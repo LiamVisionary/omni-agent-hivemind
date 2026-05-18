@@ -14,15 +14,48 @@ type UpdateBody = {
   updateCommand?: string;
 };
 
+type CollectorUpdateAttempt = {
+  result: unknown | null;
+  reachable: boolean;
+  missingUpdater: boolean;
+  error?: string;
+};
+
 async function tryCollectorUpdate(collectorUrl?: string) {
-  if (!collectorUrl) return null;
+  const emptyAttempt: CollectorUpdateAttempt = {
+    result: null,
+    reachable: false,
+    missingUpdater: false,
+  };
+  if (!collectorUrl) return emptyAttempt;
   const response = await fetch(`${collectorUrl.replace(/\/+$/, "")}/update`, {
     method: "POST",
     signal: AbortSignal.timeout(8_000),
     cache: "no-store",
-  }).catch(() => null);
-  if (!response?.ok) return null;
-  return response.json().catch(() => ({ ok: true, accepted: true }));
+  }).catch((error) => {
+    const message = error instanceof Error ? error.message : String(error);
+    return { error: message };
+  });
+  if (!response || "error" in response) {
+    return { ...emptyAttempt, error: response?.error ?? "collector update request failed" };
+  }
+
+  const payload = await response.json().catch(() => null);
+  const missingUpdater = response.status === 404 || payload?.error === "not found";
+  if (!response.ok || payload?.ok === false) {
+    return {
+      result: null,
+      reachable: true,
+      missingUpdater,
+      error: payload?.error ?? `collector update returned HTTP ${response.status}`,
+    };
+  }
+
+  return {
+    result: payload ?? { ok: true, accepted: true },
+    reachable: true,
+    missingUpdater: false,
+  };
 }
 
 function shellSingleQuote(value: string) {
@@ -150,28 +183,80 @@ async function runTailscaleSsh(target: string, script: string) {
   }
 }
 
+function plainSshTargets(target: string) {
+  if (target.includes("@")) return [target];
+  const host = target.replace(/^[^@]+@/, "");
+  return [target, `ubuntu@${host}`, `root@${host}`];
+}
+
+async function runPlainSsh(target: string, script: string) {
+  const errors: string[] = [];
+  for (const sshTarget of plainSshTargets(target)) {
+    try {
+      return await runProcess("ssh", [
+        "-o",
+        "BatchMode=yes",
+        "-o",
+        "StrictHostKeyChecking=accept-new",
+        sshTarget,
+        "bash",
+        "-s",
+      ], script, 180_000);
+    } catch (error) {
+      errors.push(`${sshTarget}: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
+  throw new Error(errors.join("\n\n"));
+}
+
+async function runRemoteShell(target: string, script: string) {
+  let tailscaleError = "";
+  try {
+    return await runTailscaleSsh(target, script);
+  } catch (error) {
+    tailscaleError = error instanceof Error ? error.message : String(error);
+  }
+
+  try {
+    const result = await runPlainSsh(target, script);
+    return {
+      ...result,
+      stderr: combineOutput(`Tailscale SSH failed, plain SSH succeeded. Original Tailscale error:\n${tailscaleError}`, result.stderr),
+    };
+  } catch (error) {
+    const plainSshError = error instanceof Error ? error.message : String(error);
+    throw new Error(combineOutput(
+      `Tailscale SSH failed:\n${tailscaleError}`,
+      `Plain SSH failed:\n${plainSshError}`,
+    ));
+  }
+}
+
 async function tryTailscaleSsh(body: UpdateBody) {
   const target = body.dnsName || body.name || body.ip;
   if (!target) throw new Error("No Tailscale target was provided.");
   const script = fallbackScript(body.appDir, body.updateCommand);
-  const { stdout, stderr } = await runTailscaleSsh(target, script);
-  return { ok: true, accepted: true, method: "tailscale-ssh", target, stdout, stderr, command: script };
+  const { stdout, stderr } = await runRemoteShell(target, script);
+  return { ok: true, accepted: true, method: "remote-shell", target, stdout, stderr, command: script };
 }
 
 export async function POST(request: Request) {
   const body = await request.json().catch(() => ({})) as UpdateBody;
-  const collectorResult = await tryCollectorUpdate(body.collectorUrl);
-  if (collectorResult) {
-    return Response.json({ ok: true, method: "collector", result: collectorResult });
+  const collectorAttempt = await tryCollectorUpdate(body.collectorUrl);
+  if (collectorAttempt.result) {
+    return Response.json({ ok: true, method: "collector", result: collectorAttempt.result });
   }
 
   try {
     const result = await tryTailscaleSsh(body);
     return Response.json(result);
   } catch (error) {
+    const rawError = error instanceof Error ? error.message : "Update failed";
+    const staleCollectorMessage = "This machine is online and reporting agent activity, but its collector is too old to update itself. This dashboard also cannot open SSH to that machine yet. Run the fallback command once on that machine; after that, the Update button will work directly from here.";
     return Response.json({
       ok: false,
-      error: error instanceof Error ? error.message : "Update failed",
+      error: collectorAttempt.reachable && collectorAttempt.missingUpdater ? staleCollectorMessage : rawError,
+      details: collectorAttempt.reachable && collectorAttempt.missingUpdater ? rawError : undefined,
       fallbackCommand: fallbackScript(body.appDir, body.updateCommand),
     }, { status: 502 });
   }

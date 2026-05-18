@@ -3,6 +3,14 @@
 This file records user-visible changes before they are committed. New work should
 be added here first, then marked `Committed` or `Pushed` after the git action.
 
+## 2026-05-18 18:24 WITA - Clear Stale Collector Update Failures
+
+- Status: Pushed
+- Areas changed: Fleet update API, remote update fallback errors
+- Summary: Make remote machine updates fall back from Tailscale SSH to plain SSH when possible, and replace the raw host-key failure with a clear stale-collector/bootstrap message when the collector is reachable but cannot update itself yet.
+- Verification: `pnpm typecheck`, `pnpm lint` (warnings only, pre-existing unused-variable warnings), `pnpm build` (pre-existing Turbopack NFT trace warning), and `git diff --check` passed.
+- Intended commit message: `Clarify stale collector update failures`
+
 ## 2026-05-18 18:17 WITA - Preflight Tailscale SSH Host Keys
 
 - Status: Pushed
