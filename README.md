@@ -1,3 +1,6 @@
+<img width="256" height="256" alt="Omni Agent Hive Mind" src="https://github.com/user-attachments/assets/38ed5ceb-f97c-4ec5-85bc-6c4a9b0f11f2" />
+
+
 # Omni Agent Hivemind
 
 Omni Agent Hivemind is a local-first control room for agent fleets spread across your own machines. It gives you one dashboard for Hermes, OpenClaw, and Aeon agents, discovers agent nodes over your private Tailscale network, and prepares a shared Obsidian workspace for memory, handoffs, and team coordination.
