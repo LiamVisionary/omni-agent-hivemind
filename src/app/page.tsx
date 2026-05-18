@@ -94,6 +94,7 @@ type MachineUpdateStatus = {
 const STORAGE_KEY = "openclaw-next.agentProfiles.v1";
 const VAULT_STORAGE_KEY = "openclaw-next.sharedVault.v1";
 const TASK_STORAGE_KEY = "openclaw-next.agentTasks.v1";
+const QUIET_SNAPSHOT_HOLD_MS = 15 * 60 * 1000;
 
 function seedAgents(): AgentProfile[] {
   return [
@@ -215,6 +216,38 @@ function friendlyEmptyBody(snapshot: AgentSnapshot | undefined, hasTelemetryUrl:
   return "This agent is connected. Its current work and recent history will appear here when activity is recorded.";
 }
 
+function shouldKeepSnapshot(previous: AgentSnapshot | undefined, incoming: AgentSnapshot) {
+  if (!previous?.tasks?.length || incoming.tasks.length > 0 || incoming.error) return false;
+  if (!incoming.ok || !incoming.runtimeReachable) return false;
+  const newestPreviousTask = Math.max(...previous.tasks.map((task) => task.updatedAt || previous.checkedAt || 0));
+  return Date.now() - newestPreviousTask < QUIET_SNAPSHOT_HOLD_MS;
+}
+
+function mergeSnapshot(previous: AgentSnapshot | undefined, incoming: AgentSnapshot) {
+  if (!shouldKeepSnapshot(previous, incoming)) return incoming;
+  if (!previous) return incoming;
+  return {
+    ...incoming,
+    summary: previous.summary,
+    sources: [...new Set([...incoming.sources, ...previous.sources, "recent activity"])],
+    tasks: previous.tasks,
+    checkedAt: incoming.checkedAt,
+  };
+}
+
+function mergeSnapshotRecord(current: Record<string, AgentSnapshot>, incoming: AgentSnapshot[]) {
+  const next = { ...current };
+  for (const snapshot of incoming) {
+    next[snapshot.agentId] = mergeSnapshot(current[snapshot.agentId], snapshot);
+  }
+  return next;
+}
+
+function mergeMachineSnapshots(previous: AgentSnapshot[] = [], incoming: AgentSnapshot[] = []) {
+  const previousById = new Map(previous.map((snapshot) => [snapshot.agentId, snapshot]));
+  return incoming.map((snapshot) => mergeSnapshot(previousById.get(snapshot.agentId), snapshot));
+}
+
 function mergeDiscoveredMachines(current: DiscoveredMachine[], incoming: DiscoveredMachine[]) {
   const currentByKey = new Map(current.map((machine) => [collectorKey(machine.device.collectorUrl) || machine.device.name, machine]));
   const now = Date.now();
@@ -223,10 +256,15 @@ function mergeDiscoveredMachines(current: DiscoveredMachine[], incoming: Discove
     const key = collectorKey(machine.device.collectorUrl) || machine.device.name;
     const previous = currentByKey.get(key);
     const hasFreshAgentData = machine.collector === "ready" && machine.agents.length > 0;
-    const hasFreshSnapshots = machine.snapshots.length > 0;
+    const mergedSnapshots = mergeMachineSnapshots(previous?.snapshots, machine.snapshots);
+    const hasFreshSnapshots = mergedSnapshots.length > 0;
 
     if (!previous || hasFreshAgentData || hasFreshSnapshots) {
-      return { ...machine, lastSeenAt: hasFreshAgentData || hasFreshSnapshots ? now : previous?.lastSeenAt };
+      return {
+        ...machine,
+        snapshots: mergedSnapshots,
+        lastSeenAt: hasFreshAgentData || hasFreshSnapshots ? now : previous?.lastSeenAt,
+      };
     }
 
     if (previous.agents.length === 0 && previous.snapshots.length === 0) {
@@ -303,7 +341,7 @@ export default function Home() {
         snapshots?: AgentSnapshot[];
       } | null;
       if (cancelled || !data?.snapshots) return;
-      setFleetSnapshots(Object.fromEntries(data.snapshots.map((snapshot) => [snapshot.agentId, snapshot])));
+      setFleetSnapshots((current) => mergeSnapshotRecord(current, data.snapshots ?? []));
       setFleetCheckedAt(data.checkedAt ?? Date.now());
     }
     refreshFleetSnapshot();
@@ -341,10 +379,7 @@ export default function Home() {
       setDiscoveredMachines((current) => mergeDiscoveredMachines(current, machines));
       const discoveredSnapshots = data.machines.flatMap((machine) => machine.snapshots ?? []);
       if (discoveredSnapshots.length > 0) {
-        setFleetSnapshots((current) => ({
-          ...current,
-          ...Object.fromEntries(discoveredSnapshots.map((snapshot) => [snapshot.agentId, snapshot])),
-        }));
+        setFleetSnapshots((current) => mergeSnapshotRecord(current, discoveredSnapshots));
       }
     }
     refreshDiscovery();

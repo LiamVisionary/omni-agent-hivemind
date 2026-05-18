@@ -3,6 +3,14 @@
 This file records user-visible changes before they are committed. New work should
 be added here first, then marked `Committed` or `Pushed` after the git action.
 
+## 2026-05-18 18:53 WITA - Stabilize Agent Activity Cards
+
+- Status: Pushed
+- Areas changed: Dashboard fleet snapshot merging, discovered machine merge behavior
+- Summary: Prevent polling flicker where an empty-but-connected collector snapshot briefly overwrites the last real Hermes task/history card. Keep recent non-empty activity visible while the collector returns quiet snapshots.
+- Verification: `pnpm typecheck`, `pnpm lint` (warnings only, pre-existing unused-variable warnings), `git diff --check`, dev-server hot compile, `/api/fleet/discover`, and direct VPS collector `/snapshot` passed.
+- Intended commit message: `Stabilize agent activity cards`
+
 ## 2026-05-18 18:38 WITA - Restart Collector During Setup
 
 - Status: Pushed
