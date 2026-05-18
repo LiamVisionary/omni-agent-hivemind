@@ -56,6 +56,8 @@ type MachineGroup = {
   name: string;
   address: string;
   collectorUrl: string;
+  dnsName?: string;
+  ip?: string;
   online: boolean;
   self: boolean;
   collector: "ready" | "not-installed" | "offline" | "missing" | "unknown";
@@ -265,7 +267,7 @@ export default function Home() {
   const [tailscaleStatus, setTailscaleStatus] = useState("Checking Tailnet...");
   const [discoveredMachines, setDiscoveredMachines] = useState<DiscoveredMachine[]>([]);
   const [appVersion, setAppVersion] = useState<AppVersion | null>(null);
-  const [copiedMachineKey, setCopiedMachineKey] = useState("");
+  const [updateStatusByMachine, setUpdateStatusByMachine] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
@@ -426,6 +428,8 @@ export default function Home() {
       name: device.self ? "This Mac" : device.name,
       address: device.ip || device.dnsName,
       collectorUrl: device.collectorUrl,
+      dnsName: device.dnsName,
+      ip: device.ip,
       online: device.online,
       self: device.self,
       collector: (discovered?.collector ?? "unknown") as MachineGroup["collector"],
@@ -438,6 +442,8 @@ export default function Home() {
       name: "Not connected yet",
       address: "These saved agents are waiting for a machine collector",
       collectorUrl: "",
+      dnsName: "",
+      ip: "",
       online: false,
       self: false,
       collector: "missing",
@@ -532,16 +538,34 @@ export default function Home() {
     )));
   }
 
-  async function copyUpdateCommand(machine: MachineGroup) {
-    const command = machine.version?.updateCommand
-      || "cd omni-agent-hivemind && git pull && ./setup.sh";
-    const text = [
-      "# Run this on the machine shown in the card:",
-      command,
-    ].join("\n");
-    await navigator.clipboard?.writeText(text).catch(() => undefined);
-    setCopiedMachineKey(machine.key);
-    window.setTimeout(() => setCopiedMachineKey((current) => current === machine.key ? "" : current), 2500);
+  async function runMachineUpdate(machine: MachineGroup) {
+    setUpdateStatusByMachine((current) => ({ ...current, [machine.key]: "Updating..." }));
+    const response = await fetch("/api/fleet/update", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        collectorUrl: machine.collectorUrl,
+        dnsName: machine.dnsName,
+        name: machine.name,
+        ip: machine.ip || machine.address,
+        appDir: machine.version?.appDir,
+        updateCommand: machine.version?.updateCommand,
+      }),
+    }).catch(() => null);
+    const data = await response?.json().catch(() => null) as { ok?: boolean; error?: string; method?: string } | null;
+    setUpdateStatusByMachine((current) => ({
+      ...current,
+      [machine.key]: data?.ok
+        ? `Updating via ${data.method === "tailscale-ssh" ? "Tailscale SSH" : "collector"}`
+        : data?.error ?? "Update failed",
+    }));
+    window.setTimeout(() => {
+      setUpdateStatusByMachine((current) => {
+        const next = { ...current };
+        delete next[machine.key];
+        return next;
+      });
+    }, 8_000);
   }
 
   async function checkStatus() {
@@ -731,9 +755,10 @@ export default function Home() {
                       <button
                         type="button"
                         className="machineUpdateFab"
-                        onClick={() => copyUpdateCommand(machine)}
+                        disabled={Boolean(updateStatusByMachine[machine.key])}
+                        onClick={() => runMachineUpdate(machine)}
                       >
-                        {copiedMachineKey === machine.key ? "Copied" : "Update"}
+                        {updateStatusByMachine[machine.key] ?? "Update"}
                       </button>
                     ) : null;
                   })()}

@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { createServer } from "node:http";
-import { execFile } from "node:child_process";
+import { execFile, spawn } from "node:child_process";
 import { access, readdir, readFile, stat } from "node:fs/promises";
 import { constants } from "node:fs";
 import { homedir, hostname } from "node:os";
@@ -61,6 +61,20 @@ async function appVersion() {
     latestShortCommit: latestCommit.slice(0, 7),
     updateCommand: `cd ${JSON.stringify(appDir)} && git pull && ./setup.sh`,
   };
+}
+
+function shellQuote(value) {
+  return `'${String(value).replaceAll("'", "'\\''")}'`;
+}
+
+function startUpdate() {
+  const command = `cd ${shellQuote(appDir)} && mkdir -p .next && { echo "--- update $(date -u +%Y-%m-%dT%H:%M:%SZ) ---"; git pull --ff-only; pnpm install --frozen-lockfile; pnpm build; ./setup.sh; } >> .next/agent-update.log 2>&1`;
+  const child = spawn("sh", ["-lc", command], {
+    detached: true,
+    stdio: "ignore",
+  });
+  child.unref();
+  return command;
 }
 
 async function scanHermesState(agent, hermesDir) {
@@ -208,6 +222,19 @@ createServer(async (request, response) => {
       ok: true,
       host: hostname(),
       version: await appVersion(),
+    }));
+    return;
+  }
+  if (request.url === "/update" && request.method === "POST") {
+    const version = await appVersion();
+    const command = startUpdate();
+    response.writeHead(202, { "content-type": "application/json" }).end(JSON.stringify({
+      ok: true,
+      accepted: true,
+      host: hostname(),
+      version,
+      message: "Update started. The collector and dashboard may briefly restart.",
+      command,
     }));
     return;
   }

@@ -352,6 +352,11 @@ h1 {
   box-shadow: 0 10px 30px rgba(250, 204, 21, 0.2);
 }
 
+.machineUpdateFab:disabled {
+  cursor: wait;
+  opacity: 0.78;
+}
+
 .agentList {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
