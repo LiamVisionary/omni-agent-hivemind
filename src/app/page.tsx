@@ -85,6 +85,12 @@ type AppVersion = {
   updateCommand?: string;
 };
 
+type MachineUpdateStatus = {
+  label: string;
+  detail?: string;
+  tone: "working" | "success" | "error";
+};
+
 const STORAGE_KEY = "openclaw-next.agentProfiles.v1";
 const VAULT_STORAGE_KEY = "openclaw-next.sharedVault.v1";
 const TASK_STORAGE_KEY = "openclaw-next.agentTasks.v1";
@@ -267,7 +273,7 @@ export default function Home() {
   const [tailscaleStatus, setTailscaleStatus] = useState("Checking Tailnet...");
   const [discoveredMachines, setDiscoveredMachines] = useState<DiscoveredMachine[]>([]);
   const [appVersion, setAppVersion] = useState<AppVersion | null>(null);
-  const [updateStatusByMachine, setUpdateStatusByMachine] = useState<Record<string, string>>({});
+  const [updateStatusByMachine, setUpdateStatusByMachine] = useState<Record<string, MachineUpdateStatus>>({});
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
@@ -539,7 +545,7 @@ export default function Home() {
   }
 
   async function runMachineUpdate(machine: MachineGroup) {
-    setUpdateStatusByMachine((current) => ({ ...current, [machine.key]: "Updating..." }));
+    setUpdateStatusByMachine((current) => ({ ...current, [machine.key]: { label: "Updating...", tone: "working" } }));
     const response = await fetch("/api/fleet/update", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -552,20 +558,48 @@ export default function Home() {
         updateCommand: machine.version?.updateCommand,
       }),
     }).catch(() => null);
-    const data = await response?.json().catch(() => null) as { ok?: boolean; error?: string; method?: string } | null;
+    const data = await response?.json().catch(() => null) as {
+      ok?: boolean;
+      error?: string;
+      method?: string;
+      fallbackCommand?: string;
+    } | null;
+    const detail = data?.ok
+      ? "The machine accepted the update. It may disappear briefly while the dashboard restarts."
+      : [data?.error ?? "Update failed", data?.fallbackCommand ? `Fallback script:\n${data.fallbackCommand}` : ""].filter(Boolean).join("\n\n");
     setUpdateStatusByMachine((current) => ({
       ...current,
-      [machine.key]: data?.ok
-        ? `Updating via ${data.method === "tailscale-ssh" ? "Tailscale SSH" : "collector"}`
-        : data?.error ?? "Update failed",
+      [machine.key]: {
+        label: data?.ok
+          ? `Updating via ${data.method === "tailscale-ssh" ? "Tailscale SSH" : "collector"}`
+          : "Update failed",
+        detail,
+        tone: data?.ok ? "success" : "error",
+      },
     }));
-    window.setTimeout(() => {
-      setUpdateStatusByMachine((current) => {
-        const next = { ...current };
-        delete next[machine.key];
-        return next;
-      });
-    }, 8_000);
+    if (data?.ok) {
+      window.setTimeout(() => {
+        setUpdateStatusByMachine((current) => {
+          const next = { ...current };
+          delete next[machine.key];
+          return next;
+        });
+      }, 8_000);
+    }
+  }
+
+  async function copyUpdateDetail(machineKey: string) {
+    const detail = updateStatusByMachine[machineKey]?.detail;
+    if (!detail) return;
+    await navigator.clipboard?.writeText(detail).catch(() => undefined);
+    setUpdateStatusByMachine((current) => ({
+      ...current,
+      [machineKey]: {
+        ...current[machineKey],
+        label: current[machineKey]?.label ?? "Copied",
+        detail,
+      },
+    }));
   }
 
   async function checkStatus() {
@@ -751,20 +785,31 @@ export default function Home() {
                 <div className="machineHeaderActions">
                   {(() => {
                     const versionState = machineVersionState(machine, appVersion?.latestCommit || appVersion?.commit);
+                    const updateStatus = updateStatusByMachine[machine.key];
                     return versionState && versionState.state !== "current" ? (
                       <button
                         type="button"
                         className="machineUpdateFab"
-                        disabled={Boolean(updateStatusByMachine[machine.key])}
+                        disabled={updateStatus?.tone === "working"}
                         onClick={() => runMachineUpdate(machine)}
                       >
-                        {updateStatusByMachine[machine.key] ?? "Update"}
+                        {updateStatus?.tone === "working" ? updateStatus.label : "Update"}
                       </button>
                     ) : null;
                   })()}
                   <strong>{machine.agents.length} agent{machine.agents.length === 1 ? "" : "s"}</strong>
                 </div>
               </div>
+
+              {updateStatusByMachine[machine.key]?.detail ? (
+                <div className={`machineUpdateStatus ${updateStatusByMachine[machine.key].tone}`}>
+                  <div>
+                    <strong>{updateStatusByMachine[machine.key].label}</strong>
+                    <pre>{updateStatusByMachine[machine.key].detail}</pre>
+                  </div>
+                  <button type="button" onClick={() => copyUpdateDetail(machine.key)}>Copy</button>
+                </div>
+              ) : null}
 
               <div className="agentList">
                 {machine.agents.length > 0 ? machine.agents.map((agent) => {

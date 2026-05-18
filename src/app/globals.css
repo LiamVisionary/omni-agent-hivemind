@@ -357,6 +357,55 @@ h1 {
   opacity: 0.78;
 }
 
+.machineUpdateStatus {
+  display: flex;
+  gap: 12px;
+  justify-content: space-between;
+  align-items: start;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #111722;
+  margin: 0 0 14px;
+  padding: 12px;
+  user-select: text;
+}
+
+.machineUpdateStatus.error {
+  border-color: rgba(251, 113, 133, 0.45);
+}
+
+.machineUpdateStatus.success {
+  border-color: rgba(45, 212, 191, 0.36);
+}
+
+.machineUpdateStatus strong {
+  display: block;
+  margin-bottom: 6px;
+}
+
+.machineUpdateStatus pre {
+  max-height: 220px;
+  margin: 0;
+  overflow: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: #d7dee9;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 12px;
+  line-height: 1.45;
+  user-select: text;
+}
+
+.machineUpdateStatus button {
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: #0b1018;
+  color: var(--foreground);
+  font-size: 12px;
+  font-weight: 800;
+  padding: 8px 10px;
+}
+
 .agentList {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));

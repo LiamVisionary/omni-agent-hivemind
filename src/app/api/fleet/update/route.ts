@@ -1,9 +1,6 @@
-import { execFile } from "child_process";
-import { promisify } from "util";
+import { spawn } from "child_process";
 
 export const runtime = "nodejs";
-
-const execFileAsync = promisify(execFile);
 
 type UpdateBody = {
   collectorUrl?: string;
@@ -29,9 +26,16 @@ function shellSingleQuote(value: string) {
   return `'${value.replaceAll("'", "'\\''")}'`;
 }
 
-function fallbackCommand(appDir?: string, updateCommand?: string) {
+function fallbackScript(appDir?: string, updateCommand?: string) {
   if (updateCommand?.trim()) return updateCommand.trim();
-  if (appDir?.trim()) return `cd ${shellSingleQuote(appDir.trim())} && git pull --ff-only && ./setup.sh`;
+  if (appDir?.trim()) {
+    return [
+      "set -euo pipefail",
+      `cd ${shellSingleQuote(appDir.trim())}`,
+      "git pull --ff-only",
+      "./setup.sh",
+    ].join("\n");
+  }
   const candidates = [
     "\"$HOME/omni-agent-hivemind\"",
     "\"$HOME/openclaw-next\"",
@@ -39,23 +43,67 @@ function fallbackCommand(appDir?: string, updateCommand?: string) {
     "/opt/omni-agent-hivemind",
   ];
   return [
-    "set -e",
-    `for d in ${candidates.join(" ")}; do if [ -d "$d/.git" ]; then cd "$d"; break; fi; done`,
+    "set -euo pipefail",
+    "for d in " + candidates.join(" ") + "; do",
+    "  if [ -d \"$d/.git\" ]; then",
+    "    cd \"$d\"",
+    "    break",
+    "  fi",
+    "done",
     "[ -d .git ] || { echo 'Could not find omni-agent-hivemind checkout'; exit 2; }",
     "git pull --ff-only",
     "./setup.sh",
-  ].join("; ");
+  ].join("\n");
+}
+
+function runTailscaleSsh(target: string, script: string) {
+  return new Promise<{ stdout: string; stderr: string }>((resolve, reject) => {
+    const child = spawn("tailscale", ["ssh", target, "bash", "-s"], {
+      stdio: ["pipe", "pipe", "pipe"],
+    });
+    let stdout = "";
+    let stderr = "";
+    let settled = false;
+    const timeout = setTimeout(() => {
+      settled = true;
+      child.kill("SIGTERM");
+      reject(new Error(`tailscale ssh timed out while updating ${target}`));
+    }, 180_000);
+
+    child.stdout.on("data", (chunk) => {
+      stdout += chunk.toString();
+    });
+    child.stderr.on("data", (chunk) => {
+      stderr += chunk.toString();
+    });
+    child.on("error", (error) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timeout);
+      reject(error);
+    });
+    child.on("close", (code) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timeout);
+      if (code === 0) {
+        resolve({ stdout, stderr });
+        return;
+      }
+      const detail = [stderr.trim(), stdout.trim()].filter(Boolean).join("\n\n");
+      reject(new Error(`tailscale ssh exited with code ${code}${detail ? `:\n${detail}` : ""}`));
+    });
+
+    child.stdin.end(script);
+  });
 }
 
 async function tryTailscaleSsh(body: UpdateBody) {
   const target = body.dnsName || body.name || body.ip;
   if (!target) throw new Error("No Tailscale target was provided.");
-  const command = fallbackCommand(body.appDir, body.updateCommand);
-  const { stdout, stderr } = await execFileAsync("tailscale", ["ssh", target, "bash", "-lc", command], {
-    timeout: 180_000,
-    maxBuffer: 1_500_000,
-  });
-  return { ok: true, accepted: true, method: "tailscale-ssh", target, stdout, stderr, command };
+  const script = fallbackScript(body.appDir, body.updateCommand);
+  const { stdout, stderr } = await runTailscaleSsh(target, script);
+  return { ok: true, accepted: true, method: "tailscale-ssh", target, stdout, stderr, command: script };
 }
 
 export async function POST(request: Request) {
@@ -72,7 +120,7 @@ export async function POST(request: Request) {
     return Response.json({
       ok: false,
       error: error instanceof Error ? error.message : "Update failed",
-      fallbackCommand: fallbackCommand(body.appDir, body.updateCommand),
+      fallbackCommand: fallbackScript(body.appDir, body.updateCommand),
     }, { status: 502 });
   }
 }
