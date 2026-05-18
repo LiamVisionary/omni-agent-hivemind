@@ -3,9 +3,25 @@
 This file records user-visible changes before they are committed. New work should
 be added here first, then marked `Committed` or `Pushed` after the git action.
 
+## 2026-05-18 18:17 WITA - Preflight Tailscale SSH Host Keys
+
+- Status: Pushed
+- Areas changed: Fleet update API, Tailscale SSH update fallback, changelog status correction
+- Summary: Prime the target machine's SSH host key before the first `tailscale ssh` update attempt, while keeping the existing retry for first-use host-key errors. Correct the previous host-key handling changelog hash after the amended push.
+- Verification: `pnpm typecheck`, `pnpm lint` (warnings only, pre-existing unused-variable warnings), `pnpm build` (pre-existing Turbopack NFT trace warning), `git diff --check`, and `ssh-keyscan` against the VPS Tailnet hostname passed. Restarted the local production server on port 5020.
+- Intended commit message: `Preflight Tailscale SSH host keys`
+
+## 2026-05-18 18:08 WITA - Omni-Agent Hivemind Branding
+
+- Status: Uncommitted
+- Areas changed: App metadata, hero branding, runtime status placement, README/docs title references, package name, public logo and favicon assets
+- Summary: Add the supplied Omni-Agent Hivemind logo throughout the app, generate browser icons and favicon assets, rename visible app title surfaces from OpenClaw Next to Omni-Agent Hivemind, and move runtime status checking out of the hero into the selected-agent workspace.
+- Verification: `pnpm typecheck`, `pnpm lint` (warnings only, pre-existing unused-variable warnings), `pnpm build` (pre-existing Turbopack NFT trace warning), and `git diff --check` passed.
+- Intended commit message: `Add Omni-Agent Hivemind branding`
+
 ## 2026-05-18 18:01 WITA - Tailscale SSH Host Key Handling
 
-- Status: Pushed in `2f7940f`
+- Status: Pushed in `5c4187f`
 - Areas changed: Tailscale SSH fallback transport, update error copy feedback
 - Summary: Avoid first-use host key failures by detecting `tailscale ssh` host-key errors, priming `~/.ssh/known_hosts` with `ssh-keyscan` for the Tailnet host, then retrying the update. Make the update error Copy button visibly switch to `Copied`.
 - Verification: `pnpm typecheck`, `pnpm lint` (warnings only), `pnpm build`, `git diff --check`, and `ssh-keyscan` against the VPS Tailnet hostname passed.

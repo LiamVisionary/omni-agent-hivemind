@@ -124,9 +124,25 @@ async function primeKnownHost(target: string) {
   }
 }
 
+function combineOutput(...parts: Array<string | undefined>) {
+  return parts.map((part) => part?.trim()).filter(Boolean).join("\n\n");
+}
+
 async function runTailscaleSsh(target: string, script: string) {
+  let primeWarning = "";
   try {
-    return await runProcess("tailscale", ["ssh", target, "bash", "-s"], script, 180_000);
+    await primeKnownHost(target);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    primeWarning = `Could not preflight SSH host key for ${target}: ${message}`;
+  }
+
+  try {
+    const result = await runProcess("tailscale", ["ssh", target, "bash", "-s"], script, 180_000);
+    return {
+      ...result,
+      stderr: combineOutput(primeWarning, result.stderr),
+    };
   } catch (error) {
     if (!isUnknownHostKeyError(error)) throw error;
     await primeKnownHost(target);
