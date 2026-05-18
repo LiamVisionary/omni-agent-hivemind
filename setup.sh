@@ -73,12 +73,27 @@ info "Building dashboard"
 pnpm build
 ok "Dashboard built"
 
-if lsof -tiTCP:"$PORT" -sTCP:LISTEN >/dev/null 2>&1; then
-  warn "Port $PORT is already in use; leaving the existing process alone"
-else
+start_dashboard() {
   info "Starting dashboard on port $PORT"
   nohup pnpm start > "$ROOT/.next/agent-control-room.log" 2>&1 &
   sleep 2
+}
+
+port_pid="$(lsof -tiTCP:"$PORT" -sTCP:LISTEN 2>/dev/null | head -1 || true)"
+if [[ -n "$port_pid" ]]; then
+  port_cmd="$(ps -p "$port_pid" -o command= 2>/dev/null || true)"
+  port_cwd="$(lsof -a -p "$port_pid" -d cwd -Fn 2>/dev/null | sed -n 's/^n//p' | head -1 || true)"
+  if [[ "$port_cwd" == "$ROOT" && "$port_cmd" == *"next"* ]]; then
+    info "Restarting existing dashboard on port $PORT"
+    kill "$port_pid"
+    sleep 2
+    start_dashboard
+  else
+    warn "Port $PORT is already in use by another process; leaving it alone"
+    warn "Use PORT=<free-port> ./setup.sh or stop PID $port_pid first"
+  fi
+else
+  start_dashboard
 fi
 
 local_url="http://localhost:$PORT"
