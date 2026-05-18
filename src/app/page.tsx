@@ -1,8 +1,32 @@
 "use client";
 
-import { FormEvent, useEffect, useMemo, useState } from "react";
-import type { ReactNode } from "react";
+import { FormEvent, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import Image from "next/image";
+import { motion } from "motion/react";
+import {
+  Activity,
+  Bot,
+  BrainCircuit,
+  Check,
+  ChevronRight,
+  CircleAlert,
+  Copy,
+  CopyPlus,
+  CreditCard,
+  KanbanSquare,
+  MessageSquare,
+  Monitor,
+  Network,
+  Plus,
+  PlugZap,
+  RefreshCcw,
+  Send,
+  Settings2,
+  ShieldCheck,
+  Trash2,
+  WalletCards,
+  X,
+} from "lucide-react";
 import type { AgentProfile, AgentRuntime, SharedVaultConfig } from "@/lib/types/agent-runtime";
 import { createAgentProfile, DEFAULT_SHARED_VAULT, RUNTIME_DEFAULTS, RUNTIME_LABELS } from "@/lib/types/agent-runtime";
 import type { AgentPaymentProvider, AgentWalletConfig } from "@/lib/types/agent-wallet";
@@ -11,6 +35,21 @@ import { KANBAN_COLUMNS } from "@/lib/types/kanban";
 import { AGENT_PAYMENT_PROVIDER_COPY, PAYMENT_SAFETY_RULES, SOVEREIGN_AGENT_LAUNCH_STEPS } from "@/lib/config/agent-payments";
 import { buildAgentPaymentPrompt, createDefaultAgentWallet, getSurvivalSnapshot, normalizeMoney } from "@/lib/utils/agent-wallet";
 import { groupKanbanTasks } from "@/lib/utils/kanban-board";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import {
+  AgentCell,
+  AgentTaskList,
+  Cell,
+  CellMenu,
+  MachineCell,
+  MemoryCell,
+  SetupCell,
+  WalletCell,
+  type AgentTaskRow,
+  type CellMenuItem,
+  type SetupStep,
+} from "@/components/cells";
 
 type GatewayStatus = {
   ok?: boolean;
@@ -35,6 +74,7 @@ type AgentTask = {
   updatedAt: number;
   completedAt?: number;
   source?: string;
+  messages?: ChatMessage[];
 };
 
 type AgentSnapshot = {
@@ -71,6 +111,7 @@ type MachineGroup = {
   collector: "ready" | "not-installed" | "offline" | "missing" | "unknown";
   agents: AgentProfile[];
   version?: AppVersion;
+  capabilities?: AgentProfile["collectorCapabilities"];
 };
 
 type DiscoveredMachine = {
@@ -79,6 +120,7 @@ type DiscoveredMachine = {
   agents: AgentProfile[];
   snapshots: AgentSnapshot[];
   version?: AppVersion;
+  capabilities?: AgentProfile["collectorCapabilities"];
   lastSeenAt?: number;
 };
 
@@ -115,8 +157,98 @@ type KanbanResponse = {
   error?: string;
 };
 
+type MiroSharkStatus = {
+  configured: boolean;
+  ok: boolean;
+  phase: "connected" | "starting" | "installing" | "installed-stopped" | "not-installed" | "needs-config" | "unreachable";
+  baseUrl: string;
+  service?: string;
+  status?: string;
+  installPath?: string;
+  installSource?: string;
+  apiDocsUrl?: string;
+  templatesUrl?: string;
+  simulationsUrl?: string;
+  checkedAt: number;
+  latencyMs?: number;
+  error?: string;
+  requirements: { name: string; ok: boolean; detail: string }[];
+  install: {
+    running: boolean;
+    phase?: string;
+    startedAt?: number;
+    finishedAt?: number;
+    exitCode?: number | null;
+    logPath: string;
+    message?: string;
+  };
+  actions: { id: "install" | "start" | "open"; label: string; disabled?: boolean }[];
+  startCommand?: string;
+  installCommand?: string;
+  configHint?: string;
+  endpoints: {
+    health: string;
+    openapi: string;
+    templates: string;
+    simulations: string;
+    createSimulation: string;
+  };
+};
+
+type MiroSharkRunResult = {
+  ok?: boolean;
+  jobId?: string;
+  status?: "queued" | "running" | "started" | "failed";
+  step?: string;
+  message?: string;
+  error?: string;
+  projectId?: string;
+  graphId?: string;
+  simulationId?: string;
+  rounds?: number;
+  platform?: string;
+  links?: Record<string, string>;
+  runStatus?: unknown;
+  actions?: unknown;
+  posts?: unknown;
+  timeline?: unknown;
+};
+
+type MiroSharkPost = {
+  post_id?: number;
+  user_id?: number;
+  content?: string;
+  quote_content?: string | null;
+  created_at?: number;
+};
+
+type VisibleMiroSharkPost = MiroSharkPost & {
+  displayText: string;
+};
+
+function getMiroSharkRunStatus(run: MiroSharkRunResult | null) {
+  return (run?.runStatus as { data?: { runner_status?: string; current_round?: number; total_rounds?: number; twitter_actions_count?: number; total_actions_count?: number } } | undefined)?.data;
+}
+
+function isMiroSharkRunTerminal(status?: string) {
+  return status === "completed" || status === "failed" || status === "stopped";
+}
+
+function getMiroSharkPosts(run: MiroSharkRunResult | null) {
+  const data = (run?.posts as { data?: { count?: number; raw_count?: number; posts?: MiroSharkPost[] } } | undefined)?.data;
+  const posts = (data?.posts ?? []).flatMap<VisibleMiroSharkPost>((post) => {
+    const displayText = (post.quote_content || post.content || "").trim();
+    return displayText ? [{ ...post, displayText }] : [];
+  });
+  return {
+    count: posts.length,
+    sourceCount: data?.raw_count ?? data?.count ?? posts.length,
+    posts,
+  };
+}
+
 const KANBAN_PRIORITIES: KanbanPriority[] = ["low", "normal", "high", "urgent"];
-type DashboardView = "agents" | "kanban" | "wallet" | "vault" | "chat";
+type DashboardView = "agents" | "kanban" | "swarm" | "wallet" | "vault" | "chat";
 
 const STORAGE_KEY = "openclaw-next.agentProfiles.v1";
 const VAULT_STORAGE_KEY = "openclaw-next.sharedVault.v1";
@@ -138,13 +270,6 @@ const STARTER_AGENT_IDS = new Set([
 function seedAgents(): AgentProfile[] {
   return [
     { ...createAgentProfile("openclaw", 1), id: "openclaw-main", name: "OpenClaw Main" },
-    { ...createAgentProfile("hermes", 1), id: "hermes-orchestrator", name: "Hermes Orchestrator", agentId: "hermes-orchestrator", gatewayUrl: "http://127.0.0.1:8642" },
-    { ...createAgentProfile("hermes", 2), id: "hermes-seo", name: "Hermes SEO", agentId: "hermes-seo", gatewayUrl: "http://127.0.0.1:8643" },
-    { ...createAgentProfile("hermes", 3), id: "hermes-cmo", name: "Hermes CMO", agentId: "hermes-cmo", gatewayUrl: "http://127.0.0.1:8644" },
-    { ...createAgentProfile("hermes", 4), id: "hermes-dev", name: "Hermes Dev", agentId: "hermes-dev", gatewayUrl: "http://127.0.0.1:8645" },
-    { ...createAgentProfile("hermes", 5), id: "hermes-ops", name: "Hermes Ops", agentId: "hermes-ops", gatewayUrl: "http://127.0.0.1:8646" },
-    { ...createAgentProfile("hermes", 6), id: "hermes-life", name: "Hermes Life", agentId: "hermes-life", gatewayUrl: "http://127.0.0.1:8647" },
-    { ...createAgentProfile("aeon", 1), id: "aeon-1", name: "Aeon Agent 1" },
   ];
 }
 
@@ -254,6 +379,34 @@ function agentWorkspaceKey(agent: AgentProfile) {
   return `${agent.runtime}:id:${agent.id}`;
 }
 
+function chatSetupIssue(agent: AgentProfile) {
+  if (STARTER_AGENT_IDS.has(agent.id) && agent.runtime !== "openclaw" && !agent.telemetryUrl?.trim()) {
+    return "This starter shortcut is not connected to a running chat runtime. Pick a discovered machine agent or connect a real Hermes/Aeon chat URL.";
+  }
+  if (agent.runtime === "openclaw") {
+    return agent.gatewayUrl.trim() ? "" : "Add the OpenClaw gateway URL before chatting.";
+  }
+  if (agent.runtime === "hermes" && agent.telemetryUrl?.trim() && agent.collectorCapabilities?.chat === false) {
+    return `${agent.machineName || "This machine"} is connected, but its collector does not have the Hermes chat bridge installed yet. Run setup/update on that machine after these dashboard changes are available there.`;
+  }
+  if (!agent.gatewayUrl.trim()) {
+    if (agent.runtime === "hermes" && agent.telemetryUrl?.trim()) return "";
+    return agent.telemetryUrl
+      ? "This agent was found through the read-only collector. Add its Hermes/Aeon chat URL in setup before sending messages."
+      : "Add the runtime chat URL before sending messages.";
+  }
+  return "";
+}
+
+function viewIcon(view: DashboardView) {
+  if (view === "agents") return <Network aria-hidden="true" />;
+  if (view === "kanban") return <KanbanSquare aria-hidden="true" />;
+  if (view === "swarm") return <Activity aria-hidden="true" />;
+  if (view === "wallet") return <WalletCards aria-hidden="true" />;
+  if (view === "vault") return <BrainCircuit aria-hidden="true" />;
+  return <MessageSquare aria-hidden="true" />;
+}
+
 function dedupeAgents(configuredAgents: AgentProfile[], autoDiscoveredAgents: AgentProfile[]) {
   const discoveredKeys = new Set(autoDiscoveredAgents.map(agentWorkspaceKey));
   const configured = configuredAgents.filter((agent) => !discoveredKeys.has(agentWorkspaceKey(agent)));
@@ -265,24 +418,29 @@ function dedupeAgents(configuredAgents: AgentProfile[], autoDiscoveredAgents: Ag
   ];
 }
 
+function isRuntimeSetupNoise(text: string) {
+  return /not reachable|Chat URL needed|runtime chat URL|Request failed with 500|fetch failed|Check that the .* runtime is running/i.test(text);
+}
+
 function isStarterPlaceholder(agent: AgentProfile, knownWork: Record<string, AgentTask[]>, knownMessages: Record<string, ChatMessage[]>) {
   if (!STARTER_AGENT_IDS.has(agent.id)) return false;
   if (agent.telemetryUrl?.trim()) return false;
+  if (agent.runtime !== "openclaw") return true;
   if (agent.localDataDir?.trim() && agent.localDataDir !== "~/.hermes") return false;
-  if ((knownWork[agent.id]?.length ?? 0) > 0) return false;
-  if ((knownMessages[agent.id]?.length ?? 0) > 0) return false;
+  const work = knownWork[agent.id] ?? [];
+  const messages = knownMessages[agent.id] ?? [];
+  const meaningfulWork = work.filter((task) => (
+    !isRuntimeSetupNoise(task.title)
+    && !isRuntimeSetupNoise(task.lastMessage)
+  ));
+  const nonSystemMessages = messages.filter((message) => message.role !== "system");
+  const hasSuccessfulAssistantMessage = nonSystemMessages.some((message) => (
+    message.role === "assistant"
+    && !isRuntimeSetupNoise(message.content)
+  ));
+  if (meaningfulWork.length > 0) return false;
+  if (hasSuccessfulAssistantMessage) return false;
   return true;
-}
-
-function friendlySource(source?: string) {
-  if (!source) return "Activity";
-  if (source === "hermes-state") return "Hermes history";
-  if (source.startsWith("task-bus")) return "Task handoff";
-  if (source.includes("/logs") || source.endsWith("/logs")) return "System signal";
-  if (source.startsWith("file/") || source.startsWith("data/")) return "Workspace note";
-  if (source === "runtime-status") return "Agent status";
-  if (source === "dashboard-chat") return "Dashboard chat";
-  return source;
 }
 
 function sourcePriority(source?: string) {
@@ -301,29 +459,21 @@ function workPriority(task: AgentTask) {
   return statusBoost + sourcePriority(task.source);
 }
 
-function isLowValueActivity(task: AgentTask) {
-  return sourcePriority(task.source) <= 2
-    || /^\s*\{/.test(task.title)
-    || /Loaded main app package|Checking for update|gateway\.run|INFO\s+gateway/i.test(task.title + " " + task.lastMessage);
-}
-
 function isMeaningfulActive(task: AgentTask) {
   return task.status === "active" && sourcePriority(task.source) >= 4;
 }
 
 function cleanActivityTitle(title: string) {
-  return title
+  const cleaned = title
     .replace(/^\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}:\d{2}[,.\d]*\s*/u, "")
     .replace(/^INFO\s+/i, "")
     .replace(/^Loaded main app package\s+/i, "Opened ")
     .trim();
-}
-
-function cleanActivityMarkdown(message: string) {
-  return message
-    .replace(/\b\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}:\d{2}[,.\d]*\b/g, "")
-    .replace(/\n{3,}/g, "\n\n")
-    .trim();
+  // Hide raw JSON / log payloads from primary surfaces (philosophy rule 6).
+  // If the title looks like structured data, return a generic plain-English
+  // fallback instead of leaking `{` or `[` into the UI.
+  if (/^[\[{]/.test(cleaned) || cleaned.length <= 1) return "Background activity";
+  return cleaned;
 }
 
 function safeMarkdownHref(href: string) {
@@ -360,10 +510,9 @@ function renderInlineMarkdown(text: string): ReactNode[] {
   return parts;
 }
 
-function ActivityMarkdown({ text }: { text: string }) {
-  const markdown = cleanActivityMarkdown(text);
-  if (!markdown) return <p>No readable message was stored.</p>;
-  const lines = markdown.split("\n");
+function ChatMarkdown({ text }: { text: string }) {
+  if (!text.trim()) return null;
+  const lines = text.trim().split("\n");
   const blocks: ReactNode[] = [];
   let index = 0;
 
@@ -373,7 +522,6 @@ function ActivityMarkdown({ text }: { text: string }) {
       index += 1;
       continue;
     }
-
     if (line.trim().startsWith("```")) {
       const code: string[] = [];
       index += 1;
@@ -385,14 +533,12 @@ function ActivityMarkdown({ text }: { text: string }) {
       blocks.push(<pre key={`code-${index}`}><code>{code.join("\n")}</code></pre>);
       continue;
     }
-
     const heading = /^(#{1,3})\s+(.+)$/.exec(line);
     if (heading) {
       blocks.push(<strong className="markdownHeading" key={`heading-${index}`}>{renderInlineMarkdown(heading[2])}</strong>);
       index += 1;
       continue;
     }
-
     if (/^\s*[-*]\s+/.test(line)) {
       const items: string[] = [];
       while (index < lines.length && /^\s*[-*]\s+/.test(lines[index])) {
@@ -402,7 +548,6 @@ function ActivityMarkdown({ text }: { text: string }) {
       blocks.push(<ul key={`list-${index}`}>{items.map((item, itemIndex) => <li key={`${index}-${itemIndex}`}>{renderInlineMarkdown(item)}</li>)}</ul>);
       continue;
     }
-
     if (/^\s*\d+[.)]\s+/.test(line)) {
       const items: string[] = [];
       while (index < lines.length && /^\s*\d+[.)]\s+/.test(lines[index])) {
@@ -412,17 +557,6 @@ function ActivityMarkdown({ text }: { text: string }) {
       blocks.push(<ol key={`ordered-${index}`}>{items.map((item, itemIndex) => <li key={`${index}-${itemIndex}`}>{renderInlineMarkdown(item)}</li>)}</ol>);
       continue;
     }
-
-    if (/^\s*>\s?/.test(line)) {
-      const quote: string[] = [];
-      while (index < lines.length && /^\s*>\s?/.test(lines[index])) {
-        quote.push(lines[index].replace(/^\s*>\s?/, ""));
-        index += 1;
-      }
-      blocks.push(<blockquote key={`quote-${index}`}>{renderInlineMarkdown(quote.join(" "))}</blockquote>);
-      continue;
-    }
-
     const paragraph: string[] = [];
     while (
       index < lines.length
@@ -431,28 +565,14 @@ function ActivityMarkdown({ text }: { text: string }) {
       && !/^(#{1,3})\s+/.test(lines[index])
       && !/^\s*[-*]\s+/.test(lines[index])
       && !/^\s*\d+[.)]\s+/.test(lines[index])
-      && !/^\s*>\s?/.test(lines[index])
     ) {
       paragraph.push(lines[index]);
       index += 1;
     }
-    blocks.push(<p key={`paragraph-${index}`}>{renderInlineMarkdown(paragraph.join(" "))}</p>);
+    blocks.push(<p key={`paragraph-${index}`}>{renderInlineMarkdown(paragraph.join("\n"))}</p>);
   }
 
-  return <div className="activityMarkdown">{blocks}</div>;
-}
-
-function agentStatusVerb(task: AgentTask | undefined) {
-  if (!task) return "Standing by";
-  if (task.status === "active") return "Working";
-  if (task.status === "failed") return "Needs review";
-  return "Last seen";
-}
-
-function visibleAgentWork(work: AgentTask[], expanded: boolean) {
-  if (expanded) return work;
-  const meaningful = work.filter((task) => !isLowValueActivity(task));
-  return (meaningful.length > 0 ? meaningful : work).slice(0, 3);
+  return <div className="messageMarkdown">{blocks}</div>;
 }
 
 function machineVersionCopy(machine: MachineGroup, latestCommit?: string) {
@@ -460,16 +580,21 @@ function machineVersionCopy(machine: MachineGroup, latestCommit?: string) {
   if (!versionState) return null;
   if (versionState.state === "current") return { label: "Synced", detail: "Latest dashboard tools", state: "current" };
   if (versionState.state === "stale") return { label: "Update ready", detail: "New dashboard tools available", state: "stale" };
-  if (versionState.state === "dirty") return { label: "Local edits", detail: "Review before updating", state: "dirty" };
   return { label: "Refresh setup", detail: "Collector needs one update", state: "unknown" };
 }
 
-function friendlyAgentState(snapshot: AgentSnapshot | undefined, hasTelemetryUrl: boolean, activeCount: number) {
-  if (activeCount > 0) return { label: `${activeCount} working`, tone: "working" };
-  if (snapshot?.ok) return { label: "Connected", tone: "ready" };
-  if (!hasTelemetryUrl) return { label: "Needs machine", tone: "setup" };
-  if (snapshot?.error) return { label: "Check connection", tone: "setup" };
-  return { label: "Ready", tone: "ready" };
+function isCollectorAutoUpdateable(versionCopy: ReturnType<typeof machineVersionCopy>) {
+  return Boolean(versionCopy && versionCopy.state !== "current");
+}
+
+function machineNeedsChatBridgeRepair(machine: MachineGroup) {
+  return machine.collector === "ready" && machine.capabilities?.chat === false;
+}
+
+function localDashboardHasUnpublishedChanges(version?: AppVersion | null) {
+  if (!version) return false;
+  if (version.dirty) return true;
+  return Boolean(version.commit && version.latestCommit && version.commit !== version.latestCommit);
 }
 
 function friendlyEmptyTitle(snapshot: AgentSnapshot | undefined, hasTelemetryUrl: boolean) {
@@ -478,13 +603,6 @@ function friendlyEmptyTitle(snapshot: AgentSnapshot | undefined, hasTelemetryUrl
   if (snapshot?.summary?.startsWith("Remote collector unavailable")) return "Machine is temporarily unreachable";
   if (snapshot?.processRunning) return "Agent is running";
   return "Waiting for new work";
-}
-
-function friendlyEmptyBody(snapshot: AgentSnapshot | undefined, hasTelemetryUrl: boolean) {
-  if (!hasTelemetryUrl) return "Install the collector on the machine that runs this agent and it will be placed automatically.";
-  if (snapshot?.summary?.startsWith("Configured data dir is not available")) return "Choose the folder where this agent stores its history on that machine.";
-  if (snapshot?.summary?.startsWith("Remote collector unavailable")) return "The last known card is being kept while the machine catches up.";
-  return "This agent is connected. Its current work and recent history will appear here when activity is recorded.";
 }
 
 function shouldKeepSnapshot(previous: AgentSnapshot | undefined, incoming: AgentSnapshot) {
@@ -559,7 +677,7 @@ function machineVersionState(machine: MachineGroup, latestCommit?: string) {
   const commit = version?.commit;
   const target = latestCommit || version?.latestCommit;
   if (!commit) return { state: "unknown", label: "Update collector", detail: "This machine has an older collector that does not report its version yet." };
-  if (version?.dirty) return { state: "dirty", label: "Local changes", detail: `Running ${version.shortCommit ?? commit.slice(0, 7)} with local changes.` };
+  if (version?.dirty) return { state: "current", label: "Up to date", detail: `Running ${version.shortCommit ?? commit.slice(0, 7)} with local changes present.` };
   if (target && commit !== target) return { state: "stale", label: "Update available", detail: `${version?.shortCommit ?? commit.slice(0, 7)} -> ${version?.latestShortCommit ?? target.slice(0, 7)}` };
   return { state: "current", label: "Up to date", detail: version?.shortCommit ?? commit.slice(0, 7) };
 }
@@ -574,19 +692,21 @@ function setupCollectorCommand() {
 }
 
 export default function Home() {
-  const [agents, setAgents] = useState<AgentProfile[]>(() => parseStoredAgents());
-  const [selectedAgentId, setSelectedAgentId] = useState(() => parseStoredAgents()[0]?.id ?? "openclaw-main");
+  // Initialize all persisted state with deterministic seed values so SSR and
+  // first client render match. localStorage is read inside a useEffect below.
+  const [hydrated, setHydrated] = useState(false);
+  const [agents, setAgents] = useState<AgentProfile[]>(seedAgents);
+  const [selectedAgentId, setSelectedAgentId] = useState(() => seedAgents()[0]?.id ?? "openclaw-main");
   const [draftRuntime, setDraftRuntime] = useState<AgentRuntime>("hermes");
   const [text, setText] = useState("");
   const [status, setStatus] = useState<GatewayStatus | null>(null);
   const [statusAgentId, setStatusAgentId] = useState("");
   const [vaultStatus, setVaultStatus] = useState<Record<string, unknown> | null>(null);
   const [controlRoomStatus, setControlRoomStatus] = useState<Record<string, unknown> | null>(null);
-  const [sharedVault, setSharedVault] = useState<SharedVaultConfig>(() => parseStoredVault());
+  const [sharedVault, setSharedVault] = useState<SharedVaultConfig>(DEFAULT_SHARED_VAULT);
   const [messagesByAgent, setMessagesByAgent] = useState<Record<string, ChatMessage[]>>({});
-  const [tasks, setTasks] = useState<AgentTask[]>(() => parseStoredTasks());
-  const [walletsByAgent, setWalletsByAgent] = useState<Record<string, AgentWalletConfig>>(() => parseStoredWallets());
-  const [expandedAgentId, setExpandedAgentId] = useState<string | null>(null);
+  const [tasks, setTasks] = useState<AgentTask[]>([]);
+  const [walletsByAgent, setWalletsByAgent] = useState<Record<string, AgentWalletConfig>>({});
   const [fleetSnapshots, setFleetSnapshots] = useState<Record<string, AgentSnapshot>>({});
   const [fleetCheckedAt, setFleetCheckedAt] = useState<number | null>(null);
   const [tailscaleDevices, setTailscaleDevices] = useState<TailscaleDevice[]>([]);
@@ -611,25 +731,57 @@ export default function Home() {
   const [newTaskDraft, setNewTaskDraft] = useState({ title: "", body: "", assignee: "", tenant: "", priority: "normal" as KanbanPriority });
   const [newBoardDraft, setNewBoardDraft] = useState({ slug: "", name: "" });
   const [commentDraft, setCommentDraft] = useState("");
+  const [mirosharkStatus, setMirosharkStatus] = useState<MiroSharkStatus | null>(null);
+  const [mirosharkActionPending, setMirosharkActionPending] = useState("");
+  const [mirosharkRun, setMirosharkRun] = useState<MiroSharkRunResult | null>(null);
+  const [mirosharkRunPending, setMirosharkRunPending] = useState(false);
+  const [mirosharkScenario, setMirosharkScenario] = useState("Nom launches a neighborhood food-sharing app. Local cooks, restaurants, parents, and city health officials debate safety, affordability, trust, and regulation.");
+  const [mirosharkRounds, setMirosharkRounds] = useState(5);
+  const [mirosharkPlatform, setMirosharkPlatform] = useState<"twitter" | "reddit" | "parallel">("twitter");
   const [activeView, setActiveView] = useState<DashboardView>("agents");
   const [agentComposer, setAgentComposer] = useState({ name: "", machineKey: "" });
   const [busy, setBusy] = useState(false);
+  const [busyAgentId, setBusyAgentId] = useState("");
+  const [chatMessageWindow, setChatMessageWindow] = useState<{ agentId: string; limit: number } | null>(null);
+  const messagesEndRef = useRef<HTMLDivElement | null>(null);
+
+  // Hydrate persisted state on the client after the first render. Reading
+  // localStorage inside useState init would diverge from SSR and trigger
+  // a hydration mismatch — this is the canonical pattern to avoid it,
+  // even though the lint rule flags setState-in-effect in general.
+  /* eslint-disable react-hooks/set-state-in-effect */
+  useEffect(() => {
+    const storedAgents = parseStoredAgents();
+    setAgents(storedAgents);
+    setSelectedAgentId((current) => (
+      storedAgents.some((agent) => agent.id === current) ? current : storedAgents[0]?.id ?? current
+    ));
+    setSharedVault(parseStoredVault());
+    setTasks(parseStoredTasks());
+    setWalletsByAgent(parseStoredWallets());
+    setHydrated(true);
+  }, []);
+  /* eslint-enable react-hooks/set-state-in-effect */
 
   useEffect(() => {
+    if (!hydrated) return;
     window.localStorage.setItem(STORAGE_KEY, JSON.stringify(agents));
-  }, [agents]);
+  }, [hydrated, agents]);
 
   useEffect(() => {
+    if (!hydrated) return;
     window.localStorage.setItem(VAULT_STORAGE_KEY, JSON.stringify(sharedVault));
-  }, [sharedVault]);
+  }, [hydrated, sharedVault]);
 
   useEffect(() => {
+    if (!hydrated) return;
     window.localStorage.setItem(TASK_STORAGE_KEY, JSON.stringify(tasks.slice(0, 80)));
-  }, [tasks]);
+  }, [hydrated, tasks]);
 
   useEffect(() => {
+    if (!hydrated) return;
     window.localStorage.setItem(WALLET_STORAGE_KEY, JSON.stringify(walletsByAgent));
-  }, [walletsByAgent]);
+  }, [hydrated, walletsByAgent]);
 
   useEffect(() => {
     let cancelled = false;
@@ -704,6 +856,134 @@ export default function Home() {
     const timer = window.setInterval(refreshVersion, 60_000);
     return () => window.clearInterval(timer);
   }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    async function refreshMirosharkStatus() {
+      const response = await fetch("/api/miroshark/status", { cache: "no-store" }).catch(() => null);
+      const data = await response?.json().catch(() => null) as MiroSharkStatus | null;
+      if (!cancelled && data?.baseUrl) setMirosharkStatus(data);
+    }
+    refreshMirosharkStatus();
+    const timer = window.setInterval(refreshMirosharkStatus, mirosharkStatus?.install.running ? 5_000 : 30_000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+    };
+  }, [mirosharkStatus?.install.running]);
+
+  async function runMirosharkAction(action: "install" | "start" | "open") {
+    if (action === "open") {
+      window.open(mirosharkStatus?.apiDocsUrl ?? mirosharkStatus?.baseUrl ?? "http://127.0.0.1:5101/api/docs", "_blank", "noopener,noreferrer");
+      return;
+    }
+    setMirosharkActionPending(action);
+    const response = await fetch("/api/miroshark/manage", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action }),
+    }).catch(() => null);
+    const data = await response?.json().catch(() => null) as MiroSharkStatus | null;
+    if (data?.baseUrl) setMirosharkStatus(data);
+    setMirosharkActionPending("");
+  }
+
+  async function runMirosharkSwarm(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setMirosharkRunPending(true);
+    setMirosharkRun(null);
+    const response = await fetch("/api/miroshark/swarm", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        scenario: mirosharkScenario,
+        rounds: mirosharkRounds,
+        platform: mirosharkPlatform,
+      }),
+    }).catch(() => null);
+    const data = await response?.json().catch(() => null) as MiroSharkRunResult | null;
+    setMirosharkRun(data ?? { ok: false, error: "MiroShark run request failed" });
+    if (!data?.jobId) setMirosharkRunPending(false);
+  }
+
+  const refreshMirosharkRun = useCallback(async () => {
+    const shouldFetchRun = mirosharkRun?.simulationId && mirosharkRun.status === "started";
+    const query = shouldFetchRun
+      ? `simulation_id=${encodeURIComponent(mirosharkRun.simulationId ?? "")}&platform=${encodeURIComponent(mirosharkRun.platform ?? mirosharkPlatform)}`
+      : mirosharkRun?.jobId
+        ? `job_id=${encodeURIComponent(mirosharkRun.jobId)}`
+        : mirosharkRun?.simulationId
+          ? `simulation_id=${encodeURIComponent(mirosharkRun.simulationId)}&platform=${encodeURIComponent(mirosharkRun.platform ?? mirosharkPlatform)}`
+          : "";
+    if (!query) return;
+    const response = await fetch(`/api/miroshark/swarm?${query}`, {
+      cache: "no-store",
+    }).catch(() => null);
+    const data = await response?.json().catch(() => null) as MiroSharkRunResult | null;
+    if (data) {
+      setMirosharkRun((current) => ({ ...(current ?? {}), ...data }));
+      if (data.status === "started" || data.status === "failed" || data.simulationId) setMirosharkRunPending(false);
+    }
+  }, [mirosharkPlatform, mirosharkRun]);
+
+  const mirosharkRunStatus = getMiroSharkRunStatus(mirosharkRun);
+  const mirosharkRunnerStatus = mirosharkRunStatus?.runner_status;
+  const mirosharkPosts = getMiroSharkPosts(mirosharkRun);
+  const mirosharkFeedIsWaiting = mirosharkRun?.status === "started"
+    && !!mirosharkRun.simulationId
+    && !isMiroSharkRunTerminal(mirosharkRunnerStatus)
+    && mirosharkPosts.count === 0;
+  const mirosharkFeedIsLive = mirosharkRun?.status === "started"
+    && !!mirosharkRun.simulationId
+    && !isMiroSharkRunTerminal(mirosharkRunnerStatus);
+
+  useEffect(() => {
+    if (!mirosharkRun?.jobId || mirosharkRun.status === "started" || mirosharkRun.status === "failed") return;
+    const timer = window.setInterval(refreshMirosharkRun, 3_000);
+    return () => window.clearInterval(timer);
+  }, [mirosharkRun?.jobId, mirosharkRun?.status, refreshMirosharkRun]);
+
+  useEffect(() => {
+    if (mirosharkRun?.status !== "started" || !mirosharkRun.simulationId || mirosharkRun.posts) return;
+    const timer = window.setTimeout(() => {
+      void refreshMirosharkRun();
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, [mirosharkRun?.posts, mirosharkRun?.simulationId, mirosharkRun?.status, refreshMirosharkRun]);
+
+  useEffect(() => {
+    if (mirosharkRun?.status !== "started" || !mirosharkRun.simulationId) return;
+    if (isMiroSharkRunTerminal(mirosharkRunnerStatus)) return;
+
+    const simulationId = mirosharkRun.simulationId;
+    const platform = mirosharkRun.platform ?? mirosharkPlatform;
+    const pollRun = async () => {
+      const response = await fetch(`/api/miroshark/swarm?simulation_id=${encodeURIComponent(simulationId)}&platform=${encodeURIComponent(platform)}`, {
+        cache: "no-store",
+      }).catch(() => null);
+      const data = await response?.json().catch(() => null) as MiroSharkRunResult | null;
+      if (data) {
+        setMirosharkRun((current) => ({ ...(current ?? {}), ...data }));
+      }
+    };
+
+    const kickoff = window.setTimeout(() => {
+      void pollRun();
+    }, 250);
+    const timer = window.setInterval(() => {
+      void pollRun();
+    }, 2_000);
+    return () => {
+      window.clearTimeout(kickoff);
+      window.clearInterval(timer);
+    };
+  }, [
+    mirosharkPlatform,
+    mirosharkRun?.platform,
+    mirosharkRun?.simulationId,
+    mirosharkRun?.status,
+    mirosharkRunnerStatus,
+  ]);
 
   useEffect(() => {
     let cancelled = false;
@@ -790,19 +1070,37 @@ export default function Home() {
   );
 
   const messages = useMemo(
-    () => selectedAgent
-      ? messagesByAgent[selectedAgent.id] ?? [{
+    () => {
+      if (!selectedAgent) return [];
+      const selectedMessages = messagesByAgent[selectedAgent.id] ?? [{
         role: "system" as const,
         content: `Chatting with ${selectedAgent.name}. Pick a machine to start fresh, or resume a previous chat when one is listed.`,
-      }]
-      : [],
-    [messagesByAgent, selectedAgent],
+      }];
+      return chatMessageWindow?.agentId === selectedAgent.id
+        ? selectedMessages.slice(-chatMessageWindow.limit)
+        : selectedMessages;
+    },
+    [chatMessageWindow, messagesByAgent, selectedAgent],
   );
 
   const lastAssistant = useMemo(
     () => [...messages].reverse().find((message) => message.role === "assistant")?.content ?? "",
     [messages],
   );
+
+  const visibleMessages = useMemo(
+    () => messages.filter((message) => message.role !== "system"),
+    [messages],
+  );
+
+  const sessionNotice = useMemo(
+    () => [...messages].reverse().find((message) => message.role === "system")?.content ?? "",
+    [messages],
+  );
+
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ block: "end" });
+  }, [visibleMessages, busy]);
 
   const machineGroups = useMemo<MachineGroup[]>(() => {
     const discoveryByKey = new Map(discoveredMachines.map((machine) => [collectorKey(machine.device.collectorUrl), machine]));
@@ -821,6 +1119,7 @@ export default function Home() {
       collector: (discovered?.collector ?? "unknown") as MachineGroup["collector"],
       agents: [] as AgentProfile[],
       version: discovered?.version,
+      capabilities: discovered?.capabilities,
       };
     });
     const unassigned: MachineGroup = {
@@ -906,6 +1205,11 @@ export default function Home() {
     };
   }, [displayAgents, walletsByAgent]);
 
+  const setupNeededCount = useMemo(
+    () => machineGroups.filter((machine) => machine.collector !== "ready").length,
+    [machineGroups],
+  );
+
   const kanbanAssigneeOptions = useMemo(() => {
     const local = displayAgents.map((agent) => agent.agentId || agent.id);
     return [...new Set([...local, ...kanbanAssignees].filter(Boolean))].sort();
@@ -914,22 +1218,27 @@ export default function Home() {
   const navItems = useMemo(() => [
     {
       id: "agents" as const,
-      label: "Agents",
-      detail: `${visibleAgentCount} live`,
+      label: "Fleet",
+      detail: `${visibleAgentCount} agents`,
     },
     {
       id: "kanban" as const,
-      label: "Kanban",
+      label: "Work",
       detail: `${kanbanBoard?.tasks.length ?? 0} tasks`,
     },
     {
+      id: "swarm" as const,
+      label: "Swarm",
+      detail: mirosharkStatus?.ok ? "rehearsal ready" : "companion off",
+    },
+    {
       id: "wallet" as const,
-      label: "Wallet",
-      detail: `${walletStats.enabled} funded`,
+      label: "Wallets",
+      detail: walletStats.critical > 0 ? `${walletStats.critical} need funding` : `${walletStats.enabled} ready`,
     },
     {
       id: "vault" as const,
-      label: "Vault",
+      label: "Brain",
       detail: sharedVault.enabled ? "enabled" : "off",
     },
     {
@@ -937,7 +1246,7 @@ export default function Home() {
       label: "Chat",
       detail: selectedAgent?.name ?? "none",
     },
-  ], [kanbanBoard?.tasks.length, selectedAgent?.name, sharedVault.enabled, visibleAgentCount, walletStats.enabled]);
+  ], [kanbanBoard?.tasks.length, mirosharkStatus?.ok, selectedAgent?.name, sharedVault.enabled, visibleAgentCount, walletStats.critical, walletStats.enabled]);
 
   const setupMachine = useMemo(
     () => machineGroups.find((machine) => machine.key === setupMachineKey) ?? null,
@@ -997,12 +1306,43 @@ export default function Home() {
     setAgentComposer({ name: "", machineKey: targetMachine.key });
   }
 
-  function duplicateAgent() {
-    if (!selectedAgent) return;
+  function addAgentToMachine(machine: MachineGroup, runtime: AgentRuntime = draftRuntime) {
+    if (machine.collector !== "ready" || !machine.collectorUrl) {
+      openSetupModal(machine);
+      return;
+    }
     const next = {
-      ...selectedAgent,
-      id: `${selectedAgent.runtime}-${Date.now()}`,
-      name: `${selectedAgent.name} Copy`,
+      ...createAgentProfile(runtime, runtimeCount(agents, runtime) + 1),
+      name: `${RUNTIME_LABELS[runtime]} on ${machine.name}`,
+      telemetryUrl: machine.collectorUrl,
+      machineName: machine.name,
+      localDataDir: "",
+    };
+    setAgents((current) => [...current, next]);
+    setSelectedAgentId(next.id);
+    setActiveView("chat");
+    setMessagesByAgent((current) => ({
+      ...current,
+      [next.id]: [
+        {
+          role: "assistant",
+          content: `Added ${next.name}. This profile is attached to ${machine.name}; send a message when you are ready.`,
+        },
+      ],
+    }));
+    setAgentComposer({ name: "", machineKey: machine.key });
+  }
+
+  function duplicateAgent(agentId?: string) {
+    const source = agentId
+      ? displayAgents.find((agent) => agent.id === agentId) ?? selectedAgent
+      : selectedAgent;
+    if (!source) return;
+    const next = {
+      ...source,
+      // eslint-disable-next-line react-hooks/purity
+      id: `${source.runtime}-${Date.now()}`,
+      name: `${source.name} Copy`,
     };
     setAgents((current) => [...current, next]);
     setSelectedAgentId(next.id);
@@ -1049,16 +1389,23 @@ export default function Home() {
     return firstUserMessage ? firstUserMessage.slice(0, 56) : "Previous chat";
   }
 
-  function startAgentChat(agentId: string, fresh = false) {
+  function startAgentChat(agentId: string, options: { fresh?: boolean; messageLimit?: number; seedMessages?: ChatMessage[] } = {}) {
     setSelectedAgentId(agentId);
     setActiveView("chat");
     setStatus(null);
     setStatusAgentId("");
-    if (fresh) {
+    setChatMessageWindow(options.messageLimit ? { agentId, limit: options.messageLimit } : null);
+    if (options.fresh) {
       setMessagesByAgent((current) => {
         const nextMessages = { ...current };
         delete nextMessages[agentId];
         return nextMessages;
+      });
+    } else if (options.seedMessages?.length) {
+      setMessagesByAgent((current) => {
+        const existing = current[agentId] ?? [];
+        const hasExistingConversation = existing.some((message) => message.role !== "system" && message.content.trim());
+        return hasExistingConversation ? current : { ...current, [agentId]: options.seedMessages ?? [] };
       });
     }
   }
@@ -1084,7 +1431,50 @@ export default function Home() {
     )));
   }
 
+  async function refreshAppVersionNow() {
+    const response = await fetch("/api/app/version", { cache: "no-store" }).catch(() => null);
+    const data = await response?.json().catch(() => null) as AppVersion | null;
+    if (data?.commit) setAppVersion(data);
+  }
+
+  async function refreshDiscoveryNow() {
+    const response = await fetch("/api/fleet/discover", { cache: "no-store" }).catch(() => null);
+    const data = await response?.json().catch(() => null) as {
+      machines?: DiscoveredMachine[];
+    } | null;
+    if (!data?.machines) return;
+    setDiscoveredMachines((current) => mergeDiscoveredMachines(current, data.machines ?? []));
+    const discoveredSnapshots = data.machines.flatMap((machine) => machine.snapshots ?? []);
+    if (discoveredSnapshots.length > 0) {
+      setFleetSnapshots((current) => mergeSnapshotRecord(current, discoveredSnapshots));
+    }
+  }
+
   async function runMachineUpdate(machine: MachineGroup) {
+    const versionCopy = machineVersionCopy(machine, appVersion?.latestCommit || appVersion?.commit);
+    const needsChatBridgeRepair = machineNeedsChatBridgeRepair(machine);
+    if (needsChatBridgeRepair && localDashboardHasUnpublishedChanges(appVersion)) {
+      setUpdateStatusByMachine((current) => ({
+        ...current,
+        [machine.key]: {
+          label: "Publish update first",
+          detail: "This machine is missing the Hermes chat bridge, but the bridge code only exists in this local dashboard checkout right now. Commit and push these dashboard changes first, then Update can pull them on that machine.",
+          tone: "error",
+        },
+      }));
+      return;
+    }
+    if (!isCollectorAutoUpdateable(versionCopy) && !needsChatBridgeRepair) {
+      setUpdateStatusByMachine((current) => ({
+        ...current,
+        [machine.key]: {
+          label: "Already up to date",
+          detail: "This collector is already reporting the latest dashboard tools.",
+          tone: "success",
+        },
+      }));
+      return;
+    }
     setUpdateStatusByMachine((current) => ({ ...current, [machine.key]: { label: "Updating...", tone: "working" } }));
     const response = await fetch("/api/fleet/update", {
       method: "POST",
@@ -1096,35 +1486,32 @@ export default function Home() {
         ip: machine.ip || machine.address,
         appDir: machine.version?.appDir,
         updateCommand: machine.version?.updateCommand,
+        requiredCapabilities: {
+          chat: needsChatBridgeRepair || undefined,
+        },
       }),
     }).catch(() => null);
     const data = await response?.json().catch(() => null) as {
       ok?: boolean;
       error?: string;
       method?: string;
+      verified?: boolean;
       fallbackCommand?: string;
     } | null;
     const detail = data?.ok
-      ? "The machine accepted the update. It may disappear briefly while the dashboard restarts."
+      ? "The update command finished. The machine pulled the latest changes, installed dependencies, and restarted the collector."
       : [data?.error ?? "Update failed", data?.fallbackCommand ? `Fallback script:\n${data.fallbackCommand}` : ""].filter(Boolean).join("\n\n");
     setUpdateStatusByMachine((current) => ({
       ...current,
       [machine.key]: {
-        label: data?.ok
-          ? `Updating via ${data.method === "tailscale-ssh" ? "Tailscale SSH" : "collector"}`
-          : "Update failed",
+        label: data?.ok ? "Updated!" : "Update failed",
         detail,
         tone: data?.ok ? "success" : "error",
       },
     }));
     if (data?.ok) {
-      window.setTimeout(() => {
-        setUpdateStatusByMachine((current) => {
-          const next = { ...current };
-          delete next[machine.key];
-          return next;
-        });
-      }, 8_000);
+      void refreshAppVersionNow();
+      void refreshDiscoveryNow();
     }
   }
 
@@ -1276,10 +1663,20 @@ export default function Home() {
     event.preventDefault();
     const prompt = text.trim();
     if (!selectedAgent || !prompt || busy) return;
+    const setupIssue = chatSetupIssue(selectedAgent);
+    if (setupIssue) {
+      appendMessage(selectedAgent.id, { role: "user", content: prompt });
+      appendMessage(selectedAgent.id, { role: "assistant", content: `Error: ${setupIssue}` });
+      return;
+    }
 
     setBusy(true);
+    setBusyAgentId(selectedAgent.id);
     setText("");
     const taskId = `${selectedAgent.id}-${Date.now()}`;
+    const contextMessages = (messagesByAgent[selectedAgent.id] ?? [])
+      .filter((message) => message.role !== "system" && message.content.trim())
+      .slice(-5);
     upsertTask({
       id: taskId,
       agentId: selectedAgent.id,
@@ -1299,7 +1696,7 @@ export default function Home() {
         body: JSON.stringify({
           agent: selectedAgent,
           sharedVault,
-          messages: [{ role: "user", content: prompt }],
+          messages: [...contextMessages, { role: "user", content: prompt }],
         }),
       });
 
@@ -1356,75 +1753,94 @@ export default function Home() {
       updateTask(taskId, { status: "failed", lastMessage: message, completedAt: Date.now() });
     } finally {
       setBusy(false);
+      setBusyAgentId("");
     }
   }
 
   return (
-    <main className="shell">
-      <section className="hero">
-        <div className="brandIntro">
-          <Image
-            className="brandLogo"
-            src="/omni-agent-hivemind-logo.png"
-            alt="Omni-Agent Hivemind"
-            width={190}
-            height={194}
-            style={{ width: "auto", height: "auto" }}
-            priority
-          />
-          <div className="brandCopy">
-            <p className="eyebrow">Multi-runtime local agents</p>
-            <h1>Omni-Agent Hivemind</h1>
-            <p className="lede">OpenClaw, Hermes, and Aeon agents across your Tailnet.</p>
+    <motion.main
+        className="shell commandShell"
+        initial={{ opacity: 0, y: 10 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.28, ease: "easeOut" }}
+      >
+        <aside className="commandSidebar" aria-label="Control room navigation">
+          <div className="sidebarBrand">
+            <Image
+              className="brandLogo"
+              src="/omni-agent-hivemind-logo.png"
+              alt="Omni-Agent Hivemind"
+              width={190}
+              height={194}
+              style={{ display: "block", width: "auto", height: "auto", margin: "0 auto" }}
+              priority
+            />
+            <div>
+              <p className="eyebrow">Private swarm command</p>
+              <h1>Omni-Agent Hivemind</h1>
+            </div>
           </div>
-        </div>
-        <div className="heroTelemetry" aria-label="Fleet summary">
-          <div>
-            <span>Machines</span>
-            <strong>{machineGroups.filter((machine) => machine.key !== "unassigned").length}</strong>
-          </div>
-          <div>
-            <span>Agents</span>
-            <strong>{visibleAgentCount}</strong>
-          </div>
-          <div>
-            <span>Last scan</span>
-            <strong>{fleetCheckedAt ? formatRelativeTime(fleetCheckedAt) : "Now"}</strong>
-          </div>
-        </div>
-      </section>
 
-      <nav className="viewTabs" aria-label="Dashboard views">
-        {navItems.map((item) => (
-          <button
-            type="button"
-            className={`viewTab ${activeView === item.id ? "active" : ""}`}
-            aria-pressed={activeView === item.id}
-            key={item.id}
-            onClick={() => setActiveView(item.id)}
-          >
-            <span>{item.label}</span>
-            <small>{item.detail}</small>
-          </button>
-        ))}
-      </nav>
+          <nav className="viewTabs" aria-label="Dashboard views">
+            {navItems.map((item) => (
+              <button
+                key={item.id}
+                type="button"
+                className={`viewTab ${activeView === item.id ? "active" : ""}`}
+                aria-pressed={activeView === item.id}
+                title={item.detail}
+                onClick={() => setActiveView(item.id)}
+              >
+                {viewIcon(item.id)}
+                <span>{item.label}</span>
+                <small>{item.detail}</small>
+                {activeView === item.id ? <ChevronRight aria-hidden="true" /> : null}
+              </button>
+            ))}
+          </nav>
+
+          <div className="sidebarTrust">
+            <Badge variant="success"><ShieldCheck aria-hidden="true" /> Tailnet private</Badge>
+            <span>Collectors are read-only until you explicitly configure runtime chat or payments.</span>
+          </div>
+        </aside>
+
+        <div className="commandMain">
+          <section className="flex items-center justify-end gap-4 px-2 py-1.5 text-xs text-[var(--muted)]" aria-label="Fleet summary">
+            <span className="flex items-center gap-1.5">
+              <Monitor aria-hidden="true" className="size-3.5 text-[var(--accent-strong)]" />
+              <strong className="text-[var(--foreground)]">{machineGroups.filter((machine) => machine.key !== "unassigned").length}</strong>
+              machines
+            </span>
+            <span className="flex items-center gap-1.5">
+              <Bot aria-hidden="true" className="size-3.5 text-[var(--accent-strong)]" />
+              <strong className="text-[var(--foreground)]">{visibleAgentCount}</strong>
+              agents
+            </span>
+            {setupNeededCount > 0 ? (
+              <span className="flex items-center gap-1.5 text-[#fde68a]">
+                <CircleAlert aria-hidden="true" className="size-3.5" />
+                <strong>{setupNeededCount}</strong>
+                need setup
+              </span>
+            ) : null}
+          </section>
 
       {activeView === "agents" ? (
       <section className="agentRail tabPanel">
         <div className="agentRailHeader">
           <div>
-            <h2>Agent Control Room</h2>
-            <p>
-              Agents are discovered automatically from live collectors. Use Connect only when you want to name a
-              specific runtime folder or bind an extra profile to a machine.
-              {fleetCheckedAt ? ` Last scan ${formatRelativeTime(fleetCheckedAt)}.` : ""}
-              {` ${tailscaleStatus}.`}
+            <h2>Fleet</h2>
+            <p className="text-xs text-[var(--muted)]">
+              {fleetCheckedAt ? `Scanned ${formatRelativeTime(fleetCheckedAt)} · ` : ""}{tailscaleStatus}
             </p>
           </div>
+          <details className="quickConnect">
+            <summary>Connect an agent</summary>
           <div className="addAgent">
             <div className="addAgentIntro">
-              <strong>Connect an agent</strong>
-              <span>{connectableMachines.length > 0 ? "Pick a live machine; no offline cards." : "Run setup on a machine first."}</span>
+              <strong>Add a saved shortcut</strong>
+              <span>{connectableMachines.length > 0 ? "Pick a machine that is already connected." : "Connect a machine first."}</span>
             </div>
             <select value={draftRuntime} onChange={(event) => setDraftRuntime(event.target.value as AgentRuntime)} aria-label="Agent runtime">
               {Object.entries(RUNTIME_LABELS).map(([runtime, label]) => (
@@ -1447,192 +1863,241 @@ export default function Home() {
               value={agentComposer.name}
               onChange={(event) => setAgentComposer((current) => ({ ...current, name: event.target.value }))}
             />
-            <button type="button" disabled={connectableMachines.length === 0} onClick={() => addAgent()}>
+            <Button type="button" size="sm" disabled={connectableMachines.length === 0} onClick={() => addAgent()}>
+              <PlugZap aria-hidden="true" />
               Attach
-            </button>
+            </Button>
           </div>
+          </details>
         </div>
 
         <div className="machineBoard">
-          {machineGroups.map((machine) => (
-            <section className={`machineGroup ${machine.key === "unassigned" ? "needsSetup" : ""}`} key={machine.key}>
-              <div className="machineHeader">
-                <div className="machineIdentity">
-                  <div className="machineGlyph" aria-hidden="true">{machine.self ? "MAC" : "VPS"}</div>
-                  <div>
-                    <span>{machine.self ? "This computer" : machine.online ? "Remote workspace" : "Offline workspace"}</span>
-                    <h3>{machine.self ? "This Mac" : machine.name}</h3>
-                    <p>
-                      {machine.agents.length} agent{machine.agents.length === 1 ? "" : "s"}
-                      {machine.online ? " ready across your private Tailnet" : " waiting for its collector"}
-                    </p>
-                  </div>
-                  {(() => {
-                    const versionState = machineVersionCopy(machine, appVersion?.latestCommit || appVersion?.commit);
-                    return versionState && versionState.state !== "current" ? (
-                      <small className={`machineVersion ${versionState.state}`}>
-                        {versionState.label} · {versionState.detail}
-                      </small>
-                    ) : null;
-                  })()}
-                </div>
-                <div className="machineHeaderActions">
-                  {(() => {
-                    const versionState = machineVersionState(machine, appVersion?.latestCommit || appVersion?.commit);
-                    const updateStatus = updateStatusByMachine[machine.key];
-                    return versionState && versionState.state !== "current" ? (
-                      <button
-                        type="button"
-                        className="machineUpdateFab"
-                        disabled={updateStatus?.tone === "working"}
-                        onClick={() => runMachineUpdate(machine)}
-                      >
-                        {updateStatus?.tone === "working" ? "Syncing..." : "Sync"}
-                      </button>
-                    ) : null;
-                  })()}
-                  {machine.collector === "ready" ? (
-                    <strong>Live</strong>
-                  ) : (
-                    <button
-                      type="button"
-                      className="machineConnectFab"
-                      onClick={() => openSetupModal(machine)}
-                    >
-                      Connect
-                    </button>
-                  )}
-                </div>
+          {machineGroups.map((machine) => {
+            const versionCopy = machineVersionCopy(machine, appVersion?.latestCommit || appVersion?.commit);
+            const updateStatus = updateStatusByMachine[machine.key];
+            const isReady = machine.collector === "ready";
+            const needsChatBridgeRepair = machineNeedsChatBridgeRepair(machine);
+            const needsPublishedBridge = needsChatBridgeRepair && localDashboardHasUnpublishedChanges(appVersion);
+            const canAutoUpdate = isCollectorAutoUpdateable(versionCopy) || (needsChatBridgeRepair && !needsPublishedBridge);
+
+            // Connect chip and Sync icon both live in MachineCell's
+            // top-right header slot — see the MachineCell component for the
+            // rendering. We just hand it the callbacks and the loading state.
+            const isSyncing = updateStatus?.tone === "working";
+            const syncSucceeded = updateStatus?.tone === "success";
+            const primaryAgent = machine.agents[0];
+            const machineMenuItems: CellMenuItem[] = [
+              ...(needsPublishedBridge ? [{
+                key: "publish-first",
+                label: "Publish update first",
+                icon: <CircleAlert aria-hidden="true" />,
+                disabled: true,
+                onClick: () => undefined,
+              }] : canAutoUpdate ? [{
+                key: "update-collector",
+                label: isSyncing
+                  ? "Updating collector"
+                  : syncSucceeded
+                    ? "Collector synced"
+                    : needsChatBridgeRepair
+                      ? "Repair chat bridge"
+                      : "Update collector",
+                icon: syncSucceeded
+                  ? <Check aria-hidden="true" />
+                  : <RefreshCcw aria-hidden="true" className={isSyncing ? "animate-spin" : ""} />,
+                disabled: !isReady || isSyncing || syncSucceeded,
+                onClick: () => runMachineUpdate(machine),
+              }] : []),
+              {
+                key: "new-chat",
+                label: primaryAgent ? "New chat" : "Connect for chat",
+                icon: primaryAgent ? <MessageSquare aria-hidden="true" /> : <PlugZap aria-hidden="true" />,
+                onClick: () => {
+                  if (primaryAgent) {
+                    startAgentChat(primaryAgent.id, { fresh: true });
+                  } else {
+                    openSetupModal(machine);
+                  }
+                },
+              },
+              {
+                key: "add-agent",
+                label: machine.collector === "ready" ? "Add agent" : "Connect first",
+                icon: <Bot aria-hidden="true" />,
+                disabled: machine.collector !== "ready",
+                onClick: () => addAgentToMachine(machine),
+              },
+            ];
+
+            // The update banner is rendered inline only while the machine is mid-update,
+            // matching the "calm motion for live activity" guidance.
+            const updateBanner = updateStatus?.detail ? (
+              <div className={`machineUpdateStatus ${updateStatus.tone}`}>
+                <div>
+                <strong>{updateStatus.label}</strong>
+                <pre>{updateStatus.detail}</pre>
               </div>
+                <Button type="button" size="sm" variant="secondary" onClick={() => copyUpdateDetail(machine.key)}>
+                  {copiedUpdateDetailKey === machine.key ? <Check aria-hidden="true" /> : <Copy aria-hidden="true" />}
+                  {copiedUpdateDetailKey === machine.key ? "Copied" : "Copy"}
+                </Button>
+              </div>
+            ) : null;
 
-              {updateStatusByMachine[machine.key]?.detail ? (
-                <div className={`machineUpdateStatus ${updateStatusByMachine[machine.key].tone}`}>
-                  <div>
-                    <strong>{updateStatusByMachine[machine.key].label}</strong>
-                    <pre>{updateStatusByMachine[machine.key].detail}</pre>
-                  </div>
-                  <button type="button" onClick={() => copyUpdateDetail(machine.key)}>
-                    {copiedUpdateDetailKey === machine.key ? "Copied" : "Copy"}
-                  </button>
-                </div>
-              ) : null}
+            // Technical machine detail — address, IP, collector URL, version commit —
+            // moved entirely behind a Details disclosure (rule 6).
+            const details = (
+              <div className="grid grid-cols-1 gap-1 sm:grid-cols-2">
+                {machine.dnsName ? <span><strong className="text-[var(--foreground)]">Tailnet name:</strong> {machine.dnsName}</span> : null}
+                {machine.ip ? <span><strong className="text-[var(--foreground)]">IP:</strong> {machine.ip}</span> : null}
+                {machine.collectorUrl ? <span className="truncate"><strong className="text-[var(--foreground)]">Collector:</strong> {machine.collectorUrl}</span> : null}
+                {machine.capabilities ? <span><strong className="text-[var(--foreground)]">Chat bridge:</strong> {machine.capabilities.chat ? "Installed" : "Missing"}</span> : null}
+                {versionCopy ? <span><strong className="text-[var(--foreground)]">Dashboard tools:</strong> {versionCopy.label} ({versionCopy.detail})</span> : null}
+              </div>
+            );
 
-              <div className="agentList">
-                {machine.agents.length > 0 ? machine.agents.map((agent) => {
-                  const agentWork = agentWorkById[agent.id] ?? [];
-                  const visibleWork = visibleAgentWork(agentWork, expandedAgentId === agent.id);
-                  const activeCount = agentWork.filter(isMeaningfulActive).length;
-                  const snapshot = fleetSnapshots[agent.id];
-                  const state = friendlyAgentState(snapshot, Boolean(agent.telemetryUrl || machine.self), activeCount);
-                  const primaryWork = visibleWork[0] ?? agentWork[0];
-                  const paymentWallet = walletsByAgent[agent.id] ?? createDefaultAgentWallet(agent.id);
-                  const paymentSnapshot = getSurvivalSnapshot(paymentWallet);
-                  return (
-                    <article
-                      className={`agentCard ${agent.id === selectedAgent?.id ? "active" : ""}`}
-                      key={agent.id}
-                    >
-                      <div className="agentCardTop">
-                        <button
-                          type="button"
-                          className="agentSelect"
-                          onClick={() => setSelectedAgentId(agent.id)}
-                        >
-                          <span>{RUNTIME_LABELS[agent.runtime]} agent</span>
-                          <strong>{agent.name}</strong>
-                          <small>{agentStatusVerb(primaryWork)}{primaryWork ? ` on ${cleanActivityTitle(primaryWork.title)}` : ""}</small>
-                        </button>
-                        <span className={`agentState ${state.tone}`}>{state.label}</span>
-                      </div>
+            return (
+              <MachineCell
+                key={machine.key}
+                name={machine.self ? "This Mac" : machine.name}
+                address={machine.address}
+                agentCount={machine.agents.length}
+                collector={machine.collector}
+                online={machine.online}
+                self={machine.self}
+                versionState={versionCopy}
+                updateBanner={updateBanner}
+                onConnect={() => openSetupModal(machine)}
+                onSyncUpdate={() => runMachineUpdate(machine)}
+                isSyncing={isSyncing}
+                syncSucceeded={syncSucceeded}
+                forceUpdateAvailable={canAutoUpdate}
+                actionMenu={(
+                  <CellMenu
+                    items={machineMenuItems}
+                    ariaLabel={`Actions for ${machine.self ? "This Mac" : machine.name}`}
+                    triggerIcon={<Plus aria-hidden="true" />}
+                    className="size-7 rounded-full border border-[rgba(148,163,184,0.24)] bg-[rgba(15,23,42,0.7)]"
+                  />
+                )}
+                details={details}
+              >
+                {machine.agents.length > 0 ? (
+                  <div className="flex flex-col">
+                    {machine.agents.map((agent) => {
+                      const agentWork = agentWorkById[agent.id] ?? [];
+                      const activeCount = agentWork.filter(isMeaningfulActive).length;
+                      const snapshot = fleetSnapshots[agent.id];
+                      const primaryWorkRaw = agentWork[0];
+                      const primaryWork = primaryWorkRaw ? {
+                        title: cleanActivityTitle(primaryWorkRaw.title),
+                      } : null;
+                      const hasMachineWiring = Boolean(agent.telemetryUrl || machine.self);
 
-                      <div className="agentBubbleStack" aria-label={`${agent.name} work bubbles`}>
-                        {visibleWork.length > 0 ? visibleWork.map((task, index) => (
-                          <article
-                            role="button"
-                            tabIndex={0}
-                            className={`agentBubble ${task.status} ${index === 0 ? "primary" : ""}`}
-                            key={`${agent.id}-${task.id}`}
-                            onClick={() => setSelectedAgentId(agent.id)}
-                            onKeyDown={(event) => {
-                              if (event.key === "Enter" || event.key === " ") setSelectedAgentId(agent.id);
-                            }}
-                          >
-                            <span>{task.status === "active" ? "Current work" : task.status === "failed" ? "Needs review" : friendlySource(task.source)}</span>
-                            <strong>{cleanActivityTitle(task.title)}</strong>
-                            <ActivityMarkdown text={task.lastMessage} />
-                            <small>{friendlySource(task.source)} · {task.updatedAt > 0 ? formatRelativeTime(task.updatedAt) : "This session"}</small>
-                          </article>
-                        )) : (
-                          <article
-                            role="button"
-                            tabIndex={0}
-                            className="agentBubble idle"
-                            onClick={() => setSelectedAgentId(agent.id)}
-                            onKeyDown={(event) => {
-                              if (event.key === "Enter" || event.key === " ") setSelectedAgentId(agent.id);
-                            }}
-                          >
-                            <span>{state.tone === "setup" ? "Needs attention" : "Quiet"}</span>
-                            <strong>{friendlyEmptyTitle(snapshot, Boolean(agent.telemetryUrl || machine.self))}</strong>
-                            <p>{friendlyEmptyBody(snapshot, Boolean(agent.telemetryUrl || machine.self))}</p>
-                            <small>{machine.name}</small>
-                          </article>
-                        )}
-                      </div>
-
-                      {agentWork.length > 3 ? (
-                        <button
-                          type="button"
-                          className="agentViewMore"
-                          onClick={() => setExpandedAgentId((current) => current === agent.id ? null : agent.id)}
-                        >
-                          {expandedAgentId === agent.id ? "Show less" : `View ${agentWork.length - 3} more`}
-                        </button>
-                      ) : null}
-
-                      <div className="agentCardActions">
-                        <span className="agentEndpoint">{machine.self ? "Local workspace" : machine.name}</span>
-                        <button
-                          type="button"
-                          className={`agentWalletShortcut ${paymentWallet.enabled ? paymentSnapshot.tier : "off"}`}
-                          onClick={(event) => {
-                            event.stopPropagation();
+                      const menuItems: CellMenuItem[] = [
+                        {
+                          key: "chat",
+                          label: "Open chat",
+                          icon: <MessageSquare aria-hidden="true" />,
+                          onClick: () => startAgentChat(agent.id),
+                        },
+                        {
+                          key: "wallet",
+                          label: "Wallet & limits",
+                          icon: <WalletCards aria-hidden="true" />,
+                          onClick: () => {
                             setSelectedAgentId(agent.id);
                             setActiveView("wallet");
-                          }}
-                        >
-                          {paymentWallet.enabled
-                            ? `Wallet ${paymentSnapshot.tier.replace("_", " ")} · $${Math.max(0, paymentSnapshot.effectiveBalanceUsd).toFixed(2)}`
-                            : "Set up wallet"}
-                        </button>
-                        <button
-                          aria-label={`Remove ${agent.name}`}
-                          className="agentRemove"
-                          disabled={agents.length <= 1}
-                          type="button"
-                          onClick={(event) => {
-                            event.stopPropagation();
-                            deleteAgent(agent.id);
-                          }}
-                        >
-                          Remove
-                        </button>
-                      </div>
-                    </article>
-                  );
-                }) : (
-                  <div className="machineEmpty">
-                    <strong>{machine.collector === "ready" ? "No agents found on this machine" : "Collector not running yet"}</strong>
-                    <p>
-                      {machine.collector === "ready"
-                        ? "The machine is connected, but it did not report any Hermes, OpenClaw, or Aeon agents yet."
-                        : "Run the collector installer on this machine once; after that, agents appear here automatically."}
-                    </p>
+                          },
+                        },
+                        {
+                          key: "settings",
+                          label: "Edit settings",
+                          icon: <Settings2 aria-hidden="true" />,
+                          onClick: () => {
+                            setSelectedAgentId(agent.id);
+                            setActiveView("chat");
+                          },
+                        },
+                        {
+                          key: "duplicate",
+                          label: "Duplicate",
+                          icon: <CopyPlus aria-hidden="true" />,
+                          onClick: () => duplicateAgent(agent.id),
+                        },
+                        {
+                          key: "remove",
+                          label: "Remove agent",
+                          icon: <Trash2 aria-hidden="true" />,
+                          onClick: () => deleteAgent(agent.id),
+                          disabled: agents.length <= 1,
+                          destructive: true,
+                        },
+                      ];
+
+                      const isSelected = agent.id === selectedAgent?.id;
+
+                      // Build the task rows shown inline when this agent is selected.
+                      // We surface up to 6 most-recent tasks to keep the machine list compact.
+                      const taskRows: AgentTaskRow[] = isSelected
+                        ? agentWork.slice(0, 6).map((task) => ({
+                            id: task.id,
+                            title: cleanActivityTitle(task.title),
+                            status: task.status,
+                            isBusy: task.status === "active"
+                              && (busyAgentId === agent.id || Date.now() - task.updatedAt <= QUIET_SNAPSHOT_HOLD_MS),
+                            messageCount: task.messages?.length,
+                            when: task.updatedAt > 0 ? formatRelativeTime(task.updatedAt) : undefined,
+                            source: task.source,
+                          }))
+                        : [];
+
+                      return (
+                        <AgentCell
+                          key={agent.id}
+                          name={agent.name}
+                          runtime={agent.runtime}
+                          hasTelemetryUrl={hasMachineWiring}
+                          activeCount={activeCount}
+                          snapshotOk={snapshot?.ok}
+                          snapshotError={snapshot?.error}
+                          primaryWork={primaryWork}
+                          primaryWorkTime={primaryWorkRaw && primaryWorkRaw.updatedAt > 0
+                            ? formatRelativeTime(primaryWorkRaw.updatedAt)
+                            : undefined}
+                          emptyTitle={friendlyEmptyTitle(snapshot, hasMachineWiring)}
+                          selected={isSelected}
+                          onSelect={() => setSelectedAgentId(agent.id)}
+                          menu={<CellMenu items={menuItems} ariaLabel={`Actions for ${agent.name}`} />}
+                          expandedContent={(
+                            <AgentTaskList
+                              tasks={taskRows}
+                              onResumeTask={(taskRow) => {
+                                const task = agentWork.find((item) => item.id === taskRow.id);
+                                const seedMessages = task?.messages?.length
+                                  ? task.messages.slice(-5)
+                                  : [
+                                    { role: "user" as const, content: cleanActivityTitle(task?.title ?? taskRow.title) },
+                                    { role: "assistant" as const, content: task?.lastMessage ?? "No readable response was stored for this task." },
+                                  ].filter((message) => message.content.trim());
+                                startAgentChat(agent.id, { messageLimit: 5, seedMessages });
+                              }}
+                              emptyTitle={friendlyEmptyTitle(snapshot, hasMachineWiring)}
+                              emptyBody="Activity will show up here as soon as this agent records work."
+                            />
+                          )}
+                        />
+                      );
+                    })}
                   </div>
+                ) : (
+                  <p className="text-xs text-[var(--muted)]">
+                    {isReady ? "No agents yet on this machine." : "Run the collector once to see agents."}
+                  </p>
                 )}
-              </div>
-            </section>
-          ))}
+              </MachineCell>
+            );
+          })}
         </div>
       </section>
       ) : null}
@@ -1856,28 +2321,228 @@ export default function Home() {
       </section>
       ) : null}
 
+      {activeView === "swarm" ? (
+      <section className="swarmPanel">
+        <div className={`mirosharkControl ${mirosharkStatus?.ok ? "connected" : ""}`}>
+          <div className="mirosharkIdentity">
+            <span className="mirosharkDot" aria-hidden="true" />
+            <div>
+              <p>MiroShark</p>
+              <h2>
+                {mirosharkStatus?.ok
+                  ? "Connected"
+                  : mirosharkStatus?.install.running
+                    ? "Starting"
+                    : mirosharkStatus?.installPath
+                      ? "Detected"
+                      : "Not installed"}
+              </h2>
+              <span>{mirosharkStatus?.ok ? mirosharkStatus.baseUrl : mirosharkStatus?.configHint ?? mirosharkStatus?.error ?? "Ready to install locally"}</span>
+            </div>
+          </div>
+
+          <div className="mirosharkActions">
+            {(mirosharkStatus?.actions ?? [{ id: "install" as const, label: "Install & start" }]).map((action) => (
+              <Button
+                key={action.id}
+                type="button"
+                size="sm"
+                variant={action.id === "open" ? "secondary" : "default"}
+                onClick={() => runMirosharkAction(action.id)}
+                disabled={Boolean(action.disabled) || mirosharkActionPending === action.id}
+              >
+                {action.id === "open" ? <ChevronRight aria-hidden="true" /> : <PlugZap aria-hidden="true" />}
+                {mirosharkActionPending === action.id ? "Working..." : action.label}
+              </Button>
+            ))}
+            <Button
+              type="button"
+              size="sm"
+              variant="ghost"
+              onClick={async () => {
+                const response = await fetch("/api/miroshark/status", { cache: "no-store" }).catch(() => null);
+                const data = await response?.json().catch(() => null) as MiroSharkStatus | null;
+                if (data?.baseUrl) setMirosharkStatus(data);
+              }}
+            >
+              <RefreshCcw aria-hidden="true" />
+              Recheck
+            </Button>
+          </div>
+        </div>
+
+        {!mirosharkStatus?.ok ? (
+          <details className="mirosharkSetup">
+            <summary>Setup details</summary>
+            <div>
+                <p>
+                  <strong className="text-[var(--foreground)]">Backend:</strong>{" "}
+                  {mirosharkStatus?.baseUrl ?? "http://127.0.0.1:5001"}{" "}
+                  {mirosharkStatus?.configured ? "(set via environment)" : mirosharkStatus?.installPath ? "(auto-detected)" : "(default address)"}
+                </p>
+                <p>
+                  <strong className="text-[var(--foreground)]">Install:</strong>{" "}
+                  {mirosharkStatus?.installPath ?? "Not found yet"}
+                  {mirosharkStatus?.installSource ? ` (${mirosharkStatus.installSource})` : ""}
+                </p>
+                {mirosharkStatus?.requirements?.length ? (
+                  <div className="grid gap-1">
+                    <strong className="text-[var(--foreground)]">Readiness:</strong>
+                    {mirosharkStatus.requirements.map((requirement) => (
+                      <span key={requirement.name} className="flex flex-wrap items-center gap-1">
+                        <span className={requirement.ok ? "text-emerald-300" : "text-rose-300"}>
+                          {requirement.ok ? "Ready" : "Needs setup"}
+                        </span>
+                        <span>{requirement.name}</span>
+                        <code className="font-mono text-[0.66rem] text-[var(--muted)]">{requirement.detail}</code>
+                      </span>
+                    ))}
+                  </div>
+                ) : null}
+                <p>
+                  <strong className="text-[var(--foreground)]">Endpoints:</strong>{" "}
+                  <code className="font-mono text-[0.7rem]">{mirosharkStatus?.endpoints.health ?? "GET /health"}</code>
+                  {" · "}
+                  <code className="font-mono text-[0.7rem]">{mirosharkStatus?.endpoints.templates ?? "GET /api/templates/list"}</code>
+                  {" · "}
+                  <code className="font-mono text-[0.7rem]">{mirosharkStatus?.endpoints.createSimulation ?? "POST /api/simulation/create"}</code>
+                </p>
+                {mirosharkStatus?.startCommand ? (
+                  <p>
+                    <strong className="text-[var(--foreground)]">Manual fallback:</strong>{" "}
+                    <code className="font-mono text-[0.66rem]">{mirosharkStatus.startCommand}</code>
+                  </p>
+                ) : null}
+                {mirosharkStatus?.configHint ? <p className="text-amber-200">{mirosharkStatus.configHint}</p> : null}
+                {mirosharkStatus?.install.logPath ? (
+                  <p className="text-[var(--muted)]">Setup log: <code>{mirosharkStatus.install.logPath}</code></p>
+                ) : null}
+              </div>
+          </details>
+        ) : null}
+
+        <form className="mirosharkRunner" onSubmit={runMirosharkSwarm}>
+          <label className="mirosharkScenario">
+            <span>Scenario</span>
+            <textarea
+              value={mirosharkScenario}
+              onChange={(event) => setMirosharkScenario(event.target.value)}
+              placeholder="Describe the market, community, launch, crisis, or decision you want the agents to simulate."
+            />
+          </label>
+
+          <div className="mirosharkRunControls">
+            <label>
+              <span>Surface</span>
+              <select value={mirosharkPlatform} onChange={(event) => setMirosharkPlatform(event.target.value as "twitter" | "reddit" | "parallel")}>
+                <option value="twitter">Twitter</option>
+                <option value="reddit">Reddit</option>
+                <option value="parallel">Twitter + Reddit</option>
+              </select>
+            </label>
+            <label>
+              <span>Rounds</span>
+              <input
+                type="number"
+                min={1}
+                max={200}
+                value={mirosharkRounds}
+                onChange={(event) => setMirosharkRounds(Number(event.target.value))}
+              />
+            </label>
+            <Button type="submit" disabled={!mirosharkStatus?.ok || mirosharkRunPending || !mirosharkScenario.trim()}>
+              <Activity aria-hidden="true" />
+              {mirosharkRunPending ? "Running setup..." : "Run swarm"}
+            </Button>
+          </div>
+        </form>
+
+        {mirosharkRun ? (
+          <section className={`mirosharkRunResult ${mirosharkRun.ok ? "ready" : "failed"}`}>
+            <header>
+              <div>
+                <p>{mirosharkRun.ok ? (mirosharkRun.status === "started" ? "Run started" : "Run progress") : "Run failed"}</p>
+                <h3>{mirosharkRun.simulationId ?? mirosharkRun.message ?? mirosharkRun.error}</h3>
+              </div>
+              {mirosharkRun.jobId || mirosharkRun.simulationId ? (
+                <Button type="button" size="sm" variant="ghost" onClick={refreshMirosharkRun}>
+                  <RefreshCcw aria-hidden="true" />
+                  Refresh run
+                </Button>
+              ) : null}
+            </header>
+            {mirosharkRun.ok ? (
+              <div className="mirosharkRunGrid">
+                <span><strong>Step</strong>{mirosharkRun.step ?? "queued"}</span>
+                <span><strong>Status</strong>{mirosharkRunStatus?.runner_status ?? mirosharkRun.status ?? "queued"}</span>
+                <span><strong>Posts</strong>{mirosharkPosts.count}</span>
+                <span><strong>Project</strong>{mirosharkRun.projectId}</span>
+                <span><strong>Graph</strong>{mirosharkRun.graphId}</span>
+                <span><strong>Surface</strong>{mirosharkRun.platform}</span>
+                <span><strong>Rounds</strong>{mirosharkRun.rounds}</span>
+              </div>
+            ) : null}
+            {mirosharkRun.error ? <p className="mirosharkRunError">{mirosharkRun.error}</p> : null}
+            {mirosharkRun.links ? (
+              <div className="mirosharkRunLinks">
+                {Object.entries(mirosharkRun.links).map(([label, href]) => (
+                  <a href={href} target="_blank" rel="noreferrer" key={label}>{label}</a>
+                ))}
+              </div>
+            ) : null}
+            {mirosharkPosts.posts.length || mirosharkFeedIsWaiting ? (
+              <div className={`mirosharkRunFeed ${mirosharkFeedIsLive ? "isLive" : ""}`}>
+                <div>
+                  <strong>Live posts</strong>
+                  <span>
+                    {mirosharkFeedIsWaiting
+                      ? "listening..."
+                      : `showing ${mirosharkPosts.count}${mirosharkPosts.sourceCount > mirosharkPosts.count ? ` · ${mirosharkPosts.sourceCount - mirosharkPosts.count} blank hidden` : ""}`}
+                  </span>
+                </div>
+                {mirosharkFeedIsWaiting ? (
+                  <div className="mirosharkFeedLoading" aria-live="polite">
+                    <span />
+                    <p>Waiting for MiroShark to publish the first posts</p>
+                  </div>
+                ) : (
+                  <ol>
+                    {mirosharkPosts.posts.map((post, index) => (
+                      <li key={`${post.post_id ?? index}-${post.created_at ?? "tick"}`}>
+                        <span>User {post.user_id ?? "?"}{typeof post.post_id === "number" ? ` · post #${post.post_id}` : ""}</span>
+                        <p>{post.displayText}</p>
+                      </li>
+                    ))}
+                  </ol>
+                )}
+              </div>
+            ) : null}
+          </section>
+        ) : null}
+      </section>
+      ) : null}
+
       {activeView === "wallet" ? (
       <section className="walletPanel tabPanel">
         <div className="walletHeader">
           <div>
-            <p className="eyebrow">Bounded agent spend</p>
-            <h2>Wallet & Survival Setup</h2>
+            <p className="eyebrow">Spending safety</p>
+            <h2>Wallets</h2>
             <p>
-              Give an agent a prepaid payment rail, seed its local compute ledger, and make its spending
-              rules explicit before it touches real money.
+              Decide which agents can spend, how much they can spend, and when they must stop or ask you.
             </p>
           </div>
           <div className="walletTotals" aria-label="Wallet summary">
             <span>
-              Funded
+              Can spend
               <strong>{walletStats.enabled}</strong>
             </span>
             <span>
-              Balance
+              Available
               <strong>${walletStats.balance.toFixed(2)}</strong>
             </span>
             <span>
-              Critical
+              Need funding
               <strong>{walletStats.critical}</strong>
             </span>
           </div>
@@ -1888,6 +2553,13 @@ export default function Home() {
             {displayAgents.map((agent) => {
               const wallet = walletsByAgent[agent.id] ?? createDefaultAgentWallet(agent.id);
               const snapshot = getSurvivalSnapshot(wallet);
+              const summary = !wallet.enabled
+                ? "Wallet off"
+                : snapshot.tier === "critical" || snapshot.tier === "dead"
+                  ? "Needs funding"
+                  : snapshot.tier === "low_compute"
+                    ? "Slowing down"
+                    : "Can spend safely";
               return (
                 <button
                   type="button"
@@ -1897,218 +2569,240 @@ export default function Home() {
                 >
                   <span>{RUNTIME_LABELS[agent.runtime]}</span>
                   <strong>{agent.name}</strong>
-                  <small>{wallet.enabled ? `${snapshot.tier} · $${snapshot.effectiveBalanceUsd.toFixed(2)}` : "wallet not enabled"}</small>
+                  <small>
+                    {summary}
+                    {wallet.enabled ? ` · $${Math.max(0, snapshot.effectiveBalanceUsd).toFixed(2)}` : ""}
+                  </small>
                 </button>
               );
             })}
           </aside>
 
           {selectedAgent && selectedWallet && selectedWalletSnapshot ? (
-          <div className="walletDetail">
-            <div className={`survivalStrip ${selectedWalletSnapshot.tier}`}>
-              <div>
-                <span>Survival tier</span>
-                <strong>{selectedWalletSnapshot.tier.replace("_", " ")}</strong>
-                <p>{selectedWalletSnapshot.statusCopy}</p>
-              </div>
-              <div>
-                <span>Effective balance</span>
-                <strong>${selectedWalletSnapshot.effectiveBalanceUsd.toFixed(2)}</strong>
-                <p>
-                  {selectedWalletSnapshot.daysRemaining == null
-                    ? "No burn rate set"
-                    : `${selectedWalletSnapshot.daysRemaining.toFixed(1)} days remaining`}
-                </p>
-              </div>
-              <div>
-                <span>Runtime behavior</span>
-                <strong>{selectedWalletSnapshot.modelHint}</strong>
-                <p>{selectedWalletSnapshot.heartbeatHint} heartbeat</p>
-              </div>
-            </div>
-
-            <div className="walletGrid">
-              <section className="walletForm">
-                <div className="walletFormHeader">
-                  <div>
-                    <h3>{selectedAgent.name}</h3>
-                    <p>{RUNTIME_LABELS[selectedAgent.runtime]} payment rail</p>
+            <div className="walletDetail">
+              <WalletCell
+                agentName={selectedAgent.name}
+                wallet={selectedWallet}
+                survival={selectedWalletSnapshot}
+                simpleLimits={(
+                  <div className="grid gap-2 sm:grid-cols-2">
+                    <label className="flex flex-col gap-1 text-xs text-[var(--muted)]">
+                      Current balance
+                      <input
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        value={selectedWallet.currentBalanceUsd}
+                        onChange={(event) => updateWallet(selectedAgent.id, { currentBalanceUsd: normalizeMoney(event.target.value, selectedWallet.currentBalanceUsd) })}
+                        className="rounded-md border border-[rgba(148,163,184,0.18)] bg-[rgba(10,14,21,0.7)] px-2 py-1 text-[var(--foreground)]"
+                      />
+                      <small>How much money is available for this agent.</small>
+                    </label>
+                    <label className="flex flex-col gap-1 text-xs text-[var(--muted)]">
+                      Ask me over
+                      <input
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        value={selectedWallet.approvalRequiredOverUsd}
+                        onChange={(event) => updateWallet(selectedAgent.id, { approvalRequiredOverUsd: normalizeMoney(event.target.value, selectedWallet.approvalRequiredOverUsd) })}
+                        className="rounded-md border border-[rgba(148,163,184,0.18)] bg-[rgba(10,14,21,0.7)] px-2 py-1 text-[var(--foreground)]"
+                      />
+                      <small>The agent must ask before spending more than this.</small>
+                    </label>
+                    <label className="flex flex-col gap-1 text-xs text-[var(--muted)]">
+                      Max per payment
+                      <input
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        value={selectedWallet.maxPaymentUsd}
+                        onChange={(event) => updateWallet(selectedAgent.id, { maxPaymentUsd: normalizeMoney(event.target.value, selectedWallet.maxPaymentUsd) })}
+                        className="rounded-md border border-[rgba(148,163,184,0.18)] bg-[rgba(10,14,21,0.7)] px-2 py-1 text-[var(--foreground)]"
+                      />
+                      <small>Hard cap for any single payment.</small>
+                    </label>
+                    <label className="flex flex-col gap-1 text-xs text-[var(--muted)]">
+                      Daily running cost
+                      <input
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        value={selectedWallet.dailyComputeBurnUsd}
+                        onChange={(event) => updateWallet(selectedAgent.id, { dailyComputeBurnUsd: normalizeMoney(event.target.value, selectedWallet.dailyComputeBurnUsd) })}
+                        className="rounded-md border border-[rgba(148,163,184,0.18)] bg-[rgba(10,14,21,0.7)] px-2 py-1 text-[var(--foreground)]"
+                      />
+                      <small>Used only for the runway estimate.</small>
+                    </label>
                   </div>
-                  <label className="toggleRow">
-                    <input
-                      type="checkbox"
-                      checked={selectedWallet.enabled}
-                      onChange={(event) => updateWallet(selectedAgent.id, { enabled: event.target.checked })}
-                    />
-                    Enabled
-                  </label>
-                </div>
+                )}
+                advancedSetup={(
+                  <div className="grid gap-3">
+                    <label className="flex flex-col gap-1 text-xs text-[var(--muted)]">
+                      Payment method
+                      <select
+                        value={selectedWallet.provider}
+                        onChange={(event) => updateWallet(selectedAgent.id, { provider: event.target.value as AgentPaymentProvider })}
+                        className="rounded-md border border-[rgba(148,163,184,0.18)] bg-[rgba(10,14,21,0.7)] px-2 py-1 text-[var(--foreground)]"
+                      >
+                        {Object.entries(AGENT_PAYMENT_PROVIDER_COPY).map(([provider, copy]) => (
+                          <option value={provider} key={provider}>{copy.label}</option>
+                        ))}
+                      </select>
+                      <small>{AGENT_PAYMENT_PROVIDER_COPY[selectedWallet.provider].summary}</small>
+                    </label>
+                    <label className="flex flex-col gap-1 text-xs text-[var(--muted)]">
+                      Wallet address
+                      <input
+                        value={selectedWallet.walletAddress}
+                        onChange={(event) => updateWallet(selectedAgent.id, { walletAddress: event.target.value })}
+                        placeholder="0x... or Solana address"
+                        className="rounded-md border border-[rgba(148,163,184,0.18)] bg-[rgba(10,14,21,0.7)] px-2 py-1 text-[var(--foreground)]"
+                      />
+                    </label>
+                    <div className="grid gap-3 sm:grid-cols-2">
+                      <label className="flex flex-col gap-1 text-xs text-[var(--muted)]">
+                        Starting balance
+                        <input
+                          type="number"
+                          min="0"
+                          step="0.01"
+                          value={selectedWallet.seedBalanceUsd}
+                          onChange={(event) => updateWallet(selectedAgent.id, { seedBalanceUsd: normalizeMoney(event.target.value, selectedWallet.seedBalanceUsd) })}
+                          className="rounded-md border border-[rgba(148,163,184,0.18)] bg-[rgba(10,14,21,0.7)] px-2 py-1 text-[var(--foreground)]"
+                        />
+                      </label>
+                      <label className="flex flex-col gap-1 text-xs text-[var(--muted)]">
+                        Network
+                        <select
+                          value={selectedWallet.network}
+                          onChange={(event) => updateWallet(selectedAgent.id, { network: event.target.value })}
+                          className="rounded-md border border-[rgba(148,163,184,0.18)] bg-[rgba(10,14,21,0.7)] px-2 py-1 text-[var(--foreground)]"
+                        >
+                          <option value="eip155:8453">Base mainnet</option>
+                          <option value="eip155:84532">Base Sepolia</option>
+                          <option value="solana:mainnet">Solana mainnet</option>
+                          <option value="solana:devnet">Solana devnet</option>
+                        </select>
+                      </label>
+                      <label className="flex flex-col gap-1 text-xs text-[var(--muted)]">
+                        Token
+                        <input
+                          value={selectedWallet.tokenSymbol}
+                          onChange={(event) => updateWallet(selectedAgent.id, { tokenSymbol: event.target.value.toUpperCase() })}
+                          className="rounded-md border border-[rgba(148,163,184,0.18)] bg-[rgba(10,14,21,0.7)] px-2 py-1 text-[var(--foreground)]"
+                        />
+                      </label>
+                      <label className="flex flex-col gap-1 text-xs text-[var(--muted)]">
+                        ClawCard env name
+                        <input
+                          value={selectedWallet.clawCardEnvName}
+                          onChange={(event) => updateWallet(selectedAgent.id, { clawCardEnvName: event.target.value })}
+                          className="rounded-md border border-[rgba(148,163,184,0.18)] bg-[rgba(10,14,21,0.7)] px-2 py-1 text-[var(--foreground)]"
+                        />
+                      </label>
+                    </div>
+                    <label className="flex flex-col gap-1 text-xs text-[var(--muted)]">
+                      x402 base URL
+                      <input
+                        value={selectedWallet.x402BaseUrl}
+                        onChange={(event) => updateWallet(selectedAgent.id, { x402BaseUrl: event.target.value })}
+                        placeholder="https://paid-api.example.com"
+                        className="rounded-md border border-[rgba(148,163,184,0.18)] bg-[rgba(10,14,21,0.7)] px-2 py-1 text-[var(--foreground)]"
+                      />
+                    </label>
+                    <label className="flex flex-col gap-1 text-xs text-[var(--muted)]">
+                      Private setup notes
+                      <textarea
+                        value={selectedWallet.notes}
+                        onChange={(event) => updateWallet(selectedAgent.id, { notes: event.target.value })}
+                        placeholder="Provider dashboard URL, deposit memo, funding policy..."
+                        className="min-h-[64px] rounded-md border border-[rgba(148,163,184,0.18)] bg-[rgba(10,14,21,0.7)] px-2 py-1 text-[var(--foreground)]"
+                      />
+                    </label>
+                  </div>
+                )}
+                moneyMovingControls={(
+                  <>
+                    <label className="inline-flex items-center gap-2 text-xs font-semibold text-[#fecdd3]">
+                      <input
+                        type="checkbox"
+                        checked={selectedWallet.enabled}
+                        onChange={(event) => updateWallet(selectedAgent.id, { enabled: event.target.checked })}
+                      />
+                      {selectedWallet.enabled ? "Wallet on" : "Wallet off"}
+                    </label>
+                    <label className="inline-flex items-center gap-2 text-xs font-semibold text-[#fecdd3]">
+                      <input
+                        type="checkbox"
+                        checked={selectedWallet.autoPayEnabled}
+                        onChange={(event) => updateWallet(selectedAgent.id, { autoPayEnabled: event.target.checked })}
+                      />
+                      Allow autopay within caps
+                    </label>
+                    <Button type="button" size="sm" variant="secondary" onClick={() => resetWalletBurnClock(selectedAgent.id)}>
+                      <RefreshCcw aria-hidden="true" />
+                      Reset runway clock
+                    </Button>
+                    <Button type="button" size="sm" variant="danger" onClick={() => copyPaymentPrompt(selectedWallet)}>
+                      <CreditCard aria-hidden="true" />
+                      Copy agent prompt
+                    </Button>
+                  </>
+                )}
+              />
 
-                <label>
-                  Provider
-                  <select
-                    value={selectedWallet.provider}
-                    onChange={(event) => updateWallet(selectedAgent.id, { provider: event.target.value as AgentPaymentProvider })}
-                  >
-                    {Object.entries(AGENT_PAYMENT_PROVIDER_COPY).map(([provider, copy]) => (
-                      <option value={provider} key={provider}>{copy.label}</option>
+              <Cell
+                glyph="NXT"
+                eyebrow="Next safe steps"
+                title="Activate one cell at a time"
+                subtitle="Set up, fund, verify, then assign work."
+                status="memory-synced"
+                tone="info"
+              >
+                <ol className="m-0 grid gap-2 p-0 [list-style:none] text-xs">
+                  {SOVEREIGN_AGENT_LAUNCH_STEPS.slice(0, 4).map((step, index) => (
+                    <li key={step} className="flex items-start gap-3">
+                      <span aria-hidden="true" className="mt-[2px] inline-flex h-5 w-5 items-center justify-center rounded-full bg-[rgba(45,212,191,0.15)] text-[0.65rem] font-semibold text-[#99f6e4]">
+                        {index + 1}
+                      </span>
+                      <span>{step}</span>
+                    </li>
+                  ))}
+                </ol>
+                <details
+                  className="mt-3 rounded-md border border-[rgba(148,163,184,0.16)] bg-[rgba(15,23,42,0.55)] px-3 py-2"
+                  onClick={(event) => event.stopPropagation()}
+                >
+                  <summary className="cursor-pointer text-[0.72rem] font-semibold uppercase tracking-[0.14em] text-[var(--muted)]">
+                    Safety rules
+                  </summary>
+                  <ul className="m-0 mt-2 grid gap-1 p-0 [list-style:none] text-[0.78rem]">
+                    {PAYMENT_SAFETY_RULES.map((rule) => (
+                      <li key={rule} className="flex items-start gap-2">
+                        <span aria-hidden="true" className="mt-[2px] text-[#fde68a]">!</span>
+                        <span>{rule}</span>
+                      </li>
                     ))}
-                  </select>
-                  <small>{AGENT_PAYMENT_PROVIDER_COPY[selectedWallet.provider].summary}</small>
-                </label>
-
-                <div className="walletTwoCol">
-                  <label>
-                    Wallet address
-                    <input
-                      value={selectedWallet.walletAddress}
-                      onChange={(event) => updateWallet(selectedAgent.id, { walletAddress: event.target.value })}
-                      placeholder="0x... or Solana address"
-                    />
-                  </label>
-                  <label>
-                    Network
-                    <select
-                      value={selectedWallet.network}
-                      onChange={(event) => updateWallet(selectedAgent.id, { network: event.target.value })}
-                    >
-                      <option value="eip155:8453">Base mainnet</option>
-                      <option value="eip155:84532">Base Sepolia</option>
-                      <option value="solana:mainnet">Solana mainnet</option>
-                      <option value="solana:devnet">Solana devnet</option>
-                    </select>
-                  </label>
-                </div>
-
-                <div className="walletThreeCol">
-                  <label>
-                    Seed
-                    <input
-                      type="number"
-                      min="0"
-                      step="0.01"
-                      value={selectedWallet.seedBalanceUsd}
-                      onChange={(event) => updateWallet(selectedAgent.id, { seedBalanceUsd: normalizeMoney(event.target.value, selectedWallet.seedBalanceUsd) })}
-                    />
-                  </label>
-                  <label>
-                    Current
-                    <input
-                      type="number"
-                      min="0"
-                      step="0.01"
-                      value={selectedWallet.currentBalanceUsd}
-                      onChange={(event) => updateWallet(selectedAgent.id, { currentBalanceUsd: normalizeMoney(event.target.value, selectedWallet.currentBalanceUsd) })}
-                    />
-                  </label>
-                  <label>
-                    Burn/day
-                    <input
-                      type="number"
-                      min="0"
-                      step="0.01"
-                      value={selectedWallet.dailyComputeBurnUsd}
-                      onChange={(event) => updateWallet(selectedAgent.id, { dailyComputeBurnUsd: normalizeMoney(event.target.value, selectedWallet.dailyComputeBurnUsd) })}
-                    />
-                  </label>
-                </div>
-
-                <div className="walletThreeCol">
-                  <label>
-                    Max pay
-                    <input
-                      type="number"
-                      min="0"
-                      step="0.01"
-                      value={selectedWallet.maxPaymentUsd}
-                      onChange={(event) => updateWallet(selectedAgent.id, { maxPaymentUsd: normalizeMoney(event.target.value, selectedWallet.maxPaymentUsd) })}
-                    />
-                  </label>
-                  <label>
-                    Approval over
-                    <input
-                      type="number"
-                      min="0"
-                      step="0.01"
-                      value={selectedWallet.approvalRequiredOverUsd}
-                      onChange={(event) => updateWallet(selectedAgent.id, { approvalRequiredOverUsd: normalizeMoney(event.target.value, selectedWallet.approvalRequiredOverUsd) })}
-                    />
-                  </label>
-                  <label>
-                    Token
-                    <input
-                      value={selectedWallet.tokenSymbol}
-                      onChange={(event) => updateWallet(selectedAgent.id, { tokenSymbol: event.target.value.toUpperCase() })}
-                    />
-                  </label>
-                </div>
-
-                <div className="walletTwoCol">
-                  <label>
-                    ClawCard env
-                    <input
-                      value={selectedWallet.clawCardEnvName}
-                      onChange={(event) => updateWallet(selectedAgent.id, { clawCardEnvName: event.target.value })}
-                    />
-                  </label>
-                  <label>
-                    x402 base URL
-                    <input
-                      value={selectedWallet.x402BaseUrl}
-                      onChange={(event) => updateWallet(selectedAgent.id, { x402BaseUrl: event.target.value })}
-                      placeholder="https://paid-api.example.com"
-                    />
-                  </label>
-                </div>
-
-                <label className="toggleRow walletAutopay">
-                  <input
-                    type="checkbox"
-                    checked={selectedWallet.autoPayEnabled}
-                    onChange={(event) => updateWallet(selectedAgent.id, { autoPayEnabled: event.target.checked })}
-                  />
-                  Allow autopay within caps
-                </label>
-
-                <label>
-                  Notes
-                  <textarea
-                    value={selectedWallet.notes}
-                    onChange={(event) => updateWallet(selectedAgent.id, { notes: event.target.value })}
-                    placeholder="Provider dashboard URL, deposit memo, funding policy..."
-                  />
-                </label>
-
-                <div className="walletActions">
-                  <button type="button" onClick={() => resetWalletBurnClock(selectedAgent.id)}>Reset burn clock</button>
-                  <button type="button" onClick={() => copyPaymentPrompt(selectedWallet)}>Copy agent prompt</button>
-                </div>
-              </section>
-
-              <aside className="walletRunbook">
-                <section>
-                  <h3>Launch path</h3>
-                  {SOVEREIGN_AGENT_LAUNCH_STEPS.map((step, index) => (
-                    <p key={step}><span>{index + 1}</span>{step}</p>
-                  ))}
-                </section>
-                <section>
-                  <h3>Safety rules</h3>
-                  {PAYMENT_SAFETY_RULES.map((rule) => (
-                    <p key={rule}><span>!</span>{rule}</p>
-                  ))}
-                </section>
-                <section>
-                  <h3>Provider setup</h3>
-                  <p>{AGENT_PAYMENT_PROVIDER_COPY[selectedWallet.provider].setup}</p>
-                </section>
-              </aside>
+                  </ul>
+                </details>
+                <details
+                  className="mt-2 rounded-md border border-[rgba(148,163,184,0.16)] bg-[rgba(15,23,42,0.55)] px-3 py-2"
+                  onClick={(event) => event.stopPropagation()}
+                >
+                  <summary className="cursor-pointer text-[0.72rem] font-semibold uppercase tracking-[0.14em] text-[var(--muted)]">
+                    Provider notes
+                  </summary>
+                  <p className="mt-2 text-[0.78rem] text-[var(--foreground)]/85">
+                    {AGENT_PAYMENT_PROVIDER_COPY[selectedWallet.provider].setup}
+                  </p>
+                </details>
+              </Cell>
             </div>
-          </div>
           ) : (
             <div className="walletEmpty">
               <strong>No agent selected</strong>
-              <p>Connect an agent first, then configure its payment rail and survival ledger.</p>
+              <p>Connect an agent first, then configure its spending limits and survival rails.</p>
             </div>
           )}
         </div>
@@ -2119,45 +2813,130 @@ export default function Home() {
       <section className="vaultPanel tabPanel">
         <div className="vaultHeader">
           <div>
-            <h2>Shared Obsidian Vault</h2>
-            <p>One local vault context can be shared across OpenClaw, Hermes, and Aeon agents.</p>
+            <p className="eyebrow">Shared brain</p>
+            <h2>One memory, many agents</h2>
+            <p>Connect an Obsidian vault to give your agents a common place for memory, handoffs, and shared project context.</p>
           </div>
-          <label className="toggleRow">
-            <input
-              type="checkbox"
-              checked={sharedVault.enabled}
-              onChange={(event) => updateSharedVault({ enabled: event.target.checked })}
-            />
-            Enabled
-          </label>
         </div>
-        <div className="vaultGrid">
-          <label>
-            Vault Path
-            <input value={sharedVault.vaultPath} onChange={(event) => updateSharedVault({ vaultPath: event.target.value })} />
-          </label>
-          <label>
-            Agent Inbox Folder
-            <input value={sharedVault.inboxFolder} onChange={(event) => updateSharedVault({ inboxFolder: event.target.value })} />
-          </label>
-          <label>
-            Shared Note
-            <input value={sharedVault.sharedNotePath} onChange={(event) => updateSharedVault({ sharedNotePath: event.target.value })} />
-          </label>
-          <label>
-            Control Room Path
-            <input value={sharedVault.controlRoomPath} onChange={(event) => updateSharedVault({ controlRoomPath: event.target.value })} />
-          </label>
-        </div>
-        <label className="vaultInstructions">
-          Agent Instructions
-          <textarea value={sharedVault.instructions} onChange={(event) => updateSharedVault({ instructions: event.target.value })} />
-        </label>
-        <div className="vaultFooter">
-          <button type="button" onClick={checkVaultStatus}>Check vault</button>
-          <button type="button" onClick={checkControlRoomStatus}>Check Control Room</button>
-          <pre>{vaultStatus ? JSON.stringify(vaultStatus, null, 2) : "Vault status will appear here. The app only validates the path; it does not write notes."}</pre>
-          <pre>{controlRoomStatus ? JSON.stringify(controlRoomStatus, null, 2) : "Control Room status will appear here. Live installer warnings are reported without running them."}</pre>
+
+        <div className="grid gap-4 lg:grid-cols-2">
+          <MemoryCell
+            enabled={sharedVault.enabled}
+            vaultPath={sharedVault.vaultPath}
+            optedInAgentCount={displayAgents.filter((agent) => agent.useSharedVault !== false).length}
+            totalAgentCount={displayAgents.length}
+            primaryAction={(
+              <label className="inline-flex items-center gap-2 text-sm font-semibold">
+                <input
+                  type="checkbox"
+                  checked={sharedVault.enabled}
+                  onChange={(event) => updateSharedVault({ enabled: event.target.checked })}
+                />
+                {sharedVault.enabled ? "Shared brain on" : "Turn on shared brain"}
+              </label>
+            )}
+            details={(
+              <div className="flex flex-col gap-3">
+                <label className="flex flex-col gap-1 text-xs text-[var(--muted)]">
+                  Vault folder
+                  <input
+                    value={sharedVault.vaultPath}
+                    onChange={(event) => updateSharedVault({ vaultPath: event.target.value })}
+                    className="rounded-md border border-[rgba(148,163,184,0.18)] bg-[rgba(10,14,21,0.7)] px-2 py-1 text-[var(--foreground)]"
+                  />
+                  <small>Where shared notes live. Read-only until the vault is reachable.</small>
+                </label>
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <label className="flex flex-col gap-1 text-xs text-[var(--muted)]">
+                    Inbox subfolder
+                    <input
+                      value={sharedVault.inboxFolder}
+                      onChange={(event) => updateSharedVault({ inboxFolder: event.target.value })}
+                      className="rounded-md border border-[rgba(148,163,184,0.18)] bg-[rgba(10,14,21,0.7)] px-2 py-1 text-[var(--foreground)]"
+                    />
+                  </label>
+                  <label className="flex flex-col gap-1 text-xs text-[var(--muted)]">
+                    Shared note path
+                    <input
+                      value={sharedVault.sharedNotePath}
+                      onChange={(event) => updateSharedVault({ sharedNotePath: event.target.value })}
+                      className="rounded-md border border-[rgba(148,163,184,0.18)] bg-[rgba(10,14,21,0.7)] px-2 py-1 text-[var(--foreground)]"
+                    />
+                  </label>
+                </div>
+                <label className="flex flex-col gap-1 text-xs text-[var(--muted)]">
+                  Control Room folder
+                  <input
+                    value={sharedVault.controlRoomPath}
+                    onChange={(event) => updateSharedVault({ controlRoomPath: event.target.value })}
+                    className="rounded-md border border-[rgba(148,163,184,0.18)] bg-[rgba(10,14,21,0.7)] px-2 py-1 text-[var(--foreground)]"
+                  />
+                </label>
+                <label className="flex flex-col gap-1 text-xs text-[var(--muted)]">
+                  Agent instructions
+                  <textarea
+                    value={sharedVault.instructions}
+                    onChange={(event) => updateSharedVault({ instructions: event.target.value })}
+                    className="min-h-[80px] rounded-md border border-[rgba(148,163,184,0.18)] bg-[rgba(10,14,21,0.7)] px-2 py-1 text-[var(--foreground)]"
+                  />
+                </label>
+                <div className="flex flex-wrap gap-2">
+                  <Button type="button" size="sm" variant="secondary" onClick={checkVaultStatus}>
+                    Check vault path
+                  </Button>
+                  <Button type="button" size="sm" variant="secondary" onClick={checkControlRoomStatus}>
+                    Check Control Room
+                  </Button>
+                </div>
+              </div>
+            )}
+          />
+
+          {/* Vault status surfaces are translated into plain sentences instead of raw JSON. */}
+          <Cell
+            glyph="OK"
+            eyebrow="Vault checks"
+            title="Path verification"
+            subtitle="The app only validates paths — it never writes to your vault unless an agent explicitly does."
+            status={(() => {
+              if (!vaultStatus && !controlRoomStatus) return "unknown";
+              const vaultOk = Boolean((vaultStatus as { ok?: boolean } | null)?.ok);
+              const controlOk = Boolean((controlRoomStatus as { ok?: boolean } | null)?.ok);
+              if (vaultStatus && !vaultOk) return "blocked";
+              if (controlRoomStatus && !controlOk) return "blocked";
+              return "healthy";
+            })()}
+            tone={(() => {
+              if (!vaultStatus && !controlRoomStatus) return "muted";
+              const vaultOk = Boolean((vaultStatus as { ok?: boolean } | null)?.ok);
+              const controlOk = Boolean((controlRoomStatus as { ok?: boolean } | null)?.ok);
+              if ((vaultStatus && !vaultOk) || (controlRoomStatus && !controlOk)) return "danger";
+              return "success";
+            })()}
+          >
+            <ul className="m-0 grid gap-2 p-0 [list-style:none] text-xs">
+              <li className="rounded-md border border-[rgba(148,163,184,0.14)] bg-[rgba(10,14,21,0.55)] px-3 py-2">
+                <strong className="block text-[var(--foreground)]">Vault path</strong>
+                <span className="text-[var(--muted)]">
+                  {vaultStatus
+                    ? (vaultStatus as { ok?: boolean; reason?: string }).ok
+                      ? "Reachable. Notes can be read by opted-in agents."
+                      : `Cannot read this folder — ${(vaultStatus as { reason?: string }).reason ?? "check that it exists."}`
+                    : "Press Check vault path above to verify."}
+                </span>
+              </li>
+              <li className="rounded-md border border-[rgba(148,163,184,0.14)] bg-[rgba(10,14,21,0.55)] px-3 py-2">
+                <strong className="block text-[var(--foreground)]">Control Room</strong>
+                <span className="text-[var(--muted)]">
+                  {controlRoomStatus
+                    ? (controlRoomStatus as { ok?: boolean; reason?: string }).ok
+                      ? "Connected. Agents see the operating manual and registry."
+                      : `Not connected — ${(controlRoomStatus as { reason?: string }).reason ?? "verify the folder path."}`
+                    : "Press Check Control Room to verify."}
+                </span>
+              </li>
+            </ul>
+          </Cell>
         </div>
       </section>
       ) : null}
@@ -2185,7 +2964,7 @@ export default function Home() {
                     </div>
                     <button
                       type="button"
-                      onClick={() => primaryAgent ? startAgentChat(primaryAgent.id, true) : openSetupModal(machine)}
+                      onClick={() => primaryAgent ? startAgentChat(primaryAgent.id, { fresh: true }) : openSetupModal(machine)}
                     >
                       {primaryAgent ? "Chat" : "Connect"}
                     </button>
@@ -2300,7 +3079,7 @@ export default function Home() {
             </details>
 
             <div className="settingsActions">
-              <button type="button" onClick={duplicateAgent}>Duplicate</button>
+              <button type="button" onClick={() => duplicateAgent()}>Duplicate</button>
               <button type="button" onClick={() => deleteAgent()} disabled={agents.length <= 1}>Delete</button>
             </div>
             </>
@@ -2311,34 +3090,85 @@ export default function Home() {
           <section className="chat">
             <div className="chatHeader">
               <div>
+                <p className="eyebrow">Live conversation</p>
                 <h2>{selectedAgent.name}</h2>
-                <p>{RUNTIME_LABELS[selectedAgent.runtime]} · {selectedAgent.gatewayUrl}</p>
+                <p>{RUNTIME_LABELS[selectedAgent.runtime]} · {selectedAgent.gatewayUrl || "Chat URL needed"}</p>
               </div>
-              <button type="button" onClick={checkStatus}>
+              <Button type="button" variant="secondary" onClick={() => checkStatus()}>
+                <Activity aria-hidden="true" />
                 Check status
-              </button>
+              </Button>
             </div>
-            {status && statusAgentId === selectedAgent.id ? (
-              <pre className="runtimeStatus">{JSON.stringify(status, null, 2)}</pre>
+            {sessionNotice && visibleMessages.length > 0 ? (
+              <div className="chatSessionNote">
+                <MessageSquare aria-hidden="true" />
+                <span>{sessionNotice}</span>
+              </div>
             ) : null}
-            <div className="messages">
-              {messages.map((message, index) => (
+            {status && statusAgentId === selectedAgent.id ? (
+              // Plain-English status summary in place of raw runtime JSON (rule 6).
+              <div className="flex items-center gap-2 rounded-md border border-[rgba(148,163,184,0.18)] bg-[rgba(10,14,21,0.55)] px-3 py-2 text-xs">
+                <strong className={status.ok ? "text-[#bbf7d0]" : "text-[#fecdd3]"}>
+                  {status.ok ? "Runtime is responding." : "Runtime did not respond."}
+                </strong>
+                <span className="text-[var(--muted)]">
+                  {status.runtime ? `${RUNTIME_LABELS[status.runtime]} agent` : "Unknown runtime"}
+                  {status.status ? ` · code ${status.status}` : ""}
+                  {status.error ? ` · ${status.error}` : ""}
+                </span>
+                <details className="ml-auto" onClick={(event) => event.stopPropagation()}>
+                  <summary className="cursor-pointer text-[0.65rem] uppercase tracking-[0.12em] text-[var(--muted)]">
+                    Raw payload
+                  </summary>
+                  <pre className="mt-2 max-w-full overflow-auto text-[0.7rem] text-[var(--muted)]">{JSON.stringify(status, null, 2)}</pre>
+                </details>
+              </div>
+            ) : null}
+            <div className={`messages ${visibleMessages.length === 0 ? "empty" : ""}`}>
+              {visibleMessages.length === 0 ? (
+                <div className="chatEmptyPrompt">
+                  <strong>No messages yet</strong>
+                  <p>Messages with {selectedAgent.name} will appear here.</p>
+                </div>
+              ) : null}
+              {visibleMessages.map((message, index) => (
                 <div className={`message ${message.role}`} key={`${message.role}-${index}`}>
-                  <span>{message.role}</span>
-                  <p>{message.content || (message.role === "assistant" && busy ? "Streaming..." : "")}</p>
+                  <span className="messageRole">{message.role}</span>
+                  {message.content ? (
+                    <ChatMarkdown text={message.content} />
+                  ) : (
+                    <p>{message.role === "assistant" && busy ? "Streaming..." : ""}</p>
+                  )}
                 </div>
               ))}
+              <div ref={messagesEndRef} aria-hidden="true" />
             </div>
+            {visibleMessages.length === 0 ? (
+              <div className="chatSuggestions" aria-label="Suggested prompts">
+                {[
+                  "What are you working on?",
+                  "Summarize latest task",
+                  "Check workspace status",
+                ].map((prompt) => (
+                  <button type="button" key={prompt} onClick={() => setText(prompt)}>
+                    {prompt}
+                  </button>
+                ))}
+              </div>
+            ) : null}
             <form onSubmit={sendMessage}>
-              <textarea
-                value={text}
-                onChange={(event) => setText(event.target.value)}
-                placeholder={`Ask ${selectedAgent.name} to do something...`}
-                disabled={busy}
-              />
-              <button type="submit" disabled={busy || !text.trim()}>
+              <div className="chatComposerField">
+                <textarea
+                  value={text}
+                  onChange={(event) => setText(event.target.value)}
+                  placeholder={`Ask ${selectedAgent.name} to do something...`}
+                  disabled={busy}
+                />
+              </div>
+              <Button type="submit" disabled={busy || !text.trim()} isLoading={busy}>
+                {busy ? null : <Send aria-hidden="true" />}
                 {busy ? "Streaming" : "Send"}
-              </button>
+              </Button>
             </form>
             <p className="hint">
               Last assistant response: {lastAssistant ? `${lastAssistant.slice(0, 120)}...` : "none yet"}
@@ -2352,6 +3182,7 @@ export default function Home() {
           )}
         </section>
       ) : null}
+        </div>
 
       {setupMachine ? (
         <div
@@ -2368,39 +3199,67 @@ export default function Home() {
                 <h2 id="setup-modal-title">{setupMachine.self ? "This Mac" : setupMachine.name}</h2>
                 <p>Use this when you are physically on the computer you want to add.</p>
               </div>
-              <button type="button" aria-label="Close setup instructions" onClick={() => setSetupMachineKey("")}>Close</button>
+              <Button type="button" variant="ghost" aria-label="Close setup instructions" onClick={() => setSetupMachineKey("")}>
+                <X aria-hidden="true" />
+                Close
+              </Button>
             </div>
 
             <div className="setupGuide">
-              <article className="setupPrimaryStep">
-                <span aria-hidden="true">1</span>
-                <div>
-                  <strong>Open Terminal on that computer, paste this command and enter.</strong>
-                  <p>The setup script does the boring parts for you: checks what is installed, sets up the dashboard tools, starts the read-only collector, and prints what to fix if anything is missing.</p>
-                </div>
-              </article>
-
-              <div className="setupCommandBox">
-                <div>
-                  <strong>Command to paste</strong>
-                  <button type="button" onClick={copySetupCommand}>
-                    {setupCommandCopied ? "Copied" : "Copy"}
-                  </button>
-                </div>
-                <pre>{setupCollectorCommand()}</pre>
-              </div>
-
-              <p className="setupAfterCopy">
-                When the command finishes, come back here. This dashboard will find the machine automatically on the next scan, and its Chat button will become available.
-              </p>
+              {/* Progressive five-step setup, "activating cells in a hive" — rule from the
+                  design philosophy's Setup Rules section. */}
+              <SetupCell
+                title="Add this machine"
+                subtitle="Each step makes the system safer and clearer."
+                steps={((): SetupStep[] => {
+                  const steps: SetupStep[] = [
+                    { label: "Connect", hint: "Open Terminal on the machine and run the setup command.", state: "current" },
+                    { label: "Verify", hint: "We auto-detect the collector once it starts.", state: "pending" },
+                    { label: "Configure limits", hint: "Set wallet caps and approval thresholds when you fund agents.", state: "pending" },
+                    { label: "Enable shared brain", hint: "Optional — opt this machine's agents into the vault.", state: "pending" },
+                    { label: "Advanced rails", hint: "Provider keys, x402, debug — only when you need them.", state: "pending" },
+                  ];
+                  if (setupMachine?.collector === "ready") {
+                    steps[0].state = "done";
+                    steps[1].state = "done";
+                    steps[2].state = "current";
+                  }
+                  return steps;
+                })()}
+                primaryAction={(
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    size="sm"
+                    onClick={copySetupCommand}
+                  >
+                    {setupCommandCopied ? <Check aria-hidden="true" /> : <Copy aria-hidden="true" />}
+                    {setupCommandCopied ? "Copied setup command" : "Copy setup command"}
+                  </Button>
+                )}
+                details={(
+                  <div className="flex flex-col gap-2 text-xs">
+                    <p>
+                      Open Terminal on <strong className="text-[var(--foreground)]">{setupMachine?.self ? "this Mac" : setupMachine?.name}</strong>, paste this command, then press Return:
+                    </p>
+                    <pre className="overflow-auto rounded-md border border-[rgba(148,163,184,0.18)] bg-[rgba(10,14,21,0.7)] p-3 text-[0.78rem] text-[var(--foreground)]">{setupCollectorCommand()}</pre>
+                    <p className="text-[var(--muted)]">
+                      When it finishes, come back here. The dashboard finds the machine on the next scan, and Chat becomes available.
+                    </p>
+                  </div>
+                )}
+              />
             </div>
 
             <div className="setupModalActions">
-              <button type="button" onClick={() => setSetupMachineKey("")}>Done</button>
+              <Button type="button" onClick={() => setSetupMachineKey("")}>
+                <Check aria-hidden="true" />
+                Done
+              </Button>
             </div>
           </section>
         </div>
       ) : null}
-    </main>
+    </motion.main>
   );
 }

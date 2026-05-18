@@ -1,0 +1,348 @@
+import { getMiroSharkCompanionStatus } from "@/lib/services/miroshark/companion-client";
+import { readFile, writeFile } from "fs/promises";
+import path from "path";
+
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+
+type MiroSharkResponse<T = Record<string, unknown>> = {
+  success?: boolean;
+  data?: T;
+  error?: string;
+};
+
+type SwarmRunRequest = {
+  scenario?: string;
+  rounds?: number;
+  platform?: "twitter" | "reddit" | "parallel";
+  projectName?: string;
+};
+
+type SwarmJob = {
+  ok: boolean;
+  jobId: string;
+  status: "queued" | "running" | "started" | "failed";
+  step: string;
+  message?: string;
+  startedAt: number;
+  finishedAt?: number;
+  error?: string;
+  baseUrl?: string;
+  projectId?: string;
+  graphId?: string;
+  simulationId?: string;
+  rounds?: number;
+  platform?: string;
+  projectName?: string;
+  links?: Record<string, string>;
+};
+
+type MiroSharkConfig = {
+  time_config?: Record<string, unknown>;
+  agent_configs?: Array<Record<string, unknown>>;
+};
+
+type MiroSharkPostsPayload = {
+  success?: boolean;
+  data?: {
+    count?: number;
+    posts?: Array<{
+      content?: string;
+      quote_content?: string | null;
+      [key: string]: unknown;
+    }>;
+    [key: string]: unknown;
+  };
+  [key: string]: unknown;
+};
+
+const globalJobs = globalThis as typeof globalThis & {
+  __openclawMirosharkJobs?: Map<string, SwarmJob>;
+};
+const jobs = globalJobs.__openclawMirosharkJobs ?? new Map<string, SwarmJob>();
+globalJobs.__openclawMirosharkJobs = jobs;
+
+function updateJob(jobId: string, patch: Partial<SwarmJob>) {
+  const current = jobs.get(jobId);
+  if (!current) return;
+  jobs.set(jobId, { ...current, ...patch });
+}
+
+async function requestJson<T>(url: string, init?: RequestInit): Promise<MiroSharkResponse<T>> {
+  const response = await fetch(url, {
+    ...init,
+    cache: "no-store",
+    signal: AbortSignal.timeout(240_000),
+  });
+  const payload = await response.json().catch(() => null) as MiroSharkResponse<T> | null;
+  if (!response.ok || !payload?.success) {
+    throw new Error(payload?.error ?? `MiroShark request failed: HTTP ${response.status}`);
+  }
+  return payload;
+}
+
+async function pollTask(baseUrl: string, taskId: string) {
+  for (let attempt = 0; attempt < 90; attempt += 1) {
+    const payload = await requestJson<{
+      status?: string;
+      progress?: number;
+      message?: string;
+      result?: Record<string, unknown>;
+      error?: string;
+    }>(`${baseUrl}/api/graph/task/${taskId}`);
+    const data = payload.data ?? {};
+    if (data.status === "completed") return data;
+    if (data.status === "failed") throw new Error(data.error || data.message || "Graph build failed");
+    await new Promise((resolve) => setTimeout(resolve, 2_000));
+  }
+  throw new Error("Timed out waiting for graph build");
+}
+
+async function pollPrepare(baseUrl: string, simulationId: string, taskId?: string) {
+  for (let attempt = 0; attempt < 120; attempt += 1) {
+    const payload = await requestJson<{
+      status?: string;
+      progress?: number;
+      message?: string;
+      prepare_info?: Record<string, unknown>;
+      error?: string;
+    }>(`${baseUrl}/api/simulation/prepare/status`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ simulation_id: simulationId, task_id: taskId }),
+    });
+    const data = payload.data ?? {};
+    if (data.status === "failed") throw new Error(data.error || data.message || "Simulation preparation failed");
+    if (data.status === "ready" || data.status === "completed") return data;
+    await new Promise((resolve) => setTimeout(resolve, 2_500));
+  }
+  throw new Error("Timed out waiting for agent preparation");
+}
+
+function scenarioDoc(scenario: string) {
+  const text = [
+    "OpenClaw swarm scenario",
+    "",
+    scenario,
+    "",
+    "Named seed participants for graph construction:",
+    "- Maya Chen is the product lead proposing the plan and coordinating the launch.",
+    "- Ravi Patel owns a local cafe and worries about pricing, staffing, and reputation.",
+    "- Lena Brooks represents parents and residents who need trust, affordability, and clear safety rules.",
+    "- Diego Morales coordinates deliveries and raises concerns about handoffs, timing, and worker incentives.",
+    "- Dr. Nora Singh is the city health inspector focused on food safety, compliance, and public risk.",
+    "",
+    "Known relationships:",
+    "- Maya Chen collaborates with Ravi Patel and Diego Morales to design the launch.",
+    "- Lena Brooks pressures Maya Chen and Dr. Nora Singh for transparency before approval.",
+    "- Dr. Nora Singh can delay or approve the launch based on safety evidence.",
+    "- Ravi Patel and Diego Morales debate whether operational load makes the launch viable.",
+  ].join("\n");
+
+  return JSON.stringify([{
+    title: "OpenClaw swarm scenario",
+    url: "openclaw://swarm-scenario",
+    text,
+  }]);
+}
+
+async function makeShortRunActive(installPath: string | undefined, simulationId: string) {
+  if (!installPath) return;
+
+  const configPath = path.join(installPath, "backend", "uploads", "simulations", simulationId, "simulation_config.json");
+  const raw = await readFile(configPath, "utf8").catch(() => null);
+  if (!raw) return;
+
+  const config = JSON.parse(raw) as MiroSharkConfig;
+  const agentCount = Math.max(1, config.agent_configs?.length ?? 1);
+  const allHours = Array.from({ length: 24 }, (_, index) => index);
+  const minAgents = Math.min(agentCount, Math.max(2, Math.ceil(agentCount / 2)));
+
+  config.time_config = {
+    ...(config.time_config ?? {}),
+    agents_per_hour_min: minAgents,
+    agents_per_hour_max: agentCount,
+    peak_hours: allHours,
+    peak_activity_multiplier: 1,
+    off_peak_hours: [],
+    off_peak_activity_multiplier: 1,
+    morning_hours: allHours,
+    morning_activity_multiplier: 1,
+    work_hours: allHours,
+    work_activity_multiplier: 1,
+  };
+
+  config.agent_configs = config.agent_configs?.map((agent) => ({
+    ...agent,
+    active_hours: allHours,
+    activity_level: Math.max(0.95, Number(agent.activity_level ?? 0)),
+  }));
+
+  await writeFile(configPath, `${JSON.stringify(config, null, 2)}\n`, "utf8");
+}
+
+function cleanPostsPayload(payload: unknown) {
+  const postsPayload = payload as MiroSharkPostsPayload;
+  const posts = postsPayload.data?.posts;
+  if (!Array.isArray(posts)) return payload;
+
+  const visiblePosts = posts.filter((post) => (post.quote_content || post.content || "").trim().length > 0);
+  return {
+    ...postsPayload,
+    data: {
+      ...postsPayload.data,
+      raw_count: postsPayload.data?.count ?? posts.length,
+      count: visiblePosts.length,
+      posts: visiblePosts,
+    },
+  };
+}
+
+export async function POST(request: Request) {
+  const body = await request.json().catch(() => null) as SwarmRunRequest | null;
+  const scenario = body?.scenario?.trim();
+  if (!scenario) {
+    return Response.json({ ok: false, error: "Scenario is required" }, { status: 400 });
+  }
+
+  const jobId = `swarm_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
+  const projectName = body?.projectName?.trim() || `OpenClaw swarm ${new Date().toISOString().slice(0, 16)}`;
+  const rounds = Math.max(1, Math.min(200, Number(body?.rounds ?? 5)));
+  const platform = body?.platform ?? "twitter";
+  jobs.set(jobId, {
+    ok: true,
+    jobId,
+    status: "queued",
+    step: "queued",
+    message: "Queued",
+    startedAt: Date.now(),
+    rounds,
+    platform,
+    projectName,
+  });
+
+  void (async () => {
+    try {
+      updateJob(jobId, { status: "running", step: "connect", message: "Checking MiroShark" });
+      const status = await getMiroSharkCompanionStatus();
+      if (!status.ok) throw new Error(status.error ?? "MiroShark is not connected");
+      const baseUrl = status.baseUrl;
+      updateJob(jobId, { baseUrl, step: "ontology", message: "Generating ontology" });
+
+      const form = new FormData();
+      form.set("simulation_requirement", scenario);
+      form.set("project_name", projectName);
+      form.set("additional_context", "Created and launched from OpenClaw Swarm controls.");
+      form.set("url_docs", scenarioDoc(scenario));
+
+      const ontology = await requestJson<{ project_id?: string; ontology?: unknown }>(`${baseUrl}/api/graph/ontology/generate`, {
+        method: "POST",
+        body: form,
+      });
+      const projectId = ontology.data?.project_id;
+      if (!projectId) throw new Error("MiroShark did not return a project_id");
+      updateJob(jobId, { projectId, step: "graph", message: "Building graph" });
+
+      const build = await requestJson<{ task_id?: string }>(`${baseUrl}/api/graph/build`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ project_id: projectId, graph_name: projectName, chunk_size: 700, chunk_overlap: 80 }),
+      });
+      const buildTaskId = build.data?.task_id;
+      if (!buildTaskId) throw new Error("MiroShark did not return a graph build task_id");
+      const graphTask = await pollTask(baseUrl, buildTaskId);
+      const graphId = typeof graphTask.result?.graph_id === "string" ? graphTask.result.graph_id : undefined;
+      if (!graphId) throw new Error("MiroShark graph build completed without graph_id");
+      const nodeCount = Number(graphTask.result?.node_count ?? 0);
+      if (nodeCount < 1) {
+        throw new Error("MiroShark built an empty graph. Add concrete actors, organizations, and relationships to the scenario.");
+      }
+      updateJob(jobId, { graphId, step: "simulation", message: "Creating simulation" });
+
+      const simulation = await requestJson<{ simulation_id?: string }>(`${baseUrl}/api/simulation/create`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          project_id: projectId,
+          graph_id: graphId,
+          enable_twitter: platform === "twitter" || platform === "parallel",
+          enable_reddit: platform === "reddit" || platform === "parallel",
+          enable_polymarket: false,
+        }),
+      });
+      const simulationId = simulation.data?.simulation_id;
+      if (!simulationId) throw new Error("MiroShark did not return a simulation_id");
+      const resultPlatform = platform === "reddit" ? "reddit" : "twitter";
+      updateJob(jobId, { simulationId, step: "prepare", message: "Preparing agents" });
+
+      const prepare = await requestJson<{ task_id?: string; status?: string }>(`${baseUrl}/api/simulation/prepare`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ simulation_id: simulationId, use_llm_for_profiles: true, parallel_profile_count: 5 }),
+      });
+      if (prepare.data?.status !== "ready") {
+        await pollPrepare(baseUrl, simulationId, prepare.data?.task_id);
+      }
+      await makeShortRunActive(status.installPath, simulationId);
+      updateJob(jobId, { step: "start", message: "Starting simulation" });
+
+      await requestJson(`${baseUrl}/api/simulation/start`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ simulation_id: simulationId, platform, max_rounds: rounds, force: true }),
+      });
+      updateJob(jobId, {
+        status: "started",
+        step: "started",
+        message: "Simulation started",
+        finishedAt: Date.now(),
+        links: {
+          runStatus: `${baseUrl}/api/simulation/${simulationId}/run-status`,
+          actions: `${baseUrl}/api/simulation/${simulationId}/actions?platform=${resultPlatform}`,
+          posts: `${baseUrl}/api/simulation/${simulationId}/posts?platform=${resultPlatform}`,
+          timeline: `${baseUrl}/api/simulation/${simulationId}/timeline`,
+          profiles: `${baseUrl}/api/simulation/${simulationId}/profiles?platform=${resultPlatform}`,
+        },
+      });
+    } catch (error) {
+      updateJob(jobId, {
+        ok: false,
+        status: "failed",
+        step: "failed",
+        message: "Run failed",
+        error: error instanceof Error ? error.message : "Unknown MiroShark run error",
+        finishedAt: Date.now(),
+      });
+    }
+  })();
+
+  return Response.json(jobs.get(jobId));
+}
+
+export async function GET(request: Request) {
+  const { searchParams } = new URL(request.url);
+  const jobId = searchParams.get("job_id");
+  if (jobId) {
+    const job = jobs.get(jobId);
+    if (!job) return Response.json({ ok: false, error: "Job not found" }, { status: 404 });
+    return Response.json(job);
+  }
+  const simulationId = searchParams.get("simulation_id");
+  const requestedPlatform = searchParams.get("platform") || "twitter";
+  const platform = requestedPlatform === "reddit" ? "reddit" : "twitter";
+  const limit = Math.max(1, Math.min(2_000, Number(searchParams.get("limit") ?? 500) || 500));
+  if (!simulationId) {
+    return Response.json({ ok: false, error: "simulation_id is required" }, { status: 400 });
+  }
+  const status = await getMiroSharkCompanionStatus();
+  if (!status.ok) {
+    return Response.json({ ok: false, error: status.error ?? "MiroShark is not connected" }, { status: 503 });
+  }
+  const [runStatus, actions, posts, timeline] = await Promise.all([
+    fetch(`${status.baseUrl}/api/simulation/${simulationId}/run-status`, { cache: "no-store" }).then((r) => r.json()).catch((error) => ({ success: false, error: String(error) })),
+    fetch(`${status.baseUrl}/api/simulation/${simulationId}/actions?platform=${platform}`, { cache: "no-store" }).then((r) => r.json()).catch((error) => ({ success: false, error: String(error) })),
+    fetch(`${status.baseUrl}/api/simulation/${simulationId}/posts?platform=${platform}&limit=${limit}`, { cache: "no-store" }).then((r) => r.json()).catch((error) => ({ success: false, error: String(error) })),
+    fetch(`${status.baseUrl}/api/simulation/${simulationId}/timeline`, { cache: "no-store" }).then((r) => r.json()).catch((error) => ({ success: false, error: String(error) })),
+  ]);
+  return Response.json({ ok: true, simulationId, platform, runStatus, actions, posts: cleanPostsPayload(posts), timeline });
+}

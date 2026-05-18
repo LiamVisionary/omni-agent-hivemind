@@ -50,7 +50,8 @@
 
 ## Swarm Behavior
 
-- Investigate and integrate MiroShark for swarm behavior orchestration.
+- Add optional MiroShark companion integration for swarm rehearsal and scenario simulation.
+- Keep real swarm coordination owned by OpenClaw: plans, roles, handoffs, voting, synthesis, attribution, and dashboard state.
 - Add swarm plans, agent role assignment, voting/synthesis, and quorum-based handoffs.
 - Add an optional task bus between orchestrators and specialists.
 - Show swarm state in the dashboard without hiding which agent did which work.

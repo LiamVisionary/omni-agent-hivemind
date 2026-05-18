@@ -1,5 +1,5 @@
 {
-  "created_at": "2026-05-18T12:11:30.126413+00:00",
+  "created_at": "2026-05-18T13:02:38.106243+00:00",
   "custom_code_assessment": "balanced",
   "entries": [
     {
@@ -99,6 +99,146 @@
       "target_path": "src/lib/config/agent-payments.ts",
       "reuse_type": "adapted_code",
       "note": "bounded prepaid payment task safety rules"
+    },
+    {
+      "source_repo": "MiladJoodi/Simple_Admin_Dashboard",
+      "source_path": "app/admin/layout.tsx",
+      "target_path": "src/app/page.tsx",
+      "reuse_type": "adapted_code",
+      "note": "simple dashboard shell pattern with compact navigation and overview cards"
+    },
+    {
+      "source_repo": "Kiranism/next-shadcn-dashboard-starter",
+      "source_path": "src/components/ui/button.tsx",
+      "target_path": "src/components/ui/button.tsx",
+      "reuse_type": "adapted_code",
+      "note": "CVA/Radix Slot button primitive adapted to the control-room theme with loading and Lucide icon support"
+    },
+    {
+      "source_repo": "Kiranism/next-shadcn-dashboard-starter",
+      "source_path": "src/components/ui/card.tsx",
+      "target_path": "src/components/ui/card.tsx",
+      "reuse_type": "adapted_code",
+      "note": "shadcn-style card primitive adapted for compact metric and panel surfaces"
+    },
+    {
+      "source_repo": "Kiranism/next-shadcn-dashboard-starter",
+      "source_path": "src/components/ui/badge.tsx",
+      "target_path": "src/components/ui/badge.tsx",
+      "reuse_type": "adapted_code",
+      "note": "CVA badge primitive adapted for status, warning, and trust chips"
+    },
+    {
+      "source_repo": "Kiranism/next-shadcn-dashboard-starter",
+      "source_path": "src/components/ui/tooltip.tsx",
+      "target_path": "src/components/ui/tooltip.tsx",
+      "reuse_type": "adapted_code",
+      "note": "Radix tooltip primitive adapted for icon navigation hints"
+    },
+    {
+      "source_repo": "salimi-my/shadcn-ui-sidebar",
+      "source_path": "src/components/admin-panel/admin-panel-layout.tsx",
+      "target_path": "src/app/page.tsx",
+      "reuse_type": "adapted_code",
+      "note": "persistent sidebar layout behavior adapted into the Omni command shell"
+    },
+    {
+      "source_repo": "salimi-my/shadcn-ui-sidebar",
+      "source_path": "src/components/admin-panel/sidebar-toggle.tsx",
+      "target_path": "src/app/globals.css",
+      "reuse_type": "style_adapted",
+      "note": "compact sidebar/navigation interaction styling adapted to the control-room layout"
+    },
+    {
+      "source_repo": "aaronjmars/MiroShark",
+      "source_path": "backend/app/__init__.py",
+      "target_path": "src/lib/services/miroshark/companion-client.ts",
+      "reuse_type": "adapted_code",
+      "note": "health endpoint detection and service-name validation"
+    },
+    {
+      "source_repo": "aaronjmars/MiroShark",
+      "source_path": "docs/API.md",
+      "target_path": "src/lib/services/miroshark/companion-client.ts",
+      "reuse_type": "adapted_code",
+      "note": "documented REST endpoint map for templates, simulations, docs, and create simulation"
+    },
+    {
+      "source_repo": "aaronjmars/MiroShark",
+      "source_path": "docs/API.md",
+      "target_path": "src/app/api/miroshark/swarm/route.ts",
+      "reuse_type": "adapted_code",
+      "note": "documented ontology, graph build, simulation create, prepare, start, status, posts, and actions lifecycle adapted into the OpenClaw swarm control route"
+    },
+    {
+      "source_repo": "aaronjmars/MiroShark",
+      "source_path": "backend/app/api/graph.py",
+      "target_path": "src/app/api/miroshark/swarm/route.ts",
+      "reuse_type": "adapted_code",
+      "note": "ontology generation, graph build task polling, graph id, and node-count handling adapted for scenario-driven runs"
+    },
+    {
+      "source_repo": "aaronjmars/MiroShark",
+      "source_path": "backend/app/api/simulation.py",
+      "target_path": "src/app/api/miroshark/swarm/route.ts",
+      "reuse_type": "adapted_code",
+      "note": "simulation create, prepare polling, start, run-status, posts, actions, and profiles endpoint usage adapted for in-dashboard swarm controls"
+    },
+    {
+      "source_repo": "aaronjmars/MiroShark",
+      "source_path": "backend/scripts/run_twitter_simulation.py",
+      "target_path": "src/app/api/miroshark/swarm/route.ts",
+      "reuse_type": "adapted_code",
+      "note": "round activation assumptions and Twitter platform result selection reflected in short-run config normalization"
+    },
+    {
+      "source_repo": "aaronjmars/MiroShark",
+      "source_path": ".env.example",
+      "target_path": ".env.example",
+      "reuse_type": "config_adapted",
+      "note": "optional companion base URL configuration without importing the MiroShark stack"
+    },
+    {
+      "source_repo": "aaronjmars/MiroShark",
+      "source_path": "backend/run.py",
+      "target_path": "src/lib/services/miroshark/companion-client.ts",
+      "reuse_type": "adapted_code",
+      "note": "managed backend start command, Flask host/port defaults, and local .env expectations"
+    },
+    {
+      "source_repo": "aaronjmars/MiroShark",
+      "source_path": "backend/pyproject.toml",
+      "target_path": "src/lib/services/miroshark/companion-client.ts",
+      "reuse_type": "config_adapted",
+      "note": "uv/python backend install readiness checks for one-click setup"
+    },
+    {
+      "source_repo": "aaronjmars/MiroShark",
+      "source_path": "README.md",
+      "target_path": "docs/MIROSHARK_COMPANION.md",
+      "reuse_type": "adapted_code",
+      "note": "local setup expectations reframed as dashboard-managed detection, install, and start workflow"
+    },
+    {
+      "source_repo": "LiamVisionary/ai-chatbot",
+      "source_path": "components/messages-old-backup.tsx",
+      "target_path": "src/app/page.tsx",
+      "reuse_type": "adapted_code",
+      "note": "message-end scroll anchor behavior adapted for the dashboard chat transcript"
+    },
+    {
+      "source_repo": "Shodydosh/AI-Chat-App",
+      "source_path": "components/Chat/MessageDisplayer.tsx",
+      "target_path": "src/app/globals.css",
+      "reuse_type": "style_adapted",
+      "note": "bounded scrollable message column adapted into the machine chat workspace"
+    },
+    {
+      "source_repo": "Shodydosh/AI-Chat-App",
+      "source_path": "components/Chat/InputForm.tsx",
+      "target_path": "src/app/globals.css",
+      "reuse_type": "style_adapted",
+      "note": "textarea-plus-send composer structure adapted into the dashboard chat composer"
     }
   ]
 }

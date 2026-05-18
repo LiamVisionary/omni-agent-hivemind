@@ -13,9 +13,15 @@ const port = Number(process.env.AGENT_TELEMETRY_PORT || 8787);
 const appDir = resolve(join(fileURLToPath(import.meta.url), "..", ".."));
 const defaultHermesDir = process.env.HERMES_HOME || join(homedir(), ".hermes");
 const maxChars = 1000;
+const maxChatChars = 12_000;
+const chatTimeoutMs = Number(process.env.AGENT_TELEMETRY_CHAT_TIMEOUT_MS || 180_000);
 
 function expandHome(path) {
   return path?.replace(/^~(?=$|\/)/, homedir());
+}
+
+function jsonResponse(response, status, payload) {
+  response.writeHead(status, { "content-type": "application/json" }).end(JSON.stringify(payload));
 }
 
 function compact(value, fallback = "No readable details.") {
@@ -59,12 +65,31 @@ async function appVersion() {
     dirty: dirty.length > 0,
     latestCommit,
     latestShortCommit: latestCommit.slice(0, 7),
-    updateCommand: `cd ${JSON.stringify(appDir)} && git pull && ./setup.sh`,
+    updateCommand: `cd ${JSON.stringify(appDir)} && git pull --ff-only && pnpm install --frozen-lockfile && ./scripts/install-telemetry-collector.sh`,
   };
 }
 
 function shellQuote(value) {
   return `'${String(value).replaceAll("'", "'\\''")}'`;
+}
+
+async function resolveHermesBin() {
+  if (process.env.HERMES_BIN) return process.env.HERMES_BIN;
+  const candidates = [
+    join(homedir(), ".local", "bin", "hermes"),
+    "/usr/local/bin/hermes",
+    "/opt/homebrew/bin/hermes",
+    "/usr/bin/hermes",
+  ];
+  for (const path of candidates) {
+    try {
+      await access(path, constants.X_OK);
+      return path;
+    } catch {
+      // try next
+    }
+  }
+  return "hermes";
 }
 
 function startUpdate() {
@@ -171,6 +196,40 @@ async function localAgents() {
   return agents;
 }
 
+async function sendHermesChat(body) {
+  if (process.env.AGENT_TELEMETRY_CHAT_DISABLED === "1") {
+    return { ok: false, status: 403, error: "Collector chat bridge is disabled on this machine." };
+  }
+
+  const message = typeof body.message === "string"
+    ? body.message
+    : Array.isArray(body.messages)
+      ? [...body.messages].reverse().find((item) => item?.role === "user")?.content
+      : "";
+  const text = typeof message === "string" ? message.trim() : "";
+  if (!text) return { ok: false, status: 400, error: "Message is required." };
+  if (text.length > maxChatChars) return { ok: false, status: 413, error: `Message is too long. Limit: ${maxChatChars} characters.` };
+
+  const agent = body.agent && typeof body.agent === "object" ? body.agent : {};
+  const hermesHome = expandHome(agent.localDataDir || body.localDataDir || defaultHermesDir);
+  const { stdout, stderr } = await execFileAsync(await resolveHermesBin(), ["-z", text], {
+    timeout: chatTimeoutMs,
+    maxBuffer: 3_000_000,
+    env: {
+      ...process.env,
+      HERMES_HOME: hermesHome,
+      PAGER: "cat",
+    },
+  });
+  const content = stdout.trim() || stderr.trim();
+  return {
+    ok: true,
+    text: content,
+    choices: [{ message: { role: "assistant", content } }],
+    host: hostname(),
+  };
+}
+
 async function snapshotFor(agent) {
   const dataDir = expandHome(agent.localDataDir || (agent.runtime === "hermes" ? defaultHermesDir : ""));
   const [hermesTasks, fileTasks, running] = await Promise.all([
@@ -218,40 +277,55 @@ createServer(async (request, response) => {
     return;
   }
   if (request.url === "/health") {
-    response.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify({
+    jsonResponse(response, 200, {
       ok: true,
       host: hostname(),
       version: await appVersion(),
-    }));
+      capabilities: { chat: true, runtimes: ["hermes"] },
+    });
     return;
   }
   if (request.url === "/update" && request.method === "POST") {
     const version = await appVersion();
     const command = startUpdate();
-    response.writeHead(202, { "content-type": "application/json" }).end(JSON.stringify({
+    jsonResponse(response, 202, {
       ok: true,
       accepted: true,
       host: hostname(),
       version,
       message: "Update started. The collector and dashboard may briefly restart.",
       command,
-    }));
+    });
     return;
   }
   if (request.url === "/agents") {
     const agents = await localAgents();
-    response.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify({ ok: true, host: hostname(), agents }));
+    jsonResponse(response, 200, { ok: true, host: hostname(), agents });
+    return;
+  }
+  if (request.url === "/chat" && request.method === "POST") {
+    try {
+      const rawBody = await readBody(request);
+      const body = rawBody ? JSON.parse(rawBody) : {};
+      const result = await sendHermesChat(body);
+      jsonResponse(response, result.ok ? 200 : result.status || 500, result);
+    } catch (error) {
+      jsonResponse(response, 500, {
+        ok: false,
+        error: error instanceof Error ? error.message : "Hermes chat failed",
+      });
+    }
     return;
   }
   if (request.url !== "/snapshot") {
-    response.writeHead(404, { "content-type": "application/json" }).end(JSON.stringify({ ok: false, error: "not found" }));
+    jsonResponse(response, 404, { ok: false, error: "not found" });
     return;
   }
   const rawBody = request.method === "POST" ? await readBody(request) : "{}";
   const body = rawBody ? JSON.parse(rawBody) : {};
   const agents = body.agent ? [body.agent] : body.agents || await localAgents();
   const snapshots = await Promise.all(agents.map((agent) => snapshotFor(agent)));
-  response.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify({ ok: true, snapshot: snapshots[0], snapshots }));
+  jsonResponse(response, 200, { ok: true, snapshot: snapshots[0], snapshots });
 }).listen(port, "0.0.0.0", () => {
   console.log(`agent telemetry collector listening on 0.0.0.0:${port}`);
 });
