@@ -67,6 +67,7 @@ type DiscoveredMachine = {
   collector: MachineGroup["collector"];
   agents: AgentProfile[];
   snapshots: AgentSnapshot[];
+  lastSeenAt?: number;
 };
 
 const STORAGE_KEY = "openclaw-next.agentProfiles.v1";
@@ -174,22 +175,51 @@ function friendlyAgentState(snapshot: AgentSnapshot | undefined, hasTelemetryUrl
   if (activeCount > 0) return { label: `${activeCount} working`, tone: "working" };
   if (snapshot?.ok) return { label: "Connected", tone: "ready" };
   if (!hasTelemetryUrl) return { label: "Needs machine", tone: "setup" };
-  return { label: "Needs setup", tone: "setup" };
+  if (snapshot?.error) return { label: "Check connection", tone: "setup" };
+  return { label: "Ready", tone: "ready" };
 }
 
 function friendlyEmptyTitle(snapshot: AgentSnapshot | undefined, hasTelemetryUrl: boolean) {
   if (!hasTelemetryUrl) return "Waiting for a collector";
-  if (snapshot?.summary?.startsWith("Configured data dir is not available")) return "Collector found the machine, but not this agent";
-  if (snapshot?.summary?.startsWith("Remote collector unavailable")) return "Collector is not reachable";
-  if (snapshot?.processRunning) return "Agent process is running";
-  return "No recent activity yet";
+  if (snapshot?.summary?.startsWith("Configured data dir is not available")) return "Agent folder needs a path";
+  if (snapshot?.summary?.startsWith("Remote collector unavailable")) return "Machine is temporarily unreachable";
+  if (snapshot?.processRunning) return "Agent is running";
+  return "Waiting for new work";
 }
 
 function friendlyEmptyBody(snapshot: AgentSnapshot | undefined, hasTelemetryUrl: boolean) {
-  if (!hasTelemetryUrl) return "Once the collector is installed on this agent's machine, this card can be placed automatically.";
-  if (snapshot?.summary?.startsWith("Configured data dir is not available")) return "Set the Runtime Data Dir to where this agent stores history on that machine.";
-  if (snapshot?.summary?.startsWith("Remote collector unavailable")) return "Run the collector on that machine, then keep this URL on the agent card.";
-  return "When this agent writes history, logs, tasks, or sessions, they will appear here.";
+  if (!hasTelemetryUrl) return "Install the collector on the machine that runs this agent and it will be placed automatically.";
+  if (snapshot?.summary?.startsWith("Configured data dir is not available")) return "Choose the folder where this agent stores its history on that machine.";
+  if (snapshot?.summary?.startsWith("Remote collector unavailable")) return "The last known card is being kept while the machine catches up.";
+  return "This agent is connected. Its current work and recent history will appear here when activity is recorded.";
+}
+
+function mergeDiscoveredMachines(current: DiscoveredMachine[], incoming: DiscoveredMachine[]) {
+  const currentByKey = new Map(current.map((machine) => [collectorKey(machine.device.collectorUrl) || machine.device.name, machine]));
+  const now = Date.now();
+
+  return incoming.map((machine) => {
+    const key = collectorKey(machine.device.collectorUrl) || machine.device.name;
+    const previous = currentByKey.get(key);
+    const hasFreshAgentData = machine.collector === "ready" && machine.agents.length > 0;
+    const hasFreshSnapshots = machine.snapshots.length > 0;
+
+    if (!previous || hasFreshAgentData || hasFreshSnapshots) {
+      return { ...machine, lastSeenAt: hasFreshAgentData || hasFreshSnapshots ? now : previous?.lastSeenAt };
+    }
+
+    if (previous.agents.length === 0 && previous.snapshots.length === 0) {
+      return { ...machine, lastSeenAt: previous.lastSeenAt };
+    }
+
+    return {
+      ...machine,
+      collector: previous.collector === "ready" ? "ready" : machine.collector,
+      agents: previous.agents,
+      snapshots: previous.snapshots,
+      lastSeenAt: previous.lastSeenAt,
+    };
+  });
 }
 
 export default function Home() {
@@ -271,7 +301,8 @@ export default function Home() {
         machines?: DiscoveredMachine[];
       } | null;
       if (cancelled || !data?.machines) return;
-      setDiscoveredMachines(data.machines);
+      const machines = data.machines;
+      setDiscoveredMachines((current) => mergeDiscoveredMachines(current, machines));
       const discoveredSnapshots = data.machines.flatMap((machine) => machine.snapshots ?? []);
       if (discoveredSnapshots.length > 0) {
         setFleetSnapshots((current) => ({
@@ -681,7 +712,7 @@ export default function Home() {
                             className="agentBubble idle"
                             onClick={() => setSelectedAgentId(agent.id)}
                           >
-                            <span>{state.tone === "setup" ? "Setup needed" : "Quiet"}</span>
+                            <span>{state.tone === "setup" ? "Needs attention" : "Quiet"}</span>
                             <strong>{friendlyEmptyTitle(snapshot, Boolean(agent.telemetryUrl || machine.self))}</strong>
                             <p>{friendlyEmptyBody(snapshot, Boolean(agent.telemetryUrl || machine.self))}</p>
                             <small>{machine.name}</small>

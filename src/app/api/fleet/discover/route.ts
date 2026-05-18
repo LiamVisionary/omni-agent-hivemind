@@ -60,7 +60,7 @@ async function tailscaleDevices() {
 async function fetchJson(url: string, init?: RequestInit) {
   const response = await fetch(url, {
     ...init,
-    signal: AbortSignal.timeout(2_500),
+    signal: AbortSignal.timeout(6_000),
     cache: "no-store",
   });
   if (!response.ok) throw new Error(`${response.status} ${response.statusText}`);
@@ -74,13 +74,24 @@ export async function GET() {
       return { device, collector: "missing", agents: [], snapshots: [] };
     }
 
+    let agents: AgentProfile[] = [];
     try {
       const agentData = await fetchJson(`${device.collectorUrl}/agents`) as { agents?: AgentProfile[] };
-      const agents = (agentData.agents ?? []).map((agent) => ({
+      agents = (agentData.agents ?? []).map((agent) => ({
         ...agent,
         telemetryUrl: device.collectorUrl,
         machineName: device.name,
       }));
+    } catch {
+      return {
+        device,
+        collector: device.online ? "not-installed" : "offline",
+        agents: [],
+        snapshots: [],
+      };
+    }
+
+    try {
       const snapshotData = await fetchJson(`${device.collectorUrl}/snapshot`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -95,8 +106,8 @@ export async function GET() {
     } catch {
       return {
         device,
-        collector: device.online ? "not-installed" : "offline",
-        agents: [],
+        collector: "ready",
+        agents,
         snapshots: [],
       };
     }
