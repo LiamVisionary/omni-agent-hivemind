@@ -3,6 +3,14 @@
 This file records user-visible changes before they are committed. New work should
 be added here first, then marked `Committed` or `Pushed` after the git action.
 
+## 2026-05-19 01:51 WITA - Add Collector Hermes Chat Bridge
+
+- Status: Uncommitted
+- Areas changed: Telemetry collector
+- Summary: Add a private collector `/chat` bridge for Hermes CLI messages, advertise chat capability from `/health`, and update the advertised collector update command to pull latest code and restart the collector without a full dashboard build.
+- Verification: Pending.
+- Intended commit message: `Add collector Hermes chat bridge`
+
 ## 2026-05-18 18:53 WITA - Stabilize Agent Activity Cards
 
 - Status: Pushed
