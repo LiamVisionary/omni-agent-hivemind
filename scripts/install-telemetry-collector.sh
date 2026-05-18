@@ -38,6 +38,7 @@ if [[ "$(uname -s)" == "Darwin" ]]; then
 PLIST
   launchctl unload "$PLIST" >/dev/null 2>&1 || true
   launchctl load "$PLIST"
+  launchctl kickstart -k "gui/$(id -u)/com.agent-control-room.telemetry" >/dev/null 2>&1 || true
   echo "Installed macOS LaunchAgent on port $PORT"
 else
   SERVICE="$HOME/.config/systemd/user/agent-telemetry.service"
@@ -55,7 +56,8 @@ Restart=always
 WantedBy=default.target
 SERVICE
   systemctl --user daemon-reload
-  systemctl --user enable --now agent-telemetry.service
+  systemctl --user enable agent-telemetry.service
+  systemctl --user restart agent-telemetry.service
   echo "Installed systemd user service on port $PORT"
 fi
 

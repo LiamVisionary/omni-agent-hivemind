@@ -3,6 +3,22 @@
 This file records user-visible changes before they are committed. New work should
 be added here first, then marked `Committed` or `Pushed` after the git action.
 
+## 2026-05-18 18:38 WITA - Restart Collector During Setup
+
+- Status: Pushed
+- Areas changed: Setup script, telemetry collector installer
+- Summary: Make setup restart the telemetry collector after reinstalling it so stale remote collectors pick up `/health` version data and `/update`. Switch dashboard startup from production `next start` to the dev server on the configured port.
+- Verification: `bash -n setup.sh scripts/install-telemetry-collector.sh`, `pnpm typecheck`, `pnpm lint` (warnings only, pre-existing unused-variable warnings), `pnpm build` (pre-existing Turbopack NFT trace warning), and `git diff --check` passed.
+- Intended commit message: `Restart collector during setup`
+
+## 2026-05-18 18:26 WITA - Multi-Agent Kanban Board
+
+- Status: Uncommitted
+- Areas changed: OpenClaw Kanban API, local Kanban persistence, Kanban dashboard UI, Kanban types and grouping utilities, assimilation manifest
+- Summary: Add a Hermes-style multi-agent Kanban surface with local board storage, task create/update/move flows, assignees, tenants, comments, links, archive visibility, and dashboard columns for triage through done.
+- Verification: `pnpm typecheck`, `pnpm lint` (warnings only, pre-existing unused-variable warnings), `pnpm build` (pre-existing Turbopack NFT trace warning), `git diff --check`, Kanban API smoke test against local dev server, and `verify_assimilation_manifest.py` passed.
+- Intended commit message: `Add multi-agent Kanban board`
+
 ## 2026-05-18 18:24 WITA - Clear Stale Collector Update Failures
 
 - Status: Pushed

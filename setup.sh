@@ -74,8 +74,8 @@ pnpm build
 ok "Dashboard built"
 
 start_dashboard() {
-  info "Starting dashboard on port $PORT"
-  nohup pnpm exec next start -p "$PORT" > "$ROOT/.next/agent-control-room.log" 2>&1 &
+  info "Starting dashboard dev server on port $PORT"
+  nohup pnpm exec next dev -p "$PORT" > "$ROOT/.next/agent-control-room.log" 2>&1 &
   sleep 2
 }
 
