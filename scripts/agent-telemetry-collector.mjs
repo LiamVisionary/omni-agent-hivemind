@@ -5,10 +5,12 @@ import { access, readdir, readFile, stat } from "node:fs/promises";
 import { constants } from "node:fs";
 import { homedir, hostname } from "node:os";
 import { join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 
 const execFileAsync = promisify(execFile);
 const port = Number(process.env.AGENT_TELEMETRY_PORT || 8787);
+const appDir = resolve(join(fileURLToPath(import.meta.url), "..", ".."));
 const defaultHermesDir = process.env.HERMES_HOME || join(homedir(), ".hermes");
 const maxChars = 1000;
 
@@ -30,6 +32,35 @@ async function execJson(cmd, args, fallback) {
   } catch {
     return fallback;
   }
+}
+
+async function execText(cmd, args, fallback = "") {
+  const { stdout } = await execFileAsync(cmd, args, {
+    cwd: appDir,
+    timeout: 5000,
+    maxBuffer: 300_000,
+  }).catch(() => ({ stdout: fallback }));
+  return stdout.trim();
+}
+
+async function appVersion() {
+  const [commit, branch, dirty, remoteCommit] = await Promise.all([
+    execText("git", ["rev-parse", "HEAD"]),
+    execText("git", ["rev-parse", "--abbrev-ref", "HEAD"]),
+    execText("git", ["status", "--porcelain"]),
+    execText("git", ["ls-remote", "origin", "main"]),
+  ]);
+  const latestCommit = remoteCommit.split(/\s+/)[0] || commit;
+  return {
+    appDir,
+    commit,
+    shortCommit: commit.slice(0, 7),
+    branch,
+    dirty: dirty.length > 0,
+    latestCommit,
+    latestShortCommit: latestCommit.slice(0, 7),
+    updateCommand: `cd ${JSON.stringify(appDir)} && git pull && ./setup.sh`,
+  };
 }
 
 async function scanHermesState(agent, hermesDir) {
@@ -173,7 +204,11 @@ createServer(async (request, response) => {
     return;
   }
   if (request.url === "/health") {
-    response.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify({ ok: true, host: hostname() }));
+    response.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify({
+      ok: true,
+      host: hostname(),
+      version: await appVersion(),
+    }));
     return;
   }
   if (request.url === "/agents") {

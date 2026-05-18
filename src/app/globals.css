@@ -309,13 +309,47 @@ h1 {
   color: var(--muted);
 }
 
-.machineHeader > strong {
+.machineHeaderActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: flex-end;
+  align-items: center;
+  min-width: max-content;
+}
+
+.machineHeaderActions > strong {
   min-width: max-content;
   border: 1px solid rgba(45, 212, 191, 0.36);
   border-radius: 999px;
   color: var(--accent-strong);
   font-size: 12px;
   padding: 7px 10px;
+}
+
+.machineVersion {
+  margin-top: 8px;
+  color: #aeb9ca;
+}
+
+.machineVersion.stale,
+.machineVersion.unknown {
+  color: #facc15;
+}
+
+.machineVersion.dirty {
+  color: #fb7185;
+}
+
+.machineUpdateFab {
+  border: 0;
+  border-radius: 999px;
+  background: #facc15;
+  color: #171003;
+  font-size: 12px;
+  font-weight: 900;
+  padding: 8px 12px;
+  box-shadow: 0 10px 30px rgba(250, 204, 21, 0.2);
 }
 
 .agentList {

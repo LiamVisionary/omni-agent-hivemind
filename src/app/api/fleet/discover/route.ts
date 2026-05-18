@@ -30,6 +30,17 @@ type Device = {
   collectorUrl: string;
 };
 
+type CollectorVersion = {
+  appDir?: string;
+  commit?: string;
+  shortCommit?: string;
+  branch?: string;
+  dirty?: boolean;
+  latestCommit?: string;
+  latestShortCommit?: string;
+  updateCommand?: string;
+};
+
 function simplifyDevice(peer: TailscalePeer, self = false): Device {
   const ip = peer.TailscaleIPs?.find((value) => /^\d+\.\d+\.\d+\.\d+$/.test(value)) ?? peer.TailscaleIPs?.[0] ?? "";
   const dnsName = peer.DNSName?.replace(/\.$/, "") ?? "";
@@ -75,7 +86,10 @@ export async function GET() {
     }
 
     let agents: AgentProfile[] = [];
+    let version: CollectorVersion | undefined;
     try {
+      const healthData = await fetchJson(`${device.collectorUrl}/health`).catch(() => null) as { version?: CollectorVersion } | null;
+      version = healthData?.version;
       const agentData = await fetchJson(`${device.collectorUrl}/agents`) as { agents?: AgentProfile[] };
       agents = (agentData.agents ?? []).map((agent) => ({
         ...agent,
@@ -100,6 +114,7 @@ export async function GET() {
       return {
         device,
         collector: "ready",
+        version,
         agents,
         snapshots: snapshotData.snapshots ?? [],
       };
@@ -107,6 +122,7 @@ export async function GET() {
       return {
         device,
         collector: "ready",
+        version,
         agents,
         snapshots: [],
       };

@@ -60,6 +60,7 @@ type MachineGroup = {
   self: boolean;
   collector: "ready" | "not-installed" | "offline" | "missing" | "unknown";
   agents: AgentProfile[];
+  version?: AppVersion;
 };
 
 type DiscoveredMachine = {
@@ -67,7 +68,19 @@ type DiscoveredMachine = {
   collector: MachineGroup["collector"];
   agents: AgentProfile[];
   snapshots: AgentSnapshot[];
+  version?: AppVersion;
   lastSeenAt?: number;
+};
+
+type AppVersion = {
+  appDir?: string;
+  commit?: string;
+  shortCommit?: string;
+  branch?: string;
+  dirty?: boolean;
+  latestCommit?: string;
+  latestShortCommit?: string;
+  updateCommand?: string;
 };
 
 const STORAGE_KEY = "openclaw-next.agentProfiles.v1";
@@ -217,9 +230,21 @@ function mergeDiscoveredMachines(current: DiscoveredMachine[], incoming: Discove
       collector: previous.collector === "ready" ? "ready" : machine.collector,
       agents: previous.agents,
       snapshots: previous.snapshots,
+      version: previous.version,
       lastSeenAt: previous.lastSeenAt,
     };
   });
+}
+
+function machineVersionState(machine: MachineGroup, latestCommit?: string) {
+  if (machine.key === "unassigned" || machine.collector !== "ready") return null;
+  const version = machine.version;
+  const commit = version?.commit;
+  const target = latestCommit || version?.latestCommit;
+  if (!commit) return { state: "unknown", label: "Update collector", detail: "This machine has an older collector that does not report its version yet." };
+  if (version?.dirty) return { state: "dirty", label: "Local changes", detail: `Running ${version.shortCommit ?? commit.slice(0, 7)} with local changes.` };
+  if (target && commit !== target) return { state: "stale", label: "Update available", detail: `${version?.shortCommit ?? commit.slice(0, 7)} -> ${version?.latestShortCommit ?? target.slice(0, 7)}` };
+  return { state: "current", label: "Up to date", detail: version?.shortCommit ?? commit.slice(0, 7) };
 }
 
 export default function Home() {
@@ -239,6 +264,8 @@ export default function Home() {
   const [tailscaleDevices, setTailscaleDevices] = useState<TailscaleDevice[]>([]);
   const [tailscaleStatus, setTailscaleStatus] = useState("Checking Tailnet...");
   const [discoveredMachines, setDiscoveredMachines] = useState<DiscoveredMachine[]>([]);
+  const [appVersion, setAppVersion] = useState<AppVersion | null>(null);
+  const [copiedMachineKey, setCopiedMachineKey] = useState("");
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
@@ -319,6 +346,17 @@ export default function Home() {
     };
   }, []);
 
+  useEffect(() => {
+    async function refreshVersion() {
+      const response = await fetch("/api/app/version", { cache: "no-store" }).catch(() => null);
+      const data = await response?.json().catch(() => null) as AppVersion | null;
+      if (data?.commit) setAppVersion(data);
+    }
+    refreshVersion();
+    const timer = window.setInterval(refreshVersion, 60_000);
+    return () => window.clearInterval(timer);
+  }, []);
+
   const discoveredAgents = useMemo(
     () => discoveredMachines.flatMap((machine) => machine.agents ?? []),
     [discoveredMachines],
@@ -392,6 +430,7 @@ export default function Home() {
       self: device.self,
       collector: (discovered?.collector ?? "unknown") as MachineGroup["collector"],
       agents: [] as AgentProfile[],
+      version: discovered?.version,
       };
     });
     const unassigned: MachineGroup = {
@@ -491,6 +530,18 @@ export default function Home() {
     setTasks((current) => current.map((task) => (
       task.id === taskId ? { ...task, ...patch, updatedAt: Date.now() } : task
     )));
+  }
+
+  async function copyUpdateCommand(machine: MachineGroup) {
+    const command = machine.version?.updateCommand
+      || "cd omni-agent-hivemind && git pull && ./setup.sh";
+    const text = [
+      "# Run this on the machine shown in the card:",
+      command,
+    ].join("\n");
+    await navigator.clipboard?.writeText(text).catch(() => undefined);
+    setCopiedMachineKey(machine.key);
+    window.setTimeout(() => setCopiedMachineKey((current) => current === machine.key ? "" : current), 2500);
   }
 
   async function checkStatus() {
@@ -664,8 +715,30 @@ export default function Home() {
                   <h3>{machine.name}</h3>
                   <p>{machine.address}</p>
                   {machine.collectorUrl ? <small>{machine.collectorUrl}</small> : null}
+                  {(() => {
+                    const versionState = machineVersionState(machine, appVersion?.latestCommit || appVersion?.commit);
+                    return versionState ? (
+                      <small className={`machineVersion ${versionState.state}`}>
+                        {versionState.label}: {versionState.detail}
+                      </small>
+                    ) : null;
+                  })()}
                 </div>
-                <strong>{machine.agents.length} agent{machine.agents.length === 1 ? "" : "s"}</strong>
+                <div className="machineHeaderActions">
+                  {(() => {
+                    const versionState = machineVersionState(machine, appVersion?.latestCommit || appVersion?.commit);
+                    return versionState && versionState.state !== "current" ? (
+                      <button
+                        type="button"
+                        className="machineUpdateFab"
+                        onClick={() => copyUpdateCommand(machine)}
+                      >
+                        {copiedMachineKey === machine.key ? "Copied" : "Update"}
+                      </button>
+                    ) : null;
+                  })()}
+                  <strong>{machine.agents.length} agent{machine.agents.length === 1 ? "" : "s"}</strong>
+                </div>
               </div>
 
               <div className="agentList">
