@@ -1,0 +1,38 @@
+{
+  "name": "openclaw-next",
+  "version": "0.1.0",
+  "private": false,
+  "type": "module",
+  "scripts": {
+    "dev": "next dev -p 5020",
+    "build": "next build",
+    "start": "next start -p 5020",
+    "lint": "eslint",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@ai-sdk/anthropic": "^2.0.77",
+    "@ai-sdk/groq": "^2.0.38",
+    "@ai-sdk/openai": "^2.0.103",
+    "@ai-sdk/react": "^2.0.181",
+    "@supabase/supabase-js": "^2.57.4",
+    "@tavily/core": "^0.7.2",
+    "ai": "^5.0.179",
+    "next": "16.2.4",
+    "react": "19.2.3",
+    "react-dom": "19.2.3",
+    "ws": "^8.19.0",
+    "zod": "^4.3.6",
+    "zustand": "^4.5.2"
+  },
+  "devDependencies": {
+    "@eslint/eslintrc": "^3",
+    "@types/node": "^20",
+    "@types/react": "^19",
+    "@types/react-dom": "^19",
+    "@types/ws": "^8.18.1",
+    "eslint": "^9.39.2",
+    "eslint-config-next": "16.2.4",
+    "typescript": "^5.9.3"
+  }
+}

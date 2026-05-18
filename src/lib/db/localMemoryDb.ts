@@ -1,0 +1,32 @@
+import type { CompanionMemory } from "@/lib/services/zepService";
+import { createDefaultMemory } from "@/lib/services/openclaw/useOpenClawMemorySync";
+
+const memoryByKey = new Map<string, CompanionMemory>();
+
+function key(userId: string, characterId: string) {
+  return `${userId}:${characterId}`;
+}
+
+export async function getLocalMemory(userId: string, characterId: string): Promise<CompanionMemory> {
+  return memoryByKey.get(key(userId, characterId)) ?? createDefaultMemory();
+}
+
+export async function setLocalMemory(userId: string, characterId: string, memory: Partial<CompanionMemory>): Promise<void> {
+  const current = await getLocalMemory(userId, characterId);
+  memoryByKey.set(key(userId, characterId), { ...current, ...memory });
+}
+
+export function mergeMemories(local: CompanionMemory, incoming: CompanionMemory): CompanionMemory {
+  const merged: CompanionMemory = { ...local };
+  for (const [field, value] of Object.entries(incoming)) {
+    if (Array.isArray(value)) {
+      const existing = (merged as unknown as Record<string, unknown>)[field];
+      const seen = new Set((Array.isArray(existing) ? existing : []).map((item) => JSON.stringify(item)));
+      const additions = value.filter((item) => !seen.has(JSON.stringify(item)));
+      (merged as unknown as Record<string, unknown>)[field] = [...(Array.isArray(existing) ? existing : []), ...additions];
+    } else if (value) {
+      (merged as unknown as Record<string, unknown>)[field] = value;
+    }
+  }
+  return merged;
+}

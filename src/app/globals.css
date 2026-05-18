@@ -1,0 +1,866 @@
+@import "./nlux-base.css";
+
+:root {
+  --background: #090b10;
+  --foreground: #f4f7fb;
+  --panel: #10141d;
+  --panel-soft: #151b26;
+  --line: #263044;
+  --muted: #8e9bb1;
+  --accent: #2dd4bf;
+  --accent-strong: #5eead4;
+  --danger: #fb7185;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  color: var(--foreground);
+  background:
+    radial-gradient(circle at 14% 12%, rgba(45, 212, 191, 0.16), transparent 30rem),
+    linear-gradient(140deg, #090b10 0%, #0e1320 48%, #12151b 100%);
+  font-family: Arial, Helvetica, sans-serif;
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+}
+
+button {
+  cursor: pointer;
+}
+
+a {
+  color: inherit;
+}
+
+.shell {
+  width: min(1280px, calc(100vw - 32px));
+  margin: 0 auto;
+  padding: 26px 0 40px;
+}
+
+.hero {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(280px, 420px);
+  gap: 24px;
+  align-items: center;
+  min-height: 210px;
+  padding-bottom: 18px;
+}
+
+.eyebrow {
+  margin: 0 0 12px;
+  color: var(--accent-strong);
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0;
+  text-transform: uppercase;
+}
+
+h1 {
+  max-width: 820px;
+  margin: 0;
+  font-size: clamp(42px, 7vw, 78px);
+  line-height: 0.94;
+  letter-spacing: 0;
+}
+
+.lede {
+  max-width: 700px;
+  margin: 18px 0 0;
+  color: #c6d1df;
+  font-size: 18px;
+  line-height: 1.55;
+}
+
+.statusPanel,
+.feature,
+.agentRail,
+.taskPanel,
+.historyPanel,
+.vaultPanel,
+.settings,
+.chat {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: rgba(16, 20, 29, 0.82);
+  box-shadow: 0 20px 80px rgba(0, 0, 0, 0.28);
+}
+
+.statusPanel {
+  padding: 16px;
+}
+
+.statusPanel button,
+.chat button,
+.addAgent button,
+.vaultFooter button,
+.settingsActions button {
+  border: 0;
+  border-radius: 6px;
+  background: var(--accent);
+  color: #06201d;
+  font-weight: 800;
+  padding: 12px 16px;
+}
+
+.statusPanel button:disabled,
+.chat button:disabled,
+.addAgent button:disabled,
+.vaultFooter button:disabled,
+.settingsActions button:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.statusText {
+  min-height: 140px;
+  margin-top: 12px;
+  overflow: auto;
+  white-space: pre-wrap;
+  color: #d7dee9;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 12px;
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  margin: 18px 0 28px;
+}
+
+.feature {
+  padding: 18px;
+}
+
+.feature h2,
+.settings h2 {
+  margin: 0 0 10px;
+  font-size: 17px;
+}
+
+.feature p,
+.settings p,
+.agentRailHeader p,
+.taskPanelHeader p,
+.historyHeader p,
+.vaultHeader p,
+.chatHeader p,
+.hint {
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.5;
+}
+
+.agentRail {
+  padding: 18px;
+  margin-bottom: 16px;
+}
+
+.vaultPanel {
+  padding: 18px;
+  margin-bottom: 16px;
+}
+
+.agentRailHeader,
+.taskPanelHeader,
+.historyHeader,
+.vaultHeader,
+.settingsHeader,
+.chatHeader {
+  display: flex;
+  gap: 14px;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.agentRailHeader h2,
+.taskPanelHeader h2,
+.historyHeader h2,
+.vaultHeader h2,
+.settingsHeader h2,
+.chatHeader h2 {
+  margin: 0;
+  font-size: 20px;
+}
+
+.addAgent,
+.vaultFooter,
+.settingsActions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.vaultGrid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+  margin-top: 16px;
+}
+
+.vaultGrid label,
+.vaultInstructions {
+  display: grid;
+  gap: 8px;
+  color: #d7dee9;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.vaultInstructions {
+  margin-top: 14px;
+}
+
+.vaultFooter {
+  align-items: stretch;
+  margin-top: 14px;
+}
+
+.vaultFooter pre {
+  flex: 1;
+  min-height: 46px;
+  max-height: 160px;
+  margin: 0;
+  overflow: auto;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: #090d14;
+  color: #d7dee9;
+  padding: 10px;
+  white-space: pre-wrap;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 12px;
+}
+
+.toggleRow {
+  display: flex !important;
+  grid-template-columns: none !important;
+  gap: 8px !important;
+  align-items: center;
+}
+
+.toggleRow input {
+  width: auto !important;
+}
+
+.addAgent select,
+.settings select {
+  min-height: 42px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: #090d14;
+  color: var(--foreground);
+  padding: 0 10px;
+  outline: none;
+}
+
+.machineBoard {
+  display: grid;
+  gap: 16px;
+  margin-top: 16px;
+}
+
+.machineGroup {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #0b1018;
+  padding: 16px;
+}
+
+.machineGroup.needsSetup {
+  border-style: dashed;
+}
+
+.machineHeader {
+  display: flex;
+  gap: 12px;
+  align-items: start;
+  justify-content: space-between;
+  margin-bottom: 14px;
+}
+
+.machineHeader span {
+  color: var(--accent-strong);
+  font-size: 11px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.machineHeader h3 {
+  margin: 5px 0 4px;
+  font-size: 24px;
+  line-height: 1.15;
+}
+
+.machineHeader p,
+.machineHeader small {
+  display: block;
+  margin: 0;
+  color: var(--muted);
+}
+
+.machineHeader > strong {
+  min-width: max-content;
+  border: 1px solid rgba(45, 212, 191, 0.36);
+  border-radius: 999px;
+  color: var(--accent-strong);
+  font-size: 12px;
+  padding: 7px 10px;
+}
+
+.agentList {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.machineEmpty {
+  border: 1px dashed var(--line);
+  border-radius: 8px;
+  background: #111722;
+  padding: 18px;
+}
+
+.machineEmpty strong {
+  display: block;
+  margin-bottom: 6px;
+}
+
+.machineEmpty p {
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.5;
+}
+
+.agentCard {
+  display: grid;
+  gap: 14px;
+  min-height: 330px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #0b1018;
+  color: var(--foreground);
+  padding: 16px;
+  text-align: left;
+}
+
+.agentCard.active {
+  border-color: rgba(45, 212, 191, 0.76);
+  background: linear-gradient(180deg, #10221f 0%, #0b1018 72%);
+  box-shadow: 0 0 0 1px rgba(94, 234, 212, 0.08), 0 22px 70px rgba(0, 0, 0, 0.34);
+}
+
+.agentCardTop {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: start;
+}
+
+.agentSelect {
+  display: grid;
+  gap: 7px;
+  width: 100%;
+  min-height: 82px;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  padding: 0;
+  text-align: left;
+}
+
+.agentCard span,
+.agentSelect span {
+  color: var(--accent-strong);
+  font-size: 11px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.agentCard strong,
+.agentSelect strong {
+  font-size: 21px;
+  line-height: 1.18;
+}
+
+.agentCard small,
+.agentSelect small {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.agentState {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 30px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: #090d14;
+  color: var(--muted) !important;
+  padding: 0 10px;
+  white-space: nowrap;
+}
+
+.agentState.working {
+  border-color: rgba(45, 212, 191, 0.48);
+  background: rgba(45, 212, 191, 0.12);
+  color: var(--accent-strong) !important;
+}
+
+.agentState.ready {
+  border-color: rgba(94, 234, 212, 0.36);
+  color: var(--accent-strong) !important;
+}
+
+.agentState.setup {
+  border-color: rgba(251, 191, 36, 0.45);
+  background: rgba(251, 191, 36, 0.08);
+  color: #fde68a !important;
+}
+
+.agentBubbleStack {
+  display: grid;
+  gap: 9px;
+}
+
+.agentBubble {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 5px 12px;
+  min-height: 92px;
+  border: 1px solid rgba(38, 48, 68, 0.9);
+  border-radius: 8px;
+  background: #111722;
+  color: var(--foreground);
+  padding: 12px;
+  text-align: left;
+}
+
+.agentBubble.active {
+  border-color: rgba(45, 212, 191, 0.62);
+  background: #0f211f;
+}
+
+.agentBubble.failed {
+  border-color: rgba(251, 113, 133, 0.62);
+  background: #211017;
+}
+
+.agentBubble.idle {
+  border-style: dashed;
+}
+
+.agentBubble span {
+  grid-column: 1;
+  color: var(--accent-strong);
+  font-size: 11px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.agentBubble strong {
+  display: -webkit-box;
+  grid-column: 1 / -1;
+  overflow: hidden;
+  color: #f8fafc;
+  font-size: 15px;
+  line-height: 1.32;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.agentBubble p {
+  display: -webkit-box;
+  grid-column: 1 / -1;
+  overflow: hidden;
+  margin: 0;
+  color: #c6d1df;
+  font-size: 13px;
+  line-height: 1.45;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.agentBubble small {
+  grid-column: 2;
+  grid-row: 1;
+  max-width: 180px;
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.agentViewMore {
+  width: 100%;
+  min-height: 38px;
+  border: 1px solid rgba(45, 212, 191, 0.35);
+  border-radius: 6px;
+  background: #0b1018;
+  color: var(--accent-strong);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.agentCardActions {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  justify-content: space-between;
+  min-width: 0;
+  margin-top: auto;
+}
+
+.agentEndpoint {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--muted) !important;
+  font-size: 11px !important;
+  font-weight: 500 !important;
+  text-overflow: ellipsis;
+  text-transform: none !important;
+  white-space: nowrap;
+}
+
+.agentRemove {
+  border: 1px solid rgba(251, 113, 133, 0.4);
+  border-radius: 6px;
+  background: transparent;
+  color: #fecdd3 !important;
+  font-size: 11px !important;
+  font-weight: 800 !important;
+  padding: 6px 8px;
+  text-transform: none !important;
+}
+
+.agentRemove:hover {
+  background: rgba(251, 113, 133, 0.14);
+}
+
+.agentRemove[aria-disabled="true"] {
+  cursor: not-allowed;
+  opacity: 0.45;
+  pointer-events: none;
+}
+
+.agentRemove:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+.taskPanel,
+.historyPanel {
+  padding: 18px;
+  margin-bottom: 16px;
+}
+
+.taskPanelHeader button {
+  min-height: 42px;
+  border: 1px solid rgba(45, 212, 191, 0.4);
+  border-radius: 6px;
+  background: #0b1018;
+  color: var(--accent-strong);
+  font-weight: 800;
+  padding: 10px 14px;
+}
+
+.taskBubbleGrid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  margin-top: 16px;
+}
+
+.taskBubble {
+  display: grid;
+  gap: 10px;
+  min-height: 190px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #0b1018;
+  color: var(--foreground);
+  padding: 15px;
+  text-align: left;
+}
+
+.taskBubble.active {
+  border-color: rgba(45, 212, 191, 0.7);
+  background: #0f211f;
+}
+
+.taskBubble.failed {
+  border-color: rgba(251, 113, 133, 0.62);
+  background: #211017;
+}
+
+.taskBubbleMeta,
+.taskBubbleFooter {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.taskBubble strong {
+  display: -webkit-box;
+  overflow: hidden;
+  min-height: 44px;
+  color: #f8fafc;
+  font-size: 16px;
+  line-height: 1.35;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.taskBubble p {
+  display: -webkit-box;
+  overflow: hidden;
+  min-height: 66px;
+  margin: 0;
+  color: #c6d1df;
+  line-height: 1.48;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+}
+
+.taskBubbleFooter {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: auto;
+}
+
+.taskBubbleFooter span:first-child {
+  color: var(--accent-strong);
+}
+
+.taskBubble.failed .taskBubbleFooter span:first-child {
+  color: #fecdd3;
+}
+
+.emptyState {
+  grid-column: 1 / -1;
+  border: 1px dashed var(--line);
+  border-radius: 8px;
+  background: #0b1018;
+  padding: 24px;
+}
+
+.emptyState strong {
+  display: block;
+  margin-bottom: 8px;
+}
+
+.emptyState p {
+  margin: 0;
+  color: var(--muted);
+}
+
+.historyList {
+  display: grid;
+  gap: 8px;
+  margin-top: 16px;
+}
+
+.historyItem {
+  display: grid;
+  grid-template-columns: minmax(120px, 0.32fr) minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: center;
+  min-height: 54px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #0b1018;
+  color: var(--foreground);
+  padding: 10px 12px;
+  text-align: left;
+}
+
+.historyItem span,
+.historyItem small {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.historyItem strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.historyItem.failed {
+  border-color: rgba(251, 113, 133, 0.42);
+}
+
+.emptyHistory {
+  border: 1px dashed var(--line);
+  border-radius: 8px;
+  color: var(--muted);
+  padding: 16px;
+}
+
+.workspace {
+  display: grid;
+  grid-template-columns: 320px minmax(0, 1fr);
+  gap: 16px;
+  align-items: start;
+}
+
+.settings,
+.chat {
+  padding: 18px;
+}
+
+.settings label {
+  display: grid;
+  gap: 8px;
+  margin: 14px 0;
+  color: #d7dee9;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.settings input,
+.settings select,
+.vaultGrid input,
+.vaultInstructions textarea,
+.chat textarea {
+  width: 100%;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: #090d14;
+  color: var(--foreground);
+  padding: 12px;
+  outline: none;
+}
+
+.settings input:focus,
+.settings select:focus,
+.vaultGrid input:focus,
+.vaultInstructions textarea:focus,
+.chat textarea:focus {
+  border-color: var(--accent);
+}
+
+.settingsActions button {
+  padding: 8px 10px;
+  font-size: 12px;
+}
+
+.messages {
+  display: grid;
+  gap: 12px;
+  min-height: 360px;
+  max-height: 520px;
+  overflow: auto;
+  padding-right: 4px;
+}
+
+.message {
+  max-width: 78%;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 12px;
+  background: var(--panel-soft);
+}
+
+.message.user {
+  justify-self: end;
+  background: #123b37;
+  border-color: rgba(45, 212, 191, 0.38);
+}
+
+.message.system {
+  max-width: 100%;
+  background: #121722;
+}
+
+.message span {
+  display: block;
+  margin-bottom: 6px;
+  color: var(--accent-strong);
+  font-size: 11px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.message p {
+  margin: 0;
+  white-space: pre-wrap;
+  line-height: 1.52;
+}
+
+.chat form {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
+  margin-top: 16px;
+}
+
+.chat textarea {
+  min-height: 64px;
+  resize: vertical;
+}
+
+.hint {
+  margin-top: 12px;
+  font-size: 13px;
+}
+
+@media (max-width: 880px) {
+  .hero,
+  .workspace {
+    grid-template-columns: 1fr;
+  }
+
+  .grid {
+    grid-template-columns: 1fr;
+  }
+
+  .agentRailHeader,
+  .taskPanelHeader,
+  .historyHeader,
+  .vaultHeader,
+  .settingsHeader,
+  .chatHeader {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .agentList {
+    grid-template-columns: 1fr;
+  }
+
+  .machineHeader {
+    flex-direction: column;
+  }
+
+  .vaultGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .vaultFooter {
+    flex-direction: column;
+  }
+
+  .message {
+    max-width: 100%;
+  }
+
+  .chat form {
+    grid-template-columns: 1fr;
+  }
+}

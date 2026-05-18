@@ -1,0 +1,83 @@
+{
+  "created_at": "2026-05-17T06:18:01.011702+00:00",
+  "custom_code_assessment": "balanced",
+  "entries": [
+    {
+      "source_repo": "internal/source-app",
+      "source_path": "src/lib/services/openclaw",
+      "target_path": "src/lib/services/openclaw",
+      "reuse_type": "copied_code",
+      "note": "OpenClaw gateway, memory sync, health, and security services"
+    },
+    {
+      "source_repo": "internal/source-app",
+      "source_path": "src/app/api/openclaw",
+      "target_path": "src/app/api/openclaw",
+      "reuse_type": "copied_code",
+      "note": "OpenClaw API route surface"
+    },
+    {
+      "source_repo": "pareto8751/vercel-ai-sdk-agent",
+      "source_path": "components/ChatMessage.tsx",
+      "target_path": "src/components/ChatMessage.tsx",
+      "reuse_type": "copied_code",
+      "note": "AI SDK UI message renderer"
+    },
+    {
+      "source_repo": "pareto8751/vercel-ai-sdk-agent",
+      "source_path": "app/api/chat/route.ts",
+      "target_path": "src/app/api/chat/agent/route.ts",
+      "reuse_type": "adapted_code",
+      "note": "AI SDK streaming agent route"
+    },
+    {
+      "source_repo": "nlkitai/nlux",
+      "source_path": "examples/dev-examples/aiChat/next/src/app/globals.css",
+      "target_path": "src/app/nlux-base.css",
+      "reuse_type": "copied_code",
+      "note": "Next AI chat CSS baseline"
+    },
+    {
+      "source_repo": "Hazel-Lin/weclaw-dashboard",
+      "source_path": "src/lib/types.ts",
+      "target_path": "src/lib/types/agent-runtime.ts",
+      "reuse_type": "adapted_code",
+      "note": "multi-agent config type shape for runtime profiles"
+    },
+    {
+      "source_repo": "Hazel-Lin/weclaw-dashboard",
+      "source_path": "src/components/agent-card.tsx",
+      "target_path": "src/app/page.tsx",
+      "reuse_type": "adapted_code",
+      "note": "agent card/list management UI concepts"
+    },
+    {
+      "source_repo": "nandezer/obsidian-fathom-sync",
+      "source_path": "src/settings.ts",
+      "target_path": "src/lib/types/agent-runtime.ts",
+      "reuse_type": "adapted_code",
+      "note": "Obsidian vault folder/path settings pattern"
+    },
+    {
+      "source_repo": "nandezer/obsidian-fathom-sync",
+      "source_path": "src/services/fileSyncService.ts",
+      "target_path": "src/app/api/obsidian/status/route.ts",
+      "reuse_type": "adapted_code",
+      "note": "vault path validation and folder existence approach"
+    },
+    {
+      "source_repo": "shannhk/hermes-agent-control-room",
+      "source_path": "skills/setup-control-room/assets/bootstrap.sh",
+      "target_path": "src/app/api/control-room/status/route.ts",
+      "reuse_type": "adapted_code",
+      "note": "safe bootstrap inspection and live-installer warning checks"
+    },
+    {
+      "source_repo": "shannhk/hermes-agent-control-room",
+      "source_path": "README.md",
+      "target_path": "docs/hermes-local-setup.md",
+      "reuse_type": "adapted_code",
+      "note": "local Control Room setup and safety handoff"
+    }
+  ]
+}
