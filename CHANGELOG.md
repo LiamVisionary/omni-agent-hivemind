@@ -3,6 +3,142 @@
 This file records user-visible changes before they are committed. New work should
 be added here first, then marked `Committed` or `Pushed` after the git action.
 
+## 2026-05-18 20:26 WITA - Clarify Connect Modal For Lay Users
+
+- Status: Pushed
+- Areas changed: Shared machine Connect modal layout, command copy treatment, setup instruction copy
+- Summary: Rework the Connect modal into one layperson-friendly instruction that tells the user to open Terminal on the other computer, paste the labeled command, press Return, and then come back after setup finishes.
+- Verification: `pnpm typecheck`, `pnpm lint` (warnings only, pre-existing unused-variable warnings), `git diff --check`, and local `/` HTTP 200 checks passed during the dashboard update verification pass.
+- Intended commit message: `Clarify connect modal instructions`
+
+## 2026-05-18 20:24 WITA - Fix Markdown Code Wrapping
+
+- Status: Pushed
+- Areas changed: Agent activity card Markdown styling
+- Summary: Make inline code and long file paths wrap inside narrow agent activity cards instead of clipping at the card edge.
+- Verification: `pnpm typecheck`, `pnpm lint` (warnings only, pre-existing unused-variable warnings), `git diff --check`, dev-server hot compile, and local `/` HTTP 200 passed.
+- Intended commit message: `Fix markdown code wrapping`
+
+## 2026-05-18 20:22 WITA - Simplify Connect Setup Instructions
+
+- Status: Pushed
+- Areas changed: Shared machine Connect modal copy and setup command
+- Summary: Replace the modal's manual Tailscale/collector instructions with the project setup script as the primary path and remove hardcoded personal-name copy.
+- Verification: `pnpm typecheck`, `pnpm lint` (warnings only, pre-existing unused-variable warnings), `git diff --check`, and local browser verification of the Connect modal copy passed.
+- Intended commit message: `Simplify connect setup instructions`
+
+## 2026-05-18 20:20 WITA - Add Design Philosophy
+
+- Status: Pushed
+- Areas changed: Design documentation
+- Summary: Add a project-wide design philosophy requiring simple layman-first primary surfaces, progressive disclosure, minimal default UI, intuitive navigation, plain-English copy, and advanced controls hidden behind clear secondary actions.
+- Verification: Documentation-only change; `git diff --check -- docs/design-philosophy.md CHANGELOG.md` passed.
+- Intended commit message: `Add design philosophy`
+
+## 2026-05-18 20:17 WITA - Add Shared Machine Connect Modal
+
+- Status: Pushed
+- Areas changed: Agent machine status actions, chat machine picker actions, shared setup modal, dashboard styling
+- Summary: Replace non-actionable Setup/Offline machine labels with Connect buttons that open one shared setup instructions modal for installing the read-only collector on another Tailnet machine.
+- Verification: `pnpm typecheck`, `pnpm lint` (warnings only, pre-existing unused-variable warnings), `git diff --check`, and local browser checks for both chat-view and agent-view Connect buttons passed.
+- Intended commit message: `Add shared machine connect modal`
+
+## 2026-05-18 20:16 WITA - Render Markdown In Agent Cards
+
+- Status: Pushed
+- Areas changed: Agent activity card rendering, markdown preview styling, changelog
+- Summary: Preserve Markdown line structure in agent activity messages and render compact card-safe formatting for headings, lists, quotes, links, bold/italic text, inline code, and fenced code blocks.
+- Verification: `pnpm typecheck`, `pnpm lint` (warnings only, pre-existing unused-variable warnings), `git diff --check`, dev-server hot compile, and local `/` HTTP 200 passed.
+- Intended commit message: `Render markdown in agent cards`
+
+## 2026-05-18 20:11 WITA - Add Agent Wallet Survival Setup
+
+- Status: Pushed
+- Areas changed: Wallet & Spend dashboard tab, agent-card wallet shortcut, local agent wallet/survival types and utilities, payment provider/runbook config, dashboard styling, assimilation manifest
+- Summary: Add a per-agent Wallet & Survival Setup view for ClawCard/MoneyClaw/x402/manual rails, bounded spend caps, local seeded-balance burn accounting, survival tiers, launch steps, safety rules, copyable payment-context prompts for agent runtimes, and a wallet setup/status shortcut on each agent card.
+- Verification: `pnpm typecheck`, `pnpm lint` (warnings only, pre-existing unused-variable warnings), `git diff --check`, `verify_assimilation_manifest.py`, and local `/` HTTP 200 smoke check passed.
+- Intended commit message: `Add agent wallet survival setup`
+
+## 2026-05-18 20:06 WITA - Fix Cross-Machine Agent Dedupe
+
+- Status: Pushed
+- Areas changed: Dashboard agent merge logic, Add Agent connector controls
+- Summary: Stop deduping Hermes home folders across different Tailnet machines, so the local Mac Hermes agent and the VPS Hermes agent can both appear at the same time. Remove the runtime folder field from the primary Add Agent flow because collectors already know their runtime defaults.
+- Verification: `pnpm typecheck`, `pnpm lint` (warnings only, pre-existing unused-variable warnings), and `git diff --check` passed. `/api/fleet/discover` reports the VPS collector and its Hermes agent.
+- Intended commit message: `Fix cross-machine agent dedupe`
+
+## 2026-05-18 19:59 WITA - Wrap Kanban Columns
+
+- Status: Pushed
+- Areas changed: Kanban board responsive layout CSS, changelog
+- Summary: Replace the horizontal-scrolling Kanban column strip with a responsive wrapping grid so fixed workflow columns flow onto additional rows instead of clipping or requiring sideways scrolling.
+- Verification: `pnpm typecheck`, `pnpm lint` (warnings only, pre-existing unused-variable warnings), and `git diff --check` passed.
+- Intended commit message: `Wrap Kanban columns`
+
+## 2026-05-18 19:59 WITA - Simplify Chat Machine Picker
+
+- Status: Pushed
+- Areas changed: Chat view sidebar, agent manual setup controls, chat sidebar styling
+- Summary: Replace the chat view's always-visible runtime configuration form with machine-first Chat buttons and previous conversation resume buttons, moving manual transport/profile fields into a collapsed setup section.
+- Verification: `pnpm typecheck`, `pnpm lint` (warnings only, pre-existing unused-variable warnings), `git diff --check`, and local browser verification on `http://localhost:5020/` passed.
+- Intended commit message: `Simplify chat machine picker`
+
+## 2026-05-18 19:58 WITA - Redesign Add Agent Flow
+
+- Status: Pushed
+- Areas changed: Agent creation flow, dashboard header controls, add-agent styling
+- Summary: Replace the one-click placeholder-creating Add Agent button with a guided connector that requires choosing a discovered machine, explains auto-discovery, and creates attached profiles instead of offline zombie cards.
+- Verification: `pnpm typecheck`, `pnpm lint` (warnings only, pre-existing unused-variable warnings), `git diff --check`, dev-server hot compile, local `/` HTTP 200, and `/api/fleet/discover` smoke read passed.
+- Intended commit message: `Redesign add agent flow`
+
+## 2026-05-18 19:51 WITA - Fix Kanban Column Clipping
+
+- Status: Pushed
+- Areas changed: Kanban board/drawer layout CSS, changelog
+- Summary: Prevent the Kanban task drawer from clipping the final board columns by making the board and drawer a two-column grid and constraining horizontal board scrolling to the board pane.
+- Verification: `pnpm typecheck` and `git diff --check` passed.
+- Intended commit message: `Fix Kanban column clipping`
+
+## 2026-05-18 19:51 WITA - Hide Starter Agent Placeholders
+
+- Status: Pushed
+- Areas changed: Dashboard agent defaults and display filtering
+- Summary: Stop rendering the original seed/demo agents as large disconnected cards once real collector-discovered agents are available. Starter profiles without telemetry, local data, chat history, or observed work are now hidden from the fleet view.
+- Verification: `pnpm typecheck`, `pnpm lint` (warnings only, pre-existing unused-variable warnings), `git diff --check`, dev-server hot compile, local `/` HTTP 200, and `/api/fleet/discover` smoke read passed.
+- Intended commit message: `Hide starter agent placeholders`
+
+## 2026-05-18 19:47 WITA - Dedupe Auto-Discovered Local Agents
+
+- Status: Pushed
+- Areas changed: Dashboard agent merge logic
+- Summary: Prevent the same local Hermes workspace from appearing as both a saved placeholder agent and an auto-discovered collector agent. Auto-discovered agents now replace saved profiles that point at the same runtime workspace.
+- Verification: `pnpm typecheck`, `pnpm lint` (warnings only, pre-existing unused-variable warnings), `git diff --check`, and dev-server hot compile passed.
+- Intended commit message: `Dedupe auto-discovered local agents`
+
+## 2026-05-18 19:47 WITA - Split Dashboard Into View Tabs
+
+- Status: Pushed
+- Areas changed: Dashboard view navigation, Agents/Kanban/Vault/Chat layout composition, responsive tab styling
+- Summary: Replace the long stacked dashboard with a top-level segmented view switcher so Kanban, agent fleet control, vault settings, and runtime chat each get a dedicated workspace while preserving shared selected-agent state.
+- Verification: `pnpm typecheck`, `pnpm lint` (warnings only, pre-existing unused-variable warnings), `pnpm build` (pre-existing Turbopack NFT trace warning), `git diff --check`, local `/` HTTP 200, and local Kanban API smoke read passed.
+- Intended commit message: `Split dashboard into view tabs`
+
+## 2026-05-18 19:29 WITA - Center README Branding Badges
+
+- Status: Pushed
+- Areas changed: README header branding and badge links
+- Summary: Center the README logo/title block and add GitHub star, GitHub fork, and Bankr badges while omitting the X follow and language buttons.
+- Verification: `git diff --check -- README.md CHANGELOG.md` passed, and README diff reviewed.
+- Intended commit message: `Center README branding badges`
+
+## 2026-05-18 19:18 WITA - Humanize Fleet Dashboard UI
+
+- Status: Pushed
+- Areas changed: Machine/agent dashboard UI, activity ranking, dashboard card styling
+- Summary: Replace the technical machine/agent card treatment with a cleaner command-center layout, compress the oversized hero into an operational header, hide raw collector/version noise, rank meaningful Hermes activity above runtime log files, soften update/empty states, add a stronger visual hierarchy for workspace and agent cards, and render activity bubbles as narrow vertical playing-card-style columns instead of long log rows.
+- Verification: `pnpm typecheck`, `pnpm lint` (warnings only, pre-existing unused-variable warnings), `git diff --check`, dev-server hot compile, `/`, `/api/app/version`, and `/api/fleet/discover` passed.
+- Intended commit message: `Humanize fleet dashboard UI`
+
 ## 2026-05-18 18:53 WITA - Stabilize Agent Activity Cards
 
 - Status: Pushed
@@ -21,7 +157,7 @@ be added here first, then marked `Committed` or `Pushed` after the git action.
 
 ## 2026-05-18 18:26 WITA - Multi-Agent Kanban Board
 
-- Status: Uncommitted
+- Status: Pushed
 - Areas changed: OpenClaw Kanban API, local Kanban persistence, Kanban dashboard UI, Kanban types and grouping utilities, assimilation manifest
 - Summary: Add a Hermes-style multi-agent Kanban surface with local board storage, task create/update/move flows, assignees, tenants, comments, links, archive visibility, and dashboard columns for triage through done.
 - Verification: `pnpm typecheck`, `pnpm lint` (warnings only, pre-existing unused-variable warnings), `pnpm build` (pre-existing Turbopack NFT trace warning), `git diff --check`, Kanban API smoke test against local dev server, and `verify_assimilation_manifest.py` passed.
@@ -45,7 +181,7 @@ be added here first, then marked `Committed` or `Pushed` after the git action.
 
 ## 2026-05-18 18:08 WITA - Omni-Agent Hivemind Branding
 
-- Status: Uncommitted
+- Status: Pushed
 - Areas changed: App metadata, hero branding, runtime status placement, README/docs title references, package name, public logo and favicon assets
 - Summary: Add the supplied Omni-Agent Hivemind logo throughout the app, generate browser icons and favicon assets, rename visible app title surfaces from OpenClaw Next to Omni-Agent Hivemind, and move runtime status checking out of the hero into the selected-agent workspace.
 - Verification: `pnpm typecheck`, `pnpm lint` (warnings only, pre-existing unused-variable warnings), `pnpm build` (pre-existing Turbopack NFT trace warning), and `git diff --check` passed.

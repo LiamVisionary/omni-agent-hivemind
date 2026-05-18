@@ -1,6 +1,6 @@
 # Tailscale Fleet Telemetry
 
-OpenClaw Next can monitor agents across machines by polling a tiny read-only
+Omni-Agent Hivemind can monitor agents across machines by polling a tiny read-only
 collector over your private Tailscale network.
 
 ## How It Works

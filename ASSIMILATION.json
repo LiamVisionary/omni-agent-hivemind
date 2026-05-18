@@ -1,5 +1,5 @@
 {
-  "created_at": "2026-05-17T06:18:01.011702+00:00",
+  "created_at": "2026-05-18T12:11:30.126413+00:00",
   "custom_code_assessment": "balanced",
   "entries": [
     {
@@ -78,6 +78,27 @@
       "target_path": "docs/hermes-local-setup.md",
       "reuse_type": "adapted_code",
       "note": "local Control Room setup and safety handoff"
+    },
+    {
+      "source_repo": "qntx/x402-openai-typescript",
+      "source_path": "src/policies.ts",
+      "target_path": "src/lib/utils/agent-wallet.ts",
+      "reuse_type": "adapted_code",
+      "note": "x402 payment requirement policy filters"
+    },
+    {
+      "source_repo": "Conway-Research/automaton",
+      "source_path": "src/conway/credits.ts",
+      "target_path": "src/lib/utils/agent-wallet.ts",
+      "reuse_type": "adapted_code",
+      "note": "survival tier threshold derivation"
+    },
+    {
+      "source_repo": "elvismusli/moneyclaw",
+      "source_path": "moneyclaw-skill/SKILL.md",
+      "target_path": "src/lib/config/agent-payments.ts",
+      "reuse_type": "adapted_code",
+      "note": "bounded prepaid payment task safety rules"
     }
   ]
 }

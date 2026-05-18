@@ -1,9 +1,14 @@
-<img width="256" height="256" alt="Omni Agent Hive Mind" src="https://github.com/user-attachments/assets/38ed5ceb-f97c-4ec5-85bc-6c4a9b0f11f2" />
+<div align="center">
+  <img width="256" height="256" alt="Omni-Agent Hivemind" src="public/omni-agent-hivemind-logo.png" />
+  <h1>Omni-Agent Hivemind</h1>
+  <p>
+    <a href="https://github.com/LiamVisionary/omni-agent-hivemind/stargazers"><img alt="GitHub stars" src="https://img.shields.io/github/stars/LiamVisionary/omni-agent-hivemind?style=for-the-badge&amp;logo=github&amp;label=stars&amp;color=0b8bdc&amp;labelColor=555555" /></a>
+    <a href="https://github.com/LiamVisionary/omni-agent-hivemind/network/members"><img alt="GitHub forks" src="https://img.shields.io/github/forks/LiamVisionary/omni-agent-hivemind?style=for-the-badge&amp;logo=github&amp;label=forks&amp;color=0b8bdc&amp;labelColor=555555" /></a>
+    <a href="https://bankr.bot"><img alt="Omni-Agent Hivemind on Bankr" src="https://img.shields.io/badge/Omni--Agent%20Hivemind%20on-Bankr-ff6a2a?style=for-the-badge&amp;labelColor=1f2137" /></a>
+  </p>
+</div>
 
-
-# Omni Agent Hivemind
-
-Omni Agent Hivemind is a local-first control room for agent fleets spread across your own machines. It gives you one dashboard for Hermes, OpenClaw, and Aeon agents, discovers agent nodes over your private Tailscale network, and prepares a shared Obsidian workspace for memory, handoffs, and team coordination.
+Omni-Agent Hivemind is a local-first control room for agent fleets spread across your own machines. It gives you one dashboard for Hermes, OpenClaw, and Aeon agents, discovers agent nodes over your private Tailscale network, and prepares a shared Obsidian workspace for memory, handoffs, and team coordination.
 
 The goal is simple: clone the repo, run one setup command, and get a private dashboard that can see the agents running across your machines without exposing them to the public internet.
 
@@ -49,7 +54,7 @@ Agent profiles live in browser local storage. Tokens and local URLs are not sync
 
 ## Tailscale Layer
 
-Tailscale supplies the encrypted private network between your machines. Omni Agent Hivemind does not require public ports or Tailscale Funnel for the default workflow.
+Tailscale supplies the encrypted private network between your machines. Omni-Agent Hivemind does not require public ports or Tailscale Funnel for the default workflow.
 
 Recommended shape:
 
