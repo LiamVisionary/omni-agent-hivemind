@@ -274,6 +274,7 @@ export default function Home() {
   const [discoveredMachines, setDiscoveredMachines] = useState<DiscoveredMachine[]>([]);
   const [appVersion, setAppVersion] = useState<AppVersion | null>(null);
   const [updateStatusByMachine, setUpdateStatusByMachine] = useState<Record<string, MachineUpdateStatus>>({});
+  const [copiedUpdateDetailKey, setCopiedUpdateDetailKey] = useState("");
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
@@ -592,14 +593,8 @@ export default function Home() {
     const detail = updateStatusByMachine[machineKey]?.detail;
     if (!detail) return;
     await navigator.clipboard?.writeText(detail).catch(() => undefined);
-    setUpdateStatusByMachine((current) => ({
-      ...current,
-      [machineKey]: {
-        ...current[machineKey],
-        label: current[machineKey]?.label ?? "Copied",
-        detail,
-      },
-    }));
+    setCopiedUpdateDetailKey(machineKey);
+    window.setTimeout(() => setCopiedUpdateDetailKey((current) => current === machineKey ? "" : current), 2500);
   }
 
   async function checkStatus() {
@@ -807,7 +802,9 @@ export default function Home() {
                     <strong>{updateStatusByMachine[machine.key].label}</strong>
                     <pre>{updateStatusByMachine[machine.key].detail}</pre>
                   </div>
-                  <button type="button" onClick={() => copyUpdateDetail(machine.key)}>Copy</button>
+                  <button type="button" onClick={() => copyUpdateDetail(machine.key)}>
+                    {copiedUpdateDetailKey === machine.key ? "Copied" : "Copy"}
+                  </button>
                 </div>
               ) : null}
 

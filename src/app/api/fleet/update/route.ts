@@ -1,4 +1,7 @@
 import { spawn } from "child_process";
+import { appendFile, mkdir, readFile } from "fs/promises";
+import { homedir } from "os";
+import { dirname, join } from "path";
 
 export const runtime = "nodejs";
 
@@ -56,9 +59,9 @@ function fallbackScript(appDir?: string, updateCommand?: string) {
   ].join("\n");
 }
 
-function runTailscaleSsh(target: string, script: string) {
+function runProcess(command: string, args: string[], stdin: string | null, timeoutMs: number) {
   return new Promise<{ stdout: string; stderr: string }>((resolve, reject) => {
-    const child = spawn("tailscale", ["ssh", target, "bash", "-s"], {
+    const child = spawn(command, args, {
       stdio: ["pipe", "pipe", "pipe"],
     });
     let stdout = "";
@@ -67,8 +70,8 @@ function runTailscaleSsh(target: string, script: string) {
     const timeout = setTimeout(() => {
       settled = true;
       child.kill("SIGTERM");
-      reject(new Error(`tailscale ssh timed out while updating ${target}`));
-    }, 180_000);
+      reject(new Error(`${command} timed out`));
+    }, timeoutMs);
 
     child.stdout.on("data", (chunk) => {
       stdout += chunk.toString();
@@ -91,11 +94,44 @@ function runTailscaleSsh(target: string, script: string) {
         return;
       }
       const detail = [stderr.trim(), stdout.trim()].filter(Boolean).join("\n\n");
-      reject(new Error(`tailscale ssh exited with code ${code}${detail ? `:\n${detail}` : ""}`));
+      reject(new Error(`${command} exited with code ${code}${detail ? `:\n${detail}` : ""}`));
     });
 
-    child.stdin.end(script);
+    child.stdin.end(stdin ?? "");
   });
+}
+
+function isUnknownHostKeyError(error: unknown) {
+  const message = error instanceof Error ? error.message : String(error);
+  return /No .* host key is known|Host key verification failed|StrictHostKeyChecking/i.test(message);
+}
+
+async function primeKnownHost(target: string) {
+  const host = target.replace(/^[^@]+@/, "");
+  const knownHostsPath = join(homedir(), ".ssh", "known_hosts");
+  const { stdout } = await runProcess("ssh-keyscan", ["-T", "8", "-t", "ed25519", host], null, 12_000);
+  const keyLines = stdout
+    .split(/\r?\n/)
+    .filter((line) => line.trim() && !line.startsWith("#"));
+  if (keyLines.length === 0) {
+    throw new Error(`Could not read SSH host key for ${host}`);
+  }
+  await mkdir(dirname(knownHostsPath), { recursive: true, mode: 0o700 });
+  const existing = await readFile(knownHostsPath, "utf-8").catch(() => "");
+  const additions = keyLines.filter((line) => !existing.includes(line));
+  if (additions.length > 0) {
+    await appendFile(knownHostsPath, `${additions.join("\n")}\n`, { mode: 0o600 });
+  }
+}
+
+async function runTailscaleSsh(target: string, script: string) {
+  try {
+    return await runProcess("tailscale", ["ssh", target, "bash", "-s"], script, 180_000);
+  } catch (error) {
+    if (!isUnknownHostKeyError(error)) throw error;
+    await primeKnownHost(target);
+    return runProcess("tailscale", ["ssh", target, "bash", "-s"], script, 180_000);
+  }
 }
 
 async function tryTailscaleSsh(body: UpdateBody) {

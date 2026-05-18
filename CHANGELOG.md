@@ -3,9 +3,17 @@
 This file records user-visible changes before they are committed. New work should
 be added here first, then marked `Committed` or `Pushed` after the git action.
 
+## 2026-05-18 18:01 WITA - Tailscale SSH Host Key Handling
+
+- Status: Pushed in `2f7940f`
+- Areas changed: Tailscale SSH fallback transport, update error copy feedback
+- Summary: Avoid first-use host key failures by detecting `tailscale ssh` host-key errors, priming `~/.ssh/known_hosts` with `ssh-keyscan` for the Tailnet host, then retrying the update. Make the update error Copy button visibly switch to `Copied`.
+- Verification: `pnpm typecheck`, `pnpm lint` (warnings only), `pnpm build`, `git diff --check`, and `ssh-keyscan` against the VPS Tailnet hostname passed.
+- Intended commit message: `Fix Tailscale SSH update host key handling`
+
 ## 2026-05-18 17:48 WITA - Robust Direct Update Errors
 
-- Status: Pushed in `d9eb599`
+- Status: Pushed in `daf7089`
 - Areas changed: Tailscale SSH update fallback, machine update UI, changelog status cleanup
 - Summary: Fix direct update failures caused by brittle remote shell quoting by streaming a script through `tailscale ssh ... bash -s`. Make update errors visible in selectable text with a copy button instead of trapping the message inside a button label.
 - Verification: `node --check scripts/agent-telemetry-collector.mjs`, `pnpm typecheck`, `pnpm lint` (warnings only), `pnpm build`, `git diff --check`, and a local `/api/fleet/update` error-path smoke test passed. The fallback script now renders as multiline `bash -s` input with valid `[ -d ... ]` spacing and remote `$HOME` expansion.
