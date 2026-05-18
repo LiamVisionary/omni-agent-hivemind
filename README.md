@@ -92,6 +92,10 @@ pnpm lint
 pnpm build
 ```
 
+Before committing any feature or user-visible fix, add an entry to
+`CHANGELOG.md` with the timestamp, commit status, verification, and intended
+commit-message summary. See `AGENTS.md` for the project rule.
+
 To run the production build locally:
 
 ```bash
