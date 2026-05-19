@@ -1740,6 +1740,7 @@ export default function Home() {
   const noteIntakeAutoInFlightRef = useRef(false);
   const kanbanReadyPickupAttemptRef = useRef<Map<string, string>>(new Map());
   const kanbanReadyPickupInFlightRef = useRef<Set<string>>(new Set());
+  const syncthingAutoPairRef = useRef<Set<string>>(new Set());
   const brainDragRef = useRef<{
     pointerId: number;
     startX: number;
@@ -3863,68 +3864,114 @@ export default function Home() {
     sharedVault.vaultPath,
   ]);
 
+  const pairSyncthingCollector = useCallback(async (target: {
+    remoteCollectorUrl: string;
+    remoteName?: string;
+    remotePath?: string;
+    remoteTailscaleIp?: string;
+    remoteAddressHost?: string;
+  }) => {
+    const localTailscaleIp = tailscaleDevices.find((device) => device.self)?.ip;
+    const response = await fetch("/api/syncthing/pair", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        localPath: sharedVault.vaultPath.trim() || undefined,
+        remotePath: target.remotePath?.trim() || undefined,
+        remoteCollectorUrl: target.remoteCollectorUrl,
+        remoteName: target.remoteName,
+        localTailscaleIp,
+        remoteTailscaleIp: target.remoteTailscaleIp,
+        remoteAddressHost: target.remoteAddressHost,
+        folderId: "omni-agent-hivemind-vault",
+        label: "Omni-Agent Hivemind Vault",
+      }),
+    }).catch(() => null);
+    return response?.json().catch(() => null) as Promise<VaultSyncStatus | null>;
+  }, [sharedVault.vaultPath, tailscaleDevices]);
+
   const pairSyncthingVaultSync = useCallback(async () => {
     const remoteHost = sharedVault.tailnetSyncHost.trim();
     const remotePath = sharedVault.tailnetSyncPath.trim();
-    if (!remoteHost || !remotePath) {
-      setVaultSyncStatus({ ok: false, method: "syncthing", error: "Choose a Tailnet machine and remote folder first." });
+    if (!remoteHost) {
+      setVaultSyncStatus({ ok: false, method: "syncthing", error: "Choose a Tailnet machine first. The remote folder can be left blank for the collector default." });
       return;
     }
     setVaultSyncPending("syncthing");
     setVaultSyncStatus(null);
     const cleanHost = remoteHost.replace(/^.+@/, "").replace(/\.$/, "");
     const hostKey = cleanHost.toLowerCase();
-    const localTailscaleIp = tailscaleDevices.find((device) => device.self)?.ip;
     const remoteDevice = tailscaleDevices.find((device) => (
       device.ip === cleanHost
       || device.name.toLowerCase() === hostKey
       || device.dnsName.toLowerCase().replace(/\.$/, "") === hostKey
       || device.collectorUrl.toLowerCase().includes(hostKey)
     ));
-    const response = await fetch("/api/syncthing/pair", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        localPath: sharedVault.vaultPath.trim(),
-        remotePath,
-        remoteCollectorUrl: /^https?:\/\//.test(cleanHost) ? cleanHost : `http://${cleanHost}:8787`,
-        remoteName: cleanHost,
-        localTailscaleIp,
-        remoteTailscaleIp: remoteDevice?.ip || (cleanHost.startsWith("100.") ? cleanHost : undefined),
-        remoteAddressHost: /^https?:\/\//.test(cleanHost) ? undefined : cleanHost,
-        folderId: "omni-agent-hivemind-vault",
-        label: "Omni-Agent Hivemind Vault",
-      }),
+    const data = await pairSyncthingCollector({
+      remoteCollectorUrl: /^https?:\/\//.test(cleanHost) ? cleanHost : `http://${cleanHost}:8787`,
+      remoteName: cleanHost,
+      remotePath,
+      remoteTailscaleIp: remoteDevice?.ip || (cleanHost.startsWith("100.") ? cleanHost : undefined),
+      remoteAddressHost: /^https?:\/\//.test(cleanHost) ? undefined : cleanHost,
     }).catch(() => null);
-    const data = await response?.json().catch(() => null) as VaultSyncStatus | null;
     setVaultSyncPending("");
     setVaultSyncStatus(data?.ok
       ? { ...data, method: "syncthing", message: `Syncthing paired ${data.folderId ?? "vault"} for realtime sync.` }
       : { ok: false, method: "syncthing", error: data?.error ?? "Syncthing pairing failed." });
   }, [
+    pairSyncthingCollector,
     sharedVault.tailnetSyncHost,
     sharedVault.tailnetSyncPath,
-    sharedVault.vaultPath,
     tailscaleDevices,
   ]);
 
   useEffect(() => {
-    if (!hydrated || !sharedVault.enabled || !sharedVault.tailnetSyncEnabled) return;
-    if (!sharedVault.tailnetSyncHost.trim() || !sharedVault.tailnetSyncPath.trim()) return;
-    const intervalMs = Math.max(10, sharedVault.tailnetSyncIntervalSeconds || 20) * 1000;
-    const timer = window.setInterval(() => {
-      if (!vaultSyncPending) void runVaultTailnetSync(false, true);
-    }, intervalMs);
-    return () => window.clearInterval(timer);
+    if (!hydrated || !sharedVault.enabled || !sharedVault.tailnetSyncEnabled || !sharedVault.vaultPath.trim()) return;
+    const candidates = discoveredMachines.filter((machine) => (
+      machine.collector === "ready"
+      && machine.device.online
+      && !machine.device.self
+      && Boolean(machine.device.collectorUrl)
+      && machine.capabilities?.syncthing === true
+    ));
+    candidates.forEach((machine) => {
+      const key = collectorKey(machine.device.collectorUrl);
+      if (!key || syncthingAutoPairRef.current.has(key)) return;
+      syncthingAutoPairRef.current.add(key);
+      void pairSyncthingCollector({
+        remoteCollectorUrl: machine.device.collectorUrl,
+        remoteName: machine.device.name,
+        remoteTailscaleIp: machine.device.ip,
+        remoteAddressHost: machine.device.ip || machine.device.dnsName,
+        remotePath: sharedVault.tailnetSyncPath,
+      }).then((data) => {
+        if (!data?.ok) {
+          syncthingAutoPairRef.current.delete(key);
+          setVaultSyncStatus({ ok: false, method: "syncthing", error: data?.error ?? `Auto-pair failed for ${machine.device.name}.` });
+          return;
+        }
+        setVaultSyncStatus({
+          ...data,
+          method: "syncthing",
+          message: `Realtime sync auto-paired with ${machine.device.name}.`,
+        });
+      }).catch((error) => {
+        syncthingAutoPairRef.current.delete(key);
+        setVaultSyncStatus({
+          ok: false,
+          method: "syncthing",
+          error: error instanceof Error ? error.message : `Auto-pair failed for ${machine.device.name}.`,
+        });
+      });
+    });
   }, [
+    discoveredMachines,
     hydrated,
-    runVaultTailnetSync,
+    pairSyncthingCollector,
     sharedVault.enabled,
     sharedVault.tailnetSyncEnabled,
-    sharedVault.tailnetSyncHost,
-    sharedVault.tailnetSyncIntervalSeconds,
     sharedVault.tailnetSyncPath,
-    vaultSyncPending,
+    sharedVault.vaultPath,
   ]);
 
   async function inspectBrainNode(node: BrainGraphNode) {
@@ -6260,7 +6307,7 @@ export default function Home() {
                   <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
 	                    <div>
 	                      <strong className="block text-xs text-[var(--foreground)]">Realtime Tailnet folder sync</strong>
-	                      <small className="text-[var(--muted)]">No Obsidian Sync subscription required. Pair Syncthing over Tailscale for Obsidian vaults or any folder; rsync is only the fallback.</small>
+	                      <small className="text-[var(--muted)]">No Obsidian Sync subscription required. Setup starts Syncthing and this dashboard auto-pairs reachable Tailnet collectors; rsync is only the fallback.</small>
 	                    </div>
 	                    <span className="rounded-full border border-[rgba(20,184,166,0.3)] px-2 py-0.5 text-[10px] font-bold uppercase tracking-[0.12em] text-[#99f6e4]">Free over Tailscale</span>
                   </div>
@@ -6275,11 +6322,11 @@ export default function Home() {
                       />
                     </label>
                     <label className="flex flex-col gap-1 text-xs text-[var(--muted)]">
-                      Remote vault folder
+                      Remote vault folder override
                       <input
                         value={sharedVault.tailnetSyncPath}
                         onChange={(event) => updateSharedVault({ tailnetSyncPath: event.target.value })}
-                        placeholder="~/Documents/Obsidian/Omni-Agent Hivemind Vault"
+                        placeholder="Leave blank for collector default"
                         className="rounded-md border border-[rgba(148,163,184,0.18)] bg-[rgba(10,14,21,0.7)] px-2 py-1 text-[var(--foreground)]"
                       />
                     </label>
@@ -6291,10 +6338,10 @@ export default function Home() {
                         checked={sharedVault.tailnetSyncEnabled}
                         onChange={(event) => updateSharedVault({ tailnetSyncEnabled: event.target.checked })}
                       />
-                      Live sync
+                      Auto-pair realtime sync
                     </label>
                     <label className="flex items-center gap-2 text-xs text-[var(--muted)]">
-                      Direction
+                      Repair direction
                       <select
                         value={sharedVault.tailnetSyncDirection}
                         onChange={(event) => updateSharedVault({ tailnetSyncDirection: event.target.value as "bidirectional" | "push" | "pull" })}
@@ -6304,18 +6351,6 @@ export default function Home() {
                         <option value="push">This Mac to Tailnet machine</option>
                         <option value="pull">Tailnet machine to This Mac</option>
                       </select>
-                    </label>
-                    <label className="flex items-center gap-2 text-xs text-[var(--muted)]">
-                      Every
-                      <input
-                        type="number"
-                        min={10}
-                        max={300}
-                        value={sharedVault.tailnetSyncIntervalSeconds}
-                        onChange={(event) => updateSharedVault({ tailnetSyncIntervalSeconds: Number(event.target.value) || 20 })}
-                        className="w-16 rounded-md border border-[rgba(148,163,184,0.18)] bg-[rgba(10,14,21,0.7)] px-2 py-1 text-[var(--foreground)]"
-                      />
-                      sec
                     </label>
 	                    <Button type="button" size="sm" variant="secondary" disabled={Boolean(vaultSyncPending)} onClick={pairSyncthingVaultSync}>
 	                      {vaultSyncPending === "syncthing" ? "Pairing..." : "Pair realtime sync"}

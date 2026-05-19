@@ -21,6 +21,11 @@ const hermesApiPort = Number(process.env.AGENT_TELEMETRY_HERMES_API_PORT || proc
 const hermesApiBaseUrl = `http://${hermesApiHost}:${hermesApiPort}`;
 const hermesApiStartTimeoutMs = Number(process.env.AGENT_TELEMETRY_HERMES_API_START_TIMEOUT_MS || 15_000);
 const syncthingApiBaseUrl = process.env.SYNCTHING_API_URL || "http://127.0.0.1:8384";
+const defaultSyncPath = expandHome(
+  process.env.OMNI_HIVEMIND_SYNC_PATH
+    || process.env.NEXT_PUBLIC_OBSIDIAN_VAULT_PATH
+    || "~/Documents/Obsidian/Omni-Agent Hivemind Vault",
+);
 let hermesApiProcess = null;
 let hermesApiStartPromise = null;
 
@@ -321,6 +326,7 @@ async function syncthingStatus() {
     host: hostname(),
     deviceID: system.myID,
     guiAddress: syncthingApiBaseUrl,
+    defaultSyncPath,
     version: version?.version,
     connections,
   };
@@ -936,7 +942,7 @@ createServer(async (request, response) => {
       ok: true,
       host: hostname(),
       version: await appVersion(),
-      capabilities: { chat: true, runtimes: ["hermes"], syncthing: true },
+      capabilities: { chat: true, runtimes: ["hermes"], syncthing: true, defaultSyncPath },
     });
     return;
   }

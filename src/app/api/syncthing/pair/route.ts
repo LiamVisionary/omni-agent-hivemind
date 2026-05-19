@@ -15,6 +15,12 @@ type PairBody = {
   remoteAddressHost?: string;
 };
 
+type SyncthingStatus = {
+  deviceID?: string;
+  host?: string;
+  defaultSyncPath?: string;
+};
+
 function collectorBase(value?: string | null) {
   return (value?.trim() || "http://127.0.0.1:8787").replace(/\/+$/, "");
 }
@@ -46,17 +52,19 @@ export async function POST(request: Request) {
     const body = await request.json() as PairBody;
     const localBase = collectorBase(body.localCollectorUrl);
     const remoteBase = collectorBase(body.remoteCollectorUrl);
-    if (!body.localPath?.trim()) throw new Error("localPath is required.");
-    if (!body.remotePath?.trim()) throw new Error("remotePath is required.");
     if (!body.remoteCollectorUrl?.trim()) throw new Error("remoteCollectorUrl is required.");
 
     const [localStatus, remoteStatus] = await Promise.all([
       collectorJson(localBase, "/syncthing/status"),
       collectorJson(remoteBase, "/syncthing/status"),
-    ]);
+    ]) as [SyncthingStatus, SyncthingStatus];
     if (!localStatus.deviceID || !remoteStatus.deviceID) {
       throw new Error("Both collectors must report Syncthing device IDs.");
     }
+    const localPath = body.localPath?.trim() || localStatus.defaultSyncPath?.trim();
+    const remotePath = body.remotePath?.trim() || remoteStatus.defaultSyncPath?.trim();
+    if (!localPath) throw new Error("localPath is required because the local collector did not report a default sync path.");
+    if (!remotePath) throw new Error("remotePath is required because the remote collector did not report a default sync path.");
 
     const folderId = body.folderId?.trim() || "omni-agent-hivemind-vault";
     const label = body.label?.trim() || "Omni-Agent Hivemind Vault";
@@ -66,7 +74,7 @@ export async function POST(request: Request) {
         body: JSON.stringify({
           folderId,
           label,
-          path: body.localPath,
+          path: localPath,
           peerDeviceID: remoteStatus.deviceID,
           peerName: body.remoteName || remoteStatus.host,
           peerAddresses: staticAddress(body.remoteTailscaleIp || body.remoteAddressHost),
@@ -77,7 +85,7 @@ export async function POST(request: Request) {
         body: JSON.stringify({
           folderId,
           label,
-          path: body.remotePath,
+          path: remotePath,
           peerDeviceID: localStatus.deviceID,
           peerName: localStatus.host,
           peerAddresses: staticAddress(body.localTailscaleIp),

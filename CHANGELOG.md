@@ -3,6 +3,14 @@
 This file records user-visible changes before they are committed. New work should
 be added here first, then marked `Committed` or `Pushed` after the git action.
 
+## 2026-05-20 01:49 WITA - Auto-Pair Tailnet Syncthing
+
+- Status: Uncommitted
+- Areas changed: Collector Syncthing status, Syncthing pairing API, shared vault defaults/UI, fleet discovery capability typing, changelog
+- Summary: Make realtime Tailnet sync work out of the box by enabling auto-pair by default, having collectors advertise a default shared-brain sync path, allowing the pair API to use collector defaults when no remote path is provided, and auto-pairing reachable Syncthing-capable Tailnet collectors from the dashboard without requiring manual folder entry.
+- Verification: Pending: syntax checks, typecheck, and local/remote auto-pair smoke.
+- Intended commit message: `Auto-pair Tailnet Syncthing`
+
 ## 2026-05-20 01:28 WITA - Simplify Machine Setup Modal
 
 - Status: Uncommitted

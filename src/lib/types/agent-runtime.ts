@@ -20,6 +20,8 @@ export interface AgentProfile {
   collectorCapabilities?: {
     chat?: boolean;
     runtimes?: string[];
+    syncthing?: boolean;
+    defaultSyncPath?: string;
   };
   beeRole?: BeeAgentRole;
   workerClass?: BeeWorkerClass;
@@ -49,7 +51,7 @@ export const DEFAULT_SHARED_VAULT: SharedVaultConfig = {
   tailnetSyncHost: "",
   tailnetSyncPath: "",
   tailnetSyncDirection: "bidirectional",
-  tailnetSyncEnabled: false,
+  tailnetSyncEnabled: true,
   tailnetSyncIntervalSeconds: 20,
   inboxFolder: "Agent Inbox",
   sharedNotePath: "Agent Team/Shared Context.md",

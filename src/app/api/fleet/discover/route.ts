@@ -44,6 +44,8 @@ type CollectorVersion = {
 type CollectorCapabilities = {
   chat?: boolean;
   runtimes?: string[];
+  syncthing?: boolean;
+  defaultSyncPath?: string;
 };
 
 function simplifyDevice(peer: TailscalePeer, self = false): Device {
