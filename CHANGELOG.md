@@ -11,6 +11,14 @@ be added here first, then marked `Committed` or `Pushed` after the git action.
 - Verification: `node --check scripts/agent-telemetry-collector.mjs`; `git diff --check -- scripts/agent-telemetry-collector.mjs CHANGELOG.md`; pushed hotfix commit `5e4f143` to `origin/main`; Ubuntu collector pulled commit `5e4f143`, but its running collector process still needs restart because `/health` does not yet report capabilities and `/chat` still returns not found.
 - Intended commit message: `Add collector Hermes chat bridge`
 
+## 2026-05-19 10:03 WITA - Stop Stale Collector Listener During Install
+
+- Status: Uncommitted
+- Areas changed: Telemetry collector installer
+- Summary: Stop any existing process listening on the telemetry collector port before restarting the systemd user service so old manually-started collectors cannot keep serving stale code after an update.
+- Verification: `bash -n scripts/install-telemetry-collector.sh`; `git diff --check -- scripts/install-telemetry-collector.sh` passed.
+- Intended commit message: `Stop stale collector listener during install`
+
 ## 2026-05-18 18:53 WITA - Stabilize Agent Activity Cards
 
 - Status: Pushed

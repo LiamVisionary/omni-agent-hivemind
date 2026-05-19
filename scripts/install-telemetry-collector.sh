@@ -11,6 +11,20 @@ if [[ ! -f "$COLLECTOR" ]]; then
   exit 1
 fi
 
+stop_existing_listener() {
+  local pids=""
+  if command -v lsof >/dev/null 2>&1; then
+    pids="$(lsof -tiTCP:"$PORT" -sTCP:LISTEN 2>/dev/null || true)"
+  elif command -v fuser >/dev/null 2>&1; then
+    pids="$(fuser "$PORT/tcp" 2>/dev/null || true)"
+  fi
+  if [[ -n "$pids" ]]; then
+    echo "Stopping existing collector listener on port $PORT: $pids"
+    kill $pids >/dev/null 2>&1 || true
+    sleep 1
+  fi
+}
+
 if [[ "$(uname -s)" == "Darwin" ]]; then
   PLIST="$HOME/Library/LaunchAgents/com.agent-control-room.telemetry.plist"
   mkdir -p "$(dirname "$PLIST")"
@@ -41,6 +55,7 @@ PLIST
   launchctl kickstart -k "gui/$(id -u)/com.agent-control-room.telemetry" >/dev/null 2>&1 || true
   echo "Installed macOS LaunchAgent on port $PORT"
 else
+  stop_existing_listener
   SERVICE="$HOME/.config/systemd/user/agent-telemetry.service"
   mkdir -p "$(dirname "$SERVICE")"
   cat > "$SERVICE" <<SERVICE
