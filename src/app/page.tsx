@@ -1,13 +1,16 @@
 "use client";
 
-import { FormEvent, useCallback, useEffect, useMemo, useRef, useState, type PointerEvent, type ReactNode } from "react";
+import { FormEvent, useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent, type PointerEvent, type ReactNode } from "react";
 import Image from "next/image";
 import { motion } from "motion/react";
 import {
   Activity,
+  ArrowUp,
+  Bell,
   Bot,
   BrainCircuit,
   Check,
+  CheckCheck,
   ChevronRight,
   Clock3,
   CircleAlert,
@@ -20,12 +23,14 @@ import {
   FileText,
   FlaskConical,
   Folder,
+  FileUp,
   GitBranch,
   Heart,
   Hexagon,
   KanbanSquare,
   Layers3,
   LineChart,
+  LoaderCircle,
   MessageSquare,
   MoreHorizontal,
   Monitor,
@@ -39,13 +44,17 @@ import {
   ShieldCheck,
   Sparkles,
   Moon,
+  Paperclip,
+  Pencil,
   Sun,
+  Mic,
   Trash2,
   Users,
   WalletCards,
   X,
 } from "lucide-react";
-import type { AgentProfile, AgentRuntime, SharedVaultConfig } from "@/lib/types/agent-runtime";
+import type { AgentProfile, AgentRuntime, BeeAgentRole, BeeWorkerClass, SharedVaultConfig } from "@/lib/types/agent-runtime";
+import type { AgentNotification, AgentNotificationSettings, AgentNotificationSummary } from "@/lib/types/agent-notifications";
 import { createAgentProfile, DEFAULT_SHARED_VAULT, RUNTIME_DEFAULTS, RUNTIME_LABELS } from "@/lib/types/agent-runtime";
 import type { AgentPaymentProvider, AgentWalletConfig } from "@/lib/types/agent-wallet";
 import type { KanbanBoard, KanbanStatus, KanbanTask } from "@/lib/types/kanban";
@@ -53,15 +62,23 @@ import { KANBAN_COLUMNS } from "@/lib/types/kanban";
 import { AGENT_PAYMENT_PROVIDER_COPY, PAYMENT_SAFETY_RULES, SOVEREIGN_AGENT_LAUNCH_STEPS } from "@/lib/config/agent-payments";
 import { buildAgentPaymentPrompt, createDefaultAgentWallet, getSurvivalSnapshot, normalizeMoney } from "@/lib/utils/agent-wallet";
 import { groupKanbanTasks } from "@/lib/utils/kanban-board";
+import {
+  BEE_AGENT_ROLES,
+  BEE_WORKER_CLASSES,
+  beeWorkerClassLabel,
+  chooseBeeAssignment,
+} from "@/lib/services/orchestration/bee-roles";
 import chatStyles from "./chat.module.css";
 import fleetStyles from "./fleet.module.css";
 import kanbanStyles from "./kanban-board.module.css";
 import mirosharkStyles from "./miroshark.module.css";
+import notificationStyles from "./notifications.module.css";
 import vaultStyles from "./vault.module.css";
 import walletStyles from "./wallets.module.css";
 import xThreadStyles from "./miroshark-x-thread.module.css";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import {
   AgentCell,
   AgentTaskList,
@@ -85,10 +102,69 @@ type GatewayStatus = {
   error?: string;
 };
 
+type VaultSyncStatus = {
+  ok?: boolean;
+  error?: string;
+  method?: "syncthing" | "rsync";
+  message?: string;
+  folderId?: string;
+  dryRun?: boolean;
+  direction?: "bidirectional" | "push" | "pull";
+  command?: string;
+  stdout?: string;
+  stderr?: string;
+  exitCode?: number | null;
+  conflicts?: string[];
+  changedFiles?: string[];
+};
+
 type ChatMessage = {
   role: "user" | "assistant" | "system";
   content: string;
+  attachments?: ChatAttachment[];
 };
+
+type ChatAttachment = {
+  id: string;
+  kind: "image" | "audio" | "file";
+  name: string;
+  mimeType: string;
+  size: number;
+  dataUrl: string;
+};
+
+type ChatContentPart =
+  | { type: "text"; text: string }
+  | { type: "image_url"; image_url: { url: string } }
+  | { type: "file"; file: { filename: string; file_data: string } };
+
+type SpeechRecognitionResultLike = {
+  isFinal: boolean;
+  length: number;
+  [index: number]: { transcript: string };
+};
+
+type SpeechRecognitionEventLike = Event & {
+  resultIndex: number;
+  results: {
+    length: number;
+    [index: number]: SpeechRecognitionResultLike;
+  };
+};
+
+type SpeechRecognitionLike = EventTarget & {
+  continuous: boolean;
+  interimResults: boolean;
+  lang: string;
+  start: () => void;
+  stop: () => void;
+  abort: () => void;
+  onresult: ((event: SpeechRecognitionEventLike) => void) | null;
+  onerror: ((event: Event & { error?: string; message?: string }) => void) | null;
+  onend: (() => void) | null;
+};
+
+type SpeechRecognitionConstructor = new () => SpeechRecognitionLike;
 
 function kanbanClass(...names: Array<string | false | null | undefined>) {
   return cssClass(kanbanStyles, ...names);
@@ -113,6 +189,10 @@ function mirosharkClass(...names: Array<string | false | null | undefined>) {
   return cssClass(mirosharkStyles, ...names);
 }
 
+function notificationClass(...names: Array<string | false | null | undefined>) {
+  return cssClass(notificationStyles, ...names);
+}
+
 function vaultClass(...names: Array<string | false | null | undefined>) {
   return cssClass(vaultStyles, ...names);
 }
@@ -132,6 +212,18 @@ type AgentTask = {
   completedAt?: number;
   source?: string;
   messages?: ChatMessage[];
+};
+
+type WalletActionState = {
+  busy?: boolean;
+  message?: string;
+  error?: string;
+  sendTo?: string;
+  sendAmount?: string;
+  confirmation?: string;
+  x402Url?: string;
+  x402Method?: string;
+  x402Confirmation?: string;
 };
 
 type AgentSnapshot = {
@@ -185,6 +277,7 @@ type ChatTreeFolder = {
   key: string;
   label: string;
   chats: ChatTreeItem[];
+  onStartChat?: () => void;
 };
 
 type ChatTreeMachine = {
@@ -192,6 +285,7 @@ type ChatTreeMachine = {
   name: string;
   detail: string;
   folders: ChatTreeFolder[];
+  onStartChat?: () => void;
 };
 
 type DiscoveredMachine = {
@@ -245,6 +339,34 @@ type KanbanResponse = {
   error?: string;
 };
 
+type NoteTaskCandidate = {
+  idempotencyKey: string;
+  title: string;
+  body: string;
+  sourcePath: string;
+  line: number;
+  project?: string;
+  section?: string;
+  kind: "checkbox" | "next-action";
+};
+
+type NoteIntakeResponse = {
+  ok?: boolean;
+  candidates?: NoteTaskCandidate[];
+  imported?: NoteTaskCandidate[];
+  skipped?: number;
+  board?: KanbanBoard;
+  error?: string;
+};
+
+type NotificationsResponse = Partial<AgentNotificationSummary> & {
+  ok?: boolean;
+  notifications?: AgentNotification[];
+  nextCursor?: number | null;
+  limit?: number;
+  error?: string;
+};
+
 type BrainAccessEvent = {
   id: string;
   notePath: string;
@@ -291,6 +413,56 @@ type BrainGraphResponse = {
   graph?: BrainGraph;
   error?: string;
 };
+
+type BrainSkillProviderId = "claude" | "codex" | "hermes" | "gemini" | "openclaw";
+
+type BrainSkillSummary = {
+  id: string;
+  slug: string;
+  name: string;
+  description: string;
+  provider: BrainSkillProviderId | "shared";
+  providerLabel: string;
+  path: string;
+  relativePath: string;
+  checksum: string;
+  imported: boolean;
+  importedAs?: string;
+};
+
+type BrainSkillProviderInventory = {
+  id: BrainSkillProviderId;
+  label: string;
+  home: string;
+  skills: BrainSkillSummary[];
+  installed: boolean;
+};
+
+type BrainSkillInventory = {
+  ok?: boolean;
+  vaultPath: string;
+  skillsFolder: string;
+  readmePath: string;
+  shared: BrainSkillSummary[];
+  providers: BrainSkillProviderInventory[];
+  totals: {
+    shared: number;
+    providerSkills: number;
+    importable: number;
+  };
+  imported?: BrainSkillSummary[];
+  skipped?: BrainSkillSummary[];
+  provider?: BrainSkillProviderId | "all";
+  error?: string;
+};
+
+const BRAIN_SKILL_PROVIDER_FALLBACK: BrainSkillProviderInventory[] = [
+  { id: "claude", label: "Claude", home: "~/.claude", skills: [], installed: false },
+  { id: "codex", label: "Codex", home: "~/.codex", skills: [], installed: false },
+  { id: "hermes", label: "Hermes", home: "~/.hermes", skills: [], installed: false },
+  { id: "gemini", label: "Gemini", home: "~/.gemini", skills: [], installed: false },
+  { id: "openclaw", label: "OpenClaw", home: "~/.openclaw", skills: [], installed: false },
+];
 
 type MiroSharkStatus = {
   configured: boolean;
@@ -546,7 +718,7 @@ function mirosharkStat(seed: number | undefined, base: number, spread: number) {
   return base + ((seed ?? 0) * 17) % spread;
 }
 
-type DashboardView = "agents" | "kanban" | "swarm" | "wallet" | "vault" | "chat";
+type DashboardView = "agents" | "kanban" | "swarm" | "wallet" | "vault" | "notifications" | "chat";
 type DashboardTheme = "dark" | "hive-light";
 
 const STORAGE_KEY = "openclaw-next.agentProfiles.v1";
@@ -574,6 +746,18 @@ function seedAgents(): AgentProfile[] {
   ];
 }
 
+function normalizeAgentProfile(agent: AgentProfile): AgentProfile {
+  const inferredQueen = agent.beeRole === "queen" || /queen|orchestrat|lead|main/i.test(agent.name) || agent.runtime === "openclaw";
+  return {
+    ...agent,
+    localDataDir: agent.runtime === "hermes" && agent.id === "hermes-orchestrator" && !agent.localDataDir
+      ? "~/.hermes"
+      : agent.localDataDir,
+    beeRole: agent.beeRole ?? (inferredQueen ? "queen" : "worker"),
+    workerClass: agent.workerClass ?? "general",
+  };
+}
+
 function parseStoredAgents(): AgentProfile[] {
   if (typeof window === "undefined") return seedAgents();
   const raw = window.localStorage.getItem(STORAGE_KEY);
@@ -581,11 +765,7 @@ function parseStoredAgents(): AgentProfile[] {
   try {
     const parsed = JSON.parse(raw) as AgentProfile[];
     if (!Array.isArray(parsed) || parsed.length === 0) return seedAgents();
-    return parsed.map((agent) => (
-      agent.runtime === "hermes" && agent.id === "hermes-orchestrator" && !agent.localDataDir
-        ? { ...agent, localDataDir: "~/.hermes" }
-        : agent
-    ));
+    return parsed.map(normalizeAgentProfile);
   } catch {
     return seedAgents();
   }
@@ -646,6 +826,37 @@ function formatRelativeTime(timestamp: number) {
   if (hours < 24) return `${hours}h ago`;
   const days = Math.floor(hours / 24);
   return `${days}d ago`;
+}
+
+function notificationDayLabel(value: string) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "Undated";
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const day = new Date(date);
+  day.setHours(0, 0, 0, 0);
+  const diffDays = Math.round((today.getTime() - day.getTime()) / 86_400_000);
+  if (diffDays === 0) return "Today";
+  if (diffDays === 1) return "Yesterday";
+  if (diffDays < 7) return date.toLocaleDateString([], { weekday: "long" });
+  return date.toLocaleDateString([], { month: "short", day: "numeric", year: "numeric" });
+}
+
+function groupNotifications(notifications: AgentNotification[]) {
+  return notifications.reduce<Array<{ label: string; items: AgentNotification[] }>>((groups, notification) => {
+    const label = notificationDayLabel(notification.createdAt);
+    const group = groups.find((item) => item.label === label);
+    if (group) group.items.push(notification);
+    else groups.push({ label, items: [notification] });
+    return groups;
+  }, []);
+}
+
+function notificationIcon(kind: AgentNotification["kind"], priority: AgentNotification["priority"]) {
+  if (priority === "urgent" || priority === "high") return <CircleAlert aria-hidden="true" />;
+  if (kind === "task" || kind === "decision") return <Check aria-hidden="true" />;
+  if (kind === "system") return <Settings2 aria-hidden="true" />;
+  return <MessageSquare aria-hidden="true" />;
 }
 
 function inferCurrentTask(messages: ChatMessage[]) {
@@ -709,7 +920,7 @@ function agentAliasTarget(agent: AgentProfile, autoDiscoveredAgents: AgentProfil
 function agentAliasMap(configuredAgents: AgentProfile[], autoDiscoveredAgents: AgentProfile[]) {
   const entries = configuredAgents.flatMap((agent) => {
     const target = agentAliasTarget(agent, autoDiscoveredAgents);
-    return target ? [[agent.id, target.id] as const] : [];
+    return target ? [[target.id, agent.id] as const] : [];
   });
   return new Map(entries);
 }
@@ -760,26 +971,118 @@ function chatSetupIssue(agent: AgentProfile) {
   return "";
 }
 
+function kanbanTaskMeta(task: KanbanTask) {
+  if (task.status === "ideas") return "Parked until you move it to Ready for Queen";
+  if (task.status === "ready") return "Waiting for Queen Bee";
+  if (task.status === "working") return task.assignee ? `${task.assignee} is working` : "Claimed by the colony";
+  if (task.status === "needs-human") return "Needs your input";
+  if (task.status === "done") return "Completed";
+  return "Archived";
+}
+
+function kanbanTaskBee(task: KanbanTask, agents: AgentProfile[]) {
+  if (task.status === "ready") {
+    return {
+      icon: "/icons/queen-bee.png",
+      roleLabel: "Queen Bee",
+      assignee: "Waiting for pickup",
+    };
+  }
+  const assignee = task.assignee?.trim();
+  const agent = assignee
+    ? agents.find((item) => item.name === assignee || item.id === assignee || item.agentId === assignee)
+    : undefined;
+  if (task.status === "done") {
+    const completedBy = agent?.name || assignee || "user";
+    const completedByQueen = agent?.beeRole === "queen";
+    return {
+      icon: agent ? (completedByQueen ? "/icons/queen-bee.png" : "/icons/worker-bee.png") : "",
+      roleLabel: "Completed by:",
+      assignee: completedBy,
+    };
+  }
+  const queen = task.tenant === "queen-bee" || agent?.beeRole === "queen";
+  const workerClass = agent?.workerClass
+    ?? (task.tenant?.endsWith("-worker") ? task.tenant.replace(/-worker$/, "") as BeeWorkerClass : undefined);
+  const roleLabel = queen ? "Queen bee" : `${beeWorkerClassLabel(workerClass)} worker bee`;
+  return {
+    icon: queen ? "/icons/queen-bee.png" : "/icons/worker-bee.png",
+    roleLabel,
+    assignee: assignee || "Unassigned",
+  };
+}
+
+function kanbanTaskBadge(task: KanbanTask) {
+  if (task.status === "ready") return "ready";
+  if (task.status === "working") return "working";
+  if (task.status === "needs-human") return "needs human";
+  return task.status.replace("-", " ");
+}
+
+function kanbanTaskDispatchPrompt(task: KanbanTask, assignment: ReturnType<typeof chooseBeeAssignment>) {
+  return [
+    "You are receiving an automated Kanban assignment from the Queen Bee orchestrator.",
+    `Task: ${task.title}`,
+    task.body ? `Task details:\n${task.body}` : "Task details: none provided.",
+    task.result ? `Existing notes:\n${task.result}` : "",
+    `Suggested worker class: ${beeWorkerClassLabel(assignment.workerClass)}.`,
+    "Complete the task as far as your runtime/tools allow. If you are blocked, say exactly what human input, access, or setup is needed. End with a concise result summary and any evidence.",
+  ].filter(Boolean).join("\n\n");
+}
+
+function kanbanReadyPickupSignature(task: KanbanTask, agents: AgentProfile[]) {
+  const agentSignature = agents
+    .map((agent) => [
+      agent.id,
+      agent.name,
+      agent.beeRole ?? "",
+      agent.workerClass ?? "",
+      agent.telemetryUrl || agent.gatewayUrl ? "online" : "offline",
+    ].join(":"))
+    .sort()
+    .join("|");
+  return `${task.id}:${task.updatedAt}:${agentSignature}`;
+}
+
+function kanbanTaskAssigneeAgent(task: KanbanTask, agents: AgentProfile[]) {
+  const assignee = task.assignee?.trim();
+  if (!assignee) return undefined;
+  return agents.find((agent) => agent.name === assignee || agent.id === assignee || agent.agentId === assignee);
+}
+
+function kanbanTaskAssignmentForAgent(task: KanbanTask, agent: AgentProfile): ReturnType<typeof chooseBeeAssignment> {
+  const fallback = chooseBeeAssignment(task, [agent]);
+  return {
+    ...fallback,
+    queen: agent.beeRole === "queen" ? agent : fallback.queen,
+    worker: agent,
+    mode: agent.beeRole === "queen" ? "queen" : "worker",
+    reason: `${agent.name} was already assigned on the Work board, so this is a retry of the claimed task.`,
+  };
+}
+
 function viewIcon(view: DashboardView) {
   if (view === "agents") return <Network aria-hidden="true" />;
   if (view === "kanban") return <KanbanSquare aria-hidden="true" />;
   if (view === "swarm") return <Activity aria-hidden="true" />;
   if (view === "wallet") return <WalletCards aria-hidden="true" />;
   if (view === "vault") return <BrainCircuit aria-hidden="true" />;
+  if (view === "notifications") return <Bell aria-hidden="true" />;
   return <MessageSquare aria-hidden="true" />;
 }
 
 function dedupeAgents(configuredAgents: AgentProfile[], autoDiscoveredAgents: AgentProfile[]) {
   const aliases = agentAliasMap(configuredAgents, autoDiscoveredAgents);
-  const discoveredKeys = new Set(autoDiscoveredAgents.map(agentWorkspaceKey));
-  const configured = configuredAgents.filter((agent) => (
-    !aliases.has(agent.id) && !discoveredKeys.has(agentWorkspaceKey(agent))
-  ));
+  const configuredKeys = new Set(configuredAgents.map(agentWorkspaceKey));
+  const configured = configuredAgents;
   return [
     ...configured,
-    ...autoDiscoveredAgents.filter((agent, index, list) => (
-      list.findIndex((item) => agentWorkspaceKey(item) === agentWorkspaceKey(agent)) === index
-    )),
+    ...autoDiscoveredAgents.filter((agent, index, list) => {
+      const key = agentWorkspaceKey(agent);
+      return !aliases.has(agent.id)
+        && !configuredKeys.has(key)
+        && list.findIndex((item) => agentWorkspaceKey(item) === key) === index;
+    }),
   ];
 }
 
@@ -942,6 +1245,109 @@ function ChatMarkdown({ text }: { text: string }) {
   }
 
   return <div className={chatClass("messageMarkdown")}>{blocks}</div>;
+}
+
+function attachmentSummary(attachments: ChatAttachment[]) {
+  if (attachments.length === 0) return "";
+  const images = attachments.filter((attachment) => attachment.kind === "image").length;
+  const audio = attachments.filter((attachment) => attachment.kind === "audio").length;
+  const files = attachments.filter((attachment) => attachment.kind === "file").length;
+  return [
+    images ? `${images} image${images === 1 ? "" : "s"}` : "",
+    audio ? `${audio} audio clip${audio === 1 ? "" : "s"}` : "",
+    files ? `${files} file${files === 1 ? "" : "s"}` : "",
+  ].filter(Boolean).join(", ");
+}
+
+function messageContentParts(text: string, attachments: ChatAttachment[]): string | ChatContentPart[] {
+  if (attachments.length === 0) return text;
+  const parts: ChatContentPart[] = [];
+  if (text.trim()) parts.push({ type: "text", text: text.trim() });
+  attachments.forEach((attachment) => {
+    if (attachment.kind === "image") {
+      parts.push({ type: "image_url", image_url: { url: attachment.dataUrl } });
+      return;
+    }
+    if (attachment.kind === "file") {
+      parts.push({
+        type: "file",
+        file: {
+          filename: attachment.name,
+          file_data: attachment.dataUrl,
+        },
+      });
+      return;
+    }
+    parts.push({
+      type: "file",
+      file: {
+        filename: attachment.name,
+        file_data: attachment.dataUrl,
+      },
+    });
+  });
+  return parts;
+}
+
+function readAttachmentFile(file: File, kind: "image" | "file"): Promise<ChatAttachment> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const dataUrl = typeof reader.result === "string" ? reader.result : "";
+      if (!dataUrl) {
+        reject(new Error(`Could not read ${file.name}`));
+        return;
+      }
+      resolve({
+        id: `${file.name}-${file.size}-${file.lastModified}-${crypto.randomUUID()}`,
+        kind,
+        name: file.name,
+        mimeType: file.type || "application/octet-stream",
+        size: file.size,
+        dataUrl,
+      });
+    };
+    reader.onerror = () => reject(new Error(`Could not read ${file.name}`));
+    reader.readAsDataURL(file);
+  });
+}
+
+function attachmentSizeLabel(size: number) {
+  if (size >= 1_000_000) return `${(size / 1_000_000).toFixed(1)} MB`;
+  return `${Math.max(1, Math.round(size / 1000))} KB`;
+}
+
+function speechRecognitionConstructor(): SpeechRecognitionConstructor | null {
+  if (typeof window === "undefined") return null;
+  const speechWindow = window as Window & {
+    SpeechRecognition?: SpeechRecognitionConstructor;
+    webkitSpeechRecognition?: SpeechRecognitionConstructor;
+  };
+  return speechWindow.SpeechRecognition ?? speechWindow.webkitSpeechRecognition ?? null;
+}
+
+function MessageAttachments({ attachments }: { attachments?: ChatAttachment[] }) {
+  if (!attachments?.length) return null;
+  return (
+    <div className={chatClass("messageAttachments")}>
+      {attachments.map((attachment) => (
+        <figure className={chatClass("messageAttachment", attachment.kind)} key={attachment.id}>
+          {attachment.kind === "image" ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img src={attachment.dataUrl} alt={attachment.name} />
+          ) : attachment.kind === "audio" ? (
+            <audio src={attachment.dataUrl} controls preload="metadata" />
+          ) : (
+            <a href={attachment.dataUrl} download={attachment.name}>
+              <FileText aria-hidden="true" />
+              {attachment.name}
+            </a>
+          )}
+          <figcaption>{attachment.name}</figcaption>
+        </figure>
+      ))}
+    </div>
+  );
 }
 
 function machineVersionCopy(machine: MachineGroup, latestCommit?: string) {
@@ -1213,21 +1619,35 @@ export default function Home() {
   const [hydrated, setHydrated] = useState(false);
   const [agents, setAgents] = useState<AgentProfile[]>(seedAgents);
   const [selectedAgentId, setSelectedAgentId] = useState(() => seedAgents()[0]?.id ?? "openclaw-main");
-  const [draftRuntime, setDraftRuntime] = useState<AgentRuntime>("hermes");
   const [text, setText] = useState("");
+  const [chatAttachments, setChatAttachments] = useState<ChatAttachment[]>([]);
+  const [attachmentError, setAttachmentError] = useState("");
+  const [attachmentMenuOpen, setAttachmentMenuOpen] = useState(false);
+  const [recording, setRecording] = useState(false);
+  const [voiceTranscript, setVoiceTranscript] = useState("");
+  const [voiceBands, setVoiceBands] = useState<number[]>(() => Array(18).fill(0));
   const [status, setStatus] = useState<GatewayStatus | null>(null);
   const [statusAgentId, setStatusAgentId] = useState("");
   const [vaultStatus, setVaultStatus] = useState<Record<string, unknown> | null>(null);
   const [controlRoomStatus, setControlRoomStatus] = useState<Record<string, unknown> | null>(null);
+  const [vaultSyncStatus, setVaultSyncStatus] = useState<VaultSyncStatus | null>(null);
+  const [vaultSyncPending, setVaultSyncPending] = useState("");
   const [sharedVault, setSharedVault] = useState<SharedVaultConfig>(DEFAULT_SHARED_VAULT);
   const [brainGraph, setBrainGraph] = useState<BrainGraph | null>(null);
   const [brainGraphStatus, setBrainGraphStatus] = useState("");
   const [brainGraphLoading, setBrainGraphLoading] = useState(false);
   const [selectedBrainNodeId, setSelectedBrainNodeId] = useState("");
   const [brainPan, setBrainPan] = useState({ x: 0, y: 0 });
+  const [brainSkills, setBrainSkills] = useState<BrainSkillInventory | null>(null);
+  const [brainSkillsStatus, setBrainSkillsStatus] = useState("");
+  const [brainSkillsLoading, setBrainSkillsLoading] = useState(false);
+  const [brainSkillImportProvider, setBrainSkillImportProvider] = useState<BrainSkillProviderId | "all" | "">("");
+  const [brainSkillImportSuccess, setBrainSkillImportSuccess] = useState<BrainSkillProviderId | "all" | "">("");
+  const [brainSkillProviderModalOpen, setBrainSkillProviderModalOpen] = useState(false);
   const [messagesByAgent, setMessagesByAgent] = useState<Record<string, ChatMessage[]>>({});
   const [tasks, setTasks] = useState<AgentTask[]>([]);
   const [walletsByAgent, setWalletsByAgent] = useState<Record<string, AgentWalletConfig>>({});
+  const [walletActionsByAgent, setWalletActionsByAgent] = useState<Record<string, WalletActionState>>({});
   const [fleetSnapshots, setFleetSnapshots] = useState<Record<string, AgentSnapshot>>({});
   const [fleetCheckedAt, setFleetCheckedAt] = useState<number | null>(null);
   const [tailscaleDevices, setTailscaleDevices] = useState<TailscaleDevice[]>([]);
@@ -1237,6 +1657,21 @@ export default function Home() {
   const [updateStatusByMachine, setUpdateStatusByMachine] = useState<Record<string, MachineUpdateStatus>>({});
   const [copiedUpdateDetailKey, setCopiedUpdateDetailKey] = useState("");
   const [setupMachineKey, setSetupMachineKey] = useState("");
+  const [agentRoleModalId, setAgentRoleModalId] = useState("");
+  const [agentCreateMachineKey, setAgentCreateMachineKey] = useState("");
+  const [agentCreateDraft, setAgentCreateDraft] = useState<{
+    name: string;
+    runtime: AgentRuntime;
+    beeRole: BeeAgentRole;
+    workerClass: BeeWorkerClass;
+  }>({
+    name: "",
+    runtime: "hermes",
+    beeRole: "worker",
+    workerClass: "general",
+  });
+  const [agentRenameDraft, setAgentRenameDraft] = useState("");
+  const [agentRenameEditing, setAgentRenameEditing] = useState(false);
   const [setupCommandCopied, setSetupCommandCopied] = useState(false);
   const [kanbanBoard, setKanbanBoard] = useState<KanbanBoard | null>(null);
   const [kanbanBoards, setKanbanBoards] = useState<KanbanBoardSummary[]>([]);
@@ -1249,6 +1684,14 @@ export default function Home() {
   const [kanbanTenants, setKanbanTenants] = useState<string[]>([]);
   const [kanbanAssignees, setKanbanAssignees] = useState<string[]>([]);
   const [kanbanStorage, setKanbanStorage] = useState<KanbanResponse["storage"] | null>(null);
+  const [noteIntakeStatus, setNoteIntakeStatus] = useState("");
+  const [noteIntakePreview, setNoteIntakePreview] = useState<NoteTaskCandidate[]>([]);
+  const [noteIntakePending, setNoteIntakePending] = useState("");
+  const [notifications, setNotifications] = useState<AgentNotification[]>([]);
+  const [notificationSummary, setNotificationSummary] = useState<AgentNotificationSummary | null>(null);
+  const [notificationCursor, setNotificationCursor] = useState<number | null>(0);
+  const [notificationsLoading, setNotificationsLoading] = useState(false);
+  const [notificationsStatus, setNotificationsStatus] = useState("");
   const [selectedKanbanTaskId, setSelectedKanbanTaskId] = useState("");
   const [quickAddStatus, setQuickAddStatus] = useState<KanbanStatus | "">("");
   const [quickAddDrafts, setQuickAddDrafts] = useState<Record<string, string>>({});
@@ -1273,7 +1716,6 @@ export default function Home() {
   const [mirosharkExperimentPending, setMirosharkExperimentPending] = useState("");
   const [activeView, setActiveView] = useState<DashboardView>("agents");
   const [dashboardTheme, setDashboardTheme] = useState<DashboardTheme>("dark");
-  const [agentComposer, setAgentComposer] = useState({ name: "", machineKey: "" });
   const [busy, setBusy] = useState(false);
   const [busyAgentId, setBusyAgentId] = useState("");
   const [hasStreamingChunk, setHasStreamingChunk] = useState(false);
@@ -1281,8 +1723,23 @@ export default function Home() {
   const [selectedChatLeafKey, setSelectedChatLeafKey] = useState("");
   const [selectedChatPreview, setSelectedChatPreview] = useState<{ agentId: string; leafKey: string; messages: ChatMessage[] } | null>(null);
   const [expandedChatFolders, setExpandedChatFolders] = useState<Set<string>>(() => new Set());
+  const [chatContextMenu, setChatContextMenu] = useState<"machine" | "directory" | "">("");
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
+  const chatFileInputRef = useRef<HTMLInputElement | null>(null);
+  const chatImageInputRef = useRef<HTMLInputElement | null>(null);
+  const attachmentMenuRef = useRef<HTMLDivElement | null>(null);
+  const chatContextMenuRef = useRef<HTMLDivElement | null>(null);
+  const voiceRecognitionRef = useRef<SpeechRecognitionLike | null>(null);
+  const voiceStreamRef = useRef<MediaStream | null>(null);
+  const voiceAudioContextRef = useRef<AudioContext | null>(null);
+  const voiceAnimationRef = useRef<number | null>(null);
+  const voiceTranscriptRef = useRef("");
+  const notificationCursorRef = useRef<number | null>(0);
+  const notificationCountRef = useRef(0);
   const mirosharkArchiveSaveKeyRef = useRef("");
+  const noteIntakeAutoInFlightRef = useRef(false);
+  const kanbanReadyPickupAttemptRef = useRef<Map<string, string>>(new Map());
+  const kanbanReadyPickupInFlightRef = useRef<Set<string>>(new Set());
   const brainDragRef = useRef<{
     pointerId: number;
     startX: number;
@@ -1339,6 +1796,51 @@ export default function Home() {
     if (!hydrated) return;
     window.localStorage.setItem(WALLET_STORAGE_KEY, JSON.stringify(walletsByAgent));
   }, [hydrated, walletsByAgent]);
+
+  useEffect(() => {
+    notificationCursorRef.current = notificationCursor;
+    notificationCountRef.current = notifications.length;
+  }, [notificationCursor, notifications.length]);
+
+  useEffect(() => {
+    if (!attachmentMenuOpen) return;
+    function closeAttachmentMenu(event: MouseEvent | TouchEvent) {
+      const target = event.target;
+      if (target instanceof Node && attachmentMenuRef.current?.contains(target)) return;
+      setAttachmentMenuOpen(false);
+    }
+    function closeAttachmentMenuOnEscape(event: KeyboardEvent) {
+      if (event.key === "Escape") setAttachmentMenuOpen(false);
+    }
+    document.addEventListener("mousedown", closeAttachmentMenu);
+    document.addEventListener("touchstart", closeAttachmentMenu);
+    document.addEventListener("keydown", closeAttachmentMenuOnEscape);
+    return () => {
+      document.removeEventListener("mousedown", closeAttachmentMenu);
+      document.removeEventListener("touchstart", closeAttachmentMenu);
+      document.removeEventListener("keydown", closeAttachmentMenuOnEscape);
+    };
+  }, [attachmentMenuOpen]);
+
+  useEffect(() => {
+    if (!chatContextMenu) return;
+    function closeChatContextMenu(event: MouseEvent | TouchEvent) {
+      const target = event.target;
+      if (target instanceof Node && chatContextMenuRef.current?.contains(target)) return;
+      setChatContextMenu("");
+    }
+    function closeChatContextMenuOnEscape(event: KeyboardEvent) {
+      if (event.key === "Escape") setChatContextMenu("");
+    }
+    document.addEventListener("mousedown", closeChatContextMenu);
+    document.addEventListener("touchstart", closeChatContextMenu);
+    document.addEventListener("keydown", closeChatContextMenuOnEscape);
+    return () => {
+      document.removeEventListener("mousedown", closeChatContextMenu);
+      document.removeEventListener("touchstart", closeChatContextMenu);
+      document.removeEventListener("keydown", closeChatContextMenuOnEscape);
+    };
+  }, [chatContextMenu]);
 
   useEffect(() => {
     let cancelled = false;
@@ -1578,6 +2080,102 @@ export default function Home() {
       : `Loaded ${data.graph.nodes.length} notes and ${data.graph.links.length} links.`);
   }, [sharedVault.enabled, sharedVault.vaultPath]);
 
+  const refreshBrainSkills = useCallback(async () => {
+    if (!sharedVault.enabled) {
+      setBrainSkills(null);
+      setBrainSkillsStatus("Shared brain is off.");
+      return;
+    }
+    setBrainSkillsLoading(true);
+    const params = new URLSearchParams();
+    if (sharedVault.vaultPath.trim()) params.set("vaultPath", sharedVault.vaultPath.trim());
+    const response = await fetch(`/api/obsidian/skills?${params.toString()}`, { cache: "no-store" }).catch(() => null);
+    const data = await response?.json().catch(() => null) as BrainSkillInventory | null;
+    setBrainSkillsLoading(false);
+    if (!response?.ok || !data?.ok) {
+      setBrainSkillsStatus(data?.error ?? "Could not read skill inventory.");
+      return;
+    }
+    setBrainSkills(data);
+    setBrainSkillsStatus(data.totals.shared
+      ? `Loaded ${data.totals.shared} shared skill${data.totals.shared === 1 ? "" : "s"}.`
+      : "The shared brain Skills folder is empty.");
+  }, [sharedVault.enabled, sharedVault.vaultPath]);
+
+  const importBrainSkills = useCallback(async (provider: BrainSkillProviderId | "all") => {
+    if (!sharedVault.enabled) {
+      setBrainSkillsStatus("Turn on the shared brain before importing skills.");
+      return;
+    }
+    setBrainSkillImportProvider(provider);
+    setBrainSkillImportSuccess("");
+    const response = await fetch("/api/obsidian/skills", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        vaultPath: sharedVault.vaultPath.trim() || undefined,
+        provider,
+      }),
+    }).catch(() => null);
+    const data = await response?.json().catch(() => null) as BrainSkillInventory | null;
+    setBrainSkillImportProvider("");
+    if (!response?.ok || !data?.ok) {
+      setBrainSkillsStatus(data?.error ?? "Could not import skills.");
+      return;
+    }
+    setBrainSkills(data);
+    setBrainSkillImportSuccess(provider);
+    setBrainSkillsStatus(`Imported ${data.imported?.length ?? 0} skill${(data.imported?.length ?? 0) === 1 ? "" : "s"} into the shared brain.`);
+    void refreshBrainGraph();
+    window.setTimeout(() => setBrainSkillImportSuccess(""), 1800);
+  }, [refreshBrainGraph, sharedVault.enabled, sharedVault.vaultPath]);
+
+  const refreshNotifications = useCallback(async (options: { append?: boolean } = {}) => {
+    if (!sharedVault.enabled) {
+      setNotifications([]);
+      setNotificationSummary(null);
+      setNotificationCursor(0);
+      setNotificationsStatus("Shared vault sync is off.");
+      return;
+    }
+    const cursor = options.append ? notificationCursorRef.current ?? 0 : 0;
+    if (options.append && notificationCursorRef.current === null) return;
+    setNotificationsLoading(true);
+    const params = new URLSearchParams({ cursor: String(cursor), limit: "40" });
+    if (sharedVault.vaultPath.trim()) params.set("vaultPath", sharedVault.vaultPath.trim());
+    if (sharedVault.notificationsFolder?.trim()) params.set("notificationsFolder", sharedVault.notificationsFolder.trim());
+    const response = await fetch(`/api/openclaw/notifications?${params.toString()}`, { cache: "no-store" }).catch(() => null);
+    const data = await response?.json().catch(() => null) as NotificationsResponse | null;
+    setNotificationsLoading(false);
+    if (!response?.ok || !data?.ok) {
+      setNotificationsStatus(data?.error ?? "Could not load notifications.");
+      return;
+    }
+    setNotifications((current) => {
+      const next = options.append ? [...current, ...(data.notifications ?? [])] : data.notifications ?? [];
+      const seen = new Set<string>();
+      return next.filter((notification) => {
+        if (seen.has(notification.id)) return false;
+        seen.add(notification.id);
+        return true;
+      });
+    });
+    setNotificationSummary({
+      total: data.total ?? 0,
+      unread: data.unread ?? 0,
+      highUnread: data.highUnread ?? 0,
+      urgentUnread: data.urgentUnread ?? 0,
+      folder: data.folder ?? sharedVault.notificationsFolder ?? "agent-notifications",
+      settings: data.settings ?? {
+        highPriorityMessagingEnabled: false,
+        messagingHandledBy: "Hermes/OpenClaw messaging agent",
+        updatedAt: new Date().toISOString(),
+      },
+    });
+    setNotificationCursor(data.nextCursor ?? null);
+    setNotificationsStatus(data.total ? `Loaded ${Math.min((options.append ? notificationCountRef.current : 0) + (data.notifications?.length ?? 0), data.total)} of ${data.total}` : "No notifications yet.");
+  }, [sharedVault.enabled, sharedVault.notificationsFolder, sharedVault.vaultPath]);
+
   async function loadMirosharkArchivedRun(simulationId: string) {
     setMirosharkArchiveStatus("Loading saved run...");
     const params = new URLSearchParams({ simulation_id: simulationId });
@@ -1701,9 +2299,24 @@ export default function Home() {
     if (!hydrated || activeView !== "vault") return;
     const timer = window.setTimeout(() => {
       void refreshBrainGraph();
+      void refreshBrainSkills();
     }, 0);
     return () => window.clearTimeout(timer);
-  }, [activeView, hydrated, refreshBrainGraph]);
+  }, [activeView, hydrated, refreshBrainGraph, refreshBrainSkills]);
+
+  useEffect(() => {
+    if (!hydrated || !sharedVault.enabled) return;
+    const timer = window.setTimeout(() => {
+      void refreshNotifications();
+    }, activeView === "notifications" ? 0 : 300);
+    const interval = window.setInterval(() => {
+      void refreshNotifications();
+    }, 30_000);
+    return () => {
+      window.clearTimeout(timer);
+      window.clearInterval(interval);
+    };
+  }, [activeView, hydrated, refreshNotifications, sharedVault.enabled]);
 
   useEffect(() => {
     if (!hydrated || !sharedVault.enabled || !mirosharkRun?.simulationId) return;
@@ -1815,7 +2428,7 @@ export default function Home() {
       if (kanbanTenantFilter) params.set("tenant", kanbanTenantFilter);
       if (kanbanAssigneeFilter) params.set("assignee", kanbanAssigneeFilter);
       if (kanbanSearch) params.set("q", kanbanSearch);
-      const response = await fetch(`/api/openclaw/kanban?${params.toString()}`, { cache: "no-store" }).catch(() => null);
+      const response = await fetch(`/api/kanban?${params.toString()}`, { cache: "no-store" }).catch(() => null);
       const data = await response?.json().catch(() => null) as KanbanResponse | null;
       if (cancelled) return;
       if (!data?.ok || !data.board) {
@@ -1874,7 +2487,7 @@ export default function Home() {
         .filter((task) => relatedIds.includes(task.agentId))
         .map((task) => ({ ...task, agentId: agent.id }))
         .sort((a, b) => b.updatedAt - a.updatedAt);
-      const observedTasks = fleetSnapshots[agent.id]?.tasks ?? [];
+      const observedTasks = relatedIds.flatMap((agentId) => fleetSnapshots[agentId]?.tasks ?? []);
       const transcript = relatedIds.flatMap((agentId) => messagesByAgent[agentId] ?? []);
       const transcriptTask: AgentTask | null = transcript.length > 0
         ? {
@@ -2044,11 +2657,6 @@ export default function Home() {
     return groups;
   }, [displayAgents, discoveredMachines, tailscaleDevices]);
 
-  const connectableMachines = useMemo(
-    () => machineGroups.filter((machine) => machine.key !== "unassigned" && machine.collector === "ready"),
-    [machineGroups],
-  );
-
   const visibleAgentCount = useMemo(
     () => machineGroups.reduce((total, machine) => total + machine.agents.length, 0),
     [machineGroups],
@@ -2060,7 +2668,7 @@ export default function Home() {
   );
   const hasKanbanTasks = (kanbanBoard?.tasks.length ?? 0) > 0;
   const visibleKanbanColumns = useMemo(() => {
-    const core = new Set<KanbanStatus>(["triage", "ready", "running", "done"]);
+    const core = new Set<KanbanStatus>(["ideas", "ready", "working", "needs-human", "done"]);
     return kanbanColumns.filter((column) => core.has(column.id) || column.tasks.length > 0 || kanbanIncludeArchived);
   }, [kanbanColumns, kanbanIncludeArchived]);
 
@@ -2071,12 +2679,17 @@ export default function Home() {
 
   const selectedKanbanComments = useMemo(
     () => kanbanBoard?.comments.filter((comment) => comment.taskId === selectedKanbanTaskId)
-      .sort((a, b) => a.createdAt - b.createdAt) ?? [],
+      .sort((a, b) => b.createdAt - a.createdAt) ?? [],
     [kanbanBoard, selectedKanbanTaskId],
   );
 
+  const notificationGroups = useMemo(() => groupNotifications(notifications), [notifications]);
+
   const selectedKanbanEvents = useMemo(
-    () => kanbanBoard?.events.filter((event) => !event.taskId || event.taskId === selectedKanbanTaskId).slice(0, 20) ?? [],
+    () => kanbanBoard?.events
+      .filter((event) => !event.taskId || event.taskId === selectedKanbanTaskId)
+      .sort((a, b) => b.createdAt - a.createdAt)
+      .slice(0, 20) ?? [],
     [kanbanBoard, selectedKanbanTaskId],
   );
 
@@ -2111,6 +2724,12 @@ export default function Home() {
     return [...new Set([...local, ...kanbanAssignees].filter(Boolean))].sort();
   }, [displayAgents, kanbanAssignees]);
 
+  const colonySummary = useMemo(() => {
+    const queens = displayAgents.filter((agent) => agent.beeRole === "queen").length;
+    const workers = displayAgents.filter((agent) => agent.beeRole === "worker").length;
+    return { queens, workers };
+  }, [displayAgents]);
+
   const navItems = useMemo(() => [
     {
       id: "agents" as const,
@@ -2138,15 +2757,28 @@ export default function Home() {
       detail: sharedVault.enabled ? "enabled" : "off",
     },
     {
+      id: "notifications" as const,
+      label: "Alerts",
+      detail: notificationSummary?.unread ? `${notificationSummary.unread} new` : `${notificationSummary?.total ?? 0} total`,
+    },
+    {
       id: "chat" as const,
       label: "Chat",
       detail: selectedAgent?.name ?? "none",
     },
-  ], [kanbanBoard?.tasks.length, mirosharkStatus?.ok, selectedAgent?.name, sharedVault.enabled, visibleAgentCount, walletStats.critical, walletStats.enabled]);
+  ], [kanbanBoard?.tasks.length, mirosharkStatus?.ok, notificationSummary, selectedAgent?.name, sharedVault.enabled, visibleAgentCount, walletStats.critical, walletStats.enabled]);
 
   const setupMachine = useMemo(
     () => machineGroups.find((machine) => machine.key === setupMachineKey) ?? null,
     [machineGroups, setupMachineKey],
+  );
+  const roleModalAgent = useMemo(
+    () => displayAgents.find((agent) => agent.id === agentRoleModalId) ?? null,
+    [agentRoleModalId, displayAgents],
+  );
+  const agentCreateMachine = useMemo(
+    () => machineGroups.find((machine) => machine.key === agentCreateMachineKey) ?? null,
+    [agentCreateMachineKey, machineGroups],
   );
 
   function updateAgent(patch: Partial<AgentProfile>) {
@@ -2154,6 +2786,60 @@ export default function Home() {
     setAgents((current) => current.map((agent) => (
       agent.id === selectedAgent.id ? { ...agent, ...patch } : agent
     )));
+  }
+
+  function updateAgentProfile(agentId: string, patch: Partial<AgentProfile>) {
+    setAgents((current) => {
+      const existing = current.find((agent) => agent.id === agentId);
+      if (existing) {
+        return current.map((agent) => (
+          agent.id === agentId ? { ...agent, ...patch } : agent
+        ));
+      }
+      const discovered = displayAgents.find((agent) => agent.id === agentId);
+      return discovered ? [...current, { ...discovered, ...patch }] : current;
+    });
+  }
+
+  function openAgentCreationModal(machine: MachineGroup, runtime: AgentRuntime = "hermes", name = "") {
+    if (machine.collector !== "ready" || !machine.collectorUrl) {
+      openSetupModal(machine);
+      return;
+    }
+    setAgentRoleModalId("");
+    setAgentRenameEditing(false);
+    setAgentCreateMachineKey(machine.key);
+    setAgentCreateDraft({
+      name,
+      runtime,
+      beeRole: runtime === "openclaw" ? "queen" : "worker",
+      workerClass: "general",
+    });
+  }
+
+  function closeAgentSettingsModal() {
+    setAgentRoleModalId("");
+    setAgentCreateMachineKey("");
+    setAgentRenameDraft("");
+    setAgentRenameEditing(false);
+  }
+
+  function createAgentFromModal() {
+    if (!agentCreateMachine?.collectorUrl) return;
+    const runtime = agentCreateDraft.runtime;
+    const next: AgentProfile = {
+      ...createAgentProfile(runtime, runtimeCount(agents, runtime) + 1),
+      name: agentCreateDraft.name.trim() || `${RUNTIME_LABELS[runtime]} on ${agentCreateMachine.name}`,
+      telemetryUrl: agentCreateMachine.collectorUrl,
+      machineName: agentCreateMachine.name,
+      agentId: runtime === "hermes" ? "local-hermes" : runtime === "openclaw" ? "main" : "",
+      localDataDir: runtime === "hermes" ? "~/.hermes" : "",
+      beeRole: agentCreateDraft.beeRole,
+      workerClass: agentCreateDraft.workerClass,
+    };
+    setAgents((current) => [...current, next]);
+    setSelectedAgentId(next.id);
+    closeAgentSettingsModal();
   }
 
   function updateSharedVault(patch: Partial<SharedVaultConfig>) {
@@ -2186,49 +2872,138 @@ export default function Home() {
     await navigator.clipboard?.writeText(buildAgentPaymentPrompt(config)).catch(() => undefined);
   }
 
-  function addAgent(runtime: AgentRuntime = draftRuntime) {
-    const targetMachine = connectableMachines.find((machine) => machine.key === agentComposer.machineKey)
-      ?? connectableMachines[0];
-    if (!targetMachine) return;
-    const next = {
-      ...createAgentProfile(runtime, runtimeCount(agents, runtime) + 1),
-      name: agentComposer.name.trim() || `${RUNTIME_LABELS[runtime]} on ${targetMachine.name}`,
-      telemetryUrl: targetMachine.collectorUrl,
-      machineName: targetMachine.name,
-      agentId: runtime === "hermes" ? "local-hermes" : runtime === "openclaw" ? "main" : "",
-      localDataDir: runtime === "hermes" ? "~/.hermes" : "",
-    };
-    setAgents((current) => [...current, next]);
-    setSelectedAgentId(next.id);
-    setAgentComposer({ name: "", machineKey: targetMachine.key });
+  function updateWalletAction(agentId: string, patch: Partial<WalletActionState>) {
+    setWalletActionsByAgent((current) => ({
+      ...current,
+      [agentId]: { ...(current[agentId] ?? {}), ...patch },
+    }));
   }
 
-  function addAgentToMachine(machine: MachineGroup, runtime: AgentRuntime = draftRuntime) {
-    if (machine.collector !== "ready" || !machine.collectorUrl) {
-      openSetupModal(machine);
+  async function createLocalWallet(agentId: string, network: string) {
+    updateWalletAction(agentId, { busy: true, error: "", message: "Creating local wallet..." });
+    const response = await fetch("/api/wallet/create", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ agentId, network }),
+    }).catch(() => null);
+    const data = await response?.json().catch(() => null) as {
+      ok?: boolean;
+      wallet?: { address: string; network: string };
+      error?: string;
+    } | null;
+    if (!response?.ok || !data?.ok || !data.wallet) {
+      updateWalletAction(agentId, { busy: false, error: data?.error ?? "Could not create wallet.", message: "" });
       return;
     }
-    const next = {
-      ...createAgentProfile(runtime, runtimeCount(agents, runtime) + 1),
-      name: `${RUNTIME_LABELS[runtime]} on ${machine.name}`,
-      telemetryUrl: machine.collectorUrl,
-      machineName: machine.name,
-      agentId: runtime === "hermes" ? "local-hermes" : runtime === "openclaw" ? "main" : "",
-      localDataDir: runtime === "hermes" ? "~/.hermes" : "",
-    };
-    setAgents((current) => [...current, next]);
-    setSelectedAgentId(next.id);
-    setActiveView("chat");
-    setMessagesByAgent((current) => ({
-      ...current,
-      [next.id]: [
-        {
-          role: "assistant",
-          content: `Added ${next.name}. This profile is attached to ${machine.name}; send a message when you are ready.`,
-        },
-      ],
-    }));
-    setAgentComposer({ name: "", machineKey: machine.key });
+    updateWallet(agentId, {
+      custodyMode: "local",
+      vaultAddress: data.wallet.address,
+      walletAddress: data.wallet.address,
+      network: data.wallet.network,
+      enabled: true,
+      survivalStartedAt: Date.now(),
+    });
+    updateWalletAction(agentId, { busy: false, error: "", message: "Wallet created. Send a tiny test amount to the address, then refresh balance." });
+  }
+
+  async function refreshWalletBalance(agentId: string) {
+    const wallet = walletsByAgent[agentId] ?? createDefaultAgentWallet(agentId);
+    const address = wallet.walletAddress || wallet.vaultAddress;
+    if (!address) {
+      updateWalletAction(agentId, { error: "Create or paste a wallet address first.", message: "" });
+      return;
+    }
+    updateWalletAction(agentId, { busy: true, error: "", message: "Checking on-chain balance..." });
+    const response = await fetch("/api/wallet/balance", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ address, network: wallet.network }),
+    }).catch(() => null);
+    const data = await response?.json().catch(() => null) as {
+      ok?: boolean;
+      balance?: { tokenBalance: number; nativeBalance: number; fetchedAt: number };
+      error?: string;
+    } | null;
+    if (!response?.ok || !data?.ok || !data.balance) {
+      updateWalletAction(agentId, { busy: false, error: data?.error ?? "Could not fetch balance.", message: "" });
+      return;
+    }
+    updateWallet(agentId, {
+      currentBalanceUsd: normalizeMoney(data.balance.tokenBalance),
+      onchainBalanceUsd: normalizeMoney(data.balance.tokenBalance),
+      nativeBalance: data.balance.nativeBalance,
+      lastOnchainSyncAt: data.balance.fetchedAt,
+      survivalStartedAt: Date.now(),
+    });
+    updateWalletAction(agentId, { busy: false, error: "", message: `Balance refreshed: ${data.balance.tokenBalance.toFixed(6)} USDC.` });
+  }
+
+  async function sendWalletUsdc(agentId: string) {
+    const wallet = walletsByAgent[agentId] ?? createDefaultAgentWallet(agentId);
+    const action = walletActionsByAgent[agentId] ?? {};
+    const amount = Number(action.sendAmount);
+    updateWalletAction(agentId, { busy: true, error: "", message: "Sending USDC..." });
+    const response = await fetch("/api/wallet/send", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        agentId,
+        toAddress: action.sendTo,
+        amountUsd: amount,
+        maxPaymentUsd: wallet.maxPaymentUsd,
+        confirmation: action.confirmation,
+      }),
+    }).catch(() => null);
+    const data = await response?.json().catch(() => null) as {
+      ok?: boolean;
+      signature?: string;
+      network?: string;
+      error?: string;
+    } | null;
+    if (!response?.ok || !data?.ok) {
+      updateWalletAction(agentId, { busy: false, error: data?.error ?? "Could not send USDC.", message: "" });
+      return;
+    }
+    updateWalletAction(agentId, { busy: false, error: "", message: `Sent. Transaction: ${data.signature}`, confirmation: "" });
+    await refreshWalletBalance(agentId);
+  }
+
+  async function testX402Fetch(agentId: string) {
+    const wallet = walletsByAgent[agentId] ?? createDefaultAgentWallet(agentId);
+    const action = walletActionsByAgent[agentId] ?? {};
+    const url = (action.x402Url || wallet.x402BaseUrl || "http://localhost:5020/api/wallet/x402/mock-paid").trim();
+    updateWalletAction(agentId, { busy: true, error: "", message: "Calling paid x402 endpoint..." });
+    const response = await fetch("/api/wallet/x402", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        agentId,
+        url,
+        method: action.x402Method || "GET",
+        policy: wallet,
+        confirmation: action.x402Confirmation,
+      }),
+    }).catch(() => null);
+    const data = await response?.json().catch(() => null) as {
+      ok?: boolean;
+      error?: string;
+      result?: { status?: number; amountUsd?: number; paid?: boolean };
+    } | null;
+    if (!response?.ok || !data?.ok) {
+      updateWalletAction(agentId, { busy: false, error: data?.error ?? "x402 request failed.", message: "" });
+      return;
+    }
+    updateWalletAction(agentId, {
+      busy: false,
+      error: "",
+      x402Confirmation: "",
+      message: `x402 returned ${data.result?.status ?? "ok"}${data.result?.paid ? ` after $${(data.result.amountUsd ?? 0).toFixed(4)} payment` : ""}.`,
+    });
+    await refreshWalletBalance(agentId);
+  }
+
+  function addAgentToMachine(machine: MachineGroup, runtime: AgentRuntime = "hermes") {
+    openAgentCreationModal(machine, runtime);
   }
 
   function duplicateAgent(agentId?: string) {
@@ -2314,17 +3089,23 @@ export default function Home() {
   const chatSidebarTree = useMemo<ChatTreeMachine[]>(() => (
     machineGroups.map((machine) => {
       const folderMap = new Map<string, ChatTreeFolder>();
-      const ensureFolder = (label: string) => {
+      const ensureFolder = (label: string, onStartChat?: () => void) => {
         const key = label.toLowerCase();
         const existing = folderMap.get(key);
-        if (existing) return existing;
-        const next = { key: `${machine.key}-${key}`, label, chats: [] };
+        if (existing) {
+          if (!existing.onStartChat && onStartChat) existing.onStartChat = onStartChat;
+          return existing;
+        }
+        const next: ChatTreeFolder = { key: `${machine.key}-${key}`, label, chats: [], onStartChat };
         folderMap.set(key, next);
         return next;
       };
 
       for (const agent of machine.agents) {
-        const folder = ensureFolder(chatFolderLabel(agent, machine));
+        const folder = ensureFolder(chatFolderLabel(agent, machine), () => startAgentChat(agent.id, {
+          fresh: true,
+          chatLeafKey: `folder-${machine.key}-${chatDedupeKey(chatFolderLabel(agent, machine))}-${agent.id}`,
+        }));
         const hasDirectConversation = hasConversation(agent.id);
         const agentWork = (agentWorkById[agent.id] ?? []).filter(isChatSidebarTask);
         const latestAgentWork = agentWork.find((task) => task.updatedAt > 0);
@@ -2368,6 +3149,9 @@ export default function Home() {
         key: machine.key,
         name: machine.name,
         detail: machine.collector === "ready" ? `${machine.agents.length} available` : "Collector not ready",
+        onStartChat: machine.agents.length > 0
+          ? () => startAgentChat(machine.agents[0].id, { fresh: true, chatLeafKey: `machine-${machine.key}-${machine.agents[0].id}` })
+          : undefined,
         folders: [...folderMap.values()]
           .map((folder) => ({
             ...folder,
@@ -2378,13 +3162,28 @@ export default function Home() {
             }, new Map<string, ChatTreeItem>()).values()]
               .sort((a, b) => (b.updatedAt ?? 0) - (a.updatedAt ?? 0) || a.title.localeCompare(b.title)),
           }))
-          .filter((folder) => folder.chats.length > 0)
           .sort((a, b) => (
             a.label === "Stray chats" ? 1 : b.label === "Stray chats" ? -1 : a.label.localeCompare(b.label)
           )),
       };
     })
   ), [agentWorkById, chatMessageWindow, conversationTitle, hasConversation, machineGroups, selectedAgent?.id, selectedChatLeafKey]);
+
+  const selectedChatMachine = useMemo(() => (
+    selectedAgent
+      ? chatSidebarTree.find((machine) => machine.folders.some((folder) => (
+        folder.chats.some((chat) => chat.active) || machineGroups.find((group) => group.key === machine.key)?.agents.some((agent) => agent.id === selectedAgent.id)
+      ))) ?? null
+      : null
+  ), [chatSidebarTree, machineGroups, selectedAgent]);
+
+  const selectedChatDirectory = useMemo(() => {
+    if (!selectedAgent) return "";
+    const activeFolder = selectedChatMachine?.folders.find((folder) => folder.chats.some((chat) => chat.active));
+    if (activeFolder) return activeFolder.label;
+    const machine = machineGroups.find((group) => group.agents.some((agent) => agent.id === selectedAgent.id));
+    return machine ? chatFolderLabel(selectedAgent, machine) : workspaceLabelFromPath(selectedAgent.localDataDir);
+  }, [machineGroups, selectedAgent, selectedChatMachine]);
 
   function openSetupModal(machine: MachineGroup) {
     setSetupMachineKey(machine.key);
@@ -2505,7 +3304,7 @@ export default function Home() {
     if (kanbanTenantFilter) params.set("tenant", kanbanTenantFilter);
     if (kanbanAssigneeFilter) params.set("assignee", kanbanAssigneeFilter);
     if (kanbanSearch) params.set("q", kanbanSearch);
-    const response = await fetch(`/api/openclaw/kanban?${params.toString()}`, { cache: "no-store" });
+    const response = await fetch(`/api/kanban?${params.toString()}`, { cache: "no-store" });
     const data = await response.json().catch(() => null) as KanbanResponse | null;
     if (!response.ok || !data?.ok || !data.board) throw new Error(data?.error ?? "Kanban refresh failed.");
     setKanbanError("");
@@ -2525,15 +3324,169 @@ export default function Home() {
       : {};
   }
 
+  function notificationStorageBody() {
+    return sharedVault.enabled
+      ? {
+        vaultPath: sharedVault.vaultPath.trim(),
+        notificationsFolder: sharedVault.notificationsFolder?.trim() || DEFAULT_SHARED_VAULT.notificationsFolder,
+      }
+      : {};
+  }
+
+  function noteIntakeBody() {
+    return {
+      ...kanbanStorageBody(),
+      folders: sharedVault.noteTaskImportFolders || DEFAULT_SHARED_VAULT.noteTaskImportFolders,
+      board: kanbanBoardSlug,
+    };
+  }
+
+  async function scanNoteIntake(quiet = false) {
+    if (!sharedVault.enabled) {
+      setNoteIntakeStatus("Turn on the shared brain before scanning note tasks.");
+      return;
+    }
+    if (!quiet) {
+      setNoteIntakePending("scan");
+      setNoteIntakeStatus("");
+    }
+    const params = new URLSearchParams({ board: kanbanBoardSlug });
+    if (sharedVault.vaultPath.trim()) params.set("vaultPath", sharedVault.vaultPath.trim());
+    params.set("kanbanFolder", sharedVault.kanbanFolder?.trim() || DEFAULT_SHARED_VAULT.kanbanFolder);
+    params.set("folders", sharedVault.noteTaskImportFolders || DEFAULT_SHARED_VAULT.noteTaskImportFolders);
+    const response = await fetch(`/api/note-intake?${params.toString()}`, { cache: "no-store" }).catch(() => null);
+    const data = await response?.json().catch(() => null) as NoteIntakeResponse | null;
+    setNoteIntakePending("");
+    if (!response?.ok || !data?.ok) {
+      setNoteIntakeStatus(data?.error ?? "Could not scan note tasks.");
+      return;
+    }
+    setNoteIntakePreview(data.candidates ?? []);
+    setNoteIntakeStatus(`${data.candidates?.length ?? 0} note tasks found.`);
+  }
+
+  async function importNoteIntake(quiet = false) {
+    if (!sharedVault.enabled) {
+      setNoteIntakeStatus("Turn on the shared brain before importing note tasks.");
+      return;
+    }
+    if (!quiet) {
+      setNoteIntakePending("import");
+      setNoteIntakeStatus("");
+    }
+    const response = await fetch(`/api/note-intake?board=${encodeURIComponent(kanbanBoardSlug)}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(noteIntakeBody()),
+    }).catch(() => null);
+    const data = await response?.json().catch(() => null) as NoteIntakeResponse | null;
+    setNoteIntakePending("");
+    if (!response?.ok || !data?.ok) {
+      setNoteIntakeStatus(data?.error ?? "Could not import note tasks.");
+      return;
+    }
+    if (data.board) setKanbanBoard(data.board);
+    setNoteIntakePreview(data.candidates ?? []);
+    setNoteIntakeStatus(`Imported ${data.imported?.length ?? 0} note tasks into Ideas. Skipped ${data.skipped ?? 0} already present.`);
+    await refreshKanbanOnce().catch((error) => setKanbanError(error instanceof Error ? error.message : "Kanban refresh failed."));
+  }
+
+  useEffect(() => {
+    if (!hydrated || !sharedVault.enabled || !sharedVault.noteTaskImportEnabled) return;
+    if (noteIntakeAutoInFlightRef.current) return;
+    const runQuietImport = () => {
+      if (noteIntakeAutoInFlightRef.current) return;
+      noteIntakeAutoInFlightRef.current = true;
+      void importNoteIntake(true).finally(() => {
+        noteIntakeAutoInFlightRef.current = false;
+      });
+    };
+    runQuietImport();
+    const timer = window.setInterval(runQuietImport, 120_000);
+    return () => window.clearInterval(timer);
+    // `importNoteIntake` is intentionally gated by the persisted config values below.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    hydrated,
+    kanbanBoardSlug,
+    sharedVault.enabled,
+    sharedVault.kanbanFolder,
+    sharedVault.noteTaskImportEnabled,
+    sharedVault.noteTaskImportFolders,
+    sharedVault.vaultPath,
+  ]);
+
+  async function markNotificationRead(id: string) {
+    const response = await fetch("/api/openclaw/notifications", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ...notificationStorageBody(), id }),
+    }).catch(() => null);
+    const data = await response?.json().catch(() => null) as NotificationsResponse | null;
+    if (!response?.ok || !data?.ok) {
+      setNotificationsStatus(data?.error ?? "Could not mark notification read.");
+      return;
+    }
+    setNotifications((current) => current.map((notification) => (
+      notification.id === id ? { ...notification, read: true, readAt: new Date().toISOString() } : notification
+    )));
+    setNotificationSummary((current) => current ? {
+      ...current,
+      unread: Math.max(0, current.unread - 1),
+      highUnread: Math.max(0, current.highUnread - (notifications.find((item) => item.id === id)?.priority === "high" ? 1 : 0)),
+      urgentUnread: Math.max(0, current.urgentUnread - (notifications.find((item) => item.id === id)?.priority === "urgent" ? 1 : 0)),
+    } : current);
+  }
+
+  async function markAllNotificationsRead() {
+    const response = await fetch("/api/openclaw/notifications", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ...notificationStorageBody(), action: "mark-all-read" }),
+    }).catch(() => null);
+    const data = await response?.json().catch(() => null) as NotificationsResponse | null;
+    if (!response?.ok || !data?.ok) {
+      setNotificationsStatus(data?.error ?? "Could not mark notifications read.");
+      return;
+    }
+    const now = new Date().toISOString();
+    setNotifications((current) => current.map((notification) => ({ ...notification, read: true, readAt: notification.readAt ?? now })));
+    setNotificationSummary((current) => current ? { ...current, unread: 0, highUnread: 0, urgentUnread: 0 } : current);
+    setNotificationsStatus("Badge cleared. New agent notifications will light it back up.");
+  }
+
+  async function updateNotificationSettings(settings: Partial<AgentNotificationSettings>) {
+    const response = await fetch("/api/openclaw/notifications", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ...notificationStorageBody(), action: "settings", settings }),
+    }).catch(() => null);
+    const data = await response?.json().catch(() => null) as NotificationsResponse | null;
+    if (!response?.ok || !data?.ok) {
+      setNotificationsStatus(data?.error ?? "Could not update notification settings.");
+      return;
+    }
+    if (data.settings) {
+      setNotificationSummary((current) => current ? { ...current, settings: data.settings! } : {
+        total: data.total ?? 0,
+        unread: data.unread ?? 0,
+        highUnread: data.highUnread ?? 0,
+        urgentUnread: data.urgentUnread ?? 0,
+        folder: data.folder ?? sharedVault.notificationsFolder ?? "agent-notifications",
+        settings: data.settings!,
+      });
+    }
+  }
+
   async function trackAgentTaskOnKanban(agent: AgentProfile, taskRow: AgentTaskRow, task?: AgentTask) {
     const status: KanbanStatus = taskRow.status === "active"
-      ? "running"
+      ? "working"
       : taskRow.status === "completed"
         ? "done"
         : taskRow.status === "failed"
-          ? "blocked"
-          : "triage";
-    const response = await fetch(`/api/openclaw/kanban?board=${encodeURIComponent(kanbanBoardSlug)}`, {
+          ? "needs-human"
+          : "ideas";
+    const response = await fetch(`/api/kanban?board=${encodeURIComponent(kanbanBoardSlug)}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -2570,7 +3523,7 @@ export default function Home() {
     event.preventDefault();
     const title = quickAddDrafts[status]?.trim();
     if (!title) return;
-    const response = await fetch(`/api/openclaw/kanban?board=${encodeURIComponent(kanbanBoardSlug)}`, {
+    const response = await fetch(`/api/kanban?board=${encodeURIComponent(kanbanBoardSlug)}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -2590,13 +3543,17 @@ export default function Home() {
     }
     setQuickAddDrafts((current) => ({ ...current, [status]: "" }));
     setQuickAddStatus("");
+    if (status === "ready" && data.task) {
+      await orchestrateReadyKanbanTask(data.task);
+      return;
+    }
     await refreshKanbanOnce().catch((error) => setKanbanError(error instanceof Error ? error.message : "Kanban refresh failed."));
   }
 
   async function createKanbanBoard(event: FormEvent) {
     event.preventDefault();
     if (!newBoardDraft.slug.trim()) return;
-    const response = await fetch("/api/openclaw/kanban", {
+    const response = await fetch("/api/kanban", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ ...kanbanStorageBody(), action: "create-board", slug: newBoardDraft.slug, name: newBoardDraft.name }),
@@ -2611,7 +3568,7 @@ export default function Home() {
   }
 
   async function patchKanbanTask(taskId: string, patch: Partial<KanbanTask>) {
-    const response = await fetch(`/api/openclaw/kanban?board=${encodeURIComponent(kanbanBoardSlug)}`, {
+    const response = await fetch(`/api/kanban?board=${encodeURIComponent(kanbanBoardSlug)}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ ...kanbanStorageBody(), taskId, patch }),
@@ -2625,7 +3582,7 @@ export default function Home() {
   }
 
   async function moveKanbanTask(taskId: string, status: KanbanStatus) {
-    const response = await fetch(`/api/openclaw/kanban?board=${encodeURIComponent(kanbanBoardSlug)}`, {
+    const response = await fetch(`/api/kanban?board=${encodeURIComponent(kanbanBoardSlug)}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ ...kanbanStorageBody(), taskId, status }),
@@ -2635,13 +3592,202 @@ export default function Home() {
       setKanbanError(data?.error ?? "Could not move task.");
       return;
     }
+    if (status === "ready" && data.task) {
+      await orchestrateReadyKanbanTask(data.task);
+      return;
+    }
     await refreshKanbanOnce().catch((error) => setKanbanError(error instanceof Error ? error.message : "Kanban refresh failed."));
   }
+
+  async function orchestrateReadyKanbanTask(task: KanbanTask) {
+    const assignment = chooseBeeAssignment(task, displayAgents);
+    if (assignment.mode === "pending") {
+      await addKanbanSystemComment(task.id, `Ready for Queen, but no Queen Bee or eligible worker is available yet. ${assignment.reason}`);
+      await refreshKanbanOnce().catch((error) => setKanbanError(error instanceof Error ? error.message : "Kanban refresh failed."));
+      return;
+    }
+
+    const owner = assignment.worker ?? assignment.queen;
+    if (!owner) return;
+    const setupIssue = chatSetupIssue(owner);
+    if (setupIssue) {
+      await addKanbanSystemComment(task.id, `Ready for Queen, but ${owner.name} cannot receive delegated work yet: ${setupIssue}`);
+      await refreshKanbanOnce().catch((error) => setKanbanError(error instanceof Error ? error.message : "Kanban refresh failed."));
+      return;
+    }
+    const response = await fetch(`/api/kanban?board=${encodeURIComponent(kanbanBoardSlug)}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        ...kanbanStorageBody(),
+        taskId: task.id,
+        patch: {
+          assignee: owner.name,
+          tenant: assignment.mode === "queen" ? "queen-bee" : `${assignment.workerClass}-worker`,
+          status: "working",
+        },
+      }),
+    });
+    const data = await response.json().catch(() => null) as KanbanResponse | null;
+    if (!response.ok || !data?.ok) {
+      setKanbanError(data?.error ?? "Queen Bee could not claim the task.");
+      return;
+    }
+    await addKanbanSystemComment(
+      task.id,
+      [
+        assignment.queen
+          ? `${assignment.queen.name} reviewed this from Ready for Queen.`
+          : "No Queen Bee is assigned yet, so the dashboard pickup loop used the best available worker.",
+        `Assigned to ${owner.name} as ${beeWorkerClassLabel(assignment.workerClass)} work.`,
+        assignment.reason,
+      ].join(" "),
+    );
+    await refreshKanbanOnce().catch((error) => setKanbanError(error instanceof Error ? error.message : "Kanban refresh failed."));
+    await dispatchKanbanTaskToAgent(task, owner, assignment);
+  }
+
+  async function addKanbanSystemComment(taskId: string, body: string) {
+    const response = await fetch(`/api/kanban?board=${encodeURIComponent(kanbanBoardSlug)}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ...kanbanStorageBody(), action: "comment", taskId, body, author: "queen-bee" }),
+    });
+    const data = await response.json().catch(() => null) as KanbanResponse | null;
+    if (!response.ok || !data?.ok) {
+      setKanbanError(data?.error ?? "Could not record Queen Bee note.");
+    }
+  }
+
+  /* eslint-disable react-hooks/immutability, react-hooks/purity */
+  async function dispatchKanbanTaskToAgent(task: KanbanTask, agent: AgentProfile, assignment: ReturnType<typeof chooseBeeAssignment>) {
+    const prompt = kanbanTaskDispatchPrompt(task, assignment);
+    const localTaskId = `kanban-${task.id}-${Date.now()}`;
+    let fullText = "";
+
+    upsertTask({
+      id: localTaskId,
+      agentId: agent.id,
+      title: task.title,
+      lastMessage: "Delegated from Work board...",
+      status: "active",
+      startedAt: Date.now(),
+      updatedAt: Date.now(),
+      source: "kanban",
+    });
+    appendMessage(agent.id, { role: "user", content: prompt });
+    appendMessage(agent.id, { role: "assistant", content: "" });
+
+    try {
+      const response = await fetch("/api/chat/agent-runtime", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          agent,
+          sharedVault,
+          wallet: walletsByAgent[agent.id] ?? createDefaultAgentWallet(agent.id),
+          messages: [{ role: "user", content: prompt }],
+        }),
+      });
+
+      if (!response.ok || !response.body) {
+        const data = await response.json().catch(() => ({}));
+        throw new Error(typeof data.error === "string" ? data.error : `Request failed with ${response.status}`);
+      }
+
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+
+      while (true) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const events = buffer.split("\n\n");
+        buffer = events.pop() ?? "";
+
+        for (const eventText of events) {
+          const line = eventText.split("\n").find((entry) => entry.startsWith("data: "));
+          if (!line) continue;
+          const payload = line.slice(6);
+          if (payload === "[DONE]") continue;
+          const parsed = JSON.parse(payload) as {
+            choices?: Array<{ delta?: { content?: string } }>;
+            error?: string;
+          };
+          if (parsed.error) throw new Error(parsed.error);
+          const chunk = parsed.choices?.[0]?.delta?.content;
+          if (!chunk) continue;
+          fullText += chunk;
+          setMessagesByAgent((current) => {
+            const existing = current[agent.id] ?? [];
+            const next = [...existing];
+            const last = next[next.length - 1] ?? { role: "assistant" as const, content: "" };
+            if (next.length === 0) next.push(last);
+            next[next.length - 1] = { ...last, content: fullText };
+            return { ...current, [agent.id]: next };
+          });
+          updateTask(localTaskId, { lastMessage: fullText });
+        }
+      }
+
+      const result = fullText.trim() || `${agent.name} accepted the delegated work.`;
+      updateTask(localTaskId, { status: "completed", lastMessage: result, completedAt: Date.now() });
+      await patchKanbanTask(task.id, { status: "done", result });
+      await addKanbanSystemComment(task.id, `${agent.name} completed the delegated work from the Work board.`);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Unknown runtime error";
+      setMessagesByAgent((current) => {
+        const existing = current[agent.id] ?? [];
+        const next = [...existing];
+        const last = next[next.length - 1] ?? { role: "assistant" as const, content: "" };
+        if (next.length === 0) next.push(last);
+        next[next.length - 1] = { ...last, content: `Error: ${message}` };
+        return { ...current, [agent.id]: next };
+      });
+      updateTask(localTaskId, { status: "failed", lastMessage: message, completedAt: Date.now() });
+      await patchKanbanTask(task.id, { status: "needs-human", result: `Delegation failed for ${agent.name}: ${message}` });
+      await addKanbanSystemComment(task.id, `Delegation failed for ${agent.name}: ${message}`);
+    }
+  }
+  /* eslint-enable react-hooks/immutability, react-hooks/purity */
+
+  useEffect(() => {
+    if (!hydrated || !kanbanBoard) return;
+    const readyTasks = kanbanBoard.tasks.filter((task) => task.status === "ready");
+    for (const task of readyTasks) {
+      if (kanbanReadyPickupInFlightRef.current.has(task.id)) continue;
+      const signature = kanbanReadyPickupSignature(task, displayAgents);
+      if (kanbanReadyPickupAttemptRef.current.get(task.id) === signature) continue;
+      kanbanReadyPickupAttemptRef.current.set(task.id, signature);
+      kanbanReadyPickupInFlightRef.current.add(task.id);
+      void orchestrateReadyKanbanTask(task).finally(() => {
+        kanbanReadyPickupInFlightRef.current.delete(task.id);
+      });
+    }
+
+    const retryableWorkingTasks = kanbanBoard.tasks.filter((task) => task.status === "working" && task.assignee?.trim());
+    for (const task of retryableWorkingTasks) {
+      if (kanbanReadyPickupInFlightRef.current.has(task.id)) continue;
+      const assignee = kanbanTaskAssigneeAgent(task, displayAgents);
+      if (!assignee) continue;
+      const signature = `working:${kanbanReadyPickupSignature(task, displayAgents)}`;
+      if (kanbanReadyPickupAttemptRef.current.get(task.id) === signature) continue;
+      kanbanReadyPickupAttemptRef.current.set(task.id, signature);
+      kanbanReadyPickupInFlightRef.current.add(task.id);
+      void dispatchKanbanTaskToAgent(task, assignee, kanbanTaskAssignmentForAgent(task, assignee)).finally(() => {
+        kanbanReadyPickupInFlightRef.current.delete(task.id);
+      });
+    }
+    // `orchestrateReadyKanbanTask` intentionally stays out of this dependency list:
+    // the pickup signature gates retries, while the function itself changes each render.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [displayAgents, hydrated, kanbanBoard]);
 
   async function addKanbanComment(event: FormEvent) {
     event.preventDefault();
     if (!selectedKanbanTask || !commentDraft.trim()) return;
-    const response = await fetch(`/api/openclaw/kanban?board=${encodeURIComponent(kanbanBoardSlug)}`, {
+    const response = await fetch(`/api/kanban?board=${encodeURIComponent(kanbanBoardSlug)}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ ...kanbanStorageBody(), action: "comment", taskId: selectedKanbanTask.id, body: commentDraft, author: "dashboard" }),
@@ -2692,6 +3838,94 @@ export default function Home() {
     const data = (await response.json().catch(() => ({}))) as Record<string, unknown>;
     setControlRoomStatus(data);
   }
+
+  const runVaultTailnetSync = useCallback(async (dryRun: boolean, quiet = false) => {
+    setVaultSyncPending(dryRun ? "dry-run" : "sync");
+    if (!quiet) setVaultSyncStatus(null);
+    const response = await fetch("/api/obsidian/sync", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        vaultPath: sharedVault.vaultPath.trim() || undefined,
+        remoteHost: sharedVault.tailnetSyncHost,
+        remotePath: sharedVault.tailnetSyncPath,
+        direction: sharedVault.tailnetSyncDirection,
+        dryRun,
+      }),
+    }).catch(() => null);
+    const data = await response?.json().catch(() => null) as VaultSyncStatus | null;
+    setVaultSyncPending("");
+    setVaultSyncStatus(data ?? { ok: false, error: "Tailnet vault sync request failed." });
+  }, [
+    sharedVault.tailnetSyncDirection,
+    sharedVault.tailnetSyncHost,
+    sharedVault.tailnetSyncPath,
+    sharedVault.vaultPath,
+  ]);
+
+  const pairSyncthingVaultSync = useCallback(async () => {
+    const remoteHost = sharedVault.tailnetSyncHost.trim();
+    const remotePath = sharedVault.tailnetSyncPath.trim();
+    if (!remoteHost || !remotePath) {
+      setVaultSyncStatus({ ok: false, method: "syncthing", error: "Choose a Tailnet machine and remote folder first." });
+      return;
+    }
+    setVaultSyncPending("syncthing");
+    setVaultSyncStatus(null);
+    const cleanHost = remoteHost.replace(/^.+@/, "").replace(/\.$/, "");
+    const hostKey = cleanHost.toLowerCase();
+    const localTailscaleIp = tailscaleDevices.find((device) => device.self)?.ip;
+    const remoteDevice = tailscaleDevices.find((device) => (
+      device.ip === cleanHost
+      || device.name.toLowerCase() === hostKey
+      || device.dnsName.toLowerCase().replace(/\.$/, "") === hostKey
+      || device.collectorUrl.toLowerCase().includes(hostKey)
+    ));
+    const response = await fetch("/api/syncthing/pair", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        localPath: sharedVault.vaultPath.trim(),
+        remotePath,
+        remoteCollectorUrl: /^https?:\/\//.test(cleanHost) ? cleanHost : `http://${cleanHost}:8787`,
+        remoteName: cleanHost,
+        localTailscaleIp,
+        remoteTailscaleIp: remoteDevice?.ip || (cleanHost.startsWith("100.") ? cleanHost : undefined),
+        remoteAddressHost: /^https?:\/\//.test(cleanHost) ? undefined : cleanHost,
+        folderId: "omni-agent-hivemind-vault",
+        label: "Omni-Agent Hivemind Vault",
+      }),
+    }).catch(() => null);
+    const data = await response?.json().catch(() => null) as VaultSyncStatus | null;
+    setVaultSyncPending("");
+    setVaultSyncStatus(data?.ok
+      ? { ...data, method: "syncthing", message: `Syncthing paired ${data.folderId ?? "vault"} for realtime sync.` }
+      : { ok: false, method: "syncthing", error: data?.error ?? "Syncthing pairing failed." });
+  }, [
+    sharedVault.tailnetSyncHost,
+    sharedVault.tailnetSyncPath,
+    sharedVault.vaultPath,
+    tailscaleDevices,
+  ]);
+
+  useEffect(() => {
+    if (!hydrated || !sharedVault.enabled || !sharedVault.tailnetSyncEnabled) return;
+    if (!sharedVault.tailnetSyncHost.trim() || !sharedVault.tailnetSyncPath.trim()) return;
+    const intervalMs = Math.max(10, sharedVault.tailnetSyncIntervalSeconds || 20) * 1000;
+    const timer = window.setInterval(() => {
+      if (!vaultSyncPending) void runVaultTailnetSync(false, true);
+    }, intervalMs);
+    return () => window.clearInterval(timer);
+  }, [
+    hydrated,
+    runVaultTailnetSync,
+    sharedVault.enabled,
+    sharedVault.tailnetSyncEnabled,
+    sharedVault.tailnetSyncHost,
+    sharedVault.tailnetSyncIntervalSeconds,
+    sharedVault.tailnetSyncPath,
+    vaultSyncPending,
+  ]);
 
   async function inspectBrainNode(node: BrainGraphNode) {
     if (brainDragMovedRef.current) {
@@ -2797,13 +4031,163 @@ export default function Home() {
     }
   }
 
+  async function addChatFiles(files: FileList | File[], kind: "image" | "file") {
+    const incoming = Array.from(files);
+    if (incoming.length === 0) {
+      setAttachmentError("Choose at least one file.");
+      return;
+    }
+    const maxAttachmentBytes = 8_000_000;
+    const oversized = incoming.find((file) => file.size > maxAttachmentBytes);
+    if (oversized) {
+      setAttachmentError(`${oversized.name} is too large. Keep attachments under 8 MB.`);
+      return;
+    }
+    try {
+      const next = await Promise.all(incoming.map((file) => readAttachmentFile(file, kind)));
+      setChatAttachments((current) => [...current, ...next].slice(0, 6));
+      setAttachmentError("");
+      setAttachmentMenuOpen(false);
+    } catch (error) {
+      setAttachmentError(error instanceof Error ? error.message : "Could not attach that file.");
+    }
+  }
+
+  function handleChatFileChange(event: ChangeEvent<HTMLInputElement>) {
+    if (event.target.files?.length) void addChatFiles(event.target.files, "file");
+    event.target.value = "";
+  }
+
+  function handleChatImageChange(event: ChangeEvent<HTMLInputElement>) {
+    if (event.target.files?.length) void addChatFiles(event.target.files, "image");
+    event.target.value = "";
+  }
+
+  function removeChatAttachment(id: string) {
+    setChatAttachments((current) => current.filter((attachment) => attachment.id !== id));
+  }
+
+  function updateVoiceTranscript(value: string) {
+    voiceTranscriptRef.current = value;
+    setVoiceTranscript(value);
+  }
+
+  function appendVoiceTranscriptToInput() {
+    const transcript = voiceTranscriptRef.current.trim();
+    if (!transcript) return;
+    setText((current) => [current.trim(), transcript].filter(Boolean).join(current.trim() ? " " : ""));
+    updateVoiceTranscript("");
+  }
+
+  function cleanupVoiceCapture(commitTranscript: boolean) {
+    if (voiceAnimationRef.current !== null) {
+      cancelAnimationFrame(voiceAnimationRef.current);
+      voiceAnimationRef.current = null;
+    }
+    voiceStreamRef.current?.getTracks().forEach((track) => track.stop());
+    voiceStreamRef.current = null;
+    void voiceAudioContextRef.current?.close().catch(() => undefined);
+    voiceAudioContextRef.current = null;
+    voiceRecognitionRef.current = null;
+    setVoiceBands(Array(18).fill(0));
+    setRecording(false);
+    if (commitTranscript) appendVoiceTranscriptToInput();
+  }
+
+  function startVoiceWaveform(stream: MediaStream) {
+    const audioWindow = window as Window & typeof globalThis & { webkitAudioContext?: typeof AudioContext };
+    const AudioContextClass = audioWindow.AudioContext || audioWindow.webkitAudioContext;
+    if (!AudioContextClass) return;
+    const audioContext = new AudioContextClass();
+    const analyser = audioContext.createAnalyser();
+    analyser.fftSize = 512;
+    const source = audioContext.createMediaStreamSource(stream);
+    source.connect(analyser);
+    voiceAudioContextRef.current = audioContext;
+    const data = new Uint8Array(analyser.frequencyBinCount);
+    const bands = 18;
+    const tick = () => {
+      analyser.getByteFrequencyData(data);
+      const binSize = Math.max(1, Math.floor(data.length / bands));
+      const next = Array.from({ length: bands }, (_, index) => {
+        const start = index * binSize;
+        const slice = data.slice(start, start + binSize);
+        const average = slice.reduce((total, value) => total + value, 0) / Math.max(1, slice.length);
+        return Math.min(1, average / 180);
+      });
+      setVoiceBands(next);
+      voiceAnimationRef.current = requestAnimationFrame(tick);
+    };
+    tick();
+  }
+
+  async function startAudioRecording() {
+    if (recording || busy) return;
+    const Recognition = speechRecognitionConstructor();
+    if (!Recognition) {
+      setAttachmentError("Speech transcription is not available in this browser.");
+      return;
+    }
+    if (!navigator.mediaDevices?.getUserMedia) {
+      setAttachmentError("Microphone access is not available in this browser.");
+      return;
+    }
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const recognition = new Recognition();
+      let committedTranscript = "";
+      recognition.continuous = true;
+      recognition.interimResults = true;
+      recognition.lang = navigator.language || "en-US";
+      recognition.onresult = (event) => {
+        let interimTranscript = "";
+        for (let index = event.resultIndex; index < event.results.length; index += 1) {
+          const result = event.results[index];
+          const transcript = Array.from({ length: result.length }, (_, partIndex) => result[partIndex]?.transcript ?? "").join("");
+          if (result.isFinal) committedTranscript = `${committedTranscript} ${transcript}`.trim();
+          else interimTranscript = `${interimTranscript} ${transcript}`.trim();
+        }
+        updateVoiceTranscript(`${committedTranscript} ${interimTranscript}`.trim());
+      };
+      recognition.onerror = (event) => {
+        setAttachmentError(event.error ? `Speech transcription failed: ${event.error}` : "Speech transcription failed.");
+      };
+      recognition.onend = () => cleanupVoiceCapture(true);
+      voiceStreamRef.current = stream;
+      voiceRecognitionRef.current = recognition;
+      updateVoiceTranscript("");
+      startVoiceWaveform(stream);
+      recognition.start();
+      setRecording(true);
+      setAttachmentError("");
+    } catch (error) {
+      cleanupVoiceCapture(false);
+      setAttachmentError(error instanceof Error ? error.message : "Could not start audio recording.");
+    }
+  }
+
+  function stopAudioRecording() {
+    const recognition = voiceRecognitionRef.current;
+    if (!recognition) {
+      cleanupVoiceCapture(true);
+      return;
+    }
+    recognition.stop();
+  }
+
   async function sendMessage(event: FormEvent) {
     event.preventDefault();
+    if (recording) {
+      stopAudioRecording();
+      return;
+    }
     const prompt = text.trim();
-    if (!selectedAgent || !prompt || busy) return;
+    const outgoingAttachments = chatAttachments;
+    if (!selectedAgent || busy || (!prompt && outgoingAttachments.length === 0)) return;
+    const outgoingLabel = prompt || attachmentSummary(outgoingAttachments) || "Media message";
     const setupIssue = chatSetupIssue(selectedAgent);
     if (setupIssue) {
-      appendMessage(selectedAgent.id, { role: "user", content: prompt });
+      appendMessage(selectedAgent.id, { role: "user", content: outgoingLabel, attachments: outgoingAttachments });
       appendMessage(selectedAgent.id, { role: "assistant", content: `Error: ${setupIssue}` });
       return;
     }
@@ -2813,20 +4197,24 @@ export default function Home() {
     setHasStreamingChunk(false);
     setSelectedChatPreview(null);
     setText("");
+    setChatAttachments([]);
+    setAttachmentError("");
+    setAttachmentMenuOpen(false);
     const taskId = `${selectedAgent.id}-${Date.now()}`;
     const contextMessages = (messagesByAgent[selectedAgent.id] ?? [])
-      .filter((message) => message.role !== "system" && message.content.trim())
+      .filter((message) => message.role !== "system" && (message.content.trim() || message.attachments?.length))
       .slice(-5);
+    const outgoingContent = messageContentParts(prompt, outgoingAttachments);
     upsertTask({
       id: taskId,
       agentId: selectedAgent.id,
-      title: prompt,
+      title: outgoingLabel,
       lastMessage: "Starting...",
       status: "active",
       startedAt: Date.now(),
       updatedAt: Date.now(),
     });
-    appendMessage(selectedAgent.id, { role: "user", content: prompt });
+    appendMessage(selectedAgent.id, { role: "user", content: outgoingLabel, attachments: outgoingAttachments });
     appendMessage(selectedAgent.id, { role: "assistant", content: "" });
 
     try {
@@ -2836,7 +4224,14 @@ export default function Home() {
         body: JSON.stringify({
           agent: selectedAgent,
           sharedVault,
-          messages: [...contextMessages, { role: "user", content: prompt }],
+          wallet: walletsByAgent[selectedAgent.id] ?? createDefaultAgentWallet(selectedAgent.id),
+          messages: [
+            ...contextMessages.map((message) => ({
+              role: message.role,
+              content: messageContentParts(message.content, message.attachments ?? []),
+            })),
+            { role: "user", content: outgoingContent },
+          ],
         }),
       });
 
@@ -2899,6 +4294,14 @@ export default function Home() {
     }
   }
 
+  const agentSettingsMachineName = agentCreateMachine?.name ?? roleModalAgent?.machineName ?? "this machine";
+  const agentSettingsTitle = agentCreateMachine ? "Add agent" : "Agent settings";
+  const agentSettingsDescription = agentCreateMachine
+    ? `Create a profile attached to ${agentSettingsMachineName}.`
+    : "Set how the Queen Bee should treat this agent when work is delegated.";
+  const agentSettingsRole = agentCreateMachine ? agentCreateDraft.beeRole : roleModalAgent?.beeRole ?? "worker";
+  const agentSettingsWorkerClass = agentCreateMachine ? agentCreateDraft.workerClass : roleModalAgent?.workerClass ?? "general";
+
   return (
     <motion.main
         className="shell commandShell"
@@ -2935,7 +4338,14 @@ export default function Home() {
               >
                 {viewIcon(item.id)}
                 <span>{item.label}</span>
-                <small>{item.detail}</small>
+                <small>
+                  {item.detail}
+                  {item.id === "notifications" && notificationSummary?.unread ? (
+                    <i className={notificationClass("navBadge")} aria-label={`${notificationSummary.unread} unread notifications`}>
+                      {notificationSummary.unread > 99 ? "99+" : notificationSummary.unread}
+                    </i>
+                  ) : null}
+                </small>
                 {activeView === item.id ? <ChevronRight aria-hidden="true" /> : null}
               </button>
             ))}
@@ -2988,40 +4398,6 @@ export default function Home() {
               {fleetCheckedAt ? `Scanned ${formatRelativeTime(fleetCheckedAt)} · ` : ""}{tailscaleStatus}
             </p>
           </div>
-          <details className={fleetClass("quickConnect")}>
-            <summary>Connect an agent</summary>
-          <div className={fleetClass("addAgent")}>
-            <div className={fleetClass("addAgentIntro")}>
-              <strong>Add a saved shortcut</strong>
-              <span>{connectableMachines.length > 0 ? "Pick a machine that is already connected." : "Connect a machine first."}</span>
-            </div>
-            <select value={draftRuntime} onChange={(event) => setDraftRuntime(event.target.value as AgentRuntime)} aria-label="Agent runtime">
-              {Object.entries(RUNTIME_LABELS).map(([runtime, label]) => (
-                <option value={runtime} key={runtime}>{label}</option>
-              ))}
-            </select>
-            <select
-              value={agentComposer.machineKey || connectableMachines[0]?.key || ""}
-              onChange={(event) => setAgentComposer((current) => ({ ...current, machineKey: event.target.value }))}
-              aria-label="Machine"
-            >
-              {connectableMachines.length === 0 ? <option value="">No live collectors</option> : null}
-              {connectableMachines.map((machine) => (
-                <option value={machine.key} key={machine.key}>{machine.name}</option>
-              ))}
-            </select>
-            <input
-              aria-label="Agent display name"
-              placeholder="Name optional"
-              value={agentComposer.name}
-              onChange={(event) => setAgentComposer((current) => ({ ...current, name: event.target.value }))}
-            />
-            <Button type="button" size="sm" disabled={connectableMachines.length === 0} onClick={() => addAgent()}>
-              <PlugZap aria-hidden="true" />
-              Attach
-            </Button>
-          </div>
-          </details>
         </div>
 
         <div className={fleetClass("machineBoard")}>
@@ -3169,7 +4545,9 @@ export default function Home() {
                           icon: <Settings2 aria-hidden="true" />,
                           onClick: () => {
                             setSelectedAgentId(agent.id);
-                            setActiveView("chat");
+                            setAgentRenameDraft(agent.name);
+                            setAgentRenameEditing(false);
+                            setAgentRoleModalId(agent.id);
                           },
                         },
                         {
@@ -3190,8 +4568,6 @@ export default function Home() {
 
                       const isSelected = agent.id === selectedAgent?.id;
 
-                      // Build the task rows shown inline when this agent is selected.
-                      // We surface up to 6 most-recent tasks to keep the machine list compact.
                       const taskRows: AgentTaskRow[] = isSelected
                         ? agentWork.slice(0, 6).map((task) => ({
                             id: task.id,
@@ -3266,15 +4642,20 @@ export default function Home() {
             <p className="eyebrow">Shared work queue</p>
             <h2>Work Board</h2>
             <p>
-              Create the next task, track agent handoffs, and keep every machine looking at the same queue.
+              Drop ideas here, then move them to Ready for Queen when the colony should pick them up.
             </p>
           </div>
           <div className={kanbanClass("kanbanHeaderActions")}>
+            <span className={kanbanClass("kanbanSyncPill", colonySummary.queens > 0 ? "synced" : "local")}>
+              {colonySummary.queens > 0
+                ? `${colonySummary.queens} queen · ${colonySummary.workers} workers`
+                : "No queen assigned"}
+            </span>
             <span
               className={kanbanClass("kanbanSyncPill", kanbanStorage?.source === "obsidian" ? "synced" : "local")}
               title={kanbanStorage?.file}
             >
-              {kanbanStorage?.source === "obsidian" ? "Obsidian sync" : "Local fallback"}
+              {kanbanStorage?.source === "obsidian" ? "Vault folder" : "Local fallback"}
             </span>
             <details className={kanbanClass("kanbanAdvanced")}>
               <summary>Board options</summary>
@@ -3300,6 +4681,46 @@ export default function Home() {
                   />
                   <button type="submit">New board</button>
                 </form>
+                <div className={kanbanClass("kanbanNoteIntake")}>
+                  <label className={kanbanClass("toggleRow")}>
+                    <input
+                      type="checkbox"
+                      checked={sharedVault.noteTaskImportEnabled}
+                      onChange={(event) => updateSharedVault({ noteTaskImportEnabled: event.target.checked })}
+                    />
+                    Auto-import note tasks to Ideas
+                  </label>
+                  <label>
+                    Note task folders
+                    <textarea
+                      value={sharedVault.noteTaskImportFolders || DEFAULT_SHARED_VAULT.noteTaskImportFolders}
+                      onChange={(event) => updateSharedVault({ noteTaskImportFolders: event.target.value })}
+                      rows={3}
+                      placeholder="Projects&#10;Inbox"
+                    />
+                  </label>
+                  <div className={kanbanClass("kanbanBoardCreate")}>
+                    <button type="button" disabled={Boolean(noteIntakePending)} onClick={() => scanNoteIntake()}>
+                      {noteIntakePending === "scan" ? "Scanning..." : "Scan notes"}
+                    </button>
+                    <button type="button" disabled={Boolean(noteIntakePending)} onClick={() => importNoteIntake()}>
+                      {noteIntakePending === "import" ? "Importing..." : "Import to Ideas"}
+                    </button>
+                  </div>
+                  <small>
+                    {noteIntakeStatus || "Reads markdown project notes for unchecked tasks and Next action sections. Auto-import stays off until you enable it."}
+                  </small>
+                  {noteIntakePreview.length > 0 ? (
+                    <ul>
+                      {noteIntakePreview.slice(0, 5).map((candidate) => (
+                        <li key={candidate.idempotencyKey}>
+                          <span>{candidate.title}</span>
+                          <small>{candidate.sourcePath}:{candidate.line}</small>
+                        </li>
+                      ))}
+                    </ul>
+                  ) : null}
+                </div>
                 <small>{kanbanStorage?.file ?? "Storage path loading..."}</small>
               </div>
             </details>
@@ -3342,8 +4763,8 @@ export default function Home() {
           </details>
         ) : (
           <div className={kanbanClass("kanbanFirstRun")}>
-            <strong>Create the first task</strong>
-            <span>Agent activity can also be tracked into this board from the Fleet view.</span>
+            <strong>Add an idea</strong>
+            <span>Ideas stay quiet. Ready for Queen is the automation pickup lane.</span>
           </div>
         )}
 
@@ -3391,23 +4812,33 @@ export default function Home() {
                       </div>
                     </form>
                   ) : null}
-                  {column.tasks.map((task) => (
-                    <button
-                      type="button"
-                      draggable
-                      className={kanbanClass("kanbanCard", task.id === selectedKanbanTaskId && "active")}
-                      key={task.id}
-                      onClick={() => setSelectedKanbanTaskId(task.id)}
-                      onDragStart={(event) => event.dataTransfer.setData("text/plain", task.id)}
-                    >
-                      <span className={kanbanClass("priorityPill", task.priority)}>{task.priority}</span>
-                      <strong>{task.title}</strong>
-                      <p>{task.body || task.result || "No task body yet."}</p>
-                      <small>
-                        {task.assignee || "unassigned"} · {task.tenant || "no tenant"} · {formatRelativeTime(task.updatedAt)}
-                      </small>
-                    </button>
-                  ))}
+                  {column.tasks.map((task) => {
+                    const bee = kanbanTaskBee(task, displayAgents);
+                    return (
+                      <button
+                        type="button"
+                        draggable
+                        className={kanbanClass("kanbanCard", task.id === selectedKanbanTaskId && "active")}
+                        key={task.id}
+                        onClick={() => setSelectedKanbanTaskId(task.id)}
+                        onDragStart={(event) => event.dataTransfer.setData("text/plain", task.id)}
+                      >
+                        <span className={kanbanClass("priorityPill", task.status)}>{kanbanTaskBadge(task)}</span>
+                        <strong>{task.title}</strong>
+                        <p>{task.body || task.result || "No task body yet."}</p>
+                        <span className={kanbanClass("kanbanBeeAssignment")}>
+                          {bee.icon ? <Image src={bee.icon} alt="" width={20} height={20} aria-hidden="true" /> : null}
+                          <span>
+                            <b>{bee.roleLabel}</b>
+                            <small>{bee.assignee}</small>
+                          </span>
+                        </span>
+                        <small>
+                          {kanbanTaskMeta(task)} · {formatRelativeTime(task.updatedAt)}
+                        </small>
+                      </button>
+                    );
+                  })}
                   {column.tasks.length === 0 && quickAddStatus !== column.id ? (
                     <button
                       type="button"
@@ -3441,12 +4872,12 @@ export default function Home() {
                   </select>
                 </label>
                 <label>
-                  Assignee
+                  {selectedKanbanTask.status === "done" ? "Completed by" : "Assignee"}
                   <select
                     value={selectedKanbanTask.assignee ?? ""}
                     onChange={(event) => patchKanbanTask(selectedKanbanTask.id, { assignee: event.target.value })}
                   >
-                    <option value="">Unassigned</option>
+                    <option value="">{selectedKanbanTask.status === "done" ? "user" : "Unassigned"}</option>
                     {kanbanAssigneeOptions.map((assignee) => <option value={assignee} key={assignee}>{assignee}</option>)}
                   </select>
                 </label>
@@ -4212,6 +5643,9 @@ export default function Home() {
           </aside>
 
           {selectedAgent && selectedWallet && selectedWalletSnapshot ? (
+            (() => {
+              const walletAction = walletActionsByAgent[selectedAgent.id] ?? {};
+              return (
             <div className={walletClass("walletDetail")}>
               <WalletCell
                 agentName={selectedAgent.name}
@@ -4271,6 +5705,47 @@ export default function Home() {
                 )}
                 advancedSetup={(
                   <div className="grid gap-3">
+                    <div className="rounded-md border border-[rgba(94,234,212,0.2)] bg-[rgba(45,212,191,0.08)] p-3 text-xs text-[var(--foreground)]/85">
+                      <strong className="block text-[#99f6e4]">Real wallet controls</strong>
+                      <p className="mt-1">
+                        Create a local throwaway wallet, fund it with a tiny USDC test amount, then refresh the on-chain balance.
+                      </p>
+                      <div className="mt-3 flex flex-wrap gap-2">
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="secondary"
+                          disabled={walletAction.busy}
+                          onClick={() => createLocalWallet(selectedAgent.id, selectedWallet.network)}
+                        >
+                          <WalletCards aria-hidden="true" />
+                          Create wallet
+                        </Button>
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="secondary"
+                          disabled={walletAction.busy}
+                          onClick={() => refreshWalletBalance(selectedAgent.id)}
+                        >
+                          <RefreshCcw aria-hidden="true" />
+                          Refresh balance
+                        </Button>
+                      </div>
+                      {selectedWallet.walletAddress ? (
+                        <p className="mt-2 break-all text-[0.72rem] text-[var(--muted)]">
+                          Deposit address: {selectedWallet.walletAddress}
+                        </p>
+                      ) : null}
+                      {selectedWallet.lastOnchainSyncAt ? (
+                        <p className="mt-1 text-[0.72rem] text-[var(--muted)]">
+                          Last on-chain check: {formatRelativeTime(selectedWallet.lastOnchainSyncAt)}
+                          {selectedWallet.nativeBalance != null ? ` · gas balance ${selectedWallet.nativeBalance.toFixed(6)}` : ""}
+                        </p>
+                      ) : null}
+                      {walletAction.message ? <p className="mt-2 text-[#99f6e4]">{walletAction.message}</p> : null}
+                      {walletAction.error ? <p className="mt-2 text-[#fecdd3]">{walletAction.error}</p> : null}
+                    </div>
                     <label className="flex flex-col gap-1 text-xs text-[var(--muted)]">
                       Payment method
                       <select
@@ -4381,6 +5856,62 @@ export default function Home() {
                       <CreditCard aria-hidden="true" />
                       Copy agent prompt
                     </Button>
+                    <details className="w-full rounded-md border border-[rgba(251,113,133,0.28)] bg-[rgba(127,29,29,0.12)] p-3">
+                      <summary className="cursor-pointer text-xs font-semibold text-[#fecdd3]">Send USDC</summary>
+                      <div className="mt-3 grid gap-2">
+                        <input
+                          value={walletAction.sendTo ?? ""}
+                          onChange={(event) => updateWalletAction(selectedAgent.id, { sendTo: event.target.value })}
+                          placeholder="Recipient address"
+                          className="rounded-md border border-[rgba(148,163,184,0.18)] bg-[rgba(10,14,21,0.7)] px-2 py-1 text-xs text-[var(--foreground)]"
+                        />
+                        <input
+                          value={walletAction.sendAmount ?? ""}
+                          onChange={(event) => updateWalletAction(selectedAgent.id, { sendAmount: event.target.value })}
+                          placeholder={`Amount, max $${selectedWallet.maxPaymentUsd.toFixed(2)}`}
+                          className="rounded-md border border-[rgba(148,163,184,0.18)] bg-[rgba(10,14,21,0.7)] px-2 py-1 text-xs text-[var(--foreground)]"
+                        />
+                        <input
+                          value={walletAction.confirmation ?? ""}
+                          onChange={(event) => updateWalletAction(selectedAgent.id, { confirmation: event.target.value })}
+                          placeholder="Type SEND_USDC"
+                          className="rounded-md border border-[rgba(148,163,184,0.18)] bg-[rgba(10,14,21,0.7)] px-2 py-1 text-xs text-[var(--foreground)]"
+                        />
+                        <Button type="button" size="sm" variant="danger" disabled={walletAction.busy} onClick={() => sendWalletUsdc(selectedAgent.id)}>
+                          <Send aria-hidden="true" />
+                          Send USDC
+                        </Button>
+                      </div>
+                    </details>
+                    <details className="w-full rounded-md border border-[rgba(251,113,133,0.28)] bg-[rgba(127,29,29,0.12)] p-3">
+                      <summary className="cursor-pointer text-xs font-semibold text-[#fecdd3]">Call x402 API</summary>
+                      <div className="mt-3 grid gap-2">
+                        <input
+                          value={walletAction.x402Url ?? ""}
+                          onChange={(event) => updateWalletAction(selectedAgent.id, { x402Url: event.target.value })}
+                          placeholder="Paid endpoint URL"
+                          className="rounded-md border border-[rgba(148,163,184,0.18)] bg-[rgba(10,14,21,0.7)] px-2 py-1 text-xs text-[var(--foreground)]"
+                        />
+                        <select
+                          value={walletAction.x402Method ?? "GET"}
+                          onChange={(event) => updateWalletAction(selectedAgent.id, { x402Method: event.target.value })}
+                          className="rounded-md border border-[rgba(148,163,184,0.18)] bg-[rgba(10,14,21,0.7)] px-2 py-1 text-xs text-[var(--foreground)]"
+                        >
+                          <option value="GET">GET</option>
+                          <option value="POST">POST</option>
+                        </select>
+                        <input
+                          value={walletAction.x402Confirmation ?? ""}
+                          onChange={(event) => updateWalletAction(selectedAgent.id, { x402Confirmation: event.target.value })}
+                          placeholder="Type PAY_X402 when approval is needed"
+                          className="rounded-md border border-[rgba(148,163,184,0.18)] bg-[rgba(10,14,21,0.7)] px-2 py-1 text-xs text-[var(--foreground)]"
+                        />
+                        <Button type="button" size="sm" variant="danger" disabled={walletAction.busy} onClick={() => testX402Fetch(selectedAgent.id)}>
+                          <CreditCard aria-hidden="true" />
+                          Call x402
+                        </Button>
+                      </div>
+                    </details>
                   </>
                 )}
               />
@@ -4432,6 +5963,8 @@ export default function Home() {
                 </details>
               </Cell>
             </div>
+              );
+            })()
           ) : (
             <div className={walletClass("walletEmpty")}>
               <strong>No agent selected</strong>
@@ -4621,6 +6154,81 @@ export default function Home() {
           </aside>
         </div>
 
+        <section className={vaultClass("brainSkillsPanel")} aria-label="Shared brain skills">
+          <div className={vaultClass("brainSkillsHeader")}>
+            <div>
+              <p className="eyebrow">Shared skills</p>
+              <h3>Operational recipes in the brain</h3>
+              <p>The shared brain is the main skills shelf. Provider installs are scanned below and can be mirrored into Obsidian.</p>
+            </div>
+            <div className={vaultClass("brainSkillsActions")}>
+              <Button type="button" size="sm" variant="secondary" onClick={refreshBrainSkills} disabled={brainSkillsLoading || Boolean(brainSkillImportProvider)}>
+                {brainSkillsLoading ? <LoaderCircle aria-hidden="true" className={vaultClass("spinIcon")} /> : <RefreshCcw aria-hidden="true" />}
+                {brainSkillsLoading ? "Scanning" : "Refresh skills"}
+              </Button>
+              <Button type="button" size="sm" variant="secondary" onClick={() => void importBrainSkills("all")} disabled={Boolean(brainSkillImportProvider)}>
+                {brainSkillImportProvider === "all" ? <LoaderCircle aria-hidden="true" className={vaultClass("spinIcon")} /> : brainSkillImportSuccess === "all" ? <Check aria-hidden="true" /> : <Download aria-hidden="true" />}
+                {brainSkillImportProvider === "all" ? "Importing" : "Import all"}
+              </Button>
+              <Button type="button" size="sm" variant="secondary" onClick={() => {
+                setBrainSkillProviderModalOpen(true);
+                if (!brainSkills && !brainSkillsLoading) void refreshBrainSkills();
+              }} disabled={Boolean(brainSkillImportProvider)}>
+                <Layers3 aria-hidden="true" />
+                Import provider
+              </Button>
+            </div>
+          </div>
+
+          {brainSkills?.shared.length ? (
+            <div className={vaultClass("sharedSkillGrid")}>
+              {brainSkills.shared.slice(0, 12).map((skill) => (
+                <article key={skill.id} className={vaultClass("sharedSkillCard")}>
+                  <span>{skill.providerLabel}</span>
+                  <strong>{skill.name}</strong>
+                  <p>{skill.description || "No description in SKILL.md frontmatter yet."}</p>
+                  <small>{skill.relativePath}</small>
+                </article>
+              ))}
+            </div>
+          ) : (
+            <div className={vaultClass("brainSkillsEmpty")}>
+              <Sparkles aria-hidden="true" />
+              <div>
+                <strong>No shared skills yet</strong>
+                <p>The vault Skills folder is empty. Import every discovered provider skill, or choose one harness at a time.</p>
+              </div>
+              <div className={vaultClass("brainSkillsActions")}>
+                <Button type="button" size="sm" onClick={() => void importBrainSkills("all")} disabled={Boolean(brainSkillImportProvider)}>
+                  {brainSkillImportProvider === "all" ? <LoaderCircle aria-hidden="true" className={vaultClass("spinIcon")} /> : <Download aria-hidden="true" />}
+                  Import all providers
+                </Button>
+                <Button type="button" size="sm" variant="secondary" onClick={() => {
+                  setBrainSkillProviderModalOpen(true);
+                  if (!brainSkills && !brainSkillsLoading) void refreshBrainSkills();
+                }} disabled={Boolean(brainSkillImportProvider)}>
+                  <Layers3 aria-hidden="true" />
+                  Import specific provider
+                </Button>
+              </div>
+            </div>
+          )}
+
+          <div className={vaultClass("providerSkillStrip")}>
+            {(brainSkills?.providers ?? BRAIN_SKILL_PROVIDER_FALLBACK).map((provider) => {
+              const importable = provider.skills.filter((skill) => !skill.imported).length;
+              return (
+                <article key={provider.id}>
+                  <span>{provider.label}</span>
+                  <strong>{provider.skills.length}</strong>
+                  <small>{provider.installed ? `${importable} ready to import` : `No ${provider.home} install found`}</small>
+                </article>
+              );
+            })}
+          </div>
+          <p className={vaultClass("brainStatus")}>{brainSkillsStatus || "Skills scan waits for the shared vault."}</p>
+        </section>
+
         <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
           <MemoryCell
             enabled={sharedVault.enabled}
@@ -4648,6 +6256,85 @@ export default function Home() {
                   />
                   <small>Where shared notes live. Read-only until the vault is reachable.</small>
                 </label>
+                <div className="rounded-lg border border-[rgba(148,163,184,0.14)] bg-[rgba(10,14,21,0.45)] p-3">
+                  <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+	                    <div>
+	                      <strong className="block text-xs text-[var(--foreground)]">Realtime Tailnet folder sync</strong>
+	                      <small className="text-[var(--muted)]">No Obsidian Sync subscription required. Pair Syncthing over Tailscale for Obsidian vaults or any folder; rsync is only the fallback.</small>
+	                    </div>
+	                    <span className="rounded-full border border-[rgba(20,184,166,0.3)] px-2 py-0.5 text-[10px] font-bold uppercase tracking-[0.12em] text-[#99f6e4]">Free over Tailscale</span>
+                  </div>
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <label className="flex flex-col gap-1 text-xs text-[var(--muted)]">
+                      Tailscale machine
+                      <input
+                        value={sharedVault.tailnetSyncHost}
+                        onChange={(event) => updateSharedVault({ tailnetSyncHost: event.target.value })}
+                        placeholder="user@machine or magicdns-name"
+                        className="rounded-md border border-[rgba(148,163,184,0.18)] bg-[rgba(10,14,21,0.7)] px-2 py-1 text-[var(--foreground)]"
+                      />
+                    </label>
+                    <label className="flex flex-col gap-1 text-xs text-[var(--muted)]">
+                      Remote vault folder
+                      <input
+                        value={sharedVault.tailnetSyncPath}
+                        onChange={(event) => updateSharedVault({ tailnetSyncPath: event.target.value })}
+                        placeholder="~/Documents/Obsidian/Omni-Agent Hivemind Vault"
+                        className="rounded-md border border-[rgba(148,163,184,0.18)] bg-[rgba(10,14,21,0.7)] px-2 py-1 text-[var(--foreground)]"
+                      />
+                    </label>
+                  </div>
+                  <div className="mt-3 flex flex-wrap items-center gap-2">
+                    <label className="flex items-center gap-2 text-xs font-semibold text-[var(--foreground)]">
+                      <input
+                        type="checkbox"
+                        checked={sharedVault.tailnetSyncEnabled}
+                        onChange={(event) => updateSharedVault({ tailnetSyncEnabled: event.target.checked })}
+                      />
+                      Live sync
+                    </label>
+                    <label className="flex items-center gap-2 text-xs text-[var(--muted)]">
+                      Direction
+                      <select
+                        value={sharedVault.tailnetSyncDirection}
+                        onChange={(event) => updateSharedVault({ tailnetSyncDirection: event.target.value as "bidirectional" | "push" | "pull" })}
+                        className="rounded-md border border-[rgba(148,163,184,0.18)] bg-[rgba(10,14,21,0.7)] px-2 py-1 text-[var(--foreground)]"
+                      >
+                        <option value="bidirectional">Bidirectional with conflict copies</option>
+                        <option value="push">This Mac to Tailnet machine</option>
+                        <option value="pull">Tailnet machine to This Mac</option>
+                      </select>
+                    </label>
+                    <label className="flex items-center gap-2 text-xs text-[var(--muted)]">
+                      Every
+                      <input
+                        type="number"
+                        min={10}
+                        max={300}
+                        value={sharedVault.tailnetSyncIntervalSeconds}
+                        onChange={(event) => updateSharedVault({ tailnetSyncIntervalSeconds: Number(event.target.value) || 20 })}
+                        className="w-16 rounded-md border border-[rgba(148,163,184,0.18)] bg-[rgba(10,14,21,0.7)] px-2 py-1 text-[var(--foreground)]"
+                      />
+                      sec
+                    </label>
+	                    <Button type="button" size="sm" variant="secondary" disabled={Boolean(vaultSyncPending)} onClick={pairSyncthingVaultSync}>
+	                      {vaultSyncPending === "syncthing" ? "Pairing..." : "Pair realtime sync"}
+	                    </Button>
+	                    <Button type="button" size="sm" variant="secondary" disabled={Boolean(vaultSyncPending)} onClick={() => runVaultTailnetSync(true)}>
+	                      {vaultSyncPending === "dry-run" ? "Checking..." : "Dry run"}
+	                    </Button>
+                    <Button type="button" size="sm" variant="secondary" disabled={Boolean(vaultSyncPending)} onClick={() => runVaultTailnetSync(false)}>
+                      {vaultSyncPending === "sync" ? "Syncing..." : "Sync now"}
+                    </Button>
+                  </div>
+                  {vaultSyncStatus ? (
+	                    <p className={`mt-3 text-xs ${vaultSyncStatus.ok ? "text-[#86efac]" : "text-[#fecdd3]"}`}>
+	                      {vaultSyncStatus.ok
+	                        ? vaultSyncStatus.message ?? `${vaultSyncStatus.dryRun ? "Dry run" : "Sync"} finished. ${vaultSyncStatus.direction === "bidirectional" ? "Merged with" : vaultSyncStatus.direction === "pull" ? "Pulled from" : "Pushed to"} ${sharedVault.tailnetSyncHost || "Tailnet machine"}.${vaultSyncStatus.conflicts?.length ? ` Conflict copies: ${vaultSyncStatus.conflicts.length}.` : ""}`
+	                        : vaultSyncStatus.error ?? vaultSyncStatus.stderr ?? "Tailnet sync failed."}
+                    </p>
+                  ) : null}
+                </div>
                 <div className="grid gap-3 sm:grid-cols-2">
                   <label className="flex flex-col gap-1 text-xs text-[var(--muted)]">
                     Inbox subfolder
@@ -4674,6 +6361,33 @@ export default function Home() {
                     className="rounded-md border border-[rgba(148,163,184,0.18)] bg-[rgba(10,14,21,0.7)] px-2 py-1 text-[var(--foreground)]"
                   />
                   <small>The Work board stores `kanban.json` files here so synced machines and agents see the same queue.</small>
+                </label>
+                <label className="flex flex-col gap-1 text-xs text-[var(--muted)]">
+                  Notifications folder
+                  <input
+                    value={sharedVault.notificationsFolder ?? DEFAULT_SHARED_VAULT.notificationsFolder}
+                    onChange={(event) => updateSharedVault({ notificationsFolder: event.target.value })}
+                    className="rounded-md border border-[rgba(148,163,184,0.18)] bg-[rgba(10,14,21,0.7)] px-2 py-1 text-[var(--foreground)]"
+                  />
+                  <small>Agents write markdown notifications here. The dashboard keeps read receipts and settings beside them.</small>
+                </label>
+                <label className="flex items-center gap-2 text-xs text-[var(--muted)]">
+                  <input
+                    type="checkbox"
+                    checked={sharedVault.noteTaskImportEnabled}
+                    onChange={(event) => updateSharedVault({ noteTaskImportEnabled: event.target.checked })}
+                  />
+                  Auto-import markdown note tasks into Work Ideas
+                </label>
+                <label className="flex flex-col gap-1 text-xs text-[var(--muted)]">
+                  Note task folders
+                  <textarea
+                    value={sharedVault.noteTaskImportFolders ?? DEFAULT_SHARED_VAULT.noteTaskImportFolders}
+                    onChange={(event) => updateSharedVault({ noteTaskImportFolders: event.target.value })}
+                    rows={3}
+                    className="rounded-md border border-[rgba(148,163,184,0.18)] bg-[rgba(10,14,21,0.7)] px-2 py-1 text-[var(--foreground)]"
+                  />
+                  <small>Folder-backed notes from Obsidian, Tailnet sync, or another markdown provider can feed unchecked tasks and Next action sections into Ideas.</small>
                 </label>
                 <label className="flex flex-col gap-1 text-xs text-[var(--muted)]">
                   Control Room folder
@@ -4752,6 +6466,113 @@ export default function Home() {
       </section>
       ) : null}
 
+      {activeView === "notifications" ? (
+      <section className={notificationClass("notificationsPanel", "tabPanel")}>
+        <div className={notificationClass("notificationsHeader")}>
+          <div>
+            <p className="eyebrow">Agent notifications</p>
+            <h2>Inbox from the swarm</h2>
+            <p>Agents can write markdown notes into the shared Obsidian notification folder when they need your attention.</p>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <Button type="button" size="sm" variant="secondary" onClick={() => void refreshNotifications()} disabled={notificationsLoading}>
+              <RefreshCcw aria-hidden="true" />
+              {notificationsLoading ? "Refreshing" : "Refresh"}
+            </Button>
+            <Button type="button" size="sm" onClick={markAllNotificationsRead} disabled={!notificationSummary?.unread}>
+              <CheckCheck aria-hidden="true" />
+              Mark read
+            </Button>
+          </div>
+        </div>
+
+        <div className={notificationClass("notificationsControls")}>
+          <div className={notificationClass("notificationStats")}>
+            <span><strong>{notificationSummary?.total ?? 0}</strong> total</span>
+            <span><strong>{notificationSummary?.unread ?? 0}</strong> unread</span>
+            <span><strong>{(notificationSummary?.highUnread ?? 0) + (notificationSummary?.urgentUnread ?? 0)}</strong> high priority</span>
+            <span title={notificationSummary?.folder}>/{notificationSummary?.folder ?? sharedVault.notificationsFolder}</span>
+          </div>
+          <label className={notificationClass("notificationSetting")}>
+            <span>
+              <strong>Escalate high priority</strong>
+              <span>Off by default. If enabled, your agent will send you a message via your preferred messaging channel (e.g. telegram, discord, etc.)</span>
+            </span>
+            <input
+              type="checkbox"
+              checked={Boolean(notificationSummary?.settings.highPriorityMessagingEnabled)}
+              onChange={(event) => updateNotificationSettings({ highPriorityMessagingEnabled: event.target.checked })}
+            />
+          </label>
+        </div>
+
+        {notifications.length ? (
+          <div
+            className={notificationClass("notificationList")}
+            onScroll={(event) => {
+              const target = event.currentTarget;
+              if (notificationsLoading || notificationCursor === null) return;
+              if (target.scrollHeight - target.scrollTop - target.clientHeight < 220) void refreshNotifications({ append: true });
+            }}
+          >
+            {notificationGroups.map((group) => (
+              <section key={group.label} className={notificationClass("notificationDayGroup")}>
+                <h3>{group.label}</h3>
+                {group.items.map((notification) => (
+                  <article
+                    key={notification.id}
+                    className={notificationClass("notificationCard", notification.priority, !notification.read && "unread")}
+                  >
+                    <div className={notificationClass("notificationGlyph")}>
+                      {notificationIcon(notification.kind, notification.priority)}
+                    </div>
+                    <div className={notificationClass("notificationBody")}>
+                      <div className={notificationClass("notificationMetaRow")}>
+                        <div>
+                          <h3>{notification.title}</h3>
+                          <p>{notification.agentName}{notification.source ? ` · ${notification.source}` : ""}</p>
+                        </div>
+                        <time>{formatBrainDate(notification.createdAt)}</time>
+                      </div>
+                      {notification.body ? <p>{notification.body}</p> : null}
+                      <div className={notificationClass("notificationFooter")}>
+                        <div className={notificationClass("notificationTags")}>
+                          <span className={notificationClass("priorityPill", notification.priority)}>{notification.priority}</span>
+                          <span className={notificationClass("kindPill")}>{notification.kind}</span>
+                          {notification.read ? <span className={notificationClass("readPill")}>read</span> : null}
+                          {notification.tags.slice(0, 4).map((tag) => <span className={notificationClass("kindPill")} key={`${notification.id}-${tag}`}>#{tag}</span>)}
+                        </div>
+                        {!notification.read ? (
+                          <Button type="button" size="sm" variant="secondary" onClick={() => markNotificationRead(notification.id)}>
+                            <Check aria-hidden="true" />
+                            Read
+                          </Button>
+                        ) : null}
+                      </div>
+                    </div>
+                  </article>
+                ))}
+              </section>
+            ))}
+            {notificationCursor !== null ? (
+              <Button type="button" variant="secondary" onClick={() => void refreshNotifications({ append: true })} disabled={notificationsLoading}>
+                {notificationsLoading ? "Loading..." : "Load more"}
+              </Button>
+            ) : null}
+          </div>
+        ) : (
+          <div className={notificationClass("notificationsEmpty")}>
+            <div>
+              <Bell aria-hidden="true" />
+              <strong>No notifications yet</strong>
+              <p>When an agent writes to the vault folder, this tab will pick it up and the sidebar badge will light up.</p>
+            </div>
+          </div>
+        )}
+        <p className={notificationClass("notificationStatus")}>{notificationsStatus || "Notifications sync from Obsidian markdown."}</p>
+      </section>
+      ) : null}
+
       {activeView === "chat" ? (
         <section className={chatClass("workspace", "tabPanel")}>
           <aside className={chatClass("settings")}>
@@ -4763,60 +6584,103 @@ export default function Home() {
               <span className={chatClass("runtimeBadge")}>{displayAgents.length} agents</span>
             </div>
 
-            <div className={chatClass("machineTree")}>
-              {chatSidebarTree.length > 0 ? chatSidebarTree.map((machine) => (
-                <details className={chatClass("machineTreeNode")} key={machine.key} open>
-                  <summary>
-                    <span className={chatClass("treeDisclosure")} aria-hidden="true" />
-                    <Monitor className={chatClass("treeIcon")} aria-hidden="true" />
-                    <span className={chatClass("treeLabel")}>{machine.name}</span>
-                    <span className={chatClass("treeMeta")}>{machine.detail}</span>
-                  </summary>
-                  <div className={chatClass("machineTreeChildren")}>
-                    {machine.folders.length > 0 ? machine.folders.map((folder) => (
-                      <details className={chatClass("machineFolderNode")} key={folder.key} open>
-                        <summary>
-                          <span className={chatClass("treeDisclosure")} aria-hidden="true" />
-                          <Folder className={chatClass("treeIcon")} aria-hidden="true" />
-                          <span className={chatClass("treeLabel")}>{folder.label}</span>
-                        </summary>
-                        <div className={chatClass("machineChatLeaves")}>
-                          {(expandedChatFolders.has(folder.key) ? folder.chats : folder.chats.slice(0, 4)).map((chat) => (
+            <TooltipProvider>
+              <div className={chatClass("machineTree")}>
+                {chatSidebarTree.length > 0 ? chatSidebarTree.map((machine) => (
+                  <details className={chatClass("machineTreeNode")} key={machine.key} open>
+                    <summary>
+                      <span className={chatClass("treeDisclosure")} aria-hidden="true" />
+                      <Monitor className={chatClass("treeIcon")} aria-hidden="true" />
+                      <span className={chatClass("treeLabel")}>{machine.name}</span>
+                      <span className={chatClass("treeMeta")}>{machine.detail}</span>
+                      {machine.onStartChat ? (
+                        <Tooltip>
+                          <TooltipTrigger asChild>
                             <button
                               type="button"
-                              key={chat.key}
-                              className={chatClass(chat.active && "active")}
-                              aria-current={chat.active ? "true" : undefined}
-                              onClick={chat.onOpen}
+                              className={chatClass("treeChatButton")}
+                              aria-label={`Start chat on ${machine.name}`}
+                              onClick={(event) => {
+                                event.preventDefault();
+                                event.stopPropagation();
+                                machine.onStartChat?.();
+                              }}
                             >
-                              <span>{chat.title}</span>
-                              {chat.updatedAt ? <time>{formatRelativeTime(chat.updatedAt)}</time> : null}
-                              <small>{chat.subtitle}</small>
+                              <MessageSquare aria-hidden="true" />
                             </button>
-                          ))}
-                          {!expandedChatFolders.has(folder.key) && folder.chats.length > 4 ? (
-                            <button
-                              type="button"
-                              className={chatClass("machineChatShowMore")}
-                              onClick={() => setExpandedChatFolders((current) => new Set(current).add(folder.key))}
-                            >
-                              Show {folder.chats.length - 4} more
-                            </button>
-                          ) : null}
-                        </div>
-                      </details>
-                    )) : (
-                      <div className={chatClass("machineTreeEmpty")}>No chats yet</div>
-                    )}
+                          </TooltipTrigger>
+                          <TooltipContent side="top">{`New chat in ${machine.name}`}</TooltipContent>
+                        </Tooltip>
+                      ) : null}
+                    </summary>
+                    <div className={chatClass("machineTreeChildren")}>
+                      {machine.folders.length > 0 ? machine.folders.map((folder) => (
+                        <details className={chatClass("machineFolderNode")} key={folder.key} open>
+                          <summary>
+                            <span className={chatClass("treeDisclosure")} aria-hidden="true" />
+                            <Folder className={chatClass("treeIcon")} aria-hidden="true" />
+                            <span className={chatClass("treeLabel")}>{folder.label}</span>
+                            {folder.onStartChat ? (
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <button
+                                    type="button"
+                                    className={chatClass("treeChatButton")}
+                                    aria-label={`Start chat in ${folder.label}`}
+                                    onClick={(event) => {
+                                      event.preventDefault();
+                                      event.stopPropagation();
+                                      folder.onStartChat?.();
+                                    }}
+                                  >
+                                    <MessageSquare aria-hidden="true" />
+                                  </button>
+                                </TooltipTrigger>
+                                <TooltipContent side="top">{`New chat in ${folder.label}`}</TooltipContent>
+                              </Tooltip>
+                            ) : null}
+                          </summary>
+                          <div className={chatClass("machineChatLeaves")}>
+                            {(expandedChatFolders.has(folder.key) ? folder.chats : folder.chats.slice(0, 4)).map((chat) => (
+                              <button
+                                type="button"
+                                key={chat.key}
+                                className={chatClass(chat.active && "active")}
+                                aria-current={chat.active ? "true" : undefined}
+                                onClick={chat.onOpen}
+                              >
+                                <span>{chat.title}</span>
+                                {chat.updatedAt ? <time>{formatRelativeTime(chat.updatedAt)}</time> : null}
+                                <small>{chat.subtitle}</small>
+                              </button>
+                            ))}
+                            {!expandedChatFolders.has(folder.key) && folder.chats.length > 4 ? (
+                              <button
+                                type="button"
+                                className={chatClass("machineChatShowMore")}
+                                onClick={() => setExpandedChatFolders((current) => new Set(current).add(folder.key))}
+                              >
+                                Show {folder.chats.length - 4} more
+                              </button>
+                            ) : null}
+                            {folder.chats.length === 0 ? (
+                              <span className={chatClass("machineTreeEmpty")}>No chats yet</span>
+                            ) : null}
+                          </div>
+                        </details>
+                      )) : (
+                        <div className={chatClass("machineTreeEmpty")}>No chats yet</div>
+                      )}
+                    </div>
+                  </details>
+                )) : (
+                  <div className={chatClass("emptyMachineChat")}>
+                    <strong>No machines yet</strong>
+                    <p>Connect a machine from Agents, then come back here to start chatting.</p>
                   </div>
-                </details>
-              )) : (
-                <div className={chatClass("emptyMachineChat")}>
-                  <strong>No machines yet</strong>
-                  <p>Connect a machine from Agents, then come back here to start chatting.</p>
-                </div>
-              )}
-            </div>
+                )}
+              </div>
+            </TooltipProvider>
 
             {selectedAgent ? (
             <>
@@ -4908,10 +6772,6 @@ export default function Home() {
               </div>
             </details>
 
-            <div className={chatClass("settingsActions")}>
-              <button type="button" onClick={() => duplicateAgent()}>Duplicate</button>
-              <button type="button" onClick={() => deleteAgent()} disabled={agents.length <= 1}>Delete</button>
-            </div>
             </>
             ) : null}
           </aside>
@@ -4922,7 +6782,70 @@ export default function Home() {
               <div>
                 <p className="eyebrow">Live conversation</p>
                 <h2>{selectedAgent.name}</h2>
-                <p>{RUNTIME_LABELS[selectedAgent.runtime]} · {selectedAgent.gatewayUrl || "Chat URL needed"}</p>
+                <div className={chatClass("chatContextControls")} ref={chatContextMenuRef}>
+                  <div className={chatClass("chatContextControl")}>
+                    <button
+                      type="button"
+                      title="Choose the machine and agent for this chat"
+                      onClick={() => setChatContextMenu((current) => current === "machine" ? "" : "machine")}
+                    >
+                      <Monitor aria-hidden="true" />
+                      {selectedChatMachine?.name ?? selectedAgent.machineName ?? "Choose machine"}
+                      <span>{selectedAgent.name}</span>
+                    </button>
+                    {chatContextMenu === "machine" ? (
+                      <div className={chatClass("chatContextMenu")} role="menu">
+                        {chatSidebarTree.flatMap((machine) => {
+                          const group = machineGroups.find((item) => item.key === machine.key);
+                          return (group?.agents ?? []).map((agent) => (
+                            <button
+                              type="button"
+                              role="menuitem"
+                              key={`${machine.key}-${agent.id}`}
+                              onClick={() => {
+                                startAgentChat(agent.id, { fresh: true, chatLeafKey: `machine-${machine.key}-${agent.id}` });
+                                setChatContextMenu("");
+                              }}
+                            >
+                              <Monitor aria-hidden="true" />
+                              <span>{machine.name}</span>
+                              <small>{agent.name}</small>
+                            </button>
+                          ));
+                        })}
+                      </div>
+                    ) : null}
+                  </div>
+                  <div className={chatClass("chatContextControl")}>
+                    <button
+                      type="button"
+                      title="Choose the working directory for this chat"
+                      onClick={() => setChatContextMenu((current) => current === "directory" ? "" : "directory")}
+                    >
+                      <Folder aria-hidden="true" />
+                      {selectedChatDirectory || "Choose directory"}
+                    </button>
+                    {chatContextMenu === "directory" ? (
+                      <div className={chatClass("chatContextMenu")} role="menu">
+                        {(selectedChatMachine?.folders.length ? selectedChatMachine.folders : chatSidebarTree.flatMap((machine) => machine.folders)).map((folder) => (
+                          <button
+                            type="button"
+                            role="menuitem"
+                            key={folder.key}
+                            onClick={() => {
+                              folder.onStartChat?.();
+                              setChatContextMenu("");
+                            }}
+                          >
+                            <Folder aria-hidden="true" />
+                            <span>{folder.label}</span>
+                            <small>{folder.chats.length ? `${folder.chats.length} chats` : "New chat"}</small>
+                          </button>
+                        ))}
+                      </div>
+                    ) : null}
+                  </div>
+                </div>
               </div>
               <Button type="button" variant="secondary" onClick={() => checkStatus()}>
                 <Activity aria-hidden="true" />
@@ -4964,6 +6887,7 @@ export default function Home() {
               {visibleMessages.map((message, index) => (
                 <div className={chatClass("message", message.role)} key={`${message.role}-${index}`}>
                   <span className={chatClass("messageRole")}>{message.role}</span>
+                  <MessageAttachments attachments={message.attachments} />
                   {message.content ? (
                     <ChatMarkdown text={message.content} />
                   ) : (
@@ -4988,17 +6912,100 @@ export default function Home() {
             ) : null}
             <form onSubmit={sendMessage}>
               <div className={chatClass("chatComposerField")}>
+                <input
+                  ref={chatFileInputRef}
+                  type="file"
+                  multiple
+                  className={chatClass("chatFileInput")}
+                  onChange={handleChatImageChange}
+                  disabled={busy}
+                />
+                <input
+                  ref={chatImageInputRef}
+                  type="file"
+                  accept="image/*"
+                  multiple
+                  className={chatClass("chatFileInput")}
+                  onChange={handleChatFileChange}
+                  disabled={busy}
+                />
+                {chatAttachments.length > 0 ? (
+                  <div className={chatClass("attachmentTray")}>
+                    {chatAttachments.map((attachment) => (
+                      <div className={chatClass("attachmentPill")} key={attachment.id}>
+                        <span>{attachment.kind === "image" ? "Image" : attachment.kind === "audio" ? "Audio" : "File"}</span>
+                        <strong>{attachment.name}</strong>
+                        <small>{attachmentSizeLabel(attachment.size)}</small>
+                        <button type="button" aria-label={`Remove ${attachment.name}`} onClick={() => removeChatAttachment(attachment.id)} disabled={busy}>
+                          <X aria-hidden="true" />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                ) : null}
                 <textarea
                   value={text}
                   onChange={(event) => setText(event.target.value)}
                   placeholder={`Ask ${selectedAgent.name} to do something...`}
                   disabled={busy}
                 />
+                {recording ? (
+                  <div className={chatClass("voiceRecorder")} aria-live="polite">
+                    <div className={chatClass("voiceWaveform")} aria-hidden="true">
+                      {voiceBands.map((level, index) => (
+                        <span key={index} style={{ transform: `scaleY(${0.18 + level * 1.8})` }} />
+                      ))}
+                    </div>
+                    <span>{voiceTranscript || "Listening..."}</span>
+                  </div>
+                ) : null}
+                <div className={chatClass("composerTools")}>
+                  <div className={chatClass("attachmentMenuWrap")} ref={attachmentMenuRef}>
+                    <button
+                      type="button"
+                      className={chatClass("composerIconButton")}
+                      onClick={() => setAttachmentMenuOpen((open) => !open)}
+                      disabled={busy}
+                      aria-label="Add attachment"
+                      aria-expanded={attachmentMenuOpen}
+                    >
+                      <Plus aria-hidden="true" />
+                    </button>
+                    {attachmentMenuOpen ? (
+                      <div className={chatClass("attachmentMenu")} role="menu">
+                        <button type="button" role="menuitem" onClick={() => chatImageInputRef.current?.click()}>
+                          <Paperclip aria-hidden="true" />
+                          Images
+                        </button>
+                        <button type="button" role="menuitem" onClick={() => chatFileInputRef.current?.click()}>
+                          <FileUp aria-hidden="true" />
+                          Files
+                        </button>
+                      </div>
+                    ) : null}
+                  </div>
+                  {attachmentError ? <span role="status">{attachmentError}</span> : null}
+                  <div className={chatClass("composerActions")}>
+                  <button
+                    type="button"
+                    className={chatClass("composerIconButton", recording && "recording")}
+                    onClick={recording ? stopAudioRecording : startAudioRecording}
+                    disabled={busy}
+                    aria-label={recording ? "Stop recording" : "Record audio"}
+                  >
+                    <Mic aria-hidden="true" />
+                  </button>
+                  <button
+                    type="submit"
+                    className={chatClass("composerIconButton", "sendButton")}
+                    disabled={busy || (!text.trim() && chatAttachments.length === 0)}
+                    aria-label={busy ? hasStreamingChunk ? "Streaming" : "Waiting" : "Send message"}
+                  >
+                    {busy ? hasStreamingChunk ? "…" : "·" : <ArrowUp aria-hidden="true" />}
+                  </button>
+                  </div>
+                </div>
               </div>
-              <Button type="submit" disabled={busy || !text.trim()} isLoading={busy}>
-                {busy ? null : <Send aria-hidden="true" />}
-                {busy ? hasStreamingChunk ? "Streaming" : "Waiting" : "Send"}
-              </Button>
             </form>
             <p className="hint">
               Last assistant response: {lastAssistant ? `${lastAssistant.slice(0, 120)}...` : "none yet"}
@@ -5013,6 +7020,197 @@ export default function Home() {
         </section>
       ) : null}
         </div>
+
+      {brainSkillProviderModalOpen ? (
+        <div
+          className={vaultClass("skillsModalBackdrop")}
+          role="presentation"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget && !brainSkillImportProvider) setBrainSkillProviderModalOpen(false);
+          }}
+        >
+          <section className={vaultClass("skillsModal")} role="dialog" aria-modal="true" aria-labelledby="skills-modal-title">
+            <div className={vaultClass("skillsModalHeader")}>
+              <div>
+                <h2 id="skills-modal-title">Import skills by provider</h2>
+                <p>Each import mirrors discovered `SKILL.md` folders into the shared Obsidian brain and refreshes this view.</p>
+              </div>
+              <button type="button" onClick={() => setBrainSkillProviderModalOpen(false)} disabled={Boolean(brainSkillImportProvider)} aria-label="Close skills import modal">
+                <X aria-hidden="true" />
+              </button>
+            </div>
+            <div className={vaultClass("providerImportList")}>
+              {(brainSkills?.providers ?? BRAIN_SKILL_PROVIDER_FALLBACK).map((provider) => {
+                const importable = provider.skills.filter((skill) => !skill.imported).length;
+                const pending = brainSkillImportProvider === provider.id;
+                const success = brainSkillImportSuccess === provider.id;
+                return (
+                  <article key={provider.id} className={vaultClass("providerImportRow")}>
+                    <div>
+                      <strong>{provider.label}</strong>
+                      <span>{provider.skills.length} found · {importable} importable · {provider.home}</span>
+                    </div>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="secondary"
+                      disabled={!importable || Boolean(brainSkillImportProvider)}
+                      onClick={() => void importBrainSkills(provider.id)}
+                    >
+                      {pending ? <LoaderCircle aria-hidden="true" className={vaultClass("spinIcon")} /> : success ? <Check aria-hidden="true" /> : <Download aria-hidden="true" />}
+                      {pending ? "Importing" : success ? "Synced" : importable ? "Import" : "Current"}
+                    </Button>
+                  </article>
+                );
+              })}
+            </div>
+          </section>
+        </div>
+      ) : null}
+
+      {roleModalAgent || agentCreateMachine ? (
+        <div
+          className={fleetClass("setupModalBackdrop")}
+          role="presentation"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget) closeAgentSettingsModal();
+          }}
+        >
+          <section className={fleetClass("setupModal", "agentSettingsModal")} role="dialog" aria-modal="true" aria-labelledby="agent-settings-title">
+            <div className={fleetClass("setupModalHeader")}>
+              <div>
+                <p className="eyebrow">{agentSettingsTitle}</p>
+                {agentCreateMachine ? (
+                  <div className={fleetClass("agentNameEdit")}>
+                    <input
+                      id="agent-settings-title"
+                      value={agentCreateDraft.name}
+                      onChange={(event) => setAgentCreateDraft((current) => ({ ...current, name: event.target.value }))}
+                      aria-label="Agent name"
+                      placeholder={`${RUNTIME_LABELS[agentCreateDraft.runtime]} on ${agentCreateMachine.name}`}
+                      autoFocus
+                    />
+                  </div>
+                ) : agentRenameEditing && roleModalAgent ? (
+                  <form
+                    className={fleetClass("agentNameEdit")}
+                    onSubmit={(event) => {
+                      event.preventDefault();
+                      const nextName = agentRenameDraft.trim();
+                      if (!nextName) return;
+                      updateAgentProfile(roleModalAgent.id, { name: nextName });
+                      setAgentRenameEditing(false);
+                    }}
+                  >
+                    <input
+                      id="agent-settings-title"
+                      value={agentRenameDraft}
+                      onChange={(event) => setAgentRenameDraft(event.target.value)}
+                      aria-label="Agent name"
+                      autoFocus
+                    />
+                    <button type="submit" aria-label="Save agent name" disabled={!agentRenameDraft.trim()}>
+                      <Check aria-hidden="true" />
+                    </button>
+                    <button
+                      type="button"
+                      aria-label="Cancel agent name edit"
+                      onClick={() => {
+                        setAgentRenameDraft(roleModalAgent.name);
+                        setAgentRenameEditing(false);
+                      }}
+                    >
+                      <X aria-hidden="true" />
+                    </button>
+                  </form>
+                ) : roleModalAgent ? (
+                  <div className={fleetClass("agentNameDisplay")}>
+                    <h2 id="agent-settings-title">{roleModalAgent.name}</h2>
+                    <button
+                      type="button"
+                      aria-label="Rename agent"
+                      onClick={() => {
+                        setAgentRenameDraft(roleModalAgent.name);
+                        setAgentRenameEditing(true);
+                      }}
+                    >
+                      <Pencil aria-hidden="true" />
+                    </button>
+                  </div>
+                ) : null}
+                <p>{agentSettingsDescription}</p>
+              </div>
+              <Button type="button" variant="ghost" aria-label="Close agent settings" onClick={closeAgentSettingsModal}>
+                <X aria-hidden="true" />
+                Close
+              </Button>
+            </div>
+
+            <div className={fleetClass("agentSettingsGrid")}>
+              {agentCreateMachine ? (
+                <label className={fleetClass("agentSettingsField")}>
+                  <span>Runtime</span>
+                  <select
+                    value={agentCreateDraft.runtime}
+                    onChange={(event) => {
+                      const runtime = event.target.value as AgentRuntime;
+                      setAgentCreateDraft((current) => ({
+                        ...current,
+                        runtime,
+                        beeRole: runtime === "openclaw" ? "queen" : current.beeRole === "queen" ? "worker" : current.beeRole,
+                      }));
+                    }}
+                  >
+                    {Object.entries(RUNTIME_LABELS).map(([runtime, label]) => (
+                      <option value={runtime} key={runtime}>{label}</option>
+                    ))}
+                  </select>
+                </label>
+              ) : null}
+              <label className={fleetClass("agentSettingsField")}>
+                <span>Colony role</span>
+                <select
+                  value={agentSettingsRole}
+                  onChange={(event) => {
+                    const beeRole = event.target.value as BeeAgentRole;
+                    if (agentCreateMachine) {
+                      setAgentCreateDraft((current) => ({ ...current, beeRole }));
+                    } else if (roleModalAgent) {
+                      updateAgentProfile(roleModalAgent.id, { beeRole });
+                    }
+                  }}
+                >
+                  {BEE_AGENT_ROLES.map((role) => <option value={role.id} key={role.id}>{role.label}</option>)}
+                </select>
+              </label>
+              <label className={fleetClass("agentSettingsField")}>
+                <span>Worker class</span>
+                <select
+                  value={agentSettingsWorkerClass}
+                  onChange={(event) => {
+                    const workerClass = event.target.value as BeeWorkerClass;
+                    if (agentCreateMachine) {
+                      setAgentCreateDraft((current) => ({ ...current, workerClass }));
+                    } else if (roleModalAgent) {
+                      updateAgentProfile(roleModalAgent.id, { workerClass });
+                    }
+                  }}
+                  disabled={agentSettingsRole === "observer" || agentSettingsRole === "human"}
+                >
+                  {BEE_WORKER_CLASSES.map((workerClass) => <option value={workerClass.id} key={workerClass.id}>{workerClass.label}</option>)}
+                </select>
+              </label>
+            </div>
+
+            <div className={fleetClass("setupModalActions")}>
+              <Button type="button" onClick={agentCreateMachine ? createAgentFromModal : closeAgentSettingsModal}>
+                <Check aria-hidden="true" />
+                {agentCreateMachine ? "Add agent" : "Done"}
+              </Button>
+            </div>
+          </section>
+        </div>
+      ) : null}
 
       {setupMachine ? (
         <div
@@ -5040,14 +7238,28 @@ export default function Home() {
                   design philosophy's Setup Rules section. */}
               <SetupCell
                 title="Add this machine"
-                subtitle="Each step makes the system safer and clearer."
+                subtitle="Run setup, let the collector report in, then tune optional rails."
                 steps={((): SetupStep[] => {
                   const steps: SetupStep[] = [
                     { label: "Connect", hint: "Open Terminal on the machine and run the setup command.", state: "current" },
-                    { label: "Verify", hint: "We auto-detect the collector once it starts.", state: "pending" },
-                    { label: "Configure limits", hint: "Set wallet caps and approval thresholds when you fund agents.", state: "pending" },
-                    { label: "Enable shared brain", hint: "Optional — opt this machine's agents into the vault.", state: "pending" },
-                    { label: "Advanced rails", hint: "Provider keys, x402, debug — only when you need them.", state: "pending" },
+                    {
+                      label: "Verify",
+                      hint: "We auto-detect the collector once it starts.",
+                      state: "pending",
+                      action: (
+                        <Button
+                          type="button"
+                          variant="secondary"
+                          size="sm"
+                          className="h-7 px-2.5 text-[0.7rem]"
+                          onClick={copySetupCommand}
+                        >
+                          {setupCommandCopied ? <Check aria-hidden="true" /> : <Copy aria-hidden="true" />}
+                          {setupCommandCopied ? "Copied" : "Copy command"}
+                        </Button>
+                      ),
+                    },
+                    { label: "Configure features", hint: "Wallet caps, provider keys, x402, and debug only when you need them.", state: "pending" },
                   ];
                   if (setupMachine?.collector === "ready") {
                     steps[0].state = "done";
@@ -5056,17 +7268,6 @@ export default function Home() {
                   }
                   return steps;
                 })()}
-                primaryAction={(
-                  <Button
-                    type="button"
-                    variant="secondary"
-                    size="sm"
-                    onClick={copySetupCommand}
-                  >
-                    {setupCommandCopied ? <Check aria-hidden="true" /> : <Copy aria-hidden="true" />}
-                    {setupCommandCopied ? "Copied setup command" : "Copy setup command"}
-                  </Button>
-                )}
                 details={(
                   <div className="flex flex-col gap-2 text-xs">
                     <p>

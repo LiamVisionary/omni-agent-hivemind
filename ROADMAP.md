@@ -8,6 +8,7 @@
 - OpenClaw, Hermes, and Aeon runtime profiles.
 - Shared Obsidian vault settings and per-agent opt-in.
 - Shared Obsidian-backed Kanban board for handoffs, blockers, queued work, and completed work.
+- Built-in Syncthing-over-Tailscale vault sync for subscription-free multi-machine sharing.
 
 ## Next
 
@@ -29,6 +30,7 @@
 ## Shared Obsidian Brain
 
 - Shared memory bank structure for company brain, project brain, agent-specific brain, and user preferences.
+- Tailnet vault sync using managed Syncthing for realtime local vault sharing, with Tailscale SSH and rsync kept as an advanced repair fallback.
 - Shared skills folder with sync status per agent runtime.
 - Vault-safe write APIs with explicit allowlists and append-only defaults.
 - Agent handoff notes that link tasks, source messages, outputs, and follow-up decisions.

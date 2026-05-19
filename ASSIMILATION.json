@@ -1,5 +1,5 @@
 {
-  "created_at": "2026-05-19T06:54:25.083276+00:00",
+  "created_at": "2026-05-19T17:12:38.098509+00:00",
   "custom_code_assessment": "balanced",
   "entries": [
     {
@@ -36,6 +36,118 @@
       "target_path": "src/app/globals.css",
       "reuse_type": "style_adapted",
       "note": "CSS-variable light/dark theme switch approach adapted into the bee and beehive palette"
+    },
+    {
+      "source_repo": "nandeesh88/Notification-Feed-Application",
+      "source_path": "lib/types.ts",
+      "target_path": "src/lib/types/agent-notifications.ts",
+      "reuse_type": "adapted_code",
+      "note": "notification item type model adapted for agent priority, kind, vault path, and read state"
+    },
+    {
+      "source_repo": "nandeesh88/Notification-Feed-Application",
+      "source_path": "components/NotificationPanel.tsx",
+      "target_path": "src/app/page.tsx",
+      "reuse_type": "adapted_code",
+      "note": "notification panel mechanics adapted for grouped feed, mark-read actions, badge counts, and incremental endless loading"
+    },
+    {
+      "source_repo": "nandeesh88/Notification-Feed-Application",
+      "source_path": "components/NotificationCard.tsx",
+      "target_path": "src/app/notifications.module.css",
+      "reuse_type": "style_adapted",
+      "note": "notification card priority/read visual treatment adapted to the dashboard CSS module"
+    },
+    {
+      "source_repo": "Conway-Research/automaton",
+      "source_path": "src/agent/harness-registry.ts",
+      "target_path": "src/lib/services/orchestration/bee-roles.ts",
+      "reuse_type": "adapted_code",
+      "note": "Role-to-capability mapping adapted into Queen Bee and worker-class assignment"
+    },
+    {
+      "source_repo": "Conway-Research/automaton",
+      "source_path": "src/orchestration/types.ts",
+      "target_path": "src/app/api/orchestrator/route.ts",
+      "reuse_type": "adapted_code",
+      "note": "Agent tracker and assignment surface concepts adapted for the dashboard orchestrator API"
+    },
+    {
+      "source_repo": "LiamVisionary/maps-agency",
+      "source_path": "config/router.json",
+      "target_path": "src/lib/types/agent-runtime.ts",
+      "reuse_type": "config_adapted",
+      "note": "Specialized agent route metadata adapted into persisted Queen Bee and worker-class role metadata"
+    },
+    {
+      "source_repo": "jedrichards/rsyncwrapper",
+      "source_path": "lib/rsyncwrapper.js",
+      "target_path": "src/lib/services/obsidian/tailnet-vault-sync.ts",
+      "reuse_type": "adapted_code",
+      "note": "Rsync option assembly, dry-run, exclude, and remote-shell concepts adapted into a shell-free Tailscale SSH vault sync service"
+    },
+    {
+      "source_repo": "stefanrmmr/streamlit-audio-recorder",
+      "source_path": "st_audiorec/frontend/src/StreamlitAudioRecorder.tsx",
+      "target_path": "src/app/page.tsx",
+      "reuse_type": "adapted_code",
+      "note": "Browser audio capture stop/read/attach flow adapted for the Chat composer microphone attachment support"
+    },
+    {
+      "source_repo": "coinbase/x402",
+      "source_path": "typescript/packages/http/fetch/src/index.ts",
+      "target_path": "src/lib/services/wallet/x402-agent-fetch.ts",
+      "reuse_type": "adapted_code",
+      "note": "x402 fetch wrapper flow adapted for dashboard-controlled paid HTTP calls with local wallet policy checks"
+    },
+    {
+      "source_repo": "coinbase/x402",
+      "source_path": "typescript/packages/http/fetch/src/index.test.ts",
+      "target_path": "src/app/api/wallet/x402/mock-paid/route.ts",
+      "reuse_type": "test_adapted",
+      "note": "402 challenge and signed retry smoke behavior adapted into a local dev-only x402 test endpoint"
+    },
+    {
+      "source_repo": "luacantu/guardx402",
+      "source_path": "artifacts/guardx402/lib/spend.ts",
+      "target_path": "src/lib/services/wallet/x402-agent-fetch.ts",
+      "reuse_type": "adapted_code",
+      "note": "Spend guard concepts adapted into per-payment caps, approval threshold gates, and local x402 spend logging"
+    },
+    {
+      "source_repo": "coinbase/x402",
+      "source_path": "typescript/packages/mechanisms/svm/src/exact/client/scheme.ts",
+      "target_path": "src/lib/services/wallet/x402-agent-fetch.ts",
+      "reuse_type": "adapted_code",
+      "note": "SVM exact payment signing flow adapted for locally vaulted Solana wallets"
+    },
+    {
+      "source_repo": "coinbase/x402",
+      "source_path": "typescript/packages/mechanisms/svm/src/constants.ts",
+      "target_path": "src/lib/services/wallet/x402-agent-fetch.ts",
+      "reuse_type": "adapted_code",
+      "note": "Solana CAIP-2 network mapping and default devnet/mainnet RPC handling adapted for x402 wallet policies"
+    },
+    {
+      "source_repo": "syncthing/syncthing",
+      "source_path": "gui/default/syncthing/core/syncthingController.js",
+      "target_path": "scripts/agent-telemetry-collector.mjs",
+      "reuse_type": "adapted_code",
+      "note": "Syncthing REST config save pattern using defaults, device/folder mutation, and config PUT"
+    },
+    {
+      "source_repo": "syncthing/syncthing",
+      "source_path": "lib/config/folderconfiguration.go",
+      "target_path": "scripts/agent-telemetry-collector.mjs",
+      "reuse_type": "adapted_code",
+      "note": "folder device list shape and sendreceive folder configuration fields"
+    },
+    {
+      "source_repo": "syncthing/syncthing",
+      "source_path": "lib/config/deviceconfiguration.go",
+      "target_path": "scripts/agent-telemetry-collector.mjs",
+      "reuse_type": "adapted_code",
+      "note": "device configuration shape for deviceID, name, addresses, introducer, paused, and auto-accept flags"
     }
   ]
 }

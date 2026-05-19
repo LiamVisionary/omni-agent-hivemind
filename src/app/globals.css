@@ -368,6 +368,9 @@ h1 {
 }
 
 .viewTab small {
+  display: flex;
+  gap: 6px;
+  align-items: center;
   grid-column: 2;
   grid-row: 2;
   overflow: hidden;

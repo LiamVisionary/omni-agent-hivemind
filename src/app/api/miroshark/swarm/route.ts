@@ -60,10 +60,10 @@ type MiroSharkPostsPayload = {
 };
 
 const globalJobs = globalThis as typeof globalThis & {
-  __openclawMirosharkJobs?: Map<string, SwarmJob>;
+  __hivemindMirosharkJobs?: Map<string, SwarmJob>;
 };
-const jobs = globalJobs.__openclawMirosharkJobs ?? new Map<string, SwarmJob>();
-globalJobs.__openclawMirosharkJobs = jobs;
+const jobs = globalJobs.__hivemindMirosharkJobs ?? new Map<string, SwarmJob>();
+globalJobs.__hivemindMirosharkJobs = jobs;
 
 function updateJob(jobId: string, patch: Partial<SwarmJob>) {
   const current = jobs.get(jobId);
@@ -124,7 +124,7 @@ async function pollPrepare(baseUrl: string, simulationId: string, taskId?: strin
 
 function scenarioDoc(scenario: string) {
   const text = [
-    "OpenClaw swarm scenario",
+    "Hivemind swarm scenario",
     "",
     scenario,
     "",
@@ -143,8 +143,8 @@ function scenarioDoc(scenario: string) {
   ].join("\n");
 
   return JSON.stringify([{
-    title: "OpenClaw swarm scenario",
-    url: "openclaw://swarm-scenario",
+    title: "Hivemind swarm scenario",
+    url: "hivemind://swarm-scenario",
     text,
   }]);
 }
@@ -246,7 +246,7 @@ export async function POST(request: Request) {
         return Response.json({ ok: true, action: body.action, simulationId, payload });
       }
       if (body.action === "fork" || body.action === "branch") {
-        const event = body.event?.trim() || "OpenClaw counterfactual branch";
+        const event = body.event?.trim() || "Hivemind counterfactual branch";
         const payload = await requestJson(`${baseUrl}/api/simulation/${body.action === "fork" ? "fork" : "branch-counterfactual"}`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -277,7 +277,7 @@ export async function POST(request: Request) {
   }
 
   const jobId = `swarm_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
-  const projectName = body?.projectName?.trim() || `OpenClaw swarm ${new Date().toISOString().slice(0, 16)}`;
+  const projectName = body?.projectName?.trim() || `Hivemind swarm ${new Date().toISOString().slice(0, 16)}`;
   const rounds = Math.max(1, Math.min(200, Number(body?.rounds ?? 5)));
   const platform = body?.platform ?? "twitter";
   jobs.set(jobId, {
@@ -303,7 +303,7 @@ export async function POST(request: Request) {
       const form = new FormData();
       form.set("simulation_requirement", scenario);
       form.set("project_name", projectName);
-      form.set("additional_context", "Created and launched from OpenClaw Swarm controls.");
+      form.set("additional_context", "Created and launched from Omni-Agent Hivemind Swarm controls.");
       form.set("url_docs", scenarioDoc(scenario));
 
       const ontology = await requestJson<{ project_id?: string; ontology?: unknown }>(`${baseUrl}/api/graph/ontology/generate`, {

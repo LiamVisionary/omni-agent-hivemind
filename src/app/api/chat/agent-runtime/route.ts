@@ -3,13 +3,20 @@ import type { AgentProfile, SharedVaultConfig } from "@/lib/types/agent-runtime"
 import { getRuntimeUrl } from "@/lib/types/agent-runtime";
 import { sendMessageViaGateway } from "@/lib/services/openclaw/gateway-client";
 import { getGatewayAuthToken } from "@/lib/services/openclaw/gateway-health";
+import type { AgentWalletConfig } from "@/lib/types/agent-wallet";
+import { summarizeX402Policy } from "@/lib/services/wallet/x402-agent-fetch";
 
 export const runtime = "nodejs";
 export const maxDuration = 120;
 
 type IncomingMessage = {
   role: string;
-  content: string | Array<{ type: string; text?: string }>;
+  content: string | Array<{
+    type: string;
+    text?: string;
+    image_url?: { url?: string };
+    file?: { filename?: string; file_data?: string };
+  }>;
 };
 
 function activeSharedVault(profile: AgentProfile, sharedVault?: SharedVaultConfig): SharedVaultConfig | null {
@@ -25,12 +32,29 @@ function buildVaultContext(sharedVault: SharedVaultConfig | null): string {
     `- Vault path: ${sharedVault.vaultPath}`,
     `- Agent inbox folder: ${sharedVault.inboxFolder || "(not set)"}`,
     `- Shared note: ${sharedVault.sharedNotePath || "(not set)"}`,
-    `- Shared Kanban folder: ${sharedVault.kanbanFolder || "Projects/OpenClaw/Kanban"}`,
-    "- Kanban API: use the dashboard's /api/openclaw/kanban endpoint for task creation, status moves, comments, and board reads when available.",
-    "- Kanban storage: boards are stored as kanban.json files under the shared Kanban folder so machines using Obsidian Sync can collaborate on the same work queue.",
+    `- Shared Kanban folder: ${sharedVault.kanbanFolder || "Projects/Omni-Agent Hivemind/Kanban"}`,
+    `- Agent notifications folder: ${sharedVault.notificationsFolder || "agent-notifications"}`,
+    "- Kanban workflow: Ideas are inert; Ready for Queen is the pickup lane; Working is claimed work; Needs Human is only for decisions/access/approval; Done is completed work.",
+    "- Queen Bee behavior: if you are the Queen Bee, watch Ready for Queen, choose yourself or a worker class, move claimed cards to Working, comment with the routing reason, and move straight to Done when no human intervention is needed.",
+    "- Kanban API: use the dashboard's /api/kanban endpoint for task creation, status moves, comments, and board reads when available. Use /api/orchestrator for the MCP-ready tool/agent/task surface when the dashboard provides agent role metadata.",
+    "- Kanban storage: boards are stored as kanban.json files under the shared Kanban folder. Collaboration can use any folder sync provider, including Obsidian Sync, iCloud Drive, Dropbox, Syncthing, Git, or the built-in Syncthing-over-Tailscale pairing.",
+    "- Notifications: when you need the user's attention outside chat, write a markdown notification under the notifications folder using priority low, normal, high, or urgent. High-priority messaging escalation is only a preference flag; a configured messaging agent should handle Telegram, iMessage, Discord, or similar delivery when configured.",
     "- Brain access tracking: when you inspect a vault note through the dashboard, call /api/obsidian/access with vaultPath, notePath, agentName, agentId, runtime, machineName, and action so the shared brain records who accessed what and when.",
     `- Hermes Agent Control Room path: ${sharedVault.controlRoomPath || "(not set)"}`,
     `- Instructions: ${sharedVault.instructions || "Read AGENTS.md before durable vault edits."}`,
+  ];
+  return lines.join("\n");
+}
+
+function buildWalletToolContext(wallet?: AgentWalletConfig): string {
+  if (!wallet) return "";
+  const lines = [
+    "Agent wallet/payment context:",
+    summarizeX402Policy(wallet),
+    "- Tool: x402_fetch",
+    "- Dashboard endpoint: POST /api/wallet/x402 with { agentId, url, method, headers, body, policy, confirmation }.",
+    "- Approval gate: if autopay is off or the payment is over the approval threshold, do not proceed until the user explicitly supplies PAY_X402.",
+    "- Hard rule: never ask for or reveal private keys; the dashboard signs from its encrypted local vault.",
   ];
   return lines.join("\n");
 }
@@ -43,6 +67,31 @@ function extractUserText(messages: IncomingMessage[]): string {
     .filter((part) => part.type === "text")
     .map((part) => part.text ?? "")
     .join(" ");
+}
+
+function messageHasContent(message: IncomingMessage) {
+  if (typeof message.content === "string") return Boolean(message.content.trim());
+  return message.content.some((part) => {
+    if (part.type === "text") return Boolean(part.text?.trim());
+    if (part.type === "image_url") return Boolean(part.image_url?.url);
+    if (part.type === "file") return Boolean(part.file?.file_data);
+    return false;
+  });
+}
+
+function latestUserMessage(messages: IncomingMessage[]) {
+  return [...messages].reverse().find((message) => message.role === "user" && messageHasContent(message));
+}
+
+function attachmentPromptSummary(message?: IncomingMessage) {
+  if (!message || typeof message.content === "string") return "";
+  const images = message.content.filter((part) => part.type === "image_url" && part.image_url?.url).length;
+  const files = message.content.filter((part) => part.type === "file" && part.file?.file_data).length;
+  const pieces = [
+    images ? `${images} image${images === 1 ? "" : "s"}` : "",
+    files ? `${files} file${files === 1 ? "" : "s"}` : "",
+  ].filter(Boolean);
+  return pieces.length ? `Please respond to the attached ${pieces.join(" and ")}.` : "";
 }
 
 function ssePayload(payload: unknown): string {
@@ -105,9 +154,12 @@ async function streamHttpRuntime(
   messages: IncomingMessage[],
   userText: string,
   sharedVault: SharedVaultConfig | null,
+  wallet?: AgentWalletConfig,
 ) {
   const url = getRuntimeUrl(profile, profile.chatPath || "/chat");
   const vaultContext = buildVaultContext(sharedVault);
+  const walletContext = buildWalletToolContext(wallet);
+  const context = [vaultContext, walletContext].filter(Boolean).join("\n\n");
   let upstream: Response;
   try {
     upstream = await fetch(url, {
@@ -125,7 +177,9 @@ async function streamHttpRuntime(
         sharedVault,
         obsidianVault: sharedVault,
         controlRoomPath: sharedVault?.controlRoomPath,
-        context: vaultContext || undefined,
+        wallet,
+        walletTools: wallet ? { x402Fetch: "/api/wallet/x402" } : undefined,
+        context: context || undefined,
       }),
       signal: AbortSignal.timeout(110_000),
     });
@@ -213,26 +267,32 @@ export async function POST(request: NextRequest) {
   let profile: AgentProfile;
   let messages: IncomingMessage[];
   let sharedVault: SharedVaultConfig | undefined;
+  let wallet: AgentWalletConfig | undefined;
   try {
     const body = (await request.json()) as {
       agent?: AgentProfile;
       messages?: IncomingMessage[];
       sharedVault?: SharedVaultConfig;
+      wallet?: AgentWalletConfig;
     };
     if (!body.agent || !Array.isArray(body.messages)) throw new Error("Missing agent or messages");
     profile = body.agent;
     messages = body.messages;
     sharedVault = body.sharedVault;
+    wallet = body.wallet;
   } catch {
     return Response.json({ error: "Expected { agent, messages }" }, { status: 400 });
   }
 
+  const userMessage = latestUserMessage(messages);
   const userText = extractUserText(messages).trim();
-  if (!userText) return Response.json({ error: "User message is empty" }, { status: 400 });
+  const userPrompt = userText || attachmentPromptSummary(userMessage);
+  if (!userMessage || !userPrompt) return Response.json({ error: "User message is empty" }, { status: 400 });
   const vault = activeSharedVault(profile, sharedVault);
-  const textWithVaultContext = vault
-    ? `${buildVaultContext(vault)}\n\nUser message:\n${userText}`
-    : userText;
+  const runtimeContexts = [buildVaultContext(vault), buildWalletToolContext(wallet)].filter(Boolean).join("\n\n");
+  const textWithVaultContext = runtimeContexts
+    ? `${runtimeContexts}\n\nUser message:\n${userPrompt}`
+    : userPrompt;
 
   if (profile.runtime !== "openclaw") {
     if (profile.runtime === "hermes" && profile.telemetryUrl?.trim() && profile.collectorCapabilities?.chat === false) {
@@ -243,7 +303,7 @@ export async function POST(request: NextRequest) {
     const effectiveProfile = collectorChatProfile(profile) ?? profile;
     const profileError = validateHttpRuntimeProfile(effectiveProfile);
     if (profileError) return Response.json({ error: profileError }, { status: 400 });
-    return streamHttpRuntime(effectiveProfile, messages, userText, vault);
+    return streamHttpRuntime(effectiveProfile, messages, userPrompt, vault, wallet);
   }
 
   const token = await getGatewayAuthToken(profile.token);

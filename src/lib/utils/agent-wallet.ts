@@ -23,6 +23,11 @@ export const DEFAULT_AGENT_WALLET: Omit<AgentWalletConfig, "agentId"> = {
   survivalStartedAt: 0,
   updatedAt: 0,
   notes: "",
+  custodyMode: "watch",
+  vaultAddress: "",
+  onchainBalanceUsd: 0,
+  nativeBalance: 0,
+  lastOnchainSyncAt: 0,
 };
 
 // Adapted from Conway-Research/automaton: src/types.ts and src/conway/credits.ts.

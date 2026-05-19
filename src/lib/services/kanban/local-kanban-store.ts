@@ -16,7 +16,7 @@ import type {
 import { KANBAN_STATUSES } from "@/lib/types/kanban";
 import { moveTaskBetweenColumns } from "@/lib/utils/kanban-board";
 
-const ROOT_DIR = join(homedir(), ".openclaw", "kanban");
+const ROOT_DIR = join(homedir(), ".omni-agent-hivemind", "kanban");
 const BOARDS_DIR = join(ROOT_DIR, "boards");
 const DEFAULT_BOARD = "default";
 const DEFAULT_VAULT_KANBAN_FOLDER = DEFAULT_SHARED_VAULT.kanbanFolder;
@@ -118,7 +118,7 @@ export async function readBoard(slugInput?: string | null, options: KanbanStorag
     const localPath = boardPathFor(ROOT_DIR, BOARDS_DIR, slug);
     if (storage.source === "obsidian" && existsSync(localPath)) {
       const migrated = normalizeBoard(await readBoardFile(localPath), slug);
-      migrated.events.unshift(event("board.migrated", "Migrated board from local OpenClaw storage into the shared Obsidian vault."));
+      migrated.events.unshift(event("board.migrated", "Migrated board from local dashboard storage into the shared Obsidian vault."));
       await writeBoard(migrated, options);
       return migrated;
     }
@@ -135,15 +135,31 @@ async function readBoardFile(path: string) {
 }
 
 function normalizeBoard(parsed: KanbanBoard, slug: string): KanbanBoard {
+  const tasks = Array.isArray(parsed.tasks) ? parsed.tasks.map(normalizeTask) : [];
   return {
     ...emptyBoard(slug),
     ...parsed,
     meta: { ...emptyBoard(slug).meta, ...parsed.meta, slug },
-    tasks: Array.isArray(parsed.tasks) ? parsed.tasks : [],
+    tasks,
     comments: Array.isArray(parsed.comments) ? parsed.comments : [],
     links: Array.isArray(parsed.links) ? parsed.links : [],
     events: Array.isArray(parsed.events) ? parsed.events : [],
   };
+}
+
+function normalizeTask(task: KanbanTask): KanbanTask {
+  return {
+    ...task,
+    status: normalizeKanbanStatus(task.status),
+  };
+}
+
+function normalizeKanbanStatus(status: string): KanbanStatus {
+  if (status === "triage") return "ideas";
+  if (status === "todo") return "ready";
+  if (status === "running") return "working";
+  if (status === "blocked") return "needs-human";
+  return KANBAN_STATUSES.includes(status as KanbanStatus) ? status as KanbanStatus : "ideas";
 }
 
 export async function createBoard(input: Partial<KanbanBoardMeta> & { slug: string }, options: KanbanStorageOptions = {}) {
@@ -187,7 +203,7 @@ export async function createTask(slug: string | null, input: CreateTaskInput, op
     body: input.body?.trim() ?? "",
     assignee: cleanOptional(input.assignee),
     tenant: cleanOptional(input.tenant),
-    status: input.status && KANBAN_STATUSES.includes(input.status) ? input.status : "triage",
+    status: input.status && KANBAN_STATUSES.includes(input.status) ? input.status : "ideas",
     priority: input.priority ?? "normal",
     workspace: input.workspace ?? "scratch",
     skills: input.skills ?? [],

@@ -37,7 +37,6 @@
   line-height: 1.5;
 }
 
-.addAgent button:not([data-slot="button"]),
 .setupModalHeader button:not([data-slot="button"]),
 .setupModalActions button:not([data-slot="button"]) {
   border: 0;
@@ -48,81 +47,10 @@
   padding: 12px 16px;
 }
 
-.addAgent button:disabled,
 .setupModalHeader button:disabled,
 .setupModalActions button:disabled {
   cursor: not-allowed;
   opacity: 0.5;
-}
-
-.quickConnect {
-  min-width: 0;
-  border: 1px solid rgba(148, 163, 184, 0.18);
-  border-radius: 6px;
-  background: rgba(9, 13, 20, 0.52);
-}
-
-.quickConnect summary {
-  cursor: pointer;
-  color: var(--muted);
-  font-size: 11px;
-  font-weight: 700;
-  list-style: none;
-  padding: 4px 10px;
-  letter-spacing: 0.04em;
-}
-
-.quickConnect summary::-webkit-details-marker {
-  display: none;
-}
-
-.quickConnect[open] summary {
-  color: var(--foreground);
-  border-bottom: 1px solid rgba(148, 163, 184, 0.14);
-}
-
-.quickConnect .addAgent {
-  border: 0;
-  border-radius: 0;
-  background: transparent;
-  padding: 10px;
-}
-
-.addAgent {
-  display: grid;
-  grid-template-columns: minmax(160px, 0.9fr) minmax(110px, 0.55fr) minmax(170px, 1fr) minmax(150px, 0.9fr) auto;
-  width: min(100%, 760px);
-  border: 1px solid rgba(94, 234, 212, 0.18);
-  border-radius: 8px;
-  background:
-    linear-gradient(135deg, rgba(45, 212, 191, 0.1), transparent 42%),
-    rgba(2, 6, 23, 0.66);
-  padding: 10px;
-}
-
-.addAgentIntro {
-  display: grid;
-  gap: 3px;
-  min-width: 0;
-}
-
-.addAgentIntro strong {
-  overflow: hidden;
-  color: #f8fafc;
-  font-size: 13px;
-  font-weight: 900;
-  text-overflow: ellipsis;
-  text-transform: uppercase;
-  white-space: nowrap;
-}
-
-.addAgentIntro span {
-  overflow: hidden;
-  color: var(--muted);
-  font-size: 11px;
-  line-height: 1.25;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 .toggleRow {
@@ -134,19 +62,6 @@
 
 .toggleRow input {
   width: auto !important;
-}
-
-.addAgent select,
-.addAgent input {
-  min-height: 42px;
-  border: 1px solid var(--line);
-  border-radius: 6px;
-  background: #090d14;
-  color: var(--foreground);
-  padding: 0 10px;
-  outline: none;
-  min-width: 0;
-  width: 100%;
 }
 
 .machineBoard {
@@ -983,6 +898,10 @@
   box-shadow: 0 30px 100px rgba(0, 0, 0, 0.55);
 }
 
+.agentSettingsModal {
+  width: min(560px, 100%);
+}
+
 .setupModalHeader,
 .setupModalActions {
   display: flex;
@@ -1008,10 +927,120 @@
   color: #f8fafc;
 }
 
+.agentNameDisplay,
+.agentNameEdit {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  min-width: 0;
+}
+
+.agentNameDisplay h2 {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.agentNameDisplay button,
+.agentNameEdit button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border: 1px solid rgba(148, 163, 184, 0.18);
+  border-radius: 7px;
+  background: rgba(148, 163, 184, 0.12);
+  color: var(--accent-strong);
+  cursor: pointer;
+}
+
+.setupModalHeader .agentNameDisplay button:not([data-slot="button"]),
+.setupModalHeader .agentNameEdit button:not([data-slot="button"]) {
+  width: 32px;
+  height: 32px;
+  border: 1px solid rgba(148, 163, 184, 0.18);
+  border-radius: 7px;
+  background: rgba(148, 163, 184, 0.12);
+  color: var(--accent-strong);
+  padding: 0;
+}
+
+.agentNameDisplay button svg,
+.agentNameEdit button svg {
+  width: 15px;
+  height: 15px;
+  flex: 0 0 auto;
+}
+
+.agentNameDisplay button:hover,
+.agentNameEdit button:hover {
+  border-color: rgba(94, 234, 212, 0.42);
+  background: rgba(45, 212, 191, 0.12);
+}
+
+.setupModalHeader .agentNameDisplay button:not([data-slot="button"]):hover,
+.setupModalHeader .agentNameEdit button:not([data-slot="button"]):hover {
+  border-color: rgba(94, 234, 212, 0.42);
+  background: rgba(45, 212, 191, 0.12);
+}
+
+.agentNameEdit input {
+  min-width: 0;
+  max-width: 360px;
+  min-height: 40px;
+  border: 1px solid rgba(94, 234, 212, 0.34);
+  border-radius: 7px;
+  background: var(--field);
+  color: var(--foreground);
+  font-size: 20px;
+  font-weight: 800;
+  letter-spacing: 0;
+  outline: none;
+  padding: 0 11px;
+}
+
+.agentNameEdit button:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
 .setupGuide {
   display: grid;
   gap: 14px;
   margin-top: 18px;
+}
+
+.agentSettingsGrid {
+  display: grid;
+  gap: 12px;
+  margin-top: 18px;
+}
+
+.agentSettingsField {
+  display: grid;
+  gap: 7px;
+}
+
+.agentSettingsField span {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 900;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.agentSettingsField select {
+  min-height: 42px;
+  border: 1px solid rgba(148, 163, 184, 0.18);
+  border-radius: 7px;
+  background: var(--field);
+  color: var(--foreground);
+  font-size: 14px;
+  letter-spacing: 0;
+  outline: none;
+  padding: 0 12px;
 }
 
 .setupCommandBox {
@@ -1176,15 +1205,6 @@
     flex-direction: column;
   }
 
-  .addAgent {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    width: 100%;
-  }
-
-  .addAgentIntro {
-    grid-column: 1 / -1;
-  }
-
   .agentList {
     grid-template-columns: 1fr;
   }
@@ -1238,8 +1258,6 @@
 :global(:root[data-theme="hive-light"]) .agentRail,
 :global(:root[data-theme="hive-light"]) .taskPanel,
 :global(:root[data-theme="hive-light"]) .historyPanel,
-:global(:root[data-theme="hive-light"]) .quickConnect,
-:global(:root[data-theme="hive-light"]) .addAgent,
 :global(:root[data-theme="hive-light"]) .machineUpdateStatus,
 :global(:root[data-theme="hive-light"]) .machineEmpty,
 :global(:root[data-theme="hive-light"]) .agentCard,
@@ -1260,7 +1278,6 @@
   background: rgba(212, 180, 111, 0.16);
 }
 
-:global(:root[data-theme="hive-light"]) .addAgentIntro strong,
 :global(:root[data-theme="hive-light"]) .agentCard strong,
 :global(:root[data-theme="hive-light"]) .agentSelect strong,
 :global(:root[data-theme="hive-light"]) .agentBubble strong,
@@ -1276,9 +1293,9 @@
   color: var(--accent-strong) !important;
 }
 
-:global(:root[data-theme="hive-light"]) .addAgent select,
-:global(:root[data-theme="hive-light"]) .addAgent input,
 :global(:root[data-theme="hive-light"]) .machineUpdateStatus button,
+:global(:root[data-theme="hive-light"]) .agentNameEdit input,
+:global(:root[data-theme="hive-light"]) .agentSettingsField select,
 :global(:root[data-theme="hive-light"]) .setupModal input,
 :global(:root[data-theme="hive-light"]) .setupModal select,
 :global(:root[data-theme="hive-light"]) .setupModal textarea,

@@ -3,15 +3,13 @@ import type { ReactNode } from "react";
 import { Cell } from "./Cell";
 
 /**
- * SetupCell renders the five-step "activating cells in a hive" flow
+ * SetupCell renders the progressive "activating cells in a hive" flow
  * described in the design philosophy. Each step is one short phrase
  * and a state — pending / current / done — never a configuration form.
  *
  *   1. Connect          — Tailscale detected
  *   2. Verify           — Collector verified
- *   3. Configure limits — Wallet caps and approval thresholds
- *   4. Enable           — First agent detected / brain attached
- *   5. Advanced         — Raw provider rails (kept behind disclosure)
+ *   3. Configure        — Optional feature rails kept behind disclosure
  */
 export type SetupStepState = "pending" | "current" | "done";
 
@@ -19,13 +17,13 @@ export type SetupStep = {
   label: string;
   hint?: string;
   state: SetupStepState;
+  action?: ReactNode;
 };
 
 type SetupCellProps = {
   title: string;
   subtitle?: string;
   steps: SetupStep[];
-  primaryAction?: ReactNode;
   /** Slot for the actual setup command, copy button, etc. */
   details?: ReactNode;
 };
@@ -42,7 +40,7 @@ const STATE_CLASS: Record<SetupStepState, string> = {
   done: "text-[#bbf7d0]",
 };
 
-export function SetupCell({ title, subtitle, steps, primaryAction, details }: SetupCellProps) {
+export function SetupCell({ title, subtitle, steps, details }: SetupCellProps) {
   const allDone = steps.every((step) => step.state === "done");
   const currentStep = steps.find((step) => step.state === "current");
 
@@ -54,7 +52,6 @@ export function SetupCell({ title, subtitle, steps, primaryAction, details }: Se
       subtitle={subtitle ?? (allDone ? "All steps are done." : currentStep?.hint ?? "Activate one cell at a time.")}
       status={allDone ? "healthy" : "needs-setup"}
       tone={allDone ? "success" : "warning"}
-      primaryAction={primaryAction}
       details={details}
       detailsLabel="Setup command"
     >
@@ -70,12 +67,19 @@ export function SetupCell({ title, subtitle, steps, primaryAction, details }: Se
             >
               {STATE_GLYPH[step.state]}
             </span>
-            <div className="flex min-w-0 flex-1 flex-col">
-              <span className="font-semibold text-[var(--foreground)]">
-                {index + 1}. {step.label}
-              </span>
-              {step.hint ? (
-                <span className="text-[var(--muted)]">{step.hint}</span>
+            <div className="flex min-w-0 flex-1 flex-col gap-1 sm:flex-row sm:items-start sm:justify-between sm:gap-3">
+              <div className="flex min-w-0 flex-1 flex-col">
+                <span className="font-semibold text-[var(--foreground)]">
+                  {index + 1}. {step.label}
+                </span>
+                {step.hint ? (
+                  <span className="text-[var(--muted)]">{step.hint}</span>
+                ) : null}
+              </div>
+              {step.action ? (
+                <div className="shrink-0 sm:pt-0.5" onClick={(event) => event.stopPropagation()}>
+                  {step.action}
+                </div>
               ) : null}
             </div>
           </li>

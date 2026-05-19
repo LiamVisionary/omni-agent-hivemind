@@ -235,6 +235,214 @@
   padding: 10px 12px;
 }
 
+.brainSkillsPanel {
+  overflow: hidden;
+  border: 1px solid rgba(148, 163, 184, 0.16);
+  border-radius: 8px;
+  background:
+    linear-gradient(135deg, rgba(251, 191, 36, 0.08), transparent 34%),
+    rgba(7, 10, 16, 0.74);
+  margin: 0 0 16px;
+}
+
+.brainSkillsHeader {
+  display: flex;
+  gap: 14px;
+  align-items: flex-start;
+  justify-content: space-between;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.13);
+  padding: 14px;
+}
+
+.brainSkillsHeader h3 {
+  margin: 0;
+  color: #f8fafc;
+  font-size: 18px;
+  font-weight: 900;
+}
+
+.brainSkillsHeader p,
+.brainSkillsEmpty p,
+.sharedSkillCard p,
+.providerSkillStrip small,
+.providerImportRow span,
+.skillsModalHeader p {
+  color: var(--muted);
+  line-height: 1.45;
+}
+
+.brainSkillsActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  justify-content: flex-end;
+}
+
+.spinIcon {
+  animation: brainSpin 800ms linear infinite;
+}
+
+@keyframes brainSpin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.sharedSkillGrid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 1px;
+  background: rgba(148, 163, 184, 0.1);
+}
+
+.sharedSkillCard {
+  display: grid;
+  gap: 8px;
+  min-height: 148px;
+  background: rgba(8, 12, 19, 0.9);
+  padding: 13px;
+}
+
+.sharedSkillCard span,
+.providerSkillStrip span {
+  color: var(--accent-strong);
+  font-size: 10px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.sharedSkillCard strong {
+  color: #f8fafc;
+  font-size: 14px;
+}
+
+.sharedSkillCard p {
+  display: -webkit-box;
+  margin: 0;
+  overflow: hidden;
+  font-size: 12px;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+}
+
+.sharedSkillCard small {
+  align-self: end;
+  overflow: hidden;
+  color: rgba(199, 210, 254, 0.72);
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.brainSkillsEmpty {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 14px;
+  align-items: center;
+  padding: 18px;
+}
+
+.brainSkillsEmpty svg {
+  width: 34px;
+  height: 34px;
+  color: #fbbf24;
+}
+
+.brainSkillsEmpty strong {
+  color: #f8fafc;
+}
+
+.providerSkillStrip {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 1px;
+  border-top: 1px solid rgba(148, 163, 184, 0.13);
+  background: rgba(148, 163, 184, 0.1);
+}
+
+.providerSkillStrip article {
+  display: grid;
+  gap: 5px;
+  background: rgba(3, 7, 18, 0.58);
+  padding: 11px 12px;
+}
+
+.providerSkillStrip strong {
+  color: #f8fafc;
+  font-size: 20px;
+}
+
+.skillsModalBackdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  display: grid;
+  place-items: center;
+  background: rgba(2, 6, 23, 0.72);
+  padding: 18px;
+}
+
+.skillsModal {
+  width: min(760px, 100%);
+  max-height: min(760px, calc(100vh - 36px));
+  overflow: auto;
+  border: 1px solid rgba(148, 163, 184, 0.22);
+  border-radius: 8px;
+  background: #080d15;
+  box-shadow: 0 30px 90px rgba(0, 0, 0, 0.45);
+}
+
+.skillsModalHeader {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  justify-content: space-between;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.14);
+  padding: 16px;
+}
+
+.skillsModalHeader h2 {
+  margin: 0;
+  color: #f8fafc;
+  font-size: 18px;
+}
+
+.skillsModalHeader button {
+  display: inline-grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border: 1px solid rgba(148, 163, 184, 0.18);
+  border-radius: 7px;
+  background: rgba(15, 23, 42, 0.72);
+  color: #f8fafc;
+}
+
+.providerImportList {
+  display: grid;
+}
+
+.providerImportRow {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: center;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.1);
+  padding: 14px 16px;
+}
+
+.providerImportRow strong {
+  display: block;
+  color: #f8fafc;
+}
+
+.providerImportRow span {
+  display: block;
+  margin-top: 3px;
+  font-size: 12px;
+}
+
 .brainInspector {
   display: grid;
   align-content: start;
@@ -478,8 +686,20 @@
     grid-template-columns: 1fr;
   }
 
+  .brainSkillsHeader,
+  .brainSkillsEmpty {
+    align-items: stretch;
+    grid-template-columns: 1fr;
+    flex-direction: column;
+  }
+
   .brainGraphStats {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .sharedSkillGrid,
+  .providerSkillStrip {
+    grid-template-columns: 1fr;
   }
 
   .vaultGrid {
@@ -500,15 +720,21 @@
 :global(:root[data-theme="hive-light"]) .vaultPanel,
 :global(:root[data-theme="hive-light"]) .brainGraphPanel,
 :global(:root[data-theme="hive-light"]) .brainInspector,
+:global(:root[data-theme="hive-light"]) .brainSkillsPanel,
+:global(:root[data-theme="hive-light"]) .skillsModal,
 :global(:root[data-theme="hive-light"]) .brainInspector dl div,
-:global(:root[data-theme="hive-light"]) .brainAccessList article {
+:global(:root[data-theme="hive-light"]) .brainAccessList article,
+:global(:root[data-theme="hive-light"]) .sharedSkillCard,
+:global(:root[data-theme="hive-light"]) .providerSkillStrip article {
   border-color: var(--comb-line);
   background: var(--surface);
   color: var(--foreground);
 }
 
 :global(:root[data-theme="hive-light"]) .brainGraphStats,
-:global(:root[data-theme="hive-light"]) .brainLegend {
+:global(:root[data-theme="hive-light"]) .brainLegend,
+:global(:root[data-theme="hive-light"]) .sharedSkillGrid,
+:global(:root[data-theme="hive-light"]) .providerSkillStrip {
   border-color: var(--comb-line);
   background: var(--surface-strong);
 }
@@ -539,6 +765,12 @@
 :global(:root[data-theme="hive-light"]) .brainGraphStats strong,
 :global(:root[data-theme="hive-light"]) .brainInspectorHeader span,
 :global(:root[data-theme="hive-light"]) .brainInspector h3,
+:global(:root[data-theme="hive-light"]) .brainSkillsHeader h3,
+:global(:root[data-theme="hive-light"]) .sharedSkillCard strong,
+:global(:root[data-theme="hive-light"]) .brainSkillsEmpty strong,
+:global(:root[data-theme="hive-light"]) .providerSkillStrip strong,
+:global(:root[data-theme="hive-light"]) .skillsModalHeader h2,
+:global(:root[data-theme="hive-light"]) .providerImportRow strong,
 :global(:root[data-theme="hive-light"]) .brainInspector dd,
 :global(:root[data-theme="hive-light"]) .brainAccessList strong,
 :global(:root[data-theme="hive-light"]) .brainAccessList span,

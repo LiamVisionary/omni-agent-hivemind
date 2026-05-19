@@ -1,0 +1,317 @@
+.notificationsPanel {
+  display: grid;
+  gap: 12px;
+  border: 1px solid rgba(148, 163, 184, 0.16);
+  border-radius: 8px;
+  background:
+    linear-gradient(135deg, rgba(45, 212, 191, 0.08), transparent 34%),
+    rgba(16, 20, 29, 0.78);
+  padding: 14px;
+}
+
+.notificationsHeader,
+.notificationsControls,
+.notificationMetaRow,
+.notificationFooter,
+.notificationSetting {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.notificationsHeader h2 {
+  margin: 0;
+  color: #f8fafc;
+  font-size: 24px;
+  line-height: 1.1;
+}
+
+.notificationsHeader p,
+.notificationsEmpty p,
+.notificationCard p,
+.notificationSetting span,
+.notificationStatus {
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.45;
+}
+
+.notificationsControls {
+  flex-wrap: wrap;
+  border: 1px solid rgba(148, 163, 184, 0.14);
+  border-radius: 8px;
+  background: rgba(9, 13, 20, 0.48);
+  padding: 10px;
+}
+
+.notificationStats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.notificationStats span,
+.priorityPill,
+.kindPill,
+.readPill {
+  display: inline-flex;
+  gap: 6px;
+  align-items: center;
+  border: 1px solid rgba(148, 163, 184, 0.16);
+  border-radius: 999px;
+  background: rgba(15, 23, 42, 0.72);
+  color: var(--text-soft);
+  font-size: 12px;
+  font-weight: 800;
+  line-height: 1;
+  padding: 7px 10px;
+}
+
+.notificationStats strong {
+  color: #f8fafc;
+}
+
+.notificationSetting {
+  min-width: min(100%, 390px);
+  border: 1px solid rgba(148, 163, 184, 0.14);
+  border-radius: 8px;
+  background: rgba(2, 6, 23, 0.34);
+  padding: 9px 10px;
+}
+
+.notificationSetting strong {
+  display: block;
+  color: var(--foreground);
+  font-size: 13px;
+}
+
+.notificationSetting span {
+  display: block;
+  font-size: 12px;
+}
+
+.notificationSetting input {
+  width: 18px;
+  height: 18px;
+  accent-color: var(--accent);
+}
+
+.notificationList {
+  display: grid;
+  max-height: min(720px, calc(100vh - 300px));
+  min-height: 420px;
+  gap: 10px;
+  overflow: auto;
+  padding-right: 4px;
+}
+
+.notificationDayGroup {
+  display: grid;
+  gap: 10px;
+}
+
+.notificationDayGroup h3 {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  margin: 0;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.14);
+  background: rgba(16, 20, 29, 0.94);
+  color: var(--accent-strong);
+  font-size: 12px;
+  font-weight: 900;
+  letter-spacing: 0;
+  padding: 8px 0;
+  text-transform: uppercase;
+}
+
+.notificationCard {
+  display: grid;
+  grid-template-columns: 42px minmax(0, 1fr);
+  gap: 12px;
+  border: 1px solid rgba(148, 163, 184, 0.14);
+  border-left-width: 4px;
+  border-radius: 8px;
+  background: rgba(9, 13, 20, 0.58);
+  padding: 12px;
+}
+
+.notificationCard.unread {
+  background:
+    linear-gradient(90deg, rgba(45, 212, 191, 0.1), transparent 48%),
+    rgba(9, 13, 20, 0.72);
+}
+
+.notificationCard.low {
+  border-left-color: #94a3b8;
+}
+
+.notificationCard.normal {
+  border-left-color: #2dd4bf;
+}
+
+.notificationCard.high {
+  border-left-color: #facc15;
+}
+
+.notificationCard.urgent {
+  border-left-color: #fb7185;
+}
+
+.notificationGlyph {
+  display: grid;
+  width: 42px;
+  height: 42px;
+  place-items: center;
+  border: 1px solid rgba(94, 234, 212, 0.22);
+  border-radius: 8px;
+  background: rgba(15, 23, 42, 0.75);
+  color: var(--accent-strong);
+}
+
+.notificationGlyph svg {
+  width: 20px;
+  height: 20px;
+}
+
+.notificationBody {
+  min-width: 0;
+}
+
+.notificationMetaRow {
+  align-items: start;
+}
+
+.notificationMetaRow h3 {
+  overflow-wrap: anywhere;
+  margin: 0;
+  color: #f8fafc;
+  font-size: 16px;
+  line-height: 1.25;
+}
+
+.notificationMetaRow time {
+  flex: 0 0 auto;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.notificationCard p {
+  margin-top: 6px;
+  white-space: pre-line;
+}
+
+.notificationFooter {
+  flex-wrap: wrap;
+  margin-top: 10px;
+}
+
+.notificationTags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.priorityPill.high,
+.priorityPill.urgent {
+  border-color: rgba(251, 191, 36, 0.36);
+  color: #fde68a;
+}
+
+.priorityPill.urgent {
+  border-color: rgba(251, 113, 133, 0.36);
+  color: #fecdd3;
+}
+
+.readPill {
+  border-color: rgba(45, 212, 191, 0.28);
+  color: #99f6e4;
+}
+
+.notificationsEmpty {
+  display: grid;
+  min-height: 360px;
+  place-items: center;
+  border: 1px dashed rgba(148, 163, 184, 0.22);
+  border-radius: 8px;
+  text-align: center;
+}
+
+.notificationsEmpty svg {
+  width: 34px;
+  height: 34px;
+  color: var(--accent-strong);
+}
+
+.notificationsEmpty strong {
+  display: block;
+  margin-top: 10px;
+  color: var(--foreground);
+}
+
+.notificationStatus {
+  font-size: 12px;
+  min-height: 18px;
+}
+
+.navBadge {
+  display: inline-grid;
+  min-width: 18px;
+  height: 18px;
+  place-items: center;
+  border-radius: 999px;
+  background: var(--danger);
+  color: white;
+  font-size: 10px;
+  font-weight: 900;
+  line-height: 1;
+}
+
+@media (max-width: 760px) {
+  .notificationsHeader,
+  .notificationMetaRow,
+  .notificationFooter,
+  .notificationSetting {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .notificationList {
+    max-height: none;
+  }
+
+  .notificationCard {
+    grid-template-columns: 1fr;
+  }
+}
+
+:global(:root[data-theme="hive-light"]) .notificationsPanel,
+:global(:root[data-theme="hive-light"]) .notificationsControls,
+:global(:root[data-theme="hive-light"]) .notificationSetting,
+:global(:root[data-theme="hive-light"]) .notificationCard,
+:global(:root[data-theme="hive-light"]) .notificationGlyph {
+  border-color: var(--comb-line);
+  background-color: var(--surface);
+  background-image: none;
+  color: var(--foreground);
+}
+
+:global(:root[data-theme="hive-light"]) .notificationsHeader h2,
+:global(:root[data-theme="hive-light"]) .notificationStats strong,
+:global(:root[data-theme="hive-light"]) .notificationMetaRow h3 {
+  color: var(--foreground);
+}
+
+:global(:root[data-theme="hive-light"]) .notificationDayGroup h3 {
+  background: rgba(238, 230, 208, 0.94);
+  color: var(--accent-strong);
+}
+
+:global(:root[data-theme="hive-light"]) .priorityPill.high {
+  color: #6f5625;
+}
+
+:global(:root[data-theme="hive-light"]) .priorityPill.urgent {
+  color: #8f1d2c;
+}

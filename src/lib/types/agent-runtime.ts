@@ -1,5 +1,8 @@
 export type AgentRuntime = "openclaw" | "hermes" | "aeon";
 
+export type BeeAgentRole = "queen" | "worker" | "observer" | "human";
+export type BeeWorkerClass = "general" | "planner" | "code" | "vision" | "writer" | "research" | "artist" | "ops" | "qa";
+
 export interface AgentProfile {
   id: string;
   name: string;
@@ -18,24 +21,42 @@ export interface AgentProfile {
     chat?: boolean;
     runtimes?: string[];
   };
+  beeRole?: BeeAgentRole;
+  workerClass?: BeeWorkerClass;
 }
 
 export interface SharedVaultConfig {
   enabled: boolean;
   vaultPath: string;
+  tailnetSyncHost: string;
+  tailnetSyncPath: string;
+  tailnetSyncDirection: "bidirectional" | "push" | "pull";
+  tailnetSyncEnabled: boolean;
+  tailnetSyncIntervalSeconds: number;
   inboxFolder: string;
   sharedNotePath: string;
   kanbanFolder: string;
+  notificationsFolder: string;
+  noteTaskImportFolders: string;
+  noteTaskImportEnabled: boolean;
   controlRoomPath: string;
   instructions: string;
 }
 
 export const DEFAULT_SHARED_VAULT: SharedVaultConfig = {
   enabled: true,
-  vaultPath: process.env.NEXT_PUBLIC_OBSIDIAN_VAULT_PATH ?? "~/Documents/Obsidian/OpenClaw Vault",
+  vaultPath: process.env.NEXT_PUBLIC_OBSIDIAN_VAULT_PATH ?? "~/Documents/Obsidian/Omni-Agent Hivemind Vault",
+  tailnetSyncHost: "",
+  tailnetSyncPath: "",
+  tailnetSyncDirection: "bidirectional",
+  tailnetSyncEnabled: false,
+  tailnetSyncIntervalSeconds: 20,
   inboxFolder: "Agent Inbox",
   sharedNotePath: "Agent Team/Shared Context.md",
-  kanbanFolder: process.env.NEXT_PUBLIC_OBSIDIAN_KANBAN_FOLDER ?? "Projects/OpenClaw/Kanban",
+  kanbanFolder: process.env.NEXT_PUBLIC_OBSIDIAN_KANBAN_FOLDER ?? "Projects/Omni-Agent Hivemind/Kanban",
+  notificationsFolder: process.env.NEXT_PUBLIC_OBSIDIAN_NOTIFICATIONS_FOLDER ?? "agent-notifications",
+  noteTaskImportFolders: "Projects\nInbox",
+  noteTaskImportEnabled: false,
   controlRoomPath: process.env.NEXT_PUBLIC_HERMES_CONTROL_ROOM_PATH ?? "~/agent-control-room",
   instructions: "Use this vault as the shared memory and handoff space for all local agents. Read AGENTS.md before durable edits. Use the Hermes Agent Control Room as the operating manual, registry, runbook library, and task-bus template.",
 };
@@ -81,6 +102,8 @@ export function createAgentProfile(runtime: AgentRuntime, index = 1): AgentProfi
     machineName: "local",
     telemetryUrl: "",
     useSharedVault: true,
+    beeRole: runtime === "openclaw" && index === 1 ? "queen" : "worker",
+    workerClass: runtime === "openclaw" && index === 1 ? "general" : "general",
   };
 }
 

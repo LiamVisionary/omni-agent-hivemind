@@ -16,6 +16,81 @@ cd "$ROOT"
 
 info "Agent Control Room setup"
 
+install_rsync_if_missing() {
+  if command -v rsync >/dev/null 2>&1; then
+    ok "rsync found: $(rsync --version 2>/dev/null | head -1)"
+    return
+  fi
+  warn "rsync is missing; trying to install it for Tailnet vault sync"
+  if [[ "$(uname -s)" == "Darwin" ]] && command -v brew >/dev/null 2>&1; then
+    brew install rsync
+  elif command -v apt-get >/dev/null 2>&1 && command -v sudo >/dev/null 2>&1; then
+    sudo apt-get update
+    sudo apt-get install -y rsync
+  elif command -v dnf >/dev/null 2>&1 && command -v sudo >/dev/null 2>&1; then
+    sudo dnf install -y rsync
+  elif command -v yum >/dev/null 2>&1 && command -v sudo >/dev/null 2>&1; then
+    sudo yum install -y rsync
+  else
+    missing+=("Install rsync for Tailnet vault sync")
+    fail "rsync is missing"
+    return
+  fi
+  command -v rsync >/dev/null 2>&1 && ok "rsync installed"
+}
+
+install_syncthing_if_missing() {
+  if command -v syncthing >/dev/null 2>&1; then
+    ok "Syncthing found: $(syncthing --version 2>/dev/null | head -1)"
+    return
+  fi
+  warn "Syncthing is missing; trying to install it for realtime folder sync"
+  if [[ "$(uname -s)" == "Darwin" ]] && command -v brew >/dev/null 2>&1; then
+    brew install syncthing
+  elif command -v apt-get >/dev/null 2>&1 && command -v sudo >/dev/null 2>&1; then
+    sudo apt-get update
+    sudo apt-get install -y syncthing
+  elif command -v dnf >/dev/null 2>&1 && command -v sudo >/dev/null 2>&1; then
+    sudo dnf install -y syncthing
+  elif command -v yum >/dev/null 2>&1 && command -v sudo >/dev/null 2>&1; then
+    sudo yum install -y syncthing
+  else
+    missing+=("Install Syncthing for realtime folder sync")
+    fail "Syncthing is missing"
+    return
+  fi
+  command -v syncthing >/dev/null 2>&1 && ok "Syncthing installed"
+}
+
+enable_tailscale_ssh() {
+  if ! command -v tailscale >/dev/null 2>&1; then
+    return
+  fi
+  if ! tailscale status >/dev/null 2>&1; then
+    return
+  fi
+  if ! tailscale set --help 2>&1 | grep -q -- '--ssh'; then
+    warn "This Tailscale version does not support Tailscale SSH"
+    return
+  fi
+  if tailscale debug prefs 2>/dev/null | grep -q '"RunSSH": true'; then
+    ok "Tailscale SSH already advertised by this machine"
+    return
+  fi
+  if tailscale set --ssh=true >/dev/null 2>&1 || tailscale set --ssh >/dev/null 2>&1; then
+    ok "Tailscale SSH advertised by this machine"
+  elif command -v sudo >/dev/null 2>&1 && (sudo -n tailscale set --ssh=true >/dev/null 2>&1 || sudo -n tailscale set --ssh >/dev/null 2>&1); then
+    ok "Tailscale SSH advertised by this machine"
+  else
+    warn "Could not advertise Tailscale SSH automatically"
+    warn "Run this on each sync machine if prompted for admin rights: sudo tailscale set --ssh"
+    return
+  fi
+  if ! tailscale debug prefs 2>/dev/null | grep -q '"RunSSH": true'; then
+    warn "Tailscale accepted the SSH setting, but verification did not report RunSSH=true yet"
+  fi
+}
+
 if command -v node >/dev/null 2>&1; then
   ok "Node found: $(node --version)"
 else
@@ -40,6 +115,7 @@ if command -v tailscale >/dev/null 2>&1; then
   if tailscale status >/dev/null 2>&1; then
     ok "Tailscale is running"
     tailscale_ip="$(tailscale ip -4 2>/dev/null | head -1 || true)"
+    enable_tailscale_ssh
   else
     warn "Tailscale is installed but not connected"
     missing+=("Run: tailscale up")
@@ -48,6 +124,9 @@ else
   warn "Tailscale is not installed"
   missing+=("Install Tailscale and log in")
 fi
+
+install_rsync_if_missing
+install_syncthing_if_missing
 
 if (( ${#missing[@]} > 0 )); then
   echo
@@ -124,4 +203,4 @@ echo
 echo "On other Tailscale machines that run agents, clone the repo and run only:"
 echo "  ./scripts/install-telemetry-collector.sh"
 echo
-echo "The dashboard will discover collectors automatically."
+echo "The dashboard will discover collectors automatically. Realtime folder sync uses Syncthing over your Tailnet by default; Tailscale SSH + rsync remains an advanced fallback."

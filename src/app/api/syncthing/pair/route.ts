@@ -1,0 +1,101 @@
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+export const maxDuration = 120;
+
+type PairBody = {
+  localCollectorUrl?: string;
+  remoteCollectorUrl?: string;
+  localPath?: string;
+  remotePath?: string;
+  folderId?: string;
+  label?: string;
+  remoteName?: string;
+  localTailscaleIp?: string;
+  remoteTailscaleIp?: string;
+  remoteAddressHost?: string;
+};
+
+function collectorBase(value?: string | null) {
+  return (value?.trim() || "http://127.0.0.1:8787").replace(/\/+$/, "");
+}
+
+async function collectorJson(base: string, path: string, init?: RequestInit) {
+  const response = await fetch(`${base}${path}`, {
+    ...init,
+    cache: "no-store",
+    signal: AbortSignal.timeout(20_000),
+    headers: {
+      ...(init?.body ? { "content-type": "application/json" } : {}),
+      ...(init?.headers ?? {}),
+    },
+  });
+  const payload = await response.json().catch(() => null);
+  if (!response.ok || payload?.ok === false) {
+    throw new Error(payload?.error ?? `${base}${path} returned HTTP ${response.status}`);
+  }
+  return payload;
+}
+
+function staticAddress(host?: string) {
+  const value = host?.trim();
+  return value ? [`tcp://${value}:22000`, "dynamic"] : ["dynamic"];
+}
+
+export async function POST(request: Request) {
+  try {
+    const body = await request.json() as PairBody;
+    const localBase = collectorBase(body.localCollectorUrl);
+    const remoteBase = collectorBase(body.remoteCollectorUrl);
+    if (!body.localPath?.trim()) throw new Error("localPath is required.");
+    if (!body.remotePath?.trim()) throw new Error("remotePath is required.");
+    if (!body.remoteCollectorUrl?.trim()) throw new Error("remoteCollectorUrl is required.");
+
+    const [localStatus, remoteStatus] = await Promise.all([
+      collectorJson(localBase, "/syncthing/status"),
+      collectorJson(remoteBase, "/syncthing/status"),
+    ]);
+    if (!localStatus.deviceID || !remoteStatus.deviceID) {
+      throw new Error("Both collectors must report Syncthing device IDs.");
+    }
+
+    const folderId = body.folderId?.trim() || "omni-agent-hivemind-vault";
+    const label = body.label?.trim() || "Omni-Agent Hivemind Vault";
+    const [localConfig, remoteConfig] = await Promise.all([
+      collectorJson(localBase, "/syncthing/configure", {
+        method: "POST",
+        body: JSON.stringify({
+          folderId,
+          label,
+          path: body.localPath,
+          peerDeviceID: remoteStatus.deviceID,
+          peerName: body.remoteName || remoteStatus.host,
+          peerAddresses: staticAddress(body.remoteTailscaleIp || body.remoteAddressHost),
+        }),
+      }),
+      collectorJson(remoteBase, "/syncthing/configure", {
+        method: "POST",
+        body: JSON.stringify({
+          folderId,
+          label,
+          path: body.remotePath,
+          peerDeviceID: localStatus.deviceID,
+          peerName: localStatus.host,
+          peerAddresses: staticAddress(body.localTailscaleIp),
+        }),
+      }),
+    ]);
+
+    return Response.json({
+      ok: true,
+      folderId,
+      label,
+      local: localConfig,
+      remote: remoteConfig,
+    });
+  } catch (error) {
+    return Response.json({
+      ok: false,
+      error: error instanceof Error ? error.message : "Could not pair Syncthing folders.",
+    }, { status: 400 });
+  }
+}

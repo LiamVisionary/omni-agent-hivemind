@@ -20,7 +20,7 @@ The goal is simple: clone the repo, run one setup command, and get a private das
 - Hermes session, log, process, and task snapshots from local runtime folders.
 - Multi-runtime agent profiles for Hermes, OpenClaw, and Aeon.
 - Shared Obsidian vault configuration, forwarded to opted-in agents.
-- Shared Kanban work board backed by Obsidian Sync, with local fallback.
+- Shared Kanban work board backed by a local or synced vault folder, with local fallback.
 - Local Hermes Agent Control Room path checks and bootstrap-risk inspection.
 - OpenClaw gateway chat proxy, skill APIs, channel helpers, cron helpers, and security proxy.
 - One-command setup script that installs dependencies, installs the collector, builds the app, starts the dashboard when possible, and prints local plus Tailscale URLs.
@@ -76,7 +76,11 @@ The dashboard includes shared vault settings for:
 - shared memory and handoff instructions
 - local control-room path
 
-Today, the app auto-detects common local Obsidian vault locations, validates an explicitly configured vault when provided, forwards the shared context to agent runtimes, and stores Work board `kanban.json` files under the shared Kanban folder. With Obsidian Sync enabled on each machine, agents and dashboards share the same board for handoffs, blockers, queued work, comments, and completion notes. If the vault is unavailable, the board falls back to `~/.openclaw/kanban`.
+Today, the app auto-detects common local Obsidian vault locations, validates an explicitly configured vault when provided, forwards the shared context to agent runtimes, and stores Work board `kanban.json` files under the shared Kanban folder. No subscription is required: Obsidian itself and local vaults are enough for single-machine use.
+
+Optional multi-device sharing can use any folder sync provider the user chooses, such as Obsidian Sync, iCloud Drive, Dropbox, Syncthing, Git, Tailscale-based file sharing, or the built-in Tailnet vault sync. The built-in path pairs Syncthing over Tailscale for realtime bidirectional folder sync between trusted machines without requiring Obsidian Sync. If the vault is unavailable, the board falls back to `~/.omni-agent-hivemind/kanban`.
+
+Tailnet vault sync is designed for agents that each keep a local copy of the same vault. The one-step setup installs and starts Syncthing locally on each collector, then the dashboard can pair two folders using the collectors' Syncthing device IDs and Tailnet addresses. Tailscale SSH plus `rsync` remains available as an advanced manual fallback with baseline conflict handling for one-shot push, pull, and bidirectional repair jobs.
 
 ## Hermes Control Room
 

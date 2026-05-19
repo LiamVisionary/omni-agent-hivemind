@@ -3,7 +3,7 @@ import { accessSync, readdirSync, statSync } from "fs";
 import { homedir } from "os";
 import { basename, join, resolve } from "path";
 
-export const GENERIC_OBSIDIAN_VAULT_PATH = "~/Documents/Obsidian/OpenClaw Vault";
+export const GENERIC_OBSIDIAN_VAULT_PATH = "~/Documents/Obsidian/Omni-Agent Hivemind Vault";
 export const LEGACY_OBSIDIAN_VAULT_PATH = "~/Documents/Obsidian/Omni Agent Vault";
 
 const OBSIDIAN_ROOT_CANDIDATES = [
@@ -41,14 +41,14 @@ function isAutoDetectHint(path?: string): boolean {
   return !value
     || value === GENERIC_OBSIDIAN_VAULT_PATH
     || value === LEGACY_OBSIDIAN_VAULT_PATH
-    || value.endsWith("/OpenClaw Vault")
+    || value.endsWith("/Omni-Agent Hivemind Vault")
     || value.endsWith("/Omni Agent Vault");
 }
 
 function scoreVaultCandidate(path: string): number {
   let score = 0;
   const name = basename(path).toLowerCase();
-  if (name.includes("openclaw")) score += 50;
+  if (name.includes("hivemind") || name.includes("omni")) score += 50;
   if (canAccess(join(path, "AGENTS.md"), constants.R_OK)) score += 20;
   if (isDirectory(join(path, ".obsidian"))) score += 10;
   return score;

@@ -1,4 +1,4 @@
-export type KanbanStatus = "triage" | "todo" | "ready" | "running" | "blocked" | "done" | "archived";
+export type KanbanStatus = "ideas" | "ready" | "working" | "needs-human" | "done" | "archived";
 
 export type KanbanPriority = "low" | "normal" | "high" | "urgent";
 
@@ -69,12 +69,11 @@ export type KanbanColumnGroup = KanbanColumn & {
 };
 
 export const KANBAN_COLUMNS: KanbanColumn[] = [
-  { id: "triage", title: "Triage", description: "Rough ideas waiting to be specified or decomposed." },
-  { id: "todo", title: "Todo", description: "Accepted work that is not ready to dispatch yet." },
-  { id: "ready", title: "Ready", description: "Unblocked work ready for a profile to claim." },
-  { id: "running", title: "Running", description: "Tasks currently owned by a profile or human." },
-  { id: "blocked", title: "Blocked", description: "Needs input, a dependency, or retry notes." },
-  { id: "done", title: "Done", description: "Completed handoffs with durable evidence." },
+  { id: "ideas", title: "Ideas", description: "Park thoughts here. Nothing is automated until you move them onward." },
+  { id: "ready", title: "Ready for Queen", description: "Work waiting for the Queen Bee to review, assign, or take herself." },
+  { id: "working", title: "Working", description: "The Queen Bee or a worker bee has claimed this." },
+  { id: "needs-human", title: "Needs Human", description: "Only used when the colony needs a decision, access, or approval." },
+  { id: "done", title: "Done", description: "Finished work with notes, evidence, or a result summary." },
   { id: "archived", title: "Archived", description: "Hidden by default, preserved for audit history." },
 ];
 

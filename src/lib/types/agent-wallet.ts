@@ -21,6 +21,11 @@ export interface AgentWalletConfig {
   survivalStartedAt: number;
   updatedAt: number;
   notes: string;
+  custodyMode?: "watch" | "local";
+  vaultAddress?: string;
+  onchainBalanceUsd?: number;
+  nativeBalance?: number;
+  lastOnchainSyncAt?: number;
 }
 
 export interface AgentSurvivalSnapshot {
@@ -41,4 +46,21 @@ export interface X402PaymentRequirement {
   maxAmountRequired?: string | number | bigint;
   asset?: string;
   description?: string;
+}
+
+export interface AgentWalletBalance {
+  address: string;
+  network: string;
+  tokenSymbol: string;
+  tokenBalance: number;
+  nativeBalance: number;
+  fetchedAt: number;
+}
+
+export interface AgentWalletVaultInfo {
+  agentId: string;
+  address: string;
+  network: string;
+  custodyMode: "local";
+  createdAt: string;
 }

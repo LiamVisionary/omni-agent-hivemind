@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 import { createServer } from "node:http";
 import { execFile, spawn } from "node:child_process";
-import { access, readdir, readFile, stat } from "node:fs/promises";
+import { randomBytes } from "node:crypto";
+import { access, mkdir, readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { constants } from "node:fs";
 import { homedir, hostname } from "node:os";
 import { join, resolve } from "node:path";
@@ -15,6 +16,13 @@ const defaultHermesDir = process.env.HERMES_HOME || join(homedir(), ".hermes");
 const maxChars = 1000;
 const maxChatChars = 12_000;
 const chatTimeoutMs = Number(process.env.AGENT_TELEMETRY_CHAT_TIMEOUT_MS || 180_000);
+const hermesApiHost = process.env.AGENT_TELEMETRY_HERMES_API_HOST || "127.0.0.1";
+const hermesApiPort = Number(process.env.AGENT_TELEMETRY_HERMES_API_PORT || process.env.API_SERVER_PORT || 8642);
+const hermesApiBaseUrl = `http://${hermesApiHost}:${hermesApiPort}`;
+const hermesApiStartTimeoutMs = Number(process.env.AGENT_TELEMETRY_HERMES_API_START_TIMEOUT_MS || 15_000);
+const syncthingApiBaseUrl = process.env.SYNCTHING_API_URL || "http://127.0.0.1:8384";
+let hermesApiProcess = null;
+let hermesApiStartPromise = null;
 
 function expandHome(path) {
   return path?.replace(/^~(?=$|\/)/, homedir());
@@ -26,6 +34,72 @@ function jsonResponse(response, status, payload) {
 
 function ssePayload(payload) {
   return `data: ${JSON.stringify(payload)}\n\n`;
+}
+
+function sleep(ms) {
+  return new Promise((resolveSleep) => setTimeout(resolveSleep, ms));
+}
+
+function normalizeContentPart(part) {
+  if (!part || typeof part !== "object") return null;
+  if (part.type === "text") {
+    const text = typeof part.text === "string" ? part.text.trim() : "";
+    return text ? { type: "text", text } : null;
+  }
+  if (part.type === "image_url" && part.image_url?.url) {
+    return { type: "image_url", image_url: { url: String(part.image_url.url) } };
+  }
+  if (part.type === "file" && part.file?.file_data) {
+    return {
+      type: "file",
+      file: {
+        filename: String(part.file.filename || "attachment"),
+        file_data: String(part.file.file_data),
+      },
+    };
+  }
+  return null;
+}
+
+function normalizeMessageContent(content) {
+  if (typeof content === "string") return content.trim();
+  if (!Array.isArray(content)) return "";
+  return content.map(normalizeContentPart).filter(Boolean);
+}
+
+function messageHasContent(message) {
+  const content = normalizeMessageContent(message?.content);
+  return Array.isArray(content) ? content.length > 0 : Boolean(content);
+}
+
+function extractUserTextFromMessages(messages) {
+  const lastUserMessage = [...messages].reverse().find((message) => message?.role === "user" && messageHasContent(message));
+  if (!lastUserMessage) return "";
+  if (typeof lastUserMessage.content === "string") return lastUserMessage.content.trim();
+  return lastUserMessage.content
+    .filter((part) => part?.type === "text" && typeof part.text === "string")
+    .map((part) => part.text.trim())
+    .filter(Boolean)
+    .join(" ");
+}
+
+function attachmentPromptFromMessages(messages) {
+  const lastUserMessage = [...messages].reverse().find((message) => message?.role === "user" && messageHasContent(message));
+  if (!lastUserMessage || !Array.isArray(lastUserMessage.content)) return "";
+  const images = lastUserMessage.content.filter((part) => part?.type === "image_url" && part.image_url?.url).length;
+  const files = lastUserMessage.content.filter((part) => part?.type === "file" && part.file?.file_data).length;
+  const pieces = [
+    images ? `${images} image${images === 1 ? "" : "s"}` : "",
+    files ? `${files} file${files === 1 ? "" : "s"}` : "",
+  ].filter(Boolean);
+  return pieces.length ? `Please respond to the attached ${pieces.join(" and ")}.` : "";
+}
+
+function messagesHaveMultimodalContent(messages) {
+  return Array.isArray(messages) && messages.some((message) => (
+    Array.isArray(message?.content)
+    && message.content.some((part) => part?.type === "image_url" || part?.type === "file")
+  ));
 }
 
 function compact(value, fallback = "No readable details.") {
@@ -103,6 +177,298 @@ async function appVersion() {
 
 function shellQuote(value) {
   return `'${String(value).replaceAll("'", "'\\''")}'`;
+}
+
+function safeFolderId(value) {
+  return String(value || "omni-agent-hivemind-sync")
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9._-]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 64) || "omni-agent-hivemind-sync";
+}
+
+function syncthingConfigCandidates() {
+  return [
+    process.env.SYNCTHING_CONFIG_PATH,
+    join(homedir(), "Library", "Application Support", "Syncthing", "config.xml"),
+    join(homedir(), ".local", "state", "syncthing", "config.xml"),
+    join(homedir(), ".config", "syncthing", "config.xml"),
+  ].filter(Boolean);
+}
+
+async function readSyncthingApiKey() {
+  if (process.env.SYNCTHING_API_KEY) return process.env.SYNCTHING_API_KEY;
+  for (const path of syncthingConfigCandidates()) {
+    const raw = await readFile(path, "utf8").catch(() => "");
+    const match = raw.match(/<apikey>([^<]+)<\/apikey>/i);
+    if (match?.[1]) return match[1].trim();
+  }
+  return "";
+}
+
+async function resolveSyncthingBin() {
+  if (process.env.SYNCTHING_BIN) return process.env.SYNCTHING_BIN;
+  const candidates = [
+    join(homedir(), ".local", "bin", "syncthing"),
+    "/opt/homebrew/bin/syncthing",
+    "/usr/local/bin/syncthing",
+    "/usr/bin/syncthing",
+  ];
+  for (const path of candidates) {
+    try {
+      await access(path, constants.X_OK);
+      return path;
+    } catch {
+      // try next
+    }
+  }
+  return "syncthing";
+}
+
+async function syncthingInstalled() {
+  const bin = await resolveSyncthingBin();
+  return access(bin, constants.X_OK).then(() => ({ installed: true, bin })).catch(() => ({ installed: false, bin }));
+}
+
+function startSyncthingDetached() {
+  const runner = join(appDir, "scripts", "run-syncthing.sh");
+  const child = spawn(runner, [], {
+    detached: true,
+    stdio: "ignore",
+    env: {
+      ...process.env,
+      SYNCTHING_GUI_ADDRESS: "127.0.0.1:8384",
+    },
+  });
+  child.unref();
+}
+
+async function syncthingFetch(path, options = {}) {
+  const apiKey = await readSyncthingApiKey();
+  const headers = {
+    ...(options.body ? { "content-type": "application/json" } : {}),
+    ...(apiKey ? { "X-API-Key": apiKey } : {}),
+    ...(options.headers || {}),
+  };
+  const response = await fetch(`${syncthingApiBaseUrl}${path}`, {
+    ...options,
+    headers,
+    signal: AbortSignal.timeout(options.timeoutMs || 8_000),
+  });
+  const text = await response.text();
+  let data = null;
+  if (text.trim()) {
+    try {
+      data = JSON.parse(text);
+    } catch {
+      data = { raw: text };
+    }
+  }
+  if (!response.ok) {
+    throw new Error(data?.error || data?.raw || `Syncthing API ${path} returned HTTP ${response.status}`);
+  }
+  return data;
+}
+
+async function waitForSyncthing() {
+  for (let attempt = 0; attempt < 12; attempt += 1) {
+    try {
+      const ping = await syncthingFetch("/rest/system/ping", { timeoutMs: 2_000 });
+      if (ping?.ping === "pong") return true;
+    } catch {
+      if (attempt === 0) {
+        try {
+          startSyncthingDetached();
+        } catch {
+          // setup normally owns service startup; keep polling.
+        }
+      }
+      await sleep(1_000);
+    }
+  }
+  return false;
+}
+
+async function syncthingStatus() {
+  const install = await syncthingInstalled();
+  if (!install.installed) {
+    return {
+      ok: false,
+      installed: false,
+      running: false,
+      error: "Syncthing is not installed. Run setup on this machine.",
+    };
+  }
+  const running = await waitForSyncthing();
+  if (!running) {
+    return {
+      ok: false,
+      installed: true,
+      running: false,
+      error: "Syncthing is installed but its local API is not reachable.",
+    };
+  }
+  const [system, version, connections] = await Promise.all([
+    syncthingFetch("/rest/system/status"),
+    syncthingFetch("/rest/system/version").catch(() => null),
+    syncthingFetch("/rest/system/connections").catch(() => null),
+  ]);
+  return {
+    ok: true,
+    installed: true,
+    running: true,
+    host: hostname(),
+    deviceID: system.myID,
+    guiAddress: syncthingApiBaseUrl,
+    version: version?.version,
+    connections,
+  };
+}
+
+function mergeDevice(existing, defaults, peer) {
+  const device = {
+    ...defaults,
+    ...existing,
+    deviceID: peer.deviceID,
+    name: peer.name || existing?.name || defaults?.name || peer.deviceID.slice(0, 7),
+    addresses: Array.isArray(peer.addresses) && peer.addresses.length ? peer.addresses : existing?.addresses || ["dynamic"],
+    paused: false,
+    introducer: false,
+    autoAcceptFolders: false,
+  };
+  delete device._editing;
+  return device;
+}
+
+function folderDevices(config, peerDeviceID) {
+  const ids = [config.myID, peerDeviceID].filter(Boolean);
+  return ids.map((deviceID) => ({ deviceID }));
+}
+
+function mergeFolder(existing, defaults, input, config) {
+  const folder = {
+    ...defaults,
+    ...existing,
+    id: safeFolderId(input.folderId || defaults?.id),
+    label: input.label || existing?.label || defaults?.label || "Omni-Agent Hivemind Sync",
+    path: expandHome(input.path),
+    type: "sendreceive",
+    paused: false,
+    fsWatcherEnabled: true,
+    fsWatcherDelayS: existing?.fsWatcherDelayS ?? defaults?.fsWatcherDelayS ?? 10,
+    rescanIntervalS: existing?.rescanIntervalS ?? defaults?.rescanIntervalS ?? 30,
+    ignorePerms: true,
+    devices: folderDevices(config, input.peerDeviceID),
+  };
+  delete folder._editing;
+  return folder;
+}
+
+async function configureSyncthingFolder(input) {
+  const peerDeviceID = String(input.peerDeviceID || "").trim();
+  const path = expandHome(String(input.path || "").trim());
+  if (!peerDeviceID) throw new Error("peerDeviceID is required.");
+  if (!path) throw new Error("path is required.");
+  await mkdir(path, { recursive: true, mode: 0o700 });
+  const running = await waitForSyncthing();
+  if (!running) throw new Error("Syncthing local API is not reachable.");
+
+  const [config, deviceDefaults, folderDefaults, status] = await Promise.all([
+    syncthingFetch("/rest/config"),
+    syncthingFetch("/rest/config/defaults/device"),
+    syncthingFetch("/rest/config/defaults/folder"),
+    syncthingFetch("/rest/system/status"),
+  ]);
+  config.myID = status.myID;
+
+  const folderId = safeFolderId(input.folderId || `omni-${randomBytes(4).toString("hex")}`);
+  const devices = Array.isArray(config.devices) ? config.devices : [];
+  const folders = Array.isArray(config.folders) ? config.folders : [];
+  const existingDeviceIndex = devices.findIndex((device) => device.deviceID === peerDeviceID);
+  const peerDevice = mergeDevice(existingDeviceIndex >= 0 ? devices[existingDeviceIndex] : null, deviceDefaults, {
+    deviceID: peerDeviceID,
+    name: input.peerName,
+    addresses: input.peerAddresses,
+  });
+  if (existingDeviceIndex >= 0) {
+    devices[existingDeviceIndex] = peerDevice;
+  } else {
+    devices.push(peerDevice);
+  }
+
+  const existingFolderIndex = folders.findIndex((folder) => folder.id === folderId);
+  const folder = mergeFolder(existingFolderIndex >= 0 ? folders[existingFolderIndex] : null, folderDefaults, {
+    folderId,
+    label: input.label,
+    path,
+    peerDeviceID,
+  }, config);
+  if (existingFolderIndex >= 0) {
+    folders[existingFolderIndex] = folder;
+  } else {
+    folders.push(folder);
+  }
+
+  config.devices = devices;
+  config.folders = folders;
+  await syncthingFetch("/rest/config", { method: "PUT", body: JSON.stringify(config), timeoutMs: 15_000 });
+  await syncthingFetch("/rest/db/scan", {
+    method: "POST",
+    body: JSON.stringify({ folder: folderId }),
+    timeoutMs: 8_000,
+  }).catch(() => null);
+
+  return {
+    ok: true,
+    host: hostname(),
+    deviceID: status.myID,
+    folderId,
+    label: folder.label,
+    path: folder.path,
+    peerDeviceID,
+  };
+}
+
+function safeSyncTestId(value) {
+  const id = String(value || "").trim();
+  if (!/^[A-Za-z0-9._-]{1,80}$/.test(id)) {
+    throw new Error("id must be 1-80 characters using letters, numbers, dot, underscore, or dash.");
+  }
+  return id;
+}
+
+function syncTestNotePath(root, id) {
+  const base = resolve(expandHome(String(root || "").trim()));
+  if (!base || base === resolve("/")) throw new Error("root is required.");
+  const testDir = resolve(base, ".omni-sync-test");
+  const notePath = resolve(testDir, `${safeSyncTestId(id)}.md`);
+  if (!notePath.startsWith(`${testDir}/`)) throw new Error("Invalid test note path.");
+  return { base, testDir, notePath };
+}
+
+async function syncthingTestNote(input) {
+  const action = String(input.action || "read").trim();
+  const { base, testDir, notePath } = syncTestNotePath(input.root, input.id);
+  if (action === "write") {
+    await mkdir(testDir, { recursive: true, mode: 0o700 });
+    const content = String(input.content ?? "");
+    await writeFile(notePath, content, "utf8");
+    return { ok: true, host: hostname(), action, root: base, path: notePath, bytes: Buffer.byteLength(content) };
+  }
+  if (action === "read") {
+    const content = await readFile(notePath, "utf8");
+    return { ok: true, host: hostname(), action, root: base, path: notePath, content };
+  }
+  if (action === "exists") {
+    const exists = await access(notePath, constants.F_OK).then(() => true).catch(() => false);
+    return { ok: true, host: hostname(), action, root: base, path: notePath, exists };
+  }
+  if (action === "delete") {
+    await rm(notePath, { force: true });
+    return { ok: true, host: hostname(), action, root: base, path: notePath, deleted: true };
+  }
+  throw new Error("action must be write, read, exists, or delete.");
 }
 
 async function resolveHermesBin() {
@@ -240,9 +606,9 @@ async function sendHermesChat(body) {
   const message = typeof body.message === "string"
     ? body.message
     : Array.isArray(body.messages)
-      ? [...body.messages].reverse().find((item) => item?.role === "user")?.content
+      ? extractUserTextFromMessages(body.messages)
       : "";
-  const text = typeof message === "string" ? message.trim() : "";
+  const text = (typeof message === "string" ? message.trim() : "") || (Array.isArray(body.messages) ? attachmentPromptFromMessages(body.messages) : "");
   if (!text) return { ok: false, status: 400, error: "Message is required." };
   if (text.length > maxChatChars) return { ok: false, status: 413, error: `Message is too long. Limit: ${maxChatChars} characters.` };
 
@@ -266,6 +632,166 @@ async function sendHermesChat(body) {
   };
 }
 
+async function hermesApiHealthy() {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 800);
+  try {
+    const response = await fetch(`${hermesApiBaseUrl}/health`, { signal: controller.signal });
+    return response.ok;
+  } catch {
+    return false;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function ensureHermesApiServer(hermesHome) {
+  if (await hermesApiHealthy()) return true;
+  if (process.env.AGENT_TELEMETRY_START_HERMES_API_SERVER === "0") return false;
+  if (hermesApiStartPromise) return hermesApiStartPromise;
+
+  hermesApiStartPromise = (async () => {
+    const bin = await resolveHermesBin();
+    hermesApiProcess = spawn(bin, ["gateway", "run"], {
+      env: {
+        ...process.env,
+        HERMES_HOME: hermesHome,
+        API_SERVER_ENABLED: "1",
+        API_SERVER_HOST: hermesApiHost,
+        API_SERVER_PORT: String(hermesApiPort),
+        PAGER: "cat",
+      },
+      stdio: ["ignore", "ignore", "ignore"],
+    });
+    hermesApiProcess.on("exit", () => {
+      hermesApiProcess = null;
+      hermesApiStartPromise = null;
+    });
+    hermesApiProcess.on("error", () => {
+      hermesApiProcess = null;
+      hermesApiStartPromise = null;
+    });
+
+    const deadline = Date.now() + hermesApiStartTimeoutMs;
+    while (Date.now() < deadline) {
+      if (await hermesApiHealthy()) return true;
+      await sleep(300);
+    }
+    return false;
+  })();
+
+  return hermesApiStartPromise;
+}
+
+function apiServerMessages(body, text) {
+  if (Array.isArray(body.messages) && body.messages.length > 0) {
+    return body.messages
+      .filter((message) => message && typeof message === "object")
+      .map((message) => {
+        const content = normalizeMessageContent(message.content);
+        return {
+          role: message.role === "assistant" || message.role === "system" ? message.role : "user",
+          content,
+        };
+      })
+      .filter((message) => Array.isArray(message.content) ? message.content.length > 0 : message.content.trim());
+  }
+  return [{ role: "user", content: text }];
+}
+
+async function proxyHermesApiChat(body, response, text, hermesHome) {
+  if (!(await ensureHermesApiServer(hermesHome))) return false;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), chatTimeoutMs);
+  try {
+    const upstream = await fetch(`${hermesApiBaseUrl}/v1/chat/completions`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        model: "hermes-agent",
+        stream: true,
+        messages: apiServerMessages(body, text),
+      }),
+      signal: controller.signal,
+    });
+    if (!upstream.ok || !upstream.body) {
+      if (messagesHaveMultimodalContent(body.messages)) {
+        const errorText = await upstream.text().catch(() => "");
+        response.writeHead(upstream.status || 502, {
+          "content-type": "text/event-stream",
+          "cache-control": "no-cache",
+          connection: "keep-alive",
+          "x-hermes-stream-source": "api-server",
+        });
+        response.end(ssePayload({ error: errorText || "Hermes rejected the attached media." }) + "data: [DONE]\n\n");
+        return true;
+      }
+      return false;
+    }
+
+    response.writeHead(200, {
+      "content-type": "text/event-stream",
+      "cache-control": "no-cache",
+      connection: "keep-alive",
+      "x-hermes-stream-source": "api-server",
+    });
+
+    response.on("close", () => controller.abort());
+
+    const reader = upstream.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "";
+    let wroteContent = false;
+    let wroteDone = false;
+    const hasMultimodal = messagesHaveMultimodalContent(body.messages);
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      const events = buffer.split("\n\n");
+      buffer = events.pop() ?? "";
+      for (const eventText of events) {
+        const dataLine = eventText.split("\n").find((line) => line.startsWith("data:"));
+        if (!dataLine) continue;
+        const raw = dataLine.replace(/^data:\s*/, "");
+        if (raw === "[DONE]") {
+          if (hasMultimodal && !wroteContent) {
+            response.write(ssePayload({ error: "Hermes accepted the attached media but returned no text. Check that the active Hermes model supports the attached image/audio type." }));
+          }
+          response.write("data: [DONE]\n\n");
+          wroteDone = true;
+          continue;
+        }
+        try {
+          const parsed = JSON.parse(raw);
+          const content = parsed?.choices?.[0]?.delta?.content;
+          if (typeof content === "string" && content.length > 0) {
+            wroteContent = true;
+            response.write(ssePayload({ choices: [{ delta: { content } }] }));
+          }
+        } catch {
+          // Ignore non-JSON SSE comments or custom tool events for the dashboard chat surface.
+        }
+      }
+    }
+    if (hasMultimodal && !wroteContent && !wroteDone) {
+      response.write(ssePayload({ error: "Hermes accepted the attached media but returned no text. Check that the active Hermes model supports the attached image/audio type." }));
+      response.write("data: [DONE]\n\n");
+    }
+    if (!response.writableEnded) response.end();
+    return true;
+  } catch {
+    if (!response.headersSent && !response.writableEnded) return false;
+    if (!response.writableEnded) {
+      response.write(ssePayload({ error: "Hermes API streaming interrupted." }));
+      response.end("data: [DONE]\n\n");
+    }
+    return true;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 async function streamHermesChat(body, response) {
   if (process.env.AGENT_TELEMETRY_CHAT_DISABLED === "1") {
     response.writeHead(403, { "content-type": "text/event-stream", "cache-control": "no-cache", connection: "keep-alive" });
@@ -276,9 +802,9 @@ async function streamHermesChat(body, response) {
   const message = typeof body.message === "string"
     ? body.message
     : Array.isArray(body.messages)
-      ? [...body.messages].reverse().find((item) => item?.role === "user")?.content
+      ? extractUserTextFromMessages(body.messages)
       : "";
-  const text = typeof message === "string" ? message.trim() : "";
+  const text = (typeof message === "string" ? message.trim() : "") || (Array.isArray(body.messages) ? attachmentPromptFromMessages(body.messages) : "");
   if (!text) {
     response.writeHead(400, { "content-type": "text/event-stream", "cache-control": "no-cache", connection: "keep-alive" });
     response.end(ssePayload({ error: "Message is required." }) + "data: [DONE]\n\n");
@@ -292,6 +818,8 @@ async function streamHermesChat(body, response) {
 
   const agent = body.agent && typeof body.agent === "object" ? body.agent : {};
   const hermesHome = expandHome(agent.localDataDir || body.localDataDir || defaultHermesDir);
+  if (await proxyHermesApiChat(body, response, text, hermesHome)) return;
+
   const child = spawn(await resolveHermesBin(), ["-z", text], {
     env: {
       ...process.env,
@@ -308,6 +836,7 @@ async function streamHermesChat(body, response) {
     "content-type": "text/event-stream",
     "cache-control": "no-cache",
     connection: "keep-alive",
+    "x-hermes-stream-source": "oneshot-fallback",
   });
 
   const finish = (payload = null) => {
@@ -407,7 +936,7 @@ createServer(async (request, response) => {
       ok: true,
       host: hostname(),
       version: await appVersion(),
-      capabilities: { chat: true, runtimes: ["hermes"] },
+      capabilities: { chat: true, runtimes: ["hermes"], syncthing: true },
     });
     return;
   }
@@ -427,6 +956,39 @@ createServer(async (request, response) => {
   if (request.url === "/agents") {
     const agents = await localAgents();
     jsonResponse(response, 200, { ok: true, host: hostname(), agents });
+    return;
+  }
+  if (request.url === "/syncthing/status") {
+    const status = await syncthingStatus();
+    jsonResponse(response, status.ok ? 200 : 503, status);
+    return;
+  }
+  if (request.url === "/syncthing/configure" && request.method === "POST") {
+    try {
+      const rawBody = await readBody(request);
+      const body = rawBody ? JSON.parse(rawBody) : {};
+      const result = await configureSyncthingFolder(body);
+      jsonResponse(response, 200, result);
+    } catch (error) {
+      jsonResponse(response, 400, {
+        ok: false,
+        error: error instanceof Error ? error.message : "Could not configure Syncthing.",
+      });
+    }
+    return;
+  }
+  if (request.url === "/syncthing/test-note" && request.method === "POST") {
+    try {
+      const rawBody = await readBody(request);
+      const body = rawBody ? JSON.parse(rawBody) : {};
+      const result = await syncthingTestNote(body);
+      jsonResponse(response, 200, result);
+    } catch (error) {
+      jsonResponse(response, 400, {
+        ok: false,
+        error: error instanceof Error ? error.message : "Could not access Syncthing test note.",
+      });
+    }
     return;
   }
   if (request.url === "/chat" && request.method === "POST") {

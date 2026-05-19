@@ -123,6 +123,42 @@
   overflow-wrap: anywhere;
 }
 
+.kanbanNoteIntake {
+  display: grid;
+  gap: 8px;
+  border: 1px solid rgba(94, 234, 212, 0.16);
+  border-radius: 7px;
+  background: rgba(20, 184, 166, 0.06);
+  padding: 10px;
+}
+
+.kanbanNoteIntake ul {
+  display: grid;
+  gap: 6px;
+  max-height: 150px;
+  overflow: auto;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.kanbanNoteIntake li {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+  border-top: 1px solid rgba(148, 163, 184, 0.1);
+  padding-top: 6px;
+}
+
+.kanbanNoteIntake li span {
+  overflow: hidden;
+  color: var(--foreground);
+  font-size: 12px;
+  font-weight: 800;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .kanbanToolbar {
   flex-wrap: wrap;
   align-items: end;
@@ -266,11 +302,10 @@
   background: var(--muted);
 }
 
-.kanbanDot.triage { background: #a78bfa; }
-.kanbanDot.todo { background: #38bdf8; }
+.kanbanDot.ideas { background: #a78bfa; }
 .kanbanDot.ready { background: #5eead4; }
-.kanbanDot.running { background: #facc15; }
-.kanbanDot.blocked { background: #fb7185; }
+.kanbanDot.working { background: #facc15; }
+.kanbanDot.needs-human { background: #fb7185; }
 .kanbanDot.done { background: #86efac; }
 .kanbanDot.archived { background: #94a3b8; }
 
@@ -338,6 +373,39 @@
   -webkit-line-clamp: 3;
 }
 
+.kanbanBeeAssignment {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid rgba(148, 163, 184, 0.12);
+  border-radius: 7px;
+  background: rgba(8, 13, 20, 0.42);
+  padding: 7px 8px;
+}
+
+.kanbanBeeAssignment img {
+  width: 20px;
+  height: 20px;
+  flex: 0 0 auto;
+  object-fit: contain;
+}
+
+.kanbanBeeAssignment span {
+  display: grid;
+  min-width: 0;
+  gap: 1px;
+}
+
+.kanbanBeeAssignment b {
+  overflow: hidden;
+  color: #f8fafc;
+  font-size: 12px;
+  line-height: 1.15;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .kanbanCard small,
 .kanbanDrawer small {
   color: var(--muted);
@@ -356,15 +424,28 @@
   text-transform: uppercase;
 }
 
+.priorityPill.needs-human,
 .priorityPill.high,
 .priorityPill.urgent {
   border-color: rgba(251, 113, 133, 0.48);
   color: #fecdd3;
 }
 
+.priorityPill.ready,
+.priorityPill.working,
 .priorityPill.normal {
   border-color: rgba(94, 234, 212, 0.36);
   color: var(--accent-strong);
+}
+
+.priorityPill.ideas {
+  border-color: rgba(167, 139, 250, 0.36);
+  color: #c4b5fd;
+}
+
+.priorityPill.done {
+  border-color: rgba(134, 239, 172, 0.36);
+  color: #bbf7d0;
 }
 
 .kanbanEmpty {
@@ -503,6 +584,7 @@
 .kanbanToolbar select,
 .kanbanToolbar input,
 .kanbanBoardCreate input,
+.kanbanNoteIntake textarea,
 .kanbanInlineAdd input,
 .kanbanDrawer input,
 .kanbanDrawer select,
@@ -545,9 +627,11 @@
 :global(:root[data-theme="hive-light"]) .kanbanColumn,
 :global(:root[data-theme="hive-light"]) .kanbanDrawer,
 :global(:root[data-theme="hive-light"]) .kanbanAdvancedPanel,
+:global(:root[data-theme="hive-light"]) .kanbanNoteIntake,
 :global(:root[data-theme="hive-light"]) .kanbanCard,
 :global(:root[data-theme="hive-light"]) .kanbanThread article,
 :global(:root[data-theme="hive-light"]) .kanbanMetaGrid span,
+:global(:root[data-theme="hive-light"]) .kanbanBeeAssignment,
 :global(:root[data-theme="hive-light"]) .priorityPill {
   border-color: var(--comb-line);
   background: var(--surface);
@@ -567,6 +651,7 @@
 }
 
 :global(:root[data-theme="hive-light"]) .kanbanCard strong,
+:global(:root[data-theme="hive-light"]) .kanbanBeeAssignment b,
 :global(:root[data-theme="hive-light"]) .kanbanFirstRun strong,
 :global(:root[data-theme="hive-light"]) .kanbanThread p,
 :global(:root[data-theme="hive-light"]) .kanbanEvents p,
@@ -604,6 +689,7 @@
 :global(:root[data-theme="hive-light"]) .kanbanToolbar select,
 :global(:root[data-theme="hive-light"]) .kanbanToolbar input,
 :global(:root[data-theme="hive-light"]) .kanbanBoardCreate input,
+:global(:root[data-theme="hive-light"]) .kanbanNoteIntake textarea,
 :global(:root[data-theme="hive-light"]) .kanbanInlineAdd input,
 :global(:root[data-theme="hive-light"]) .kanbanDrawer input,
 :global(:root[data-theme="hive-light"]) .kanbanDrawer select,

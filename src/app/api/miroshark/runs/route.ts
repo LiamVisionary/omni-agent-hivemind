@@ -44,7 +44,7 @@ type RunSummary = {
   folder: string;
 };
 
-const ARCHIVE_RELATIVE_DIR = ["Projects", "OpenClaw", "MiroShark Simulations"];
+const ARCHIVE_RELATIVE_DIR = ["Projects", "Omni-Agent Hivemind", "MiroShark Simulations"];
 const INDEX_JSON = "_index.json";
 const INDEX_MD = "index.md";
 function expandHome(value: string) {
@@ -223,7 +223,7 @@ async function writeIndex(archiveDir: string, summaries: RunSummary[]) {
   const md = [
     "# MiroShark Simulations",
     "",
-    "Durable archive of OpenClaw-launched MiroShark swarm runs.",
+    "Durable archive of Hivemind-launched MiroShark swarm runs.",
     "",
     "| Saved | Simulation | Platform | Status | Posts | Scenario |",
     "| --- | --- | --- | --- | ---: | --- |",
