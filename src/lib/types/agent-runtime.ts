@@ -14,6 +14,10 @@ export interface AgentProfile {
   localDataDir?: string;
   machineName?: string;
   telemetryUrl?: string;
+  collectorCapabilities?: {
+    chat?: boolean;
+    runtimes?: string[];
+  };
 }
 
 export interface SharedVaultConfig {

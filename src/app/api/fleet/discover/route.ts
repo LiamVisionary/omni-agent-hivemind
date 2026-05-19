@@ -41,6 +41,11 @@ type CollectorVersion = {
   updateCommand?: string;
 };
 
+type CollectorCapabilities = {
+  chat?: boolean;
+  runtimes?: string[];
+};
+
 function simplifyDevice(peer: TailscalePeer, self = false): Device {
   const ip = peer.TailscaleIPs?.find((value) => /^\d+\.\d+\.\d+\.\d+$/.test(value)) ?? peer.TailscaleIPs?.[0] ?? "";
   const dnsName = peer.DNSName?.replace(/\.$/, "") ?? "";
@@ -87,14 +92,20 @@ export async function GET() {
 
     let agents: AgentProfile[] = [];
     let version: CollectorVersion | undefined;
+    let capabilities: CollectorCapabilities | undefined;
     try {
-      const healthData = await fetchJson(`${device.collectorUrl}/health`).catch(() => null) as { version?: CollectorVersion } | null;
+      const healthData = await fetchJson(`${device.collectorUrl}/health`).catch(() => null) as {
+        version?: CollectorVersion;
+        capabilities?: CollectorCapabilities;
+      } | null;
       version = healthData?.version;
+      capabilities = healthData?.capabilities ?? { chat: false, runtimes: [] };
       const agentData = await fetchJson(`${device.collectorUrl}/agents`) as { agents?: AgentProfile[] };
       agents = (agentData.agents ?? []).map((agent) => ({
         ...agent,
         telemetryUrl: device.collectorUrl,
         machineName: device.name,
+        collectorCapabilities: capabilities,
       }));
     } catch {
       return {
@@ -115,6 +126,7 @@ export async function GET() {
         device,
         collector: "ready",
         version,
+        capabilities,
         agents,
         snapshots: snapshotData.snapshots ?? [],
       };
@@ -123,6 +135,7 @@ export async function GET() {
         device,
         collector: "ready",
         version,
+        capabilities,
         agents,
         snapshots: [],
       };
