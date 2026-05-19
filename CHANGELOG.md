@@ -3,6 +3,14 @@
 This file records user-visible changes before they are committed. New work should
 be added here first, then marked `Committed` or `Pushed` after the git action.
 
+## 2026-05-20 01:59 WITA - Create Syncthing Folder Markers
+
+- Status: Uncommitted
+- Areas changed: Collector Syncthing folder configuration, changelog
+- Summary: Create Syncthing's `.stfolder` marker whenever the collector configures a shared folder so existing vault directories do not enter the `folder marker missing` error state.
+- Verification: Pending: syntax checks and no-path sync smoke retry.
+- Intended commit message: `Create Syncthing folder markers`
+
 ## 2026-05-20 01:49 WITA - Auto-Pair Tailnet Syncthing
 
 - Status: Uncommitted

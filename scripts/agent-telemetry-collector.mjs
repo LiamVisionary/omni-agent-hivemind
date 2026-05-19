@@ -377,6 +377,7 @@ async function configureSyncthingFolder(input) {
   if (!peerDeviceID) throw new Error("peerDeviceID is required.");
   if (!path) throw new Error("path is required.");
   await mkdir(path, { recursive: true, mode: 0o700 });
+  await mkdir(join(path, ".stfolder"), { recursive: true, mode: 0o700 });
   const running = await waitForSyncthing();
   if (!running) throw new Error("Syncthing local API is not reachable.");
 
