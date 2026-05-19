@@ -5,18 +5,18 @@ be added here first, then marked `Committed` or `Pushed` after the git action.
 
 ## 2026-05-20 01:59 WITA - Create Syncthing Folder Markers
 
-- Status: Uncommitted
+- Status: Pushed
 - Areas changed: Collector Syncthing folder configuration, changelog
 - Summary: Create Syncthing's `.stfolder` marker whenever the collector configures a shared folder so existing vault directories do not enter the `folder marker missing` error state.
-- Verification: Pending: syntax checks and no-path sync smoke retry.
+- Verification: `node --check scripts/agent-telemetry-collector.mjs`; `git diff --cached --check`; restarted the local collector; updated the Ubuntu collector to `272dd7d`; re-paired without a remote folder path; local Syncthing folder status returned `idle` with no marker error; no-path E2E smoke passed Mac to Ubuntu in 5 attempts and Ubuntu to Mac in 6 attempts; cleaned up hidden `.omni-sync-test` notes.
 - Intended commit message: `Create Syncthing folder markers`
 
 ## 2026-05-20 01:49 WITA - Auto-Pair Tailnet Syncthing
 
-- Status: Uncommitted
+- Status: Pushed
 - Areas changed: Collector Syncthing status, Syncthing pairing API, shared vault defaults/UI, fleet discovery capability typing, changelog
 - Summary: Make realtime Tailnet sync work out of the box by enabling auto-pair by default, having collectors advertise a default shared-brain sync path, allowing the pair API to use collector defaults when no remote path is provided, and auto-pairing reachable Syncthing-capable Tailnet collectors from the dashboard without requiring manual folder entry.
-- Verification: Pending: syntax checks, typecheck, and local/remote auto-pair smoke.
+- Verification: `node --check scripts/agent-telemetry-collector.mjs`; `pnpm typecheck`; `git diff --check`; local collector restart advertised default sync path; Ubuntu collector updated to `72c8e0f` and advertised its default sync path; pair API accepted a request with no remote folder path and selected the Ubuntu collector default.
 - Intended commit message: `Auto-pair Tailnet Syncthing`
 
 ## 2026-05-20 01:28 WITA - Simplify Machine Setup Modal
