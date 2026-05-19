@@ -491,7 +491,7 @@ async function resolveHermesBin() {
 }
 
 function startUpdate() {
-  const command = `cd ${shellQuote(appDir)} && mkdir -p .next && { echo "--- update $(date -u +%Y-%m-%dT%H:%M:%SZ) ---"; git pull --ff-only; pnpm install --frozen-lockfile; pnpm build; ./setup.sh; } >> .next/agent-update.log 2>&1`;
+  const command = `cd ${shellQuote(appDir)} && mkdir -p .next && { echo "--- update $(date -u +%Y-%m-%dT%H:%M:%SZ) ---"; git pull --ff-only; if command -v corepack >/dev/null 2>&1; then corepack prepare pnpm@8.6.12 --activate; hash -r 2>/dev/null || true; fi; CI=true pnpm install --frozen-lockfile; pnpm build; ./setup.sh; } >> .next/agent-update.log 2>&1`;
   const child = spawn("sh", ["-lc", command], {
     detached: true,
     stdio: "ignore",

@@ -103,11 +103,16 @@ if command -v pnpm >/dev/null 2>&1; then
 elif command -v corepack >/dev/null 2>&1; then
   info "pnpm not found; enabling pnpm through corepack"
   corepack enable
-  corepack prepare pnpm@latest --activate
+  corepack prepare pnpm@8.6.12 --activate
   ok "pnpm enabled: $(pnpm --version)"
 else
   missing+=("pnpm or corepack")
   fail "pnpm is missing"
+fi
+
+if command -v corepack >/dev/null 2>&1; then
+  corepack prepare pnpm@8.6.12 --activate >/dev/null 2>&1 || true
+  hash -r 2>/dev/null || true
 fi
 
 tailscale_ip=""
