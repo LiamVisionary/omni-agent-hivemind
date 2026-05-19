@@ -7,6 +7,7 @@
 - Hermes local activity discovery from sessions, logs, runtime files, and process signals.
 - OpenClaw, Hermes, and Aeon runtime profiles.
 - Shared Obsidian vault settings and per-agent opt-in.
+- Shared Obsidian-backed Kanban board for handoffs, blockers, queued work, and completed work.
 
 ## Next
 
@@ -28,7 +29,6 @@
 ## Shared Obsidian Brain
 
 - Shared memory bank structure for company brain, project brain, agent-specific brain, and user preferences.
-- Shared kanban board for agent handoffs, queued work, blocked work, and completed work.
 - Shared skills folder with sync status per agent runtime.
 - Vault-safe write APIs with explicit allowlists and append-only defaults.
 - Agent handoff notes that link tasks, source messages, outputs, and follow-up decisions.
@@ -50,7 +50,8 @@
 
 ## Swarm Behavior
 
-- Investigate and integrate MiroShark for swarm behavior orchestration.
+- Add optional MiroShark companion integration for swarm rehearsal and scenario simulation.
+- Keep real swarm coordination owned by OpenClaw: plans, roles, handoffs, voting, synthesis, attribution, and dashboard state.
 - Add swarm plans, agent role assignment, voting/synthesis, and quorum-based handoffs.
 - Add an optional task bus between orchestrators and specialists.
 - Show swarm state in the dashboard without hiding which agent did which work.

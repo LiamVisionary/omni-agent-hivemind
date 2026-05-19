@@ -25,6 +25,11 @@ type FleetTask = {
   status: FleetTaskStatus;
   source: string;
   updatedAt: number;
+  startedAt?: number;
+  messages?: Array<{
+    role: "user" | "assistant";
+    content: string;
+  }>;
 };
 
 type AgentWithLocal = AgentProfile & {
@@ -110,10 +115,39 @@ function normalize(value: string) {
   return value.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
 }
 
-function compact(value: unknown, fallback = "No details reported.") {
-  if (typeof value === "string") return value.trim().slice(0, 900) || fallback;
-  if (value && typeof value === "object") return JSON.stringify(value).slice(0, 900);
+function compact(value: unknown, fallback = "No details reported.", maxLength = 900) {
+  if (typeof value === "string") return value.trim().slice(0, maxLength) || fallback;
+  if (value && typeof value === "object") return JSON.stringify(value).slice(0, maxLength);
   return fallback;
+}
+
+function readableChatContent(value: unknown): string {
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    if (!trimmed) return "";
+    if (/^[\[{]/.test(trimmed)) {
+      try {
+        return readableChatContent(JSON.parse(trimmed));
+      } catch {
+        return trimmed;
+      }
+    }
+    return trimmed;
+  }
+  if (!value || typeof value !== "object") return "";
+  const record = value as Record<string, unknown>;
+  const choices = Array.isArray(record.choices) ? record.choices : [];
+  for (const choice of choices) {
+    const content = readableChatContent((choice as Record<string, unknown>)?.message)
+      || readableChatContent((choice as Record<string, unknown>)?.delta)
+      || readableChatContent((choice as Record<string, unknown>)?.text);
+    if (content) return content;
+  }
+  for (const key of ["response", "answer", "content", "text", "message", "output", "result", "summary"]) {
+    const content = readableChatContent(record[key]);
+    if (content) return content;
+  }
+  return "";
 }
 
 function titleFromText(text: string) {
@@ -240,16 +274,30 @@ async function scanHermesStateDb(agent: AgentProfile, hermesDir: string): Promis
       tool_name: string | null;
       timestamp: number;
     }>>("sqlite3", ["-json", dbPath, `
-      select role, substr(content,1,900) as content, tool_name, timestamp
+      select role, substr(content,1,8000) as content, tool_name, timestamp
       from messages
       where session_id = '${session.id.replaceAll("'", "''")}'
       order by timestamp desc
-      limit 8;
+      limit 30;
     `], []);
-    const latestAssistant = messages.find((message) => message.role === "assistant" && message.content?.trim());
-    const latestUser = messages.find((message) => message.role === "user" && message.content?.trim());
-    const latestTool = messages.find((message) => message.role === "tool" && message.content?.trim());
+    const readableMessages = messages.map((message) => ({
+      ...message,
+      content: readableChatContent(message.content),
+    })).filter((message) => message.content.trim());
+    const latestAssistant = readableMessages.find((message) => message.role === "assistant");
+    const latestUser = readableMessages.find((message) => message.role === "user");
+    const latestTool = readableMessages.find((message) => message.role === "tool");
     const latest = latestAssistant ?? latestTool ?? messages.find((message) => message.content?.trim());
+    const chatMessages = readableMessages
+      .filter((message) => (
+        (message.role === "user" || message.role === "assistant")
+        && message.content.trim()
+      ))
+      .sort((a, b) => a.timestamp - b.timestamp)
+      .map((message) => ({
+        role: message.role as "user" | "assistant",
+        content: compact(message.content, "", 8_000),
+      }));
     return {
       id: `hermes-state:${session.id}`,
       agentId: agent.id,
@@ -259,6 +307,7 @@ async function scanHermesStateDb(agent: AgentProfile, hermesDir: string): Promis
       source: "hermes-state",
       startedAt: session.started_at * 1000,
       updatedAt: (latest?.timestamp ?? session.started_at) * 1000,
+      messages: chatMessages,
     };
   }));
 

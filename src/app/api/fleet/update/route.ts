@@ -1,9 +1,9 @@
 import { spawn } from "child_process";
-import { appendFile, mkdir, readFile } from "fs/promises";
-import { homedir } from "os";
-import { dirname, join } from "path";
+import { access } from "fs/promises";
+import { join } from "path";
 
 export const runtime = "nodejs";
+export const maxDuration = 360;
 
 type UpdateBody = {
   collectorUrl?: string;
@@ -12,64 +12,90 @@ type UpdateBody = {
   ip?: string;
   appDir?: string;
   updateCommand?: string;
-};
-
-type CollectorUpdateAttempt = {
-  result: unknown | null;
-  reachable: boolean;
-  missingUpdater: boolean;
-  error?: string;
-};
-
-async function tryCollectorUpdate(collectorUrl?: string) {
-  const emptyAttempt: CollectorUpdateAttempt = {
-    result: null,
-    reachable: false,
-    missingUpdater: false,
+  requiredCapabilities?: {
+    chat?: boolean;
   };
-  if (!collectorUrl) return emptyAttempt;
-  const response = await fetch(`${collectorUrl.replace(/\/+$/, "")}/update`, {
+};
+
+type CollectorHealth = {
+  ok?: boolean;
+  capabilities?: {
+    chat?: boolean;
+    runtimes?: string[];
+  };
+  version?: {
+    commit?: string;
+    shortCommit?: string;
+    dirty?: boolean;
+  };
+};
+
+function collectorBase(collectorUrl?: string) {
+  return collectorUrl?.replace(/\/+$/, "") || "";
+}
+
+async function fetchCollectorHealth(collectorUrl?: string): Promise<CollectorHealth | null> {
+  const base = collectorBase(collectorUrl);
+  if (!base) return null;
+  const response = await fetch(`${base}/health`, {
+    signal: AbortSignal.timeout(6_000),
+    cache: "no-store",
+  }).catch(() => null);
+  if (!response?.ok) return null;
+  return response.json().catch(() => null) as Promise<CollectorHealth | null>;
+}
+
+function hasRequiredCapabilities(health: CollectorHealth | null, required?: UpdateBody["requiredCapabilities"]) {
+  if (!required?.chat) return true;
+  return health?.capabilities?.chat === true;
+}
+
+async function waitForCollectorVerification(collectorUrl?: string, required?: UpdateBody["requiredCapabilities"]) {
+  const delays = [1_000, 2_000, 4_000, 8_000, 15_000];
+  let health = await fetchCollectorHealth(collectorUrl);
+  if (hasRequiredCapabilities(health, required)) return { verified: true, health };
+  for (const delay of delays) {
+    await new Promise((resolve) => setTimeout(resolve, delay));
+    health = await fetchCollectorHealth(collectorUrl);
+    if (hasRequiredCapabilities(health, required)) return { verified: true, health };
+  }
+  return { verified: false, health };
+}
+
+async function startCollectorUpdate(collectorUrl?: string) {
+  const base = collectorBase(collectorUrl);
+  if (!base) throw new Error("No collector URL was provided.");
+  const response = await fetch(`${base}/update`, {
     method: "POST",
     signal: AbortSignal.timeout(8_000),
     cache: "no-store",
-  }).catch((error) => {
-    const message = error instanceof Error ? error.message : String(error);
-    return { error: message };
   });
-  if (!response || "error" in response) {
-    return { ...emptyAttempt, error: response?.error ?? "collector update request failed" };
-  }
-
   const payload = await response.json().catch(() => null);
-  const missingUpdater = response.status === 404 || payload?.error === "not found";
   if (!response.ok || payload?.ok === false) {
-    return {
-      result: null,
-      reachable: true,
-      missingUpdater,
-      error: payload?.error ?? `collector update returned HTTP ${response.status}`,
-    };
+    throw new Error(payload?.error ?? `collector update returned HTTP ${response.status}`);
   }
-
-  return {
-    result: payload ?? { ok: true, accepted: true },
-    reachable: true,
-    missingUpdater: false,
-  };
+  return payload ?? { ok: true, accepted: true };
 }
 
 function shellSingleQuote(value: string) {
   return `'${value.replaceAll("'", "'\\''")}'`;
 }
 
-function fallbackScript(appDir?: string, updateCommand?: string) {
-  if (updateCommand?.trim()) return updateCommand.trim();
+function updateScriptForCheckout() {
+  return [
+    "git pull --ff-only",
+    "if ! command -v pnpm >/dev/null 2>&1 && command -v corepack >/dev/null 2>&1; then corepack enable; corepack prepare pnpm@latest --activate; fi",
+    "pnpm install --frozen-lockfile",
+    "AGENT_TELEMETRY_PORT=\"${AGENT_TELEMETRY_PORT:-8787}\" ./scripts/install-telemetry-collector.sh",
+  ].join("\n");
+}
+
+function fallbackScript(appDir?: string) {
   if (appDir?.trim()) {
     return [
       "set -euo pipefail",
       `cd ${shellSingleQuote(appDir.trim())}`,
-      "git pull --ff-only",
-      "./setup.sh",
+      updateScriptForCheckout(),
     ].join("\n");
   }
   const candidates = [
@@ -87,8 +113,7 @@ function fallbackScript(appDir?: string, updateCommand?: string) {
     "  fi",
     "done",
     "[ -d .git ] || { echo 'Could not find omni-agent-hivemind checkout'; exit 2; }",
-    "git pull --ff-only",
-    "./setup.sh",
+    updateScriptForCheckout(),
   ].join("\n");
 }
 
@@ -139,47 +164,16 @@ function isUnknownHostKeyError(error: unknown) {
   return /No .* host key is known|Host key verification failed|StrictHostKeyChecking/i.test(message);
 }
 
-async function primeKnownHost(target: string) {
-  const host = target.replace(/^[^@]+@/, "");
-  const knownHostsPath = join(homedir(), ".ssh", "known_hosts");
-  const { stdout } = await runProcess("ssh-keyscan", ["-T", "8", "-t", "ed25519", host], null, 12_000);
-  const keyLines = stdout
-    .split(/\r?\n/)
-    .filter((line) => line.trim() && !line.startsWith("#"));
-  if (keyLines.length === 0) {
-    throw new Error(`Could not read SSH host key for ${host}`);
-  }
-  await mkdir(dirname(knownHostsPath), { recursive: true, mode: 0o700 });
-  const existing = await readFile(knownHostsPath, "utf-8").catch(() => "");
-  const additions = keyLines.filter((line) => !existing.includes(line));
-  if (additions.length > 0) {
-    await appendFile(knownHostsPath, `${additions.join("\n")}\n`, { mode: 0o600 });
-  }
-}
-
 function combineOutput(...parts: Array<string | undefined>) {
   return parts.map((part) => part?.trim()).filter(Boolean).join("\n\n");
 }
 
 async function runTailscaleSsh(target: string, script: string) {
-  let primeWarning = "";
   try {
-    await primeKnownHost(target);
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    primeWarning = `Could not preflight SSH host key for ${target}: ${message}`;
-  }
-
-  try {
-    const result = await runProcess("tailscale", ["ssh", target, "bash", "-s"], script, 180_000);
-    return {
-      ...result,
-      stderr: combineOutput(primeWarning, result.stderr),
-    };
+    return await runProcess("tailscale", ["ssh", target, "bash", "-s"], script, 45_000);
   } catch (error) {
     if (!isUnknownHostKeyError(error)) throw error;
-    await primeKnownHost(target);
-    return runProcess("tailscale", ["ssh", target, "bash", "-s"], script, 180_000);
+    throw new Error(`${error instanceof Error ? error.message : String(error)}\n\nTailscale SSH is not enabled or trusted for this machine.`);
   }
 }
 
@@ -197,11 +191,13 @@ async function runPlainSsh(target: string, script: string) {
         "-o",
         "BatchMode=yes",
         "-o",
+        "ConnectTimeout=8",
+        "-o",
         "StrictHostKeyChecking=accept-new",
         sshTarget,
         "bash",
         "-s",
-      ], script, 180_000);
+      ], script, 20_000);
     } catch (error) {
       errors.push(`${sshTarget}: ${error instanceof Error ? error.message : String(error)}`);
     }
@@ -235,29 +231,88 @@ async function runRemoteShell(target: string, script: string) {
 async function tryTailscaleSsh(body: UpdateBody) {
   const target = body.dnsName || body.name || body.ip;
   if (!target) throw new Error("No Tailscale target was provided.");
-  const script = fallbackScript(body.appDir, body.updateCommand);
+  const script = fallbackScript(body.appDir);
   const { stdout, stderr } = await runRemoteShell(target, script);
   return { ok: true, accepted: true, method: "remote-shell", target, stdout, stderr, command: script };
 }
 
+async function isLocalCheckout(appDir?: string) {
+  if (!appDir?.trim()) return false;
+  try {
+    await access(join(appDir.trim(), ".git"));
+    await access(join(appDir.trim(), "setup.sh"));
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function tryLocalShell(body: UpdateBody) {
+  const script = fallbackScript(body.appDir);
+  const { stdout, stderr } = await runProcess("bash", ["-s"], script, 300_000);
+  return { ok: true, accepted: true, method: "local-shell", target: "this machine", stdout, stderr, command: script };
+}
+
 export async function POST(request: Request) {
   const body = await request.json().catch(() => ({})) as UpdateBody;
-  const collectorAttempt = await tryCollectorUpdate(body.collectorUrl);
-  if (collectorAttempt.result) {
-    return Response.json({ ok: true, method: "collector", result: collectorAttempt.result });
-  }
-
   try {
-    const result = await tryTailscaleSsh(body);
-    return Response.json(result);
+    const result = await (await isLocalCheckout(body.appDir) ? tryLocalShell(body) : tryTailscaleSsh(body));
+    const verification = await waitForCollectorVerification(body.collectorUrl, body.requiredCapabilities);
+    if (!verification.verified) {
+      return Response.json({
+        ok: false,
+        error: body.requiredCapabilities?.chat
+          ? "The update command finished, but the collector still does not report the Hermes chat bridge."
+          : "The update command finished, but collector verification did not pass.",
+        method: result.method,
+        stdout: result.stdout,
+        stderr: result.stderr,
+        health: verification.health,
+        fallbackCommand: fallbackScript(body.appDir),
+      }, { status: 502 });
+    }
+    return Response.json({ ...result, verified: true, health: verification.health });
   } catch (error) {
     const rawError = error instanceof Error ? error.message : "Update failed";
-    const staleCollectorMessage = "This machine is online and reporting agent activity, but its collector is too old to update itself. This dashboard also cannot open SSH to that machine yet. Run the fallback command once on that machine; after that, the Update button will work directly from here.";
+    if (body.collectorUrl) {
+      try {
+        const collectorResult = await startCollectorUpdate(body.collectorUrl);
+        const verification = await waitForCollectorVerification(body.collectorUrl, body.requiredCapabilities);
+        if (verification.verified) {
+          return Response.json({
+            ok: true,
+            accepted: true,
+            method: "collector-fallback",
+            result: collectorResult,
+            verified: true,
+            health: verification.health,
+            stderr: rawError,
+          });
+        }
+        return Response.json({
+          ok: false,
+          error: "SSH is not available for this machine, so the collector fallback started the update, but verification did not pass before the timeout.",
+          method: "collector-fallback",
+          sshError: rawError,
+          result: collectorResult,
+          health: verification.health,
+          fallbackCommand: fallbackScript(body.appDir),
+        }, { status: 502 });
+      } catch (collectorError) {
+        return Response.json({
+          ok: false,
+          error: combineOutput(
+            rawError,
+            `Collector fallback failed:\n${collectorError instanceof Error ? collectorError.message : String(collectorError)}`,
+          ),
+          fallbackCommand: fallbackScript(body.appDir),
+        }, { status: 502 });
+      }
+    }
     return Response.json({
       ok: false,
-      error: collectorAttempt.reachable && collectorAttempt.missingUpdater ? staleCollectorMessage : rawError,
-      details: collectorAttempt.reachable && collectorAttempt.missingUpdater ? rawError : undefined,
-      fallbackCommand: fallbackScript(body.appDir, body.updateCommand),
+      error: rawError,
+      fallbackCommand: fallbackScript(body.appDir),
     }, { status: 502 });
   }
 }

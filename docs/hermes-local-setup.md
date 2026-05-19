@@ -21,7 +21,7 @@ Safety posture:
 - Live installers were not executed.
 - Docker images were not pulled.
 - For audit-only clones, disable pushes with `git remote set-url --push origin DISABLED`.
-- The OpenClaw Next dashboard validates this folder and forwards its path to opted-in agents as context.
+- The Omni-Agent Hivemind dashboard validates this folder and forwards its path to opted-in agents as context.
 
 Known live-code risks in the upstream bootstrap:
 

@@ -1,0 +1,569 @@
+.vaultPanel {
+  border: 1px solid rgba(148, 163, 184, 0.16);
+  border-radius: 8px;
+  background: rgba(16, 20, 29, 0.78);
+  box-shadow: 0 18px 60px rgba(0, 0, 0, 0.24);
+  padding: 18px;
+  margin-bottom: 16px;
+}
+
+.vaultHeader {
+  display: flex;
+  gap: 14px;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.vaultHeader h2 {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.vaultHeader p {
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.5;
+}
+
+.brainWorkspace {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(300px, 0.36fr);
+  gap: 14px;
+  margin: 16px 0;
+}
+
+.brainGraphPanel,
+.brainInspector {
+  min-width: 0;
+  border: 1px solid rgba(148, 163, 184, 0.16);
+  border-radius: 8px;
+  background:
+    linear-gradient(135deg, rgba(45, 212, 191, 0.08), transparent 40%),
+    rgba(7, 10, 16, 0.72);
+}
+
+.brainGraphPanel {
+  overflow: hidden;
+}
+
+.brainGraphStats {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 1px;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.13);
+  background: rgba(148, 163, 184, 0.08);
+}
+
+.brainGraphStats span {
+  display: grid;
+  grid-template-columns: auto auto 1fr;
+  gap: 7px;
+  align-items: center;
+  min-width: 0;
+  background: rgba(8, 12, 19, 0.9);
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 800;
+  padding: 11px 12px;
+  text-transform: uppercase;
+}
+
+.brainGraphStats svg {
+  width: 15px;
+  height: 15px;
+  color: var(--accent-strong);
+}
+
+.brainGraphStats strong {
+  color: #f8fafc;
+  font-size: 15px;
+}
+
+.brainLegend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: center;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.13);
+  background: rgba(3, 7, 18, 0.72);
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 800;
+  padding: 8px 12px;
+  text-transform: uppercase;
+}
+
+.brainLegend span {
+  display: inline-flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.brainLegend i {
+  display: inline-block;
+  width: 18px;
+  height: 14px;
+  clip-path: polygon(25% 0, 75% 0, 100% 50%, 75% 100%, 25% 100%, 0 50%);
+}
+
+.legendNote {
+  background: #07111a;
+  outline: 2px solid #2dd4bf;
+}
+
+.legendUnresolved {
+  background: rgba(75, 85, 99, 0.42);
+  outline: 2px solid rgba(148, 163, 184, 0.72);
+}
+
+.legendSelected {
+  background: rgba(251, 191, 36, 0.36);
+  outline: 2px solid #fbbf24;
+}
+
+.legendTarget {
+  background: #07111a;
+  outline: 3px solid #fbbf24;
+}
+
+.brainGraphCanvas {
+  position: relative;
+  min-height: 620px;
+  background:
+    linear-gradient(rgba(94, 234, 212, 0.045) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(94, 234, 212, 0.045) 1px, transparent 1px),
+    radial-gradient(circle at 48% 44%, rgba(45, 212, 191, 0.14), transparent 34%),
+    #060a10;
+  background-size: 28px 28px, 28px 28px, auto, auto;
+}
+
+.brainGraphCanvas svg {
+  display: block;
+  width: 100%;
+  min-height: 620px;
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
+}
+
+.brainGraphCanvas svg:active,
+.brainGraphCanvas svg.dragging {
+  cursor: grabbing;
+}
+
+.brainEdge,
+.brainEdgeActive {
+  fill: none;
+  stroke: rgba(94, 234, 212, 0);
+  stroke-linejoin: round;
+  stroke-linecap: round;
+  stroke-width: 1.2;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.brainEdgeActive {
+  stroke: rgba(214, 190, 66, 0.92);
+  stroke-width: 1.6;
+  opacity: 1;
+  filter: drop-shadow(0 0 3px rgba(214, 190, 66, 0.2));
+}
+
+.brainNode {
+  cursor: pointer;
+  outline: none;
+}
+
+.brainNode polygon {
+  fill: rgba(13, 22, 31, 0.92);
+  stroke: rgba(94, 234, 212, 0.5);
+  stroke-width: 1.7;
+  transition: fill 160ms ease, stroke 160ms ease, transform 160ms ease;
+}
+
+.brainNode text {
+  pointer-events: none;
+  fill: #e5eef9;
+  font-size: 11px;
+  font-weight: 900;
+}
+
+.brainNode .brainNodeMeta {
+  fill: rgba(199, 210, 254, 0.78);
+  font-size: 9px;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.brainNode:hover polygon,
+.brainNode:focus polygon {
+  fill: rgba(20, 184, 166, 0.18);
+  stroke: rgba(251, 191, 36, 0.82);
+}
+
+.brainNode.selected polygon {
+  fill: rgba(251, 191, 36, 0.2);
+  stroke: #fbbf24;
+  stroke-width: 2.4;
+}
+
+.brainNode.target polygon {
+  fill: rgba(13, 22, 31, 0.92);
+  stroke: #fbbf24;
+  stroke-width: 4.4;
+  filter: drop-shadow(0 0 8px rgba(251, 191, 36, 0.34));
+}
+
+.brainNode.unresolved polygon {
+  fill: rgba(75, 85, 99, 0.38);
+  stroke: rgba(148, 163, 184, 0.42);
+}
+
+.brainNode.unresolved.target polygon {
+  fill: rgba(75, 85, 99, 0.38);
+  stroke: #fbbf24;
+  stroke-width: 4.4;
+  filter: drop-shadow(0 0 8px rgba(251, 191, 36, 0.34));
+}
+
+.brainStatus {
+  margin: 0;
+  border-top: 1px solid rgba(148, 163, 184, 0.13);
+  color: var(--muted);
+  font-size: 12px;
+  padding: 10px 12px;
+}
+
+.brainInspector {
+  display: grid;
+  align-content: start;
+  gap: 13px;
+  padding: 14px;
+}
+
+.brainInspectorHeader {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  justify-content: space-between;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.13);
+  padding-bottom: 12px;
+}
+
+.brainInspectorHeader span {
+  display: inline-flex;
+  gap: 7px;
+  align-items: center;
+  color: #f8fafc;
+  font-size: 12px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.brainInspectorHeader small,
+.brainInspector p,
+.brainAccessList small,
+.brainEmpty span {
+  color: var(--muted);
+  line-height: 1.45;
+}
+
+.brainInspector h3 {
+  margin: 0;
+  overflow-wrap: anywhere;
+  color: #f8fafc;
+  font-size: 20px;
+  line-height: 1.15;
+}
+
+.brainInspector p {
+  margin: -6px 0 0;
+  font-size: 12px;
+}
+
+.brainInspector dl {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  margin: 0;
+}
+
+.brainInspector dl div {
+  border: 1px solid rgba(148, 163, 184, 0.14);
+  border-radius: 7px;
+  background: rgba(3, 7, 18, 0.45);
+  padding: 9px;
+}
+
+.brainInspector dt {
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.brainInspector dd {
+  margin: 4px 0 0;
+  color: #f8fafc;
+  font-size: 13px;
+  font-weight: 900;
+}
+
+.brainTags,
+.brainAccessList {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+}
+
+.brainTags span {
+  border: 1px solid rgba(94, 234, 212, 0.2);
+  border-radius: 999px;
+  background: rgba(20, 184, 166, 0.09);
+  color: var(--accent-strong);
+  font-size: 11px;
+  font-weight: 800;
+  padding: 5px 8px;
+}
+
+.brainAccessList {
+  display: grid;
+}
+
+.brainAccessList strong {
+  color: #f8fafc;
+  font-size: 12px;
+  text-transform: uppercase;
+}
+
+.brainAccessList article {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 9px;
+  align-items: start;
+  border: 1px solid rgba(148, 163, 184, 0.12);
+  border-radius: 7px;
+  background: rgba(3, 7, 18, 0.42);
+  padding: 9px;
+}
+
+.brainAccessList svg {
+  width: 16px;
+  height: 16px;
+  color: #fbbf24;
+}
+
+.brainAccessList span {
+  display: block;
+  color: #f8fafc;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.brainAccessList small {
+  display: block;
+  overflow-wrap: anywhere;
+  font-size: 11px;
+}
+
+.brainEmpty {
+  display: grid;
+  place-items: center;
+  min-height: 360px;
+  padding: 22px;
+  text-align: center;
+}
+
+.brainEmpty.compact {
+  min-height: 220px;
+}
+
+.brainEmpty svg {
+  width: 44px;
+  height: 44px;
+  color: rgba(94, 234, 212, 0.72);
+}
+
+.brainEmpty strong {
+  margin-top: 8px;
+  color: #f8fafc;
+}
+
+.vaultFooter {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.vaultFooter button:not([data-slot="button"]) {
+  border: 0;
+  border-radius: 6px;
+  background: var(--accent);
+  color: #06201d;
+  font-weight: 800;
+  padding: 12px 16px;
+}
+
+.vaultFooter button:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.vaultGrid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+  margin-top: 16px;
+}
+
+.vaultGrid label,
+.vaultInstructions {
+  display: grid;
+  gap: 8px;
+  color: #d7dee9;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.vaultInstructions {
+  margin-top: 14px;
+}
+
+.vaultFooter {
+  align-items: stretch;
+  margin-top: 14px;
+}
+
+.vaultFooter pre {
+  flex: 1;
+  min-height: 46px;
+  max-height: 160px;
+  margin: 0;
+  overflow: auto;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: #090d14;
+  color: #d7dee9;
+  padding: 10px;
+  white-space: pre-wrap;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 12px;
+}
+
+
+.vaultGrid input,
+.vaultInstructions textarea {
+  width: 100%;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: #090d14;
+  color: var(--foreground);
+  padding: 12px;
+  outline: none;
+}
+
+.vaultGrid input:focus,
+.vaultInstructions textarea:focus {
+  border-color: var(--accent);
+}
+
+@media (max-width: 880px) {
+  .vaultHeader {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .brainWorkspace {
+    grid-template-columns: 1fr;
+  }
+
+  .brainGraphStats {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .vaultGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .vaultFooter {
+    flex-direction: column;
+  }
+}
+
+@media (max-width: 720px) {
+  .vaultPanel {
+    border-radius: 7px;
+  }
+}
+
+:global(:root[data-theme="hive-light"]) .vaultPanel,
+:global(:root[data-theme="hive-light"]) .brainGraphPanel,
+:global(:root[data-theme="hive-light"]) .brainInspector,
+:global(:root[data-theme="hive-light"]) .brainInspector dl div,
+:global(:root[data-theme="hive-light"]) .brainAccessList article {
+  border-color: var(--comb-line);
+  background: var(--surface);
+  color: var(--foreground);
+}
+
+:global(:root[data-theme="hive-light"]) .brainGraphStats,
+:global(:root[data-theme="hive-light"]) .brainLegend {
+  border-color: var(--comb-line);
+  background: var(--surface-strong);
+}
+
+:global(:root[data-theme="hive-light"]) .brainGraphStats span,
+:global(:root[data-theme="hive-light"]) .brainGraphCanvas,
+:global(:root[data-theme="hive-light"]) .vaultFooter pre {
+  background: var(--surface-soft);
+  color: var(--foreground);
+}
+
+:global(:root[data-theme="hive-light"]) .brainGraphCanvas {
+  background:
+    linear-gradient(rgba(92, 75, 45, 0.06) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(92, 75, 45, 0.06) 1px, transparent 1px),
+    radial-gradient(circle at 48% 44%, rgba(212, 180, 111, 0.18), transparent 34%),
+    var(--surface-soft);
+  background-size: 28px 28px, 28px 28px, auto, auto;
+}
+
+:global(:root[data-theme="hive-light"]) .brainNode polygon {
+  fill: rgba(238, 230, 208, 0.94);
+  stroke: rgba(111, 86, 37, 0.46);
+}
+
+:global(:root[data-theme="hive-light"]) .brainNode text,
+:global(:root[data-theme="hive-light"]) .brainNode .brainNodeMeta,
+:global(:root[data-theme="hive-light"]) .brainGraphStats strong,
+:global(:root[data-theme="hive-light"]) .brainInspectorHeader span,
+:global(:root[data-theme="hive-light"]) .brainInspector h3,
+:global(:root[data-theme="hive-light"]) .brainInspector dd,
+:global(:root[data-theme="hive-light"]) .brainAccessList strong,
+:global(:root[data-theme="hive-light"]) .brainAccessList span,
+:global(:root[data-theme="hive-light"]) .brainEmpty strong,
+:global(:root[data-theme="hive-light"]) .vaultGrid label,
+:global(:root[data-theme="hive-light"]) .vaultInstructions {
+  color: var(--foreground);
+  fill: var(--foreground);
+}
+
+:global(:root[data-theme="hive-light"]) .legendNote,
+:global(:root[data-theme="hive-light"]) .legendTarget {
+  background: var(--surface);
+  outline-color: rgba(111, 86, 37, 0.52);
+}
+
+:global(:root[data-theme="hive-light"]) .legendSelected,
+:global(:root[data-theme="hive-light"]) .brainNode.selected polygon {
+  fill: rgba(212, 180, 111, 0.24);
+  stroke: var(--accent-strong);
+}
+
+:global(:root[data-theme="hive-light"]) .vaultGrid input,
+:global(:root[data-theme="hive-light"]) .vaultInstructions textarea {
+  border-color: var(--line);
+  background: var(--field);
+  color: var(--foreground);
+}

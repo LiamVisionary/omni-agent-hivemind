@@ -14,6 +14,10 @@ export interface AgentProfile {
   localDataDir?: string;
   machineName?: string;
   telemetryUrl?: string;
+  collectorCapabilities?: {
+    chat?: boolean;
+    runtimes?: string[];
+  };
 }
 
 export interface SharedVaultConfig {
@@ -21,15 +25,17 @@ export interface SharedVaultConfig {
   vaultPath: string;
   inboxFolder: string;
   sharedNotePath: string;
+  kanbanFolder: string;
   controlRoomPath: string;
   instructions: string;
 }
 
 export const DEFAULT_SHARED_VAULT: SharedVaultConfig = {
   enabled: true,
-  vaultPath: process.env.NEXT_PUBLIC_OBSIDIAN_VAULT_PATH ?? "~/Documents/Obsidian/Omni Agent Vault",
+  vaultPath: process.env.NEXT_PUBLIC_OBSIDIAN_VAULT_PATH ?? "~/Documents/Obsidian/OpenClaw Vault",
   inboxFolder: "Agent Inbox",
   sharedNotePath: "Agent Team/Shared Context.md",
+  kanbanFolder: process.env.NEXT_PUBLIC_OBSIDIAN_KANBAN_FOLDER ?? "Projects/OpenClaw/Kanban",
   controlRoomPath: process.env.NEXT_PUBLIC_HERMES_CONTROL_ROOM_PATH ?? "~/agent-control-room",
   instructions: "Use this vault as the shared memory and handoff space for all local agents. Read AGENTS.md before durable edits. Use the Hermes Agent Control Room as the operating manual, registry, runbook library, and task-bus template.",
 };

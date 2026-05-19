@@ -24,10 +24,42 @@ function jsonResponse(response, status, payload) {
   response.writeHead(status, { "content-type": "application/json" }).end(JSON.stringify(payload));
 }
 
+function ssePayload(payload) {
+  return `data: ${JSON.stringify(payload)}\n\n`;
+}
+
 function compact(value, fallback = "No readable details.") {
   if (typeof value === "string") return value.trim().slice(0, maxChars) || fallback;
   if (value && typeof value === "object") return JSON.stringify(value).slice(0, maxChars);
   return fallback;
+}
+
+function readableChatContent(value) {
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    if (!trimmed) return "";
+    if (/^[\[{]/.test(trimmed)) {
+      try {
+        return readableChatContent(JSON.parse(trimmed));
+      } catch {
+        return trimmed;
+      }
+    }
+    return trimmed;
+  }
+  if (!value || typeof value !== "object") return "";
+  const choices = Array.isArray(value.choices) ? value.choices : [];
+  for (const choice of choices) {
+    const content = readableChatContent(choice?.message)
+      || readableChatContent(choice?.delta)
+      || readableChatContent(choice?.text);
+    if (content) return content;
+  }
+  for (const key of ["response", "answer", "content", "text", "message", "output", "result", "summary"]) {
+    const content = readableChatContent(value[key]);
+    if (content) return content;
+  }
+  return "";
 }
 
 async function execJson(cmd, args, fallback) {
@@ -121,9 +153,13 @@ async function scanHermesState(agent, hermesDir) {
       where session_id = '${String(session.id).replaceAll("'", "''")}'
       order by timestamp desc limit 8;
     `], []);
-    const latestAssistant = messages.find((message) => message.role === "assistant" && message.content?.trim());
-    const latestUser = messages.find((message) => message.role === "user" && message.content?.trim());
-    const latestTool = messages.find((message) => message.role === "tool" && message.content?.trim());
+    const readableMessages = messages.map((message) => ({
+      ...message,
+      content: readableChatContent(message.content),
+    })).filter((message) => message.content.trim());
+    const latestAssistant = readableMessages.find((message) => message.role === "assistant");
+    const latestUser = readableMessages.find((message) => message.role === "user");
+    const latestTool = readableMessages.find((message) => message.role === "tool");
     const latest = latestAssistant ?? latestTool ?? messages.find((message) => message.content?.trim());
     return {
       id: `hermes-state:${session.id}`,
@@ -230,6 +266,96 @@ async function sendHermesChat(body) {
   };
 }
 
+async function streamHermesChat(body, response) {
+  if (process.env.AGENT_TELEMETRY_CHAT_DISABLED === "1") {
+    response.writeHead(403, { "content-type": "text/event-stream", "cache-control": "no-cache", connection: "keep-alive" });
+    response.end(ssePayload({ error: "Collector chat bridge is disabled on this machine." }) + "data: [DONE]\n\n");
+    return;
+  }
+
+  const message = typeof body.message === "string"
+    ? body.message
+    : Array.isArray(body.messages)
+      ? [...body.messages].reverse().find((item) => item?.role === "user")?.content
+      : "";
+  const text = typeof message === "string" ? message.trim() : "";
+  if (!text) {
+    response.writeHead(400, { "content-type": "text/event-stream", "cache-control": "no-cache", connection: "keep-alive" });
+    response.end(ssePayload({ error: "Message is required." }) + "data: [DONE]\n\n");
+    return;
+  }
+  if (text.length > maxChatChars) {
+    response.writeHead(413, { "content-type": "text/event-stream", "cache-control": "no-cache", connection: "keep-alive" });
+    response.end(ssePayload({ error: `Message is too long. Limit: ${maxChatChars} characters.` }) + "data: [DONE]\n\n");
+    return;
+  }
+
+  const agent = body.agent && typeof body.agent === "object" ? body.agent : {};
+  const hermesHome = expandHome(agent.localDataDir || body.localDataDir || defaultHermesDir);
+  const child = spawn(await resolveHermesBin(), ["-z", text], {
+    env: {
+      ...process.env,
+      HERMES_HOME: hermesHome,
+      PAGER: "cat",
+    },
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+
+  let stdout = "";
+  let stderr = "";
+  let settled = false;
+  response.writeHead(200, {
+    "content-type": "text/event-stream",
+    "cache-control": "no-cache",
+    connection: "keep-alive",
+  });
+
+  const finish = (payload = null) => {
+    if (settled) return;
+    settled = true;
+    clearTimeout(timeout);
+    if (payload) response.write(ssePayload(payload));
+    response.end("data: [DONE]\n\n");
+  };
+
+  const timeout = setTimeout(() => {
+    child.kill("SIGTERM");
+    finish({ error: `Hermes chat timed out after ${chatTimeoutMs}ms.` });
+  }, chatTimeoutMs);
+
+  response.on("close", () => {
+    if (!settled) child.kill("SIGTERM");
+  });
+
+  child.stdout.on("data", (chunk) => {
+    const textChunk = chunk.toString("utf8");
+    stdout += textChunk;
+    response.write(ssePayload({ choices: [{ delta: { content: textChunk } }] }));
+  });
+
+  child.stderr.on("data", (chunk) => {
+    stderr += chunk.toString("utf8");
+  });
+
+  child.on("error", (error) => {
+    finish({ error: error instanceof Error ? error.message : "Hermes chat failed" });
+  });
+
+  child.on("close", (code) => {
+    if (settled) return;
+    const content = stdout.trim();
+    const errorText = stderr.trim();
+    if (code === 0) {
+      if (!content && errorText) {
+        response.write(ssePayload({ choices: [{ delta: { content: errorText } }] }));
+      }
+      finish();
+      return;
+    }
+    finish({ error: errorText || `Hermes exited with code ${code ?? "unknown"}.` });
+  });
+}
+
 async function snapshotFor(agent) {
   const dataDir = expandHome(agent.localDataDir || (agent.runtime === "hermes" ? defaultHermesDir : ""));
   const [hermesTasks, fileTasks, running] = await Promise.all([
@@ -307,6 +433,10 @@ createServer(async (request, response) => {
     try {
       const rawBody = await readBody(request);
       const body = rawBody ? JSON.parse(rawBody) : {};
+      if (body.stream === true) {
+        await streamHermesChat(body, response);
+        return;
+      }
       const result = await sendHermesChat(body);
       jsonResponse(response, result.ok ? 200 : result.status || 500, result);
     } catch (error) {

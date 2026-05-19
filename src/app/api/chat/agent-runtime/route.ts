@@ -25,6 +25,10 @@ function buildVaultContext(sharedVault: SharedVaultConfig | null): string {
     `- Vault path: ${sharedVault.vaultPath}`,
     `- Agent inbox folder: ${sharedVault.inboxFolder || "(not set)"}`,
     `- Shared note: ${sharedVault.sharedNotePath || "(not set)"}`,
+    `- Shared Kanban folder: ${sharedVault.kanbanFolder || "Projects/OpenClaw/Kanban"}`,
+    "- Kanban API: use the dashboard's /api/openclaw/kanban endpoint for task creation, status moves, comments, and board reads when available.",
+    "- Kanban storage: boards are stored as kanban.json files under the shared Kanban folder so machines using Obsidian Sync can collaborate on the same work queue.",
+    "- Brain access tracking: when you inspect a vault note through the dashboard, call /api/obsidian/access with vaultPath, notePath, agentName, agentId, runtime, machineName, and action so the shared brain records who accessed what and when.",
     `- Hermes Agent Control Room path: ${sharedVault.controlRoomPath || "(not set)"}`,
     `- Instructions: ${sharedVault.instructions || "Read AGENTS.md before durable vault edits."}`,
   ];
@@ -66,6 +70,36 @@ function extractChunk(payload: unknown): string {
   );
 }
 
+function validateHttpRuntimeProfile(profile: AgentProfile): string | null {
+  const gatewayUrl = profile.gatewayUrl?.trim();
+  if (!gatewayUrl) {
+    return profile.telemetryUrl
+      ? "This discovered agent is connected through the read-only telemetry collector. Add a Hermes/Aeon chat runtime URL before sending messages."
+      : "Missing runtime chat URL.";
+  }
+
+  try {
+    const parsed = new URL(gatewayUrl);
+    if (!["http:", "https:"].includes(parsed.protocol)) {
+      return "Runtime chat URL must start with http:// or https://.";
+    }
+  } catch {
+    return "Runtime chat URL is invalid.";
+  }
+
+  return null;
+}
+
+function collectorChatProfile(profile: AgentProfile): AgentProfile | null {
+  if (profile.runtime !== "hermes") return null;
+  if (!profile.telemetryUrl?.trim()) return null;
+  return {
+    ...profile,
+    gatewayUrl: profile.telemetryUrl,
+    chatPath: "/chat",
+  };
+}
+
 async function streamHttpRuntime(
   profile: AgentProfile,
   messages: IncomingMessage[],
@@ -74,30 +108,44 @@ async function streamHttpRuntime(
 ) {
   const url = getRuntimeUrl(profile, profile.chatPath || "/chat");
   const vaultContext = buildVaultContext(sharedVault);
-  const upstream = await fetch(url, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      ...(profile.token ? { Authorization: `Bearer ${profile.token}` } : {}),
-    },
-    body: JSON.stringify({
-      agentId: profile.agentId || profile.id,
-      sessionKey: profile.sessionKey,
-      message: userText,
-      messages,
-      stream: true,
-      sharedVault,
-      obsidianVault: sharedVault,
-      controlRoomPath: sharedVault?.controlRoomPath,
-      context: vaultContext || undefined,
-    }),
-    signal: AbortSignal.timeout(110_000),
-  });
+  let upstream: Response;
+  try {
+    upstream = await fetch(url, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...(profile.token ? { Authorization: `Bearer ${profile.token}` } : {}),
+      },
+      body: JSON.stringify({
+        agentId: profile.agentId || profile.id,
+        sessionKey: profile.sessionKey,
+        message: userText,
+        messages,
+        stream: true,
+        sharedVault,
+        obsidianVault: sharedVault,
+        controlRoomPath: sharedVault?.controlRoomPath,
+        context: vaultContext || undefined,
+      }),
+      signal: AbortSignal.timeout(110_000),
+    });
+  } catch (error) {
+    const reason = error instanceof Error ? error.message : "Runtime did not respond";
+    return Response.json(
+      {
+        error: `${profile.name || profile.runtime} is not reachable at ${url}. Check that the ${profile.runtime} runtime is running and that the chat URL is correct. (${reason})`,
+      },
+      { status: 502 },
+    );
+  }
 
   if (!upstream.ok) {
     const errorText = await upstream.text().catch(() => "");
+    const message = upstream.status === 404 && profile.runtime === "hermes" && profile.telemetryUrl
+      ? "This machine's collector is connected but does not have the Hermes chat bridge yet. Run Update/Setup on that machine, then try again."
+      : errorText || `${profile.runtime} returned ${upstream.status}`;
     return new Response(
-      ssePayload({ error: errorText || `${profile.runtime} returned ${upstream.status}` }) + "data: [DONE]\n\n",
+      ssePayload({ error: message }) + "data: [DONE]\n\n",
       { headers: { "Content-Type": "text/event-stream", "Cache-Control": "no-cache" } },
     );
   }
@@ -187,7 +235,15 @@ export async function POST(request: NextRequest) {
     : userText;
 
   if (profile.runtime !== "openclaw") {
-    return streamHttpRuntime(profile, messages, userText, vault);
+    if (profile.runtime === "hermes" && profile.telemetryUrl?.trim() && profile.collectorCapabilities?.chat === false) {
+      return Response.json({
+        error: `${profile.machineName || "This machine"} is connected, but its collector does not have the Hermes chat bridge installed yet. Run setup/update on that machine after these dashboard changes are available there.`,
+      }, { status: 400 });
+    }
+    const effectiveProfile = collectorChatProfile(profile) ?? profile;
+    const profileError = validateHttpRuntimeProfile(effectiveProfile);
+    if (profileError) return Response.json({ error: profileError }, { status: 400 });
+    return streamHttpRuntime(effectiveProfile, messages, userText, vault);
   }
 
   const token = await getGatewayAuthToken(profile.token);
