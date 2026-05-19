@@ -128,6 +128,7 @@ export function StatusPill({ kind, label, className, hideIcon }: StatusPillProps
   return (
     <span
       data-slot="status-pill"
+      data-tone={visual.tone}
       className={cn(
         "inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-semibold leading-none tracking-tight [&_svg]:size-3",
         TONE_CLASS[visual.tone],

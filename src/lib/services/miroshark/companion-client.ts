@@ -1,4 +1,5 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "fs";
+import { randomBytes } from "crypto";
 import { homedir } from "os";
 import path from "path";
 import { execFile, spawn } from "child_process";
@@ -20,7 +21,7 @@ export type MiroSharkRequirement = {
 };
 
 export type MiroSharkAction = {
-  id: "install" | "start" | "open";
+  id: "install" | "start" | "open" | "configure-admin";
   label: string;
   disabled?: boolean;
 };
@@ -52,6 +53,11 @@ export type MiroSharkCompanionStatus = {
   error?: string;
   requirements: MiroSharkRequirement[];
   install: MiroSharkInstallState;
+  adminAuth: {
+    configured: boolean;
+    source?: "environment" | "miroshark-env";
+    hint: string;
+  };
   actions: MiroSharkAction[];
   startCommand?: string;
   installCommand?: string;
@@ -185,6 +191,56 @@ function preferredApiKey() {
   return process.env.OPENROUTER_API_KEY || process.env.OPENAI_API_KEY || process.env.LLM_API_KEY || "";
 }
 
+function parseEnvValue(raw: string, key: string) {
+  const line = raw.split(/\r?\n/).find((item) => item.trim().startsWith(`${key}=`));
+  if (!line) return "";
+  return line.slice(line.indexOf("=") + 1).trim().replace(/^['"]|['"]$/g, "");
+}
+
+function upsertEnvValue(raw: string, key: string, value: string) {
+  const lines = raw.split(/\r?\n/);
+  let updated = false;
+  const next = lines.map((line) => {
+    if (!line.trim().startsWith(`${key}=`)) return line;
+    updated = true;
+    return `${key}=${value}`;
+  });
+  if (!updated) next.push(`${key}=${value}`);
+  return `${next.join("\n").replace(/\n*$/, "")}\n`;
+}
+
+function adminTokenFromEnvFile(installPath?: string) {
+  if (!installPath) return "";
+  const envPath = path.join(installPath, ".env");
+  if (!existsSync(envPath)) return "";
+  return parseEnvValue(readFileSync(envPath, "utf8"), "MIROSHARK_ADMIN_TOKEN");
+}
+
+export function getMiroSharkAdminToken(installPath?: string) {
+  return (process.env.MIROSHARK_ADMIN_TOKEN || adminTokenFromEnvFile(installPath || discoverInstall().installPath)).trim();
+}
+
+function getAdminAuthStatus(installPath?: string): MiroSharkCompanionStatus["adminAuth"] {
+  if (process.env.MIROSHARK_ADMIN_TOKEN?.trim()) {
+    return {
+      configured: true,
+      source: "environment",
+      hint: "Publish/export auth is configured in OpenClaw's environment.",
+    };
+  }
+  if (adminTokenFromEnvFile(installPath)) {
+    return {
+      configured: true,
+      source: "miroshark-env",
+      hint: "Publish/export auth is configured in MiroShark's .env.",
+    };
+  }
+  return {
+    configured: false,
+    hint: "Publish/export requires MIROSHARK_ADMIN_TOKEN. OpenClaw can generate it, write it to MiroShark's .env, restart MiroShark, and keep using it from the local file.",
+  };
+}
+
 function writeManagedEnv(installPath: string) {
   const envPath = path.join(installPath, ".env");
   if (existsSync(envPath)) return;
@@ -211,6 +267,20 @@ function writeManagedEnv(installPath: string) {
     "ENABLE_GRAPH_SEARCH=false",
     "",
   ].join("\n"), { mode: 0o600 });
+}
+
+export function configureMiroSharkAdminAuth() {
+  const discovered = discoverInstall();
+  if (!discovered.installPath) {
+    throw new Error("MiroShark is not installed yet");
+  }
+
+  writeManagedEnv(discovered.installPath);
+  const envPath = path.join(discovered.installPath, ".env");
+  const raw = existsSync(envPath) ? readFileSync(envPath, "utf8") : "";
+  const token = parseEnvValue(raw, "MIROSHARK_ADMIN_TOKEN") || randomBytes(32).toString("base64url");
+  writeFileSync(envPath, upsertEnvValue(raw, "MIROSHARK_ADMIN_TOKEN", token), { mode: 0o600 });
+  return startMiroSharkSetup("start");
 }
 
 function writeBootstrapEnv() {
@@ -240,7 +310,7 @@ function writeBootstrapEnv() {
 }
 
 function managedStartCommand(installPath: string) {
-  return `screen -dmS ${SCREEN_SESSION_NAME} bash -lc 'cd ${backendDir(installPath)} && .venv/bin/python run.py'`;
+  return `cd ${backendDir(installPath)} && nohup .venv/bin/python run.py >/tmp/miroshark-5101.out 2>/tmp/miroshark-5101.err &`;
 }
 
 export function startMiroSharkSetup(action: "install" | "start") {
@@ -278,7 +348,17 @@ if command -v docker >/dev/null 2>&1; then
 fi
 UV_PYTHON=python3.11 uv sync
 screen -S ${SCREEN_SESSION_NAME} -X quit >/dev/null 2>&1 || true
-screen -dmS ${SCREEN_SESSION_NAME} bash -lc 'cd "${backendDir(installPath)}" && .venv/bin/python run.py'
+if command -v lsof >/dev/null 2>&1; then
+  existing_pids=$(lsof -tiTCP:${DEFAULT_MANAGED_PORT} -sTCP:LISTEN || true)
+  if [ -n "$existing_pids" ]; then
+    echo "Stopping existing MiroShark listener(s) on ${DEFAULT_MANAGED_PORT}: $existing_pids"
+    kill $existing_pids >/dev/null 2>&1 || true
+    sleep 1
+  fi
+fi
+cd "${backendDir(installPath)}"
+nohup .venv/bin/python run.py >/tmp/miroshark-5101.out 2>/tmp/miroshark-5101.err &
+echo $! >/tmp/miroshark-5101.pid
 echo "[$(date)] MiroShark started at http://127.0.0.1:${DEFAULT_MANAGED_PORT}"
 `;
 
@@ -327,6 +407,7 @@ export async function getMiroSharkCompanionStatus(): Promise<MiroSharkCompanionS
   const baseUrl = normalizeBaseUrl(rawBaseUrl || (discovered.installPath ? `http://127.0.0.1:${DEFAULT_MANAGED_PORT}` : undefined));
   const configured = Boolean(rawBaseUrl?.trim());
   const requirements = await getRequirements(discovered.installPath);
+  const adminAuth = getAdminAuthStatus(discovered.installPath);
   const hasKey = Boolean(preferredApiKey() || (discovered.installPath && existsSync(path.join(discovered.installPath, ".env"))));
   const endpoints = {
     health: buildUrl(baseUrl, MIROSHARK_ENDPOINTS.health),
@@ -359,8 +440,12 @@ export async function getMiroSharkCompanionStatus(): Promise<MiroSharkCompanionS
       latencyMs,
       requirements,
       install: setup,
+      adminAuth,
       actions: ok
-        ? [{ id: "open", label: "API Docs" }]
+        ? [
+          { id: "open", label: "API Docs" },
+          ...(adminAuth.configured ? [] : [{ id: "configure-admin" as const, label: "Configure publish auth", disabled: setup.running }]),
+        ]
         : discovered.installPath
           ? [{ id: "start", label: setup.running ? "Starting..." : "Start MiroShark", disabled: setup.running || !hasKey }]
           : [{ id: "install", label: setup.running ? "Installing..." : "Install & start", disabled: setup.running || !requirements.every((item) => item.name === "MiroShark .env" || item.ok) || !hasKey }],
@@ -385,6 +470,7 @@ export async function getMiroSharkCompanionStatus(): Promise<MiroSharkCompanionS
       checkedAt: Date.now(),
       requirements,
       install: setup,
+      adminAuth,
       actions: discovered.installPath
         ? [{ id: "start", label: setup.running ? "Starting..." : "Start MiroShark", disabled: setup.running || !hasKey }]
         : [{ id: "install", label: setup.running ? "Installing..." : "Install & start", disabled: setup.running || !requirements.every((item) => item.name === "MiroShark .env" || item.ok) || !hasKey }],

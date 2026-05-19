@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { FormEvent, useCallback, useEffect, useMemo, useRef, useState, type PointerEvent, type ReactNode } from "react";
 import Image from "next/image";
 import { motion } from "motion/react";
 import {
@@ -9,32 +9,57 @@ import {
   BrainCircuit,
   Check,
   ChevronRight,
+  Clock3,
   CircleAlert,
+  BarChart3,
   Copy,
   CopyPlus,
   CreditCard,
+  Download,
+  Eye,
+  FileText,
+  FlaskConical,
+  Folder,
+  GitBranch,
+  Heart,
+  Hexagon,
   KanbanSquare,
+  Layers3,
+  LineChart,
   MessageSquare,
+  MoreHorizontal,
   Monitor,
   Network,
   Plus,
   PlugZap,
   RefreshCcw,
+  Repeat2,
   Send,
   Settings2,
   ShieldCheck,
+  Sparkles,
+  Moon,
+  Sun,
   Trash2,
+  Users,
   WalletCards,
   X,
 } from "lucide-react";
 import type { AgentProfile, AgentRuntime, SharedVaultConfig } from "@/lib/types/agent-runtime";
 import { createAgentProfile, DEFAULT_SHARED_VAULT, RUNTIME_DEFAULTS, RUNTIME_LABELS } from "@/lib/types/agent-runtime";
 import type { AgentPaymentProvider, AgentWalletConfig } from "@/lib/types/agent-wallet";
-import type { KanbanBoard, KanbanPriority, KanbanStatus, KanbanTask } from "@/lib/types/kanban";
+import type { KanbanBoard, KanbanStatus, KanbanTask } from "@/lib/types/kanban";
 import { KANBAN_COLUMNS } from "@/lib/types/kanban";
 import { AGENT_PAYMENT_PROVIDER_COPY, PAYMENT_SAFETY_RULES, SOVEREIGN_AGENT_LAUNCH_STEPS } from "@/lib/config/agent-payments";
 import { buildAgentPaymentPrompt, createDefaultAgentWallet, getSurvivalSnapshot, normalizeMoney } from "@/lib/utils/agent-wallet";
 import { groupKanbanTasks } from "@/lib/utils/kanban-board";
+import chatStyles from "./chat.module.css";
+import fleetStyles from "./fleet.module.css";
+import kanbanStyles from "./kanban-board.module.css";
+import mirosharkStyles from "./miroshark.module.css";
+import vaultStyles from "./vault.module.css";
+import walletStyles from "./wallets.module.css";
+import xThreadStyles from "./miroshark-x-thread.module.css";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -50,6 +75,7 @@ import {
   type CellMenuItem,
   type SetupStep,
 } from "@/components/cells";
+import { LottiePlayer } from "@/components/ui/lottie-player";
 
 type GatewayStatus = {
   ok?: boolean;
@@ -63,6 +89,37 @@ type ChatMessage = {
   role: "user" | "assistant" | "system";
   content: string;
 };
+
+function kanbanClass(...names: Array<string | false | null | undefined>) {
+  return cssClass(kanbanStyles, ...names);
+}
+
+function cssClass(styles: Record<string, string>, ...names: Array<string | false | null | undefined>) {
+  return names
+    .filter((name): name is string => Boolean(name))
+    .map((name) => styles[name] ?? name)
+    .join(" ");
+}
+
+function fleetClass(...names: Array<string | false | null | undefined>) {
+  return cssClass(fleetStyles, ...names);
+}
+
+function chatClass(...names: Array<string | false | null | undefined>) {
+  return cssClass(chatStyles, ...names);
+}
+
+function mirosharkClass(...names: Array<string | false | null | undefined>) {
+  return cssClass(mirosharkStyles, ...names);
+}
+
+function vaultClass(...names: Array<string | false | null | undefined>) {
+  return cssClass(vaultStyles, ...names);
+}
+
+function walletClass(...names: Array<string | false | null | undefined>) {
+  return cssClass(walletStyles, ...names);
+}
 
 type AgentTask = {
   id: string;
@@ -114,6 +171,29 @@ type MachineGroup = {
   capabilities?: AgentProfile["collectorCapabilities"];
 };
 
+type ChatTreeItem = {
+  key: string;
+  title: string;
+  subtitle: string;
+  updatedAt?: number;
+  rank: number;
+  active: boolean;
+  onOpen: () => void;
+};
+
+type ChatTreeFolder = {
+  key: string;
+  label: string;
+  chats: ChatTreeItem[];
+};
+
+type ChatTreeMachine = {
+  key: string;
+  name: string;
+  detail: string;
+  folders: ChatTreeFolder[];
+};
+
 type DiscoveredMachine = {
   device: TailscaleDevice;
   collector: MachineGroup["collector"];
@@ -152,8 +232,63 @@ type KanbanResponse = {
   ok?: boolean;
   boards?: KanbanBoardSummary[];
   board?: KanbanBoard;
+  task?: KanbanTask;
   tenants?: string[];
   assignees?: string[];
+  storage?: {
+    source: "obsidian" | "local";
+    root: string;
+    boardsRoot: string;
+    file: string;
+    fallbackReason?: string;
+  };
+  error?: string;
+};
+
+type BrainAccessEvent = {
+  id: string;
+  notePath: string;
+  agentName: string;
+  agentId?: string;
+  runtime?: string;
+  machineName: string;
+  dashboardMachine: string;
+  accessedAt: string;
+  action: "view" | "read" | "write" | "inspect";
+};
+
+type BrainGraphNode = {
+  id: string;
+  label: string;
+  folder: string;
+  tags: string[];
+  byteSize: number;
+  incoming: number;
+  outgoing: number;
+  accessCount: number;
+  lastAccessedAt?: string;
+  recentAccesses: BrainAccessEvent[];
+};
+
+type BrainGraphLink = {
+  source: string;
+  target: string;
+  unresolved?: boolean;
+};
+
+type BrainGraph = {
+  vaultPath: string;
+  accessLogPath: string;
+  generatedAt: string;
+  nodes: BrainGraphNode[];
+  links: BrainGraphLink[];
+  recentAccesses: BrainAccessEvent[];
+  truncated: boolean;
+};
+
+type BrainGraphResponse = {
+  ok?: boolean;
+  graph?: BrainGraph;
   error?: string;
 };
 
@@ -182,7 +317,12 @@ type MiroSharkStatus = {
     logPath: string;
     message?: string;
   };
-  actions: { id: "install" | "start" | "open"; label: string; disabled?: boolean }[];
+  adminAuth: {
+    configured: boolean;
+    source?: "environment" | "miroshark-env";
+    hint: string;
+  };
+  actions: { id: "install" | "start" | "open" | "configure-admin"; label: string; disabled?: boolean }[];
   startCommand?: string;
   installCommand?: string;
   configHint?: string;
@@ -197,6 +337,9 @@ type MiroSharkStatus = {
 
 type MiroSharkRunResult = {
   ok?: boolean;
+  archived?: boolean;
+  archivedAt?: string;
+  archivedSummary?: MiroSharkArchivedRun;
   jobId?: string;
   status?: "queued" | "running" | "started" | "failed";
   step?: string;
@@ -212,6 +355,35 @@ type MiroSharkRunResult = {
   actions?: unknown;
   posts?: unknown;
   timeline?: unknown;
+  profiles?: unknown;
+  realtimeProfiles?: unknown;
+  beliefDrift?: unknown;
+  counterfactual?: unknown;
+  agentStats?: unknown;
+  influence?: unknown;
+  interactionNetwork?: unknown;
+  demographics?: unknown;
+  quality?: unknown;
+  markets?: unknown;
+  surfaceStats?: unknown;
+  lineage?: unknown;
+  threadJson?: unknown;
+  observabilityStats?: unknown;
+  observabilityEvents?: unknown;
+  llmCalls?: unknown;
+};
+
+type MiroSharkArchivedRun = {
+  simulationId: string;
+  projectId?: string;
+  graphId?: string;
+  platform?: string;
+  status?: string;
+  scenario?: string;
+  rounds?: number;
+  postCount: number;
+  savedAt: string;
+  folder: string;
 };
 
 type MiroSharkPost = {
@@ -220,14 +392,115 @@ type MiroSharkPost = {
   content?: string;
   quote_content?: string | null;
   created_at?: number;
+  num_likes?: number;
+  num_shares?: number;
+  num_dislikes?: number;
+  num_reports?: number;
+  original_post_id?: number | null;
 };
 
 type VisibleMiroSharkPost = MiroSharkPost & {
   displayText: string;
 };
 
+type MiroSharkTemplate = {
+  id?: string;
+  name?: string;
+  category?: string;
+  description?: string;
+  difficulty?: string;
+  estimated_agents?: number;
+  estimated_rounds?: number;
+  platforms?: string[];
+  tags?: string[];
+  has_counterfactuals?: boolean;
+  counterfactual_count?: number;
+};
+
+type MiroSharkMetadata = {
+  ok?: boolean;
+  baseUrl?: string;
+  templates?: unknown;
+  history?: unknown;
+  trending?: unknown;
+  observabilityStats?: unknown;
+  observabilityEvents?: unknown;
+  llmCalls?: unknown;
+  error?: string;
+};
+
+type MiroSharkWorkbenchTab = "surface" | "analysis" | "agents" | "experiments" | "observability" | "exports";
+type MiroSharkSurfaceView = "x" | "reddit" | "polymarket" | "timeline";
+type MiroSharkWorkspaceMode = "new" | "run";
+
+const MIROSHARK_WORKBENCH_TABS: Array<{ id: MiroSharkWorkbenchTab; label: string; icon: ReactNode }> = [
+  { id: "surface", label: "Surfaces", icon: <Layers3 aria-hidden="true" /> },
+  { id: "analysis", label: "Analysis", icon: <LineChart aria-hidden="true" /> },
+  { id: "agents", label: "Agents", icon: <Users aria-hidden="true" /> },
+  { id: "experiments", label: "Experiments", icon: <FlaskConical aria-hidden="true" /> },
+  { id: "observability", label: "Telemetry", icon: <Activity aria-hidden="true" /> },
+  { id: "exports", label: "Exports", icon: <Download aria-hidden="true" /> },
+];
+
+function asRecord(value: unknown): Record<string, unknown> {
+  return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};
+}
+
+function payloadData(value: unknown): unknown {
+  const record = asRecord(value);
+  return Object.prototype.hasOwnProperty.call(record, "data") ? record.data : value;
+}
+
+function payloadArray<T = Record<string, unknown>>(value: unknown): T[] {
+  const data = payloadData(value);
+  if (Array.isArray(data)) return data as T[];
+  const record = asRecord(data);
+  for (const key of ["items", "events", "calls", "profiles", "actions", "markets", "nodes", "edges", "history", "posts"]) {
+    const candidate = record[key];
+    if (Array.isArray(candidate)) return candidate as T[];
+  }
+  return [];
+}
+
+function payloadCount(value: unknown): number {
+  const data = payloadData(value);
+  if (Array.isArray(data)) return data.length;
+  const record = asRecord(data);
+  for (const key of ["count", "total", "node_count", "edge_count", "posts_count", "actions_count"]) {
+    const candidate = record[key];
+    if (typeof candidate === "number") return candidate;
+  }
+  const firstArray = Object.values(record).find(Array.isArray);
+  return Array.isArray(firstArray) ? firstArray.length : Object.keys(record).length;
+}
+
+function payloadPreview(value: unknown, max = 6): Array<[string, string]> {
+  const data = payloadData(value);
+  if (Array.isArray(data)) {
+    return data.slice(0, max).map((item, index) => [`#${index + 1}`, compactValue(item)]);
+  }
+  const record = asRecord(data);
+  return Object.entries(record)
+    .filter(([, item]) => item !== null && item !== undefined && typeof item !== "object")
+    .slice(0, max)
+    .map(([key, item]) => [key, String(item)]);
+}
+
+function compactValue(value: unknown): string {
+  if (value === null || value === undefined) return "empty";
+  if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") return String(value);
+  const record = asRecord(value);
+  const preferred = record.name ?? record.title ?? record.label ?? record.agent_name ?? record.username ?? record.content ?? record.text ?? record.event_type ?? record.type ?? record.status;
+  if (preferred !== undefined && preferred !== null) return String(preferred);
+  return JSON.stringify(value).slice(0, 180);
+}
+
+function getMiroSharkTemplates(metadata: MiroSharkMetadata | null): MiroSharkTemplate[] {
+  return payloadArray<MiroSharkTemplate>(metadata?.templates);
+}
+
 function getMiroSharkRunStatus(run: MiroSharkRunResult | null) {
-  return (run?.runStatus as { data?: { runner_status?: string; current_round?: number; total_rounds?: number; twitter_actions_count?: number; total_actions_count?: number } } | undefined)?.data;
+  return (run?.runStatus as { data?: { runner_status?: string; current_round?: number; twitter_current_round?: number; total_rounds?: number; progress_percent?: number; twitter_actions_count?: number; total_actions_count?: number } } | undefined)?.data;
 }
 
 function isMiroSharkRunTerminal(status?: string) {
@@ -239,6 +512,13 @@ function getMiroSharkPosts(run: MiroSharkRunResult | null) {
   const posts = (data?.posts ?? []).flatMap<VisibleMiroSharkPost>((post) => {
     const displayText = (post.quote_content || post.content || "").trim();
     return displayText ? [{ ...post, displayText }] : [];
+  }).sort((a, b) => {
+    const tickA = typeof a.created_at === "number" ? a.created_at : Number.MAX_SAFE_INTEGER;
+    const tickB = typeof b.created_at === "number" ? b.created_at : Number.MAX_SAFE_INTEGER;
+    if (tickA !== tickB) return tickA - tickB;
+    const postA = typeof a.post_id === "number" ? a.post_id : Number.MAX_SAFE_INTEGER;
+    const postB = typeof b.post_id === "number" ? b.post_id : Number.MAX_SAFE_INTEGER;
+    return postA - postB;
   });
   return {
     count: posts.length,
@@ -247,13 +527,34 @@ function getMiroSharkPosts(run: MiroSharkRunResult | null) {
   };
 }
 
-const KANBAN_PRIORITIES: KanbanPriority[] = ["low", "normal", "high", "urgent"];
+function mirosharkUserName(userId?: number) {
+  const names = ["Nora Singh", "Maya Chen", "Ravi Patel", "Diego Morales", "Lena Brooks"];
+  return typeof userId === "number" ? names[userId % names.length] ?? `User ${userId}` : "Swarm Agent";
+}
+
+function mirosharkHandle(userId?: number) {
+  const handles = ["@healthdesk", "@nomlaunch", "@cafeledger", "@routeops", "@parentswatch"];
+  return typeof userId === "number" ? handles[userId % handles.length] ?? `@agent${userId}` : "@swarm";
+}
+
+function mirosharkAvatar(userId?: number) {
+  const initials = mirosharkUserName(userId).split(" ").map((part) => part[0]).join("").slice(0, 2);
+  return initials || "SW";
+}
+
+function mirosharkStat(seed: number | undefined, base: number, spread: number) {
+  return base + ((seed ?? 0) * 17) % spread;
+}
+
 type DashboardView = "agents" | "kanban" | "swarm" | "wallet" | "vault" | "chat";
+type DashboardTheme = "dark" | "hive-light";
 
 const STORAGE_KEY = "openclaw-next.agentProfiles.v1";
 const VAULT_STORAGE_KEY = "openclaw-next.sharedVault.v1";
 const TASK_STORAGE_KEY = "openclaw-next.agentTasks.v1";
 const WALLET_STORAGE_KEY = "openclaw-next.agentWallets.v1";
+const THEME_STORAGE_KEY = "openclaw-next.theme.v1";
+const LEGACY_OBSIDIAN_VAULT_PATH = "~/Documents/Obsidian/Omni Agent Vault";
 const REPO_CLONE_URL = "https://github.com/LiamVisionary/omni-agent-hivemind.git";
 const QUIET_SNAPSHOT_HOLD_MS = 15 * 60 * 1000;
 const STARTER_AGENT_IDS = new Set([
@@ -295,7 +596,14 @@ function parseStoredVault(): SharedVaultConfig {
   const raw = window.localStorage.getItem(VAULT_STORAGE_KEY);
   if (!raw) return DEFAULT_SHARED_VAULT;
   try {
-    return { ...DEFAULT_SHARED_VAULT, ...(JSON.parse(raw) as Partial<SharedVaultConfig>) };
+    const parsed = JSON.parse(raw) as Partial<SharedVaultConfig>;
+    return {
+      ...DEFAULT_SHARED_VAULT,
+      ...parsed,
+      vaultPath: parsed.vaultPath === LEGACY_OBSIDIAN_VAULT_PATH
+        ? DEFAULT_SHARED_VAULT.vaultPath
+        : parsed.vaultPath ?? DEFAULT_SHARED_VAULT.vaultPath,
+    };
   } catch {
     return DEFAULT_SHARED_VAULT;
   }
@@ -379,6 +687,60 @@ function agentWorkspaceKey(agent: AgentProfile) {
   return `${agent.runtime}:id:${agent.id}`;
 }
 
+function collectorRuntimeKey(agent: AgentProfile) {
+  const collector = collectorKey(agent.telemetryUrl);
+  return collector ? `${agent.runtime}:collector:${collector}` : "";
+}
+
+function agentAliasTarget(agent: AgentProfile, autoDiscoveredAgents: AgentProfile[]) {
+  const exactKey = agentWorkspaceKey(agent);
+  const exact = autoDiscoveredAgents.find((candidate) => candidate.id !== agent.id && agentWorkspaceKey(candidate) === exactKey);
+  if (exact) return exact;
+
+  const collectorRuntime = collectorRuntimeKey(agent);
+  if (!collectorRuntime || normalizeAgentPath(agent.localDataDir)) return undefined;
+  const matches = autoDiscoveredAgents.filter((candidate) => (
+    candidate.id !== agent.id
+    && collectorRuntimeKey(candidate) === collectorRuntime
+  ));
+  return matches.length === 1 ? matches[0] : undefined;
+}
+
+function agentAliasMap(configuredAgents: AgentProfile[], autoDiscoveredAgents: AgentProfile[]) {
+  const entries = configuredAgents.flatMap((agent) => {
+    const target = agentAliasTarget(agent, autoDiscoveredAgents);
+    return target ? [[agent.id, target.id] as const] : [];
+  });
+  return new Map(entries);
+}
+
+function workspaceLabelFromPath(path?: string) {
+  const trimmed = path?.trim();
+  if (!trimmed) return "Stray chats";
+  const withoutTrailingSlash = trimmed.replace(/\/+$/, "");
+  if (withoutTrailingSlash === "~" || withoutTrailingSlash === "$home") return "Home";
+  return withoutTrailingSlash.split("/").filter(Boolean).at(-1) ?? withoutTrailingSlash;
+}
+
+function chatFolderLabel(agent: AgentProfile, machine: MachineGroup) {
+  return workspaceLabelFromPath(machine.version?.appDir || agent.localDataDir);
+}
+
+function chatDedupeKey(value: string) {
+  return value.trim().toLowerCase().replace(/\s+/g, " ").slice(0, 96);
+}
+
+function chatPreviewDedupeKey(title: string, subtitle: string) {
+  return `${chatDedupeKey(title)}:${chatDedupeKey(subtitle).slice(0, 80)}`;
+}
+
+function preferChatTreeItem(current: ChatTreeItem | undefined, candidate: ChatTreeItem) {
+  if (!current) return candidate;
+  if (candidate.active !== current.active) return candidate.active ? candidate : current;
+  if (candidate.rank !== current.rank) return candidate.rank > current.rank ? candidate : current;
+  return (candidate.updatedAt ?? 0) > (current.updatedAt ?? 0) ? candidate : current;
+}
+
 function chatSetupIssue(agent: AgentProfile) {
   if (STARTER_AGENT_IDS.has(agent.id) && agent.runtime !== "openclaw" && !agent.telemetryUrl?.trim()) {
     return "This starter shortcut is not connected to a running chat runtime. Pick a discovered machine agent or connect a real Hermes/Aeon chat URL.";
@@ -408,8 +770,11 @@ function viewIcon(view: DashboardView) {
 }
 
 function dedupeAgents(configuredAgents: AgentProfile[], autoDiscoveredAgents: AgentProfile[]) {
+  const aliases = agentAliasMap(configuredAgents, autoDiscoveredAgents);
   const discoveredKeys = new Set(autoDiscoveredAgents.map(agentWorkspaceKey));
-  const configured = configuredAgents.filter((agent) => !discoveredKeys.has(agentWorkspaceKey(agent)));
+  const configured = configuredAgents.filter((agent) => (
+    !aliases.has(agent.id) && !discoveredKeys.has(agentWorkspaceKey(agent))
+  ));
   return [
     ...configured,
     ...autoDiscoveredAgents.filter((agent, index, list) => (
@@ -461,6 +826,10 @@ function workPriority(task: AgentTask) {
 
 function isMeaningfulActive(task: AgentTask) {
   return task.status === "active" && sourcePriority(task.source) >= 4;
+}
+
+function isChatSidebarTask(task: AgentTask) {
+  return task.source === "hermes-state" || task.source === "dashboard-chat";
 }
 
 function cleanActivityTitle(title: string) {
@@ -535,7 +904,7 @@ function ChatMarkdown({ text }: { text: string }) {
     }
     const heading = /^(#{1,3})\s+(.+)$/.exec(line);
     if (heading) {
-      blocks.push(<strong className="markdownHeading" key={`heading-${index}`}>{renderInlineMarkdown(heading[2])}</strong>);
+      blocks.push(<strong className={chatClass("markdownHeading")} key={`heading-${index}`}>{renderInlineMarkdown(heading[2])}</strong>);
       index += 1;
       continue;
     }
@@ -572,7 +941,7 @@ function ChatMarkdown({ text }: { text: string }) {
     blocks.push(<p key={`paragraph-${index}`}>{renderInlineMarkdown(paragraph.join("\n"))}</p>);
   }
 
-  return <div className="messageMarkdown">{blocks}</div>;
+  return <div className={chatClass("messageMarkdown")}>{blocks}</div>;
 }
 
 function machineVersionCopy(machine: MachineGroup, latestCommit?: string) {
@@ -691,6 +1060,153 @@ function setupCollectorCommand() {
   ].join("\n");
 }
 
+function formatBrainDate(value?: string) {
+  if (!value) return "never";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return date.toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
+}
+
+function brainNodePoints(cx: number, cy: number, radius: number) {
+  return Array.from({ length: 6 }, (_, index) => {
+    const angle = (Math.PI / 3) * index + Math.PI / 6;
+    return `${cx + Math.cos(angle) * radius},${cy + Math.sin(angle) * radius}`;
+  }).join(" ");
+}
+
+function splitBrainLabel(label: string): string[] {
+  const compact = label.replace(/\.md$/, "");
+  if (compact.length <= 13) return [compact];
+  const first = compact.slice(0, 13);
+  const second = compact.slice(13, 25);
+  return [first, second ? `${second}${compact.length > 25 ? "..." : ""}` : ""].filter(Boolean);
+}
+
+type BrainHexCoord = { q: number; r: number };
+type BrainPoint = { x: number; y: number };
+
+function brainHexVertex(center: BrainPoint, radius: number, index: number): BrainPoint {
+  const angle = (Math.PI / 3) * index + Math.PI / 6;
+  return {
+    x: center.x + Math.cos(angle) * radius,
+    y: center.y + Math.sin(angle) * radius,
+  };
+}
+
+function brainPointKey(point: BrainPoint) {
+  return `${Math.round(point.x * 1000) / 1000},${Math.round(point.y * 1000) / 1000}`;
+}
+
+function brainGraphEdgePath(
+  source: BrainHexCoord,
+  target: BrainHexCoord,
+  positions: Map<string, BrainPoint>,
+  radius: number,
+) {
+  const sourceCenter = positions.get(`${source.q},${source.r}`);
+  const targetCenter = positions.get(`${target.q},${target.r}`);
+  if (!sourceCenter || !targetCenter) return "";
+
+  const points = new Map<string, BrainPoint>();
+  const edges = new Map<string, Set<string>>();
+  const addEdge = (a: BrainPoint, b: BrainPoint) => {
+    const aKey = brainPointKey(a);
+    const bKey = brainPointKey(b);
+    points.set(aKey, a);
+    points.set(bKey, b);
+    edges.set(aKey, edges.get(aKey) ?? new Set<string>());
+    edges.set(bKey, edges.get(bKey) ?? new Set<string>());
+    edges.get(aKey)!.add(bKey);
+    edges.get(bKey)!.add(aKey);
+  };
+
+  for (const center of positions.values()) {
+    const vertices = Array.from({ length: 6 }, (_, index) => brainHexVertex(center, radius, index));
+    vertices.forEach((vertex, index) => addEdge(vertex, vertices[(index + 1) % vertices.length]));
+  }
+
+  const sourceKeys = Array.from({ length: 6 }, (_, index) => brainPointKey(brainHexVertex(sourceCenter, radius, index)));
+  const targetKeys = new Set(Array.from({ length: 6 }, (_, index) => brainPointKey(brainHexVertex(targetCenter, radius, index))));
+  const preferredSource = sourceKeys
+    .map((key) => ({ key, point: points.get(key)! }))
+    .sort((a, b) => Math.hypot(a.point.x - targetCenter.x, a.point.y - targetCenter.y) - Math.hypot(b.point.x - targetCenter.x, b.point.y - targetCenter.y))
+    .map((entry) => entry.key);
+
+  const queue = [...preferredSource];
+  const previous = new Map<string, string | null>(preferredSource.map((key) => [key, null]));
+  let found = "";
+
+  while (queue.length && !found) {
+    const current = queue.shift()!;
+    if (targetKeys.has(current)) {
+      found = current;
+      break;
+    }
+    for (const next of edges.get(current) ?? []) {
+      if (previous.has(next)) continue;
+      previous.set(next, current);
+      queue.push(next);
+    }
+  }
+
+  if (!found) return "";
+  const pathKeys: string[] = [];
+  for (let current: string | null = found; current; current = previous.get(current) ?? null) {
+    pathKeys.unshift(current);
+  }
+  return pathKeys
+    .map((key, index) => {
+      const point = points.get(key)!;
+      return `${index === 0 ? "M" : "L"} ${point.x} ${point.y}`;
+    })
+    .join(" ");
+}
+
+function brainGraphLayout(nodes: BrainGraphNode[]) {
+  const radius = 66;
+  const stepX = Math.sqrt(3) * radius;
+  const stepY = 1.5 * radius;
+  const centerX = 560;
+  const centerY = 420;
+  const positions = new Map<string, { x: number; y: number }>();
+  const coordsByNode = new Map<string, BrainHexCoord>();
+  const positionsByCoord = new Map<string, { x: number; y: number }>();
+  const coords: Array<{ q: number; r: number }> = [{ q: 0, r: 0 }];
+  const directions = [
+    { q: 1, r: 0 },
+    { q: 1, r: -1 },
+    { q: 0, r: -1 },
+    { q: -1, r: 0 },
+    { q: -1, r: 1 },
+    { q: 0, r: 1 },
+  ];
+
+  for (let ring = 1; coords.length < nodes.length; ring += 1) {
+    let q = -ring;
+    let r = ring;
+    for (const direction of directions) {
+      for (let side = 0; side < ring && coords.length < nodes.length; side += 1) {
+        coords.push({ q, r });
+        q += direction.q;
+        r += direction.r;
+      }
+    }
+  }
+
+  nodes.forEach((node, index) => {
+    const coord = coords[index] ?? { q: 0, r: 0 };
+    const position = {
+      x: centerX + stepX * (coord.q + coord.r / 2),
+      y: centerY + stepY * coord.r,
+    };
+    positions.set(node.id, position);
+    coordsByNode.set(node.id, coord);
+    positionsByCoord.set(`${coord.q},${coord.r}`, position);
+  });
+
+  return { positions, coordsByNode, positionsByCoord, radius, width: 1120, height: 840 };
+}
+
 export default function Home() {
   // Initialize all persisted state with deterministic seed values so SSR and
   // first client render match. localStorage is read inside a useEffect below.
@@ -704,6 +1220,11 @@ export default function Home() {
   const [vaultStatus, setVaultStatus] = useState<Record<string, unknown> | null>(null);
   const [controlRoomStatus, setControlRoomStatus] = useState<Record<string, unknown> | null>(null);
   const [sharedVault, setSharedVault] = useState<SharedVaultConfig>(DEFAULT_SHARED_VAULT);
+  const [brainGraph, setBrainGraph] = useState<BrainGraph | null>(null);
+  const [brainGraphStatus, setBrainGraphStatus] = useState("");
+  const [brainGraphLoading, setBrainGraphLoading] = useState(false);
+  const [selectedBrainNodeId, setSelectedBrainNodeId] = useState("");
+  const [brainPan, setBrainPan] = useState({ x: 0, y: 0 });
   const [messagesByAgent, setMessagesByAgent] = useState<Record<string, ChatMessage[]>>({});
   const [tasks, setTasks] = useState<AgentTask[]>([]);
   const [walletsByAgent, setWalletsByAgent] = useState<Record<string, AgentWalletConfig>>({});
@@ -727,8 +1248,10 @@ export default function Home() {
   const [kanbanSearch, setKanbanSearch] = useState("");
   const [kanbanTenants, setKanbanTenants] = useState<string[]>([]);
   const [kanbanAssignees, setKanbanAssignees] = useState<string[]>([]);
+  const [kanbanStorage, setKanbanStorage] = useState<KanbanResponse["storage"] | null>(null);
   const [selectedKanbanTaskId, setSelectedKanbanTaskId] = useState("");
-  const [newTaskDraft, setNewTaskDraft] = useState({ title: "", body: "", assignee: "", tenant: "", priority: "normal" as KanbanPriority });
+  const [quickAddStatus, setQuickAddStatus] = useState<KanbanStatus | "">("");
+  const [quickAddDrafts, setQuickAddDrafts] = useState<Record<string, string>>({});
   const [newBoardDraft, setNewBoardDraft] = useState({ slug: "", name: "" });
   const [commentDraft, setCommentDraft] = useState("");
   const [mirosharkStatus, setMirosharkStatus] = useState<MiroSharkStatus | null>(null);
@@ -737,13 +1260,39 @@ export default function Home() {
   const [mirosharkRunPending, setMirosharkRunPending] = useState(false);
   const [mirosharkScenario, setMirosharkScenario] = useState("Nom launches a neighborhood food-sharing app. Local cooks, restaurants, parents, and city health officials debate safety, affordability, trust, and regulation.");
   const [mirosharkRounds, setMirosharkRounds] = useState(5);
-  const [mirosharkPlatform, setMirosharkPlatform] = useState<"twitter" | "reddit" | "parallel">("twitter");
+  const [mirosharkPlatform, setMirosharkPlatform] = useState<"twitter" | "reddit" | "parallel" | "polymarket">("twitter");
+  const [mirosharkArchiveRuns, setMirosharkArchiveRuns] = useState<MiroSharkArchivedRun[]>([]);
+  const [mirosharkArchiveStatus, setMirosharkArchiveStatus] = useState("");
+  const [mirosharkMetadata, setMirosharkMetadata] = useState<MiroSharkMetadata | null>(null);
+  const [mirosharkWorkspaceMode, setMirosharkWorkspaceMode] = useState<MiroSharkWorkspaceMode>("new");
+  const [mirosharkWorkbenchTab, setMirosharkWorkbenchTab] = useState<MiroSharkWorkbenchTab>("surface");
+  const [mirosharkSurfaceView, setMirosharkSurfaceView] = useState<MiroSharkSurfaceView>("x");
+  const [mirosharkSelectedTemplateId, setMirosharkSelectedTemplateId] = useState("");
+  const [mirosharkExperimentEvent, setMirosharkExperimentEvent] = useState("A city health official issues a public warning and demands proof of food handling compliance.");
+  const [mirosharkExperimentStatus, setMirosharkExperimentStatus] = useState("");
+  const [mirosharkExperimentPending, setMirosharkExperimentPending] = useState("");
   const [activeView, setActiveView] = useState<DashboardView>("agents");
+  const [dashboardTheme, setDashboardTheme] = useState<DashboardTheme>("dark");
   const [agentComposer, setAgentComposer] = useState({ name: "", machineKey: "" });
   const [busy, setBusy] = useState(false);
   const [busyAgentId, setBusyAgentId] = useState("");
+  const [hasStreamingChunk, setHasStreamingChunk] = useState(false);
   const [chatMessageWindow, setChatMessageWindow] = useState<{ agentId: string; limit: number } | null>(null);
+  const [selectedChatLeafKey, setSelectedChatLeafKey] = useState("");
+  const [selectedChatPreview, setSelectedChatPreview] = useState<{ agentId: string; leafKey: string; messages: ChatMessage[] } | null>(null);
+  const [expandedChatFolders, setExpandedChatFolders] = useState<Set<string>>(() => new Set());
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
+  const mirosharkArchiveSaveKeyRef = useRef("");
+  const brainDragRef = useRef<{
+    pointerId: number;
+    startX: number;
+    startY: number;
+    panX: number;
+    panY: number;
+    moved: boolean;
+    nodeId: string;
+  } | null>(null);
+  const brainDragMovedRef = useRef(false);
 
   // Hydrate persisted state on the client after the first render. Reading
   // localStorage inside useState init would diverge from SSR and trigger
@@ -759,9 +1308,17 @@ export default function Home() {
     setSharedVault(parseStoredVault());
     setTasks(parseStoredTasks());
     setWalletsByAgent(parseStoredWallets());
+    const storedTheme = window.localStorage.getItem(THEME_STORAGE_KEY);
+    setDashboardTheme(storedTheme === "hive-light" ? "hive-light" : "dark");
     setHydrated(true);
   }, []);
   /* eslint-enable react-hooks/set-state-in-effect */
+
+  useEffect(() => {
+    document.documentElement.dataset.theme = dashboardTheme;
+    if (!hydrated) return;
+    window.localStorage.setItem(THEME_STORAGE_KEY, dashboardTheme);
+  }, [dashboardTheme, hydrated]);
 
   useEffect(() => {
     if (!hydrated) return;
@@ -872,7 +1429,27 @@ export default function Home() {
     };
   }, [mirosharkStatus?.install.running]);
 
-  async function runMirosharkAction(action: "install" | "start" | "open") {
+  const refreshMirosharkMetadata = useCallback(async () => {
+    const response = await fetch("/api/miroshark/swarm?metadata=1", { cache: "no-store" }).catch(() => null);
+    const data = await response?.json().catch(() => null) as MiroSharkMetadata | null;
+    if (data) setMirosharkMetadata(data);
+  }, []);
+
+  useEffect(() => {
+    if (activeView !== "swarm" || !mirosharkStatus?.ok) return;
+    const kickoff = window.setTimeout(() => {
+      void refreshMirosharkMetadata();
+    }, 0);
+    const timer = window.setInterval(() => {
+      void refreshMirosharkMetadata();
+    }, 20_000);
+    return () => {
+      window.clearTimeout(kickoff);
+      window.clearInterval(timer);
+    };
+  }, [activeView, mirosharkStatus?.ok, refreshMirosharkMetadata]);
+
+  async function runMirosharkAction(action: "install" | "start" | "open" | "configure-admin") {
     if (action === "open") {
       window.open(mirosharkStatus?.apiDocsUrl ?? mirosharkStatus?.baseUrl ?? "http://127.0.0.1:5101/api/docs", "_blank", "noopener,noreferrer");
       return;
@@ -888,10 +1465,40 @@ export default function Home() {
     setMirosharkActionPending("");
   }
 
+  function startNewMirosharkSimulation() {
+    setMirosharkWorkspaceMode("new");
+    setMirosharkRun(null);
+    setMirosharkRunPending(false);
+    setMirosharkArchiveStatus("");
+    setMirosharkWorkbenchTab("surface");
+  }
+
+  function applyMirosharkTemplate(template: MiroSharkTemplate) {
+    if (!template.id) return;
+    setMirosharkWorkspaceMode("new");
+    setMirosharkSelectedTemplateId(template.id);
+    const platform = template.platforms?.includes("polymarket")
+      ? "polymarket"
+      : template.platforms?.includes("reddit") && template.platforms?.includes("twitter")
+        ? "parallel"
+        : template.platforms?.includes("reddit")
+          ? "reddit"
+          : "twitter";
+    setMirosharkPlatform(platform);
+    if (template.estimated_rounds) setMirosharkRounds(Math.min(24, Math.max(1, template.estimated_rounds)));
+    setMirosharkScenario([
+      `${template.name ?? template.id}: ${template.description ?? "Run this MiroShark template."}`,
+      template.tags?.length ? `Focus tags: ${template.tags.join(", ")}.` : "",
+      template.has_counterfactuals ? "Include counterfactual branch opportunities and decision points." : "",
+    ].filter(Boolean).join("\n\n"));
+  }
+
   async function runMirosharkSwarm(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setMirosharkRunPending(true);
+    setMirosharkWorkspaceMode("run");
     setMirosharkRun(null);
+    setMirosharkArchiveStatus("");
     const response = await fetch("/api/miroshark/swarm", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -904,6 +1511,103 @@ export default function Home() {
     const data = await response?.json().catch(() => null) as MiroSharkRunResult | null;
     setMirosharkRun(data ?? { ok: false, error: "MiroShark run request failed" });
     if (!data?.jobId) setMirosharkRunPending(false);
+  }
+
+  async function runMirosharkExperiment(action: "stop" | "inject" | "fork" | "branch" | "publish") {
+    if (!mirosharkRun?.simulationId) return;
+    setMirosharkExperimentPending(action);
+    setMirosharkExperimentStatus("");
+    const response = await fetch("/api/miroshark/swarm", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        action,
+        simulationId: mirosharkRun.simulationId,
+        event: mirosharkExperimentEvent,
+      }),
+    }).catch(() => null);
+    const data = await response?.json().catch(() => null) as { ok?: boolean; error?: string; payload?: unknown } | null;
+    setMirosharkExperimentPending("");
+    if (!data?.ok) {
+      setMirosharkExperimentStatus(data?.error ?? "Experiment request failed");
+      return;
+    }
+    setMirosharkExperimentStatus(`${action} sent to MiroShark`);
+    if (action === "stop" || action === "inject" || action === "publish") void refreshMirosharkRun();
+  }
+
+  const refreshMirosharkArchive = useCallback(async () => {
+    if (!sharedVault.enabled) {
+      setMirosharkArchiveRuns([]);
+      return;
+    }
+    const params = new URLSearchParams();
+    if (sharedVault.vaultPath.trim()) params.set("vaultPath", sharedVault.vaultPath.trim());
+    const response = await fetch(`/api/miroshark/runs?${params.toString()}`, { cache: "no-store" }).catch(() => null);
+    const data = await response?.json().catch(() => null) as { ok?: boolean; runs?: MiroSharkArchivedRun[]; error?: string } | null;
+    if (data?.ok && Array.isArray(data.runs)) {
+      setMirosharkArchiveRuns(data.runs);
+      setMirosharkArchiveStatus(data.runs.length ? `Loaded ${data.runs.length} saved run${data.runs.length === 1 ? "" : "s"}` : "No saved MiroShark runs yet");
+    } else {
+      setMirosharkArchiveStatus(data?.error ?? "Could not load saved MiroShark runs");
+    }
+  }, [sharedVault.enabled, sharedVault.vaultPath]);
+
+  const refreshBrainGraph = useCallback(async () => {
+    if (!sharedVault.enabled) {
+      setBrainGraph(null);
+      setBrainGraphStatus("Shared brain is off.");
+      return;
+    }
+    setBrainGraphLoading(true);
+    const response = await fetch("/api/obsidian/graph", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ vaultPath: sharedVault.vaultPath.trim() || undefined }),
+    }).catch(() => null);
+    const data = await response?.json().catch(() => null) as BrainGraphResponse | null;
+    setBrainGraphLoading(false);
+    if (!response?.ok || !data?.ok || !data.graph) {
+      setBrainGraphStatus(data?.error ?? "Could not build brain graph.");
+      return;
+    }
+    setBrainGraph(data.graph);
+    setSelectedBrainNodeId((current) => current || data.graph?.nodes[0]?.id || "");
+    setBrainGraphStatus(data.graph.truncated
+      ? `Loaded first ${data.graph.nodes.length} notes and links.`
+      : `Loaded ${data.graph.nodes.length} notes and ${data.graph.links.length} links.`);
+  }, [sharedVault.enabled, sharedVault.vaultPath]);
+
+  async function loadMirosharkArchivedRun(simulationId: string) {
+    setMirosharkArchiveStatus("Loading saved run...");
+    const params = new URLSearchParams({ simulation_id: simulationId });
+    if (sharedVault.vaultPath.trim()) params.set("vaultPath", sharedVault.vaultPath.trim());
+    const response = await fetch(`/api/miroshark/runs?${params.toString()}`, { cache: "no-store" }).catch(() => null);
+    const data = await response?.json().catch(() => null) as {
+      ok?: boolean;
+      summary?: MiroSharkArchivedRun;
+      run?: { scenario?: string; run?: MiroSharkRunResult };
+      error?: string;
+    } | null;
+    if (!data?.ok || !data.run?.run) {
+      setMirosharkArchiveStatus(data?.error ?? "Could not load saved run");
+      return;
+    }
+    if (data.run.scenario) setMirosharkScenario(data.run.scenario);
+    if (data.summary?.rounds) setMirosharkRounds(data.summary.rounds);
+    if (data.summary?.platform === "twitter" || data.summary?.platform === "reddit" || data.summary?.platform === "parallel" || data.summary?.platform === "polymarket") {
+      setMirosharkPlatform(data.summary.platform);
+    }
+    setMirosharkWorkspaceMode("run");
+    setMirosharkWorkbenchTab("surface");
+    setMirosharkRun({
+      ...data.run.run,
+      archived: true,
+      archivedAt: data.summary?.savedAt,
+      archivedSummary: data.summary,
+    });
+    setMirosharkRunPending(false);
+    setMirosharkArchiveStatus(`Loaded ${simulationId}`);
   }
 
   const refreshMirosharkRun = useCallback(async () => {
@@ -927,15 +1631,121 @@ export default function Home() {
   }, [mirosharkPlatform, mirosharkRun]);
 
   const mirosharkRunStatus = getMiroSharkRunStatus(mirosharkRun);
+  const mirosharkRunIsArchived = Boolean(mirosharkRun?.archived);
   const mirosharkRunnerStatus = mirosharkRunStatus?.runner_status;
   const mirosharkPosts = getMiroSharkPosts(mirosharkRun);
   const mirosharkFeedIsWaiting = mirosharkRun?.status === "started"
+    && !mirosharkRunIsArchived
     && !!mirosharkRun.simulationId
     && !isMiroSharkRunTerminal(mirosharkRunnerStatus)
     && mirosharkPosts.count === 0;
   const mirosharkFeedIsLive = mirosharkRun?.status === "started"
+    && !mirosharkRunIsArchived
     && !!mirosharkRun.simulationId
     && !isMiroSharkRunTerminal(mirosharkRunnerStatus);
+  const mirosharkObservedRound = mirosharkPosts.posts.reduce((max, post) => (
+    typeof post.created_at === "number" ? Math.max(max, post.created_at) : max
+  ), 0);
+  const mirosharkTotalRounds = Math.max(
+    0,
+    Number(mirosharkRunStatus?.total_rounds ?? mirosharkRun?.rounds ?? 0) || 0,
+  );
+  const mirosharkCurrentRound = Math.max(
+    0,
+    Number(mirosharkRunStatus?.current_round ?? 0) || 0,
+    Number(mirosharkRunStatus?.twitter_current_round ?? 0) || 0,
+    mirosharkObservedRound,
+  );
+  const mirosharkProgressPercent = mirosharkTotalRounds > 0
+    ? Math.min(100, Math.round((mirosharkCurrentRound / mirosharkTotalRounds) * 100))
+    : 0;
+  const mirosharkRunIsWorking = mirosharkRunPending
+    || (!mirosharkRunIsArchived && mirosharkRun?.status === "queued")
+    || (!mirosharkRunIsArchived && mirosharkRun?.status === "running")
+    || mirosharkFeedIsWaiting;
+  const mirosharkDisplayStep = mirosharkRunIsArchived ? "complete" : (mirosharkRun?.step ?? "queued");
+  const mirosharkDisplayStatus = mirosharkRunIsArchived
+    ? "complete"
+    : (mirosharkRunnerStatus ?? mirosharkRun?.status ?? "queued");
+  const mirosharkProgressLabel = (() => {
+    if (mirosharkFeedIsWaiting) return "Waiting for first posts";
+    if (mirosharkRun?.step === "ontology") return "Building scenario ontology";
+    if (mirosharkRun?.step === "graph") return "Building interaction graph";
+    if (mirosharkRun?.step === "simulation") return "Creating simulation";
+    if (mirosharkRun?.step === "prepare") return "Preparing agents";
+    if (mirosharkRun?.step === "start") return "Starting swarm";
+    if (mirosharkRun?.step === "connect") return "Connecting to MiroShark";
+    if (mirosharkRun?.step === "queued") return "Queued";
+    return mirosharkRunPending ? "Starting run" : "Working";
+  })();
+  const mirosharkTemplates = getMiroSharkTemplates(mirosharkMetadata);
+  const mirosharkTelemetryCount = payloadCount(mirosharkRun?.observabilityEvents ?? mirosharkMetadata?.observabilityEvents);
+  const mirosharkActionCount = payloadCount(mirosharkRun?.actions);
+  const mirosharkMarketCount = payloadCount(mirosharkRun?.markets);
+  const mirosharkTimelineItems = payloadArray<Record<string, unknown>>(mirosharkRun?.timeline).slice(0, 24);
+  const mirosharkActionItems = payloadArray<Record<string, unknown>>(mirosharkRun?.actions).slice(0, 24);
+  const mirosharkProfileItems = payloadArray<Record<string, unknown>>(mirosharkRun?.profiles ?? mirosharkRun?.realtimeProfiles).slice(0, 12);
+  const mirosharkMarketItems = payloadArray<Record<string, unknown>>(mirosharkRun?.markets).slice(0, 8);
+  const mirosharkObservabilityItems = payloadArray<Record<string, unknown>>(mirosharkRun?.observabilityEvents ?? mirosharkMetadata?.observabilityEvents).slice(0, 18);
+  const mirosharkLlmCallItems = payloadArray<Record<string, unknown>>(mirosharkRun?.llmCalls ?? mirosharkMetadata?.llmCalls).slice(0, 10);
+
+  useEffect(() => {
+    if (!hydrated || activeView !== "swarm") return;
+    const timer = window.setTimeout(() => {
+      void refreshMirosharkArchive();
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, [activeView, hydrated, refreshMirosharkArchive]);
+
+  useEffect(() => {
+    if (!hydrated || activeView !== "vault") return;
+    const timer = window.setTimeout(() => {
+      void refreshBrainGraph();
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, [activeView, hydrated, refreshBrainGraph]);
+
+  useEffect(() => {
+    if (!hydrated || !sharedVault.enabled || !mirosharkRun?.simulationId) return;
+    const saveKey = [
+      mirosharkRun.simulationId,
+      mirosharkPosts.count,
+      mirosharkRunnerStatus ?? mirosharkRun.status ?? "",
+      mirosharkRun.step ?? "",
+    ].join(":");
+    if (mirosharkArchiveSaveKeyRef.current === saveKey) return;
+
+    const timer = window.setTimeout(async () => {
+      const response = await fetch("/api/miroshark/runs", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          vaultPath: sharedVault.vaultPath.trim() || undefined,
+          scenario: mirosharkScenario,
+          run: mirosharkRun,
+        }),
+      }).catch(() => null);
+      const data = await response?.json().catch(() => null) as { ok?: boolean; summary?: MiroSharkArchivedRun; error?: string } | null;
+      if (data?.ok) {
+        mirosharkArchiveSaveKeyRef.current = saveKey;
+        setMirosharkArchiveStatus(`Saved ${data.summary?.postCount ?? mirosharkPosts.count} posts to Obsidian`);
+        void refreshMirosharkArchive();
+      } else {
+        setMirosharkArchiveStatus(data?.error ?? "Could not save MiroShark run to Obsidian");
+      }
+    }, 900);
+
+    return () => window.clearTimeout(timer);
+  }, [
+    hydrated,
+    mirosharkPosts.count,
+    mirosharkRunnerStatus,
+    mirosharkRun,
+    mirosharkScenario,
+    refreshMirosharkArchive,
+    sharedVault.enabled,
+    sharedVault.vaultPath,
+  ]);
 
   useEffect(() => {
     if (!mirosharkRun?.jobId || mirosharkRun.status === "started" || mirosharkRun.status === "failed") return;
@@ -985,6 +1795,12 @@ export default function Home() {
     mirosharkRunnerStatus,
   ]);
 
+  const addKanbanStorageParams = useCallback((params: URLSearchParams) => {
+    if (!sharedVault.enabled) return;
+    if (sharedVault.vaultPath.trim()) params.set("vaultPath", sharedVault.vaultPath.trim());
+    if (sharedVault.kanbanFolder?.trim()) params.set("kanbanFolder", sharedVault.kanbanFolder.trim());
+  }, [sharedVault.enabled, sharedVault.kanbanFolder, sharedVault.vaultPath]);
+
   useEffect(() => {
     let cancelled = false;
     async function refreshKanban() {
@@ -992,6 +1808,10 @@ export default function Home() {
         board: kanbanBoardSlug,
         include_archived: String(kanbanIncludeArchived),
       });
+      if (sharedVault.enabled) {
+        if (sharedVault.vaultPath.trim()) params.set("vaultPath", sharedVault.vaultPath.trim());
+        if (sharedVault.kanbanFolder?.trim()) params.set("kanbanFolder", sharedVault.kanbanFolder.trim());
+      }
       if (kanbanTenantFilter) params.set("tenant", kanbanTenantFilter);
       if (kanbanAssigneeFilter) params.set("assignee", kanbanAssigneeFilter);
       if (kanbanSearch) params.set("q", kanbanSearch);
@@ -1007,6 +1827,7 @@ export default function Home() {
       setKanbanBoards(data.boards ?? []);
       setKanbanTenants(data.tenants ?? []);
       setKanbanAssignees(data.assignees ?? []);
+      setKanbanStorage(data.storage ?? null);
       setSelectedKanbanTaskId((current) => (
         current && data.board?.tasks.some((task) => task.id === current) ? current : data.board?.tasks[0]?.id ?? ""
       ));
@@ -1017,11 +1838,25 @@ export default function Home() {
       cancelled = true;
       window.clearInterval(timer);
     };
-  }, [kanbanBoardSlug, kanbanIncludeArchived, kanbanTenantFilter, kanbanAssigneeFilter, kanbanSearch]);
+  }, [
+    kanbanBoardSlug,
+    kanbanIncludeArchived,
+    kanbanTenantFilter,
+    kanbanAssigneeFilter,
+    kanbanSearch,
+    sharedVault.enabled,
+    sharedVault.kanbanFolder,
+    sharedVault.vaultPath,
+  ]);
 
   const discoveredAgents = useMemo(
     () => discoveredMachines.flatMap((machine) => machine.agents ?? []),
     [discoveredMachines],
+  );
+
+  const agentAliases = useMemo(
+    () => agentAliasMap(agents, discoveredAgents),
+    [agents, discoveredAgents],
   );
 
   const candidateAgents = useMemo(
@@ -1030,12 +1865,17 @@ export default function Home() {
   );
 
   const candidateWorkById = useMemo(() => {
+    const idsForAgent = (agentId: string) => [agentId, ...[...agentAliases.entries()]
+      .filter(([, canonicalId]) => canonicalId === agentId)
+      .map(([aliasId]) => aliasId)];
     return Object.fromEntries(candidateAgents.map((agent) => {
+      const relatedIds = idsForAgent(agent.id);
       const agentTasks = tasks
-        .filter((task) => task.agentId === agent.id)
+        .filter((task) => relatedIds.includes(task.agentId))
+        .map((task) => ({ ...task, agentId: agent.id }))
         .sort((a, b) => b.updatedAt - a.updatedAt);
       const observedTasks = fleetSnapshots[agent.id]?.tasks ?? [];
-      const transcript = messagesByAgent[agent.id] ?? [];
+      const transcript = relatedIds.flatMap((agentId) => messagesByAgent[agentId] ?? []);
       const transcriptTask: AgentTask | null = transcript.length > 0
         ? {
           id: `recent-${agent.id}`,
@@ -1053,7 +1893,7 @@ export default function Home() {
         .sort((a, b) => workPriority(b) - workPriority(a) || b.updatedAt - a.updatedAt);
       return [agent.id, work];
     }));
-  }, [candidateAgents, fleetSnapshots, messagesByAgent, tasks]);
+  }, [agentAliases, candidateAgents, fleetSnapshots, messagesByAgent, tasks]);
 
   const displayAgents = useMemo(
     () => candidateAgents.filter((agent) => !isStarterPlaceholder(agent, candidateWorkById, messagesByAgent)),
@@ -1064,15 +1904,66 @@ export default function Home() {
     return Object.fromEntries(displayAgents.map((agent) => [agent.id, candidateWorkById[agent.id] ?? []]));
   }, [candidateWorkById, displayAgents]);
 
+  const effectiveSelectedAgentId = agentAliases.get(selectedAgentId) ?? selectedAgentId;
+
   const selectedAgent = useMemo(
-    () => displayAgents.find((agent) => agent.id === selectedAgentId) ?? displayAgents[0],
-    [displayAgents, selectedAgentId],
+    () => displayAgents.find((agent) => agent.id === effectiveSelectedAgentId) ?? displayAgents[0],
+    [displayAgents, effectiveSelectedAgentId],
   );
+
+  const selectedBrainNode = useMemo(
+    () => brainGraph?.nodes.find((node) => node.id === selectedBrainNodeId) ?? brainGraph?.nodes[0] ?? null,
+    [brainGraph, selectedBrainNodeId],
+  );
+
+  const visibleBrainNodes = useMemo(
+    () => (brainGraph?.nodes ?? []).slice(0, 72),
+    [brainGraph],
+  );
+
+  const brainLayout = useMemo(
+    () => brainGraphLayout(visibleBrainNodes),
+    [visibleBrainNodes],
+  );
+
+  const brainGraphStats = useMemo(() => {
+    const notes = brainGraph?.nodes.filter((node) => !node.id.startsWith("unresolved:")).length ?? 0;
+    const accessed = brainGraph?.nodes.filter((node) => node.accessCount > 0).length ?? 0;
+    return {
+      notes,
+      links: brainGraph?.links.length ?? 0,
+      accessed,
+      recent: brainGraph?.recentAccesses.length ?? 0,
+    };
+  }, [brainGraph]);
+
+  const selectedBrainTargetIds = useMemo(() => {
+    if (!brainGraph || !selectedBrainNode) return new Set<string>();
+    const targetIds = new Set<string>();
+    for (const link of brainGraph.links) {
+      if (link.source === selectedBrainNode.id && brainLayout.positions.has(link.target)) targetIds.add(link.target);
+      if (link.target === selectedBrainNode.id && brainLayout.positions.has(link.source)) targetIds.add(link.source);
+    }
+    return targetIds;
+  }, [brainGraph, brainLayout.positions, selectedBrainNode]);
 
   const messages = useMemo(
     () => {
       if (!selectedAgent) return [];
-      const selectedMessages = messagesByAgent[selectedAgent.id] ?? [{
+      if (
+        selectedChatPreview
+        && selectedChatPreview.agentId === selectedAgent.id
+        && selectedChatPreview.leafKey === selectedChatLeafKey
+      ) {
+        return chatMessageWindow?.agentId === selectedAgent.id
+          ? selectedChatPreview.messages.slice(-chatMessageWindow.limit)
+          : selectedChatPreview.messages;
+      }
+      const relatedIds = [selectedAgent.id, ...[...agentAliases.entries()]
+        .filter(([, canonicalId]) => canonicalId === selectedAgent.id)
+        .map(([aliasId]) => aliasId)];
+      const mergedMessages = relatedIds.flatMap((agentId) => messagesByAgent[agentId] ?? []);
+      const selectedMessages = mergedMessages.length ? mergedMessages : [{
         role: "system" as const,
         content: `Chatting with ${selectedAgent.name}. Pick a machine to start fresh, or resume a previous chat when one is listed.`,
       }];
@@ -1080,7 +1971,7 @@ export default function Home() {
         ? selectedMessages.slice(-chatMessageWindow.limit)
         : selectedMessages;
     },
-    [chatMessageWindow, messagesByAgent, selectedAgent],
+    [agentAliases, chatMessageWindow, messagesByAgent, selectedAgent, selectedChatLeafKey, selectedChatPreview],
   );
 
   const lastAssistant = useMemo(
@@ -1167,6 +2058,11 @@ export default function Home() {
     () => groupKanbanTasks(kanbanBoard?.tasks ?? [], kanbanIncludeArchived),
     [kanbanBoard, kanbanIncludeArchived],
   );
+  const hasKanbanTasks = (kanbanBoard?.tasks.length ?? 0) > 0;
+  const visibleKanbanColumns = useMemo(() => {
+    const core = new Set<KanbanStatus>(["triage", "ready", "running", "done"]);
+    return kanbanColumns.filter((column) => core.has(column.id) || column.tasks.length > 0 || kanbanIncludeArchived);
+  }, [kanbanColumns, kanbanIncludeArchived]);
 
   const selectedKanbanTask = useMemo(
     () => kanbanBoard?.tasks.find((task) => task.id === selectedKanbanTaskId) ?? null,
@@ -1299,7 +2195,8 @@ export default function Home() {
       name: agentComposer.name.trim() || `${RUNTIME_LABELS[runtime]} on ${targetMachine.name}`,
       telemetryUrl: targetMachine.collectorUrl,
       machineName: targetMachine.name,
-      localDataDir: "",
+      agentId: runtime === "hermes" ? "local-hermes" : runtime === "openclaw" ? "main" : "",
+      localDataDir: runtime === "hermes" ? "~/.hermes" : "",
     };
     setAgents((current) => [...current, next]);
     setSelectedAgentId(next.id);
@@ -1316,7 +2213,8 @@ export default function Home() {
       name: `${RUNTIME_LABELS[runtime]} on ${machine.name}`,
       telemetryUrl: machine.collectorUrl,
       machineName: machine.name,
-      localDataDir: "",
+      agentId: runtime === "hermes" ? "local-hermes" : runtime === "openclaw" ? "main" : "",
+      localDataDir: runtime === "hermes" ? "~/.hermes" : "",
     };
     setAgents((current) => [...current, next]);
     setSelectedAgentId(next.id);
@@ -1380,17 +2278,20 @@ export default function Home() {
     }));
   }
 
-  function hasConversation(agentId: string) {
+  const hasConversation = useCallback((agentId: string) => {
     return (messagesByAgent[agentId] ?? []).some((message) => message.role !== "system" && message.content.trim());
-  }
+  }, [messagesByAgent]);
 
-  function conversationTitle(agentId: string) {
+  const conversationTitle = useCallback((agentId: string) => {
     const firstUserMessage = (messagesByAgent[agentId] ?? []).find((message) => message.role === "user")?.content.trim();
     return firstUserMessage ? firstUserMessage.slice(0, 56) : "Previous chat";
-  }
+  }, [messagesByAgent]);
 
-  function startAgentChat(agentId: string, options: { fresh?: boolean; messageLimit?: number; seedMessages?: ChatMessage[] } = {}) {
+  function startAgentChat(agentId: string, options: { fresh?: boolean; messageLimit?: number; seedMessages?: ChatMessage[]; chatLeafKey?: string } = {}) {
+    const leafKey = options.chatLeafKey ?? `agent-${agentId}`;
     setSelectedAgentId(agentId);
+    setSelectedChatLeafKey(leafKey);
+    setSelectedChatPreview(options.seedMessages?.length ? { agentId, leafKey, messages: options.seedMessages } : null);
     setActiveView("chat");
     setStatus(null);
     setStatusAgentId("");
@@ -1409,6 +2310,81 @@ export default function Home() {
       });
     }
   }
+
+  const chatSidebarTree = useMemo<ChatTreeMachine[]>(() => (
+    machineGroups.map((machine) => {
+      const folderMap = new Map<string, ChatTreeFolder>();
+      const ensureFolder = (label: string) => {
+        const key = label.toLowerCase();
+        const existing = folderMap.get(key);
+        if (existing) return existing;
+        const next = { key: `${machine.key}-${key}`, label, chats: [] };
+        folderMap.set(key, next);
+        return next;
+      };
+
+      for (const agent of machine.agents) {
+        const folder = ensureFolder(chatFolderLabel(agent, machine));
+        const hasDirectConversation = hasConversation(agent.id);
+        const agentWork = (agentWorkById[agent.id] ?? []).filter(isChatSidebarTask);
+        const latestAgentWork = agentWork.find((task) => task.updatedAt > 0);
+        const hasRecentHistory = agentWork.some((task) => task.source !== "dashboard-chat");
+        const agentChatKey = `agent-${agent.id}`;
+        const shouldShowDirectChat = !hasRecentHistory;
+        if (shouldShowDirectChat) {
+          folder.chats.push({
+            key: agentChatKey,
+            title: hasDirectConversation ? conversationTitle(agent.id) : agent.name,
+            subtitle: hasDirectConversation ? agent.name : `${RUNTIME_LABELS[agent.runtime]} chat`,
+            updatedAt: latestAgentWork?.updatedAt,
+            rank: hasRecentHistory ? 1 : 3,
+            active: selectedChatLeafKey ? selectedChatLeafKey === agentChatKey : agent.id === selectedAgent?.id && !chatMessageWindow,
+            onOpen: () => startAgentChat(agent.id, { chatLeafKey: agentChatKey }),
+          });
+        }
+
+        for (const [taskIndex, task] of agentWork.entries()) {
+          if (task.source === "dashboard-chat" && hasDirectConversation) continue;
+          const seedMessages = task.messages?.some((message) => message.content.trim())
+            ? task.messages
+            : [
+              { role: "system" as const, content: `Resuming ${task.title || "previous chat"} from recent collector metadata.` },
+              { role: "assistant" as const, content: task.lastMessage || task.title || "Recent chat metadata is available, but the full transcript was not cached locally." },
+            ];
+          const taskChatKey = `task-${agent.id}-${task.id}-${task.source ?? "unknown"}-${task.updatedAt || task.startedAt || taskIndex}`;
+          folder.chats.push({
+            key: taskChatKey,
+            title: task.title || "Previous chat",
+            subtitle: task.lastMessage || agent.name,
+            updatedAt: task.updatedAt > 0 ? task.updatedAt : task.startedAt > 0 ? task.startedAt : undefined,
+            rank: workPriority(task) + (task.messages?.length ? 3 : 0),
+            active: selectedChatLeafKey === taskChatKey,
+            onOpen: () => startAgentChat(agent.id, { messageLimit: 5, seedMessages, chatLeafKey: taskChatKey }),
+          });
+        }
+      }
+
+      return {
+        key: machine.key,
+        name: machine.name,
+        detail: machine.collector === "ready" ? `${machine.agents.length} available` : "Collector not ready",
+        folders: [...folderMap.values()]
+          .map((folder) => ({
+            ...folder,
+            chats: [...folder.chats.reduce((deduped, chat) => {
+              const key = chatPreviewDedupeKey(chat.title, chat.subtitle);
+              deduped.set(key, preferChatTreeItem(deduped.get(key), chat));
+              return deduped;
+            }, new Map<string, ChatTreeItem>()).values()]
+              .sort((a, b) => (b.updatedAt ?? 0) - (a.updatedAt ?? 0) || a.title.localeCompare(b.title)),
+          }))
+          .filter((folder) => folder.chats.length > 0)
+          .sort((a, b) => (
+            a.label === "Stray chats" ? 1 : b.label === "Stray chats" ? -1 : a.label.localeCompare(b.label)
+          )),
+      };
+    })
+  ), [agentWorkById, chatMessageWindow, conversationTitle, hasConversation, machineGroups, selectedAgent?.id, selectedChatLeafKey]);
 
   function openSetupModal(machine: MachineGroup) {
     setSetupMachineKey(machine.key);
@@ -1525,6 +2501,7 @@ export default function Home() {
 
   async function refreshKanbanOnce() {
     const params = new URLSearchParams({ board: kanbanBoardSlug, include_archived: String(kanbanIncludeArchived) });
+    addKanbanStorageParams(params);
     if (kanbanTenantFilter) params.set("tenant", kanbanTenantFilter);
     if (kanbanAssigneeFilter) params.set("assignee", kanbanAssigneeFilter);
     if (kanbanSearch) params.set("q", kanbanSearch);
@@ -1536,21 +2513,74 @@ export default function Home() {
     setKanbanBoards(data.boards ?? []);
     setKanbanTenants(data.tenants ?? []);
     setKanbanAssignees(data.assignees ?? []);
+    setKanbanStorage(data.storage ?? null);
   }
 
-  async function createKanbanTask(event: FormEvent) {
-    event.preventDefault();
-    if (!newTaskDraft.title.trim()) return;
+  function kanbanStorageBody() {
+    return sharedVault.enabled
+      ? {
+        vaultPath: sharedVault.vaultPath.trim(),
+        kanbanFolder: sharedVault.kanbanFolder?.trim() || DEFAULT_SHARED_VAULT.kanbanFolder,
+      }
+      : {};
+  }
+
+  async function trackAgentTaskOnKanban(agent: AgentProfile, taskRow: AgentTaskRow, task?: AgentTask) {
+    const status: KanbanStatus = taskRow.status === "active"
+      ? "running"
+      : taskRow.status === "completed"
+        ? "done"
+        : taskRow.status === "failed"
+          ? "blocked"
+          : "triage";
     const response = await fetch(`/api/openclaw/kanban?board=${encodeURIComponent(kanbanBoardSlug)}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        title: newTaskDraft.title,
-        body: newTaskDraft.body,
-        assignee: newTaskDraft.assignee,
-        tenant: newTaskDraft.tenant,
-        priority: newTaskDraft.priority,
-        status: "triage",
+        ...kanbanStorageBody(),
+        title: cleanActivityTitle(task?.title ?? taskRow.title),
+        body: [
+          task?.lastMessage ? `Latest agent note: ${task.lastMessage}` : "",
+          task?.source ? `Source: ${task.source}` : taskRow.source ? `Source: ${taskRow.source}` : "",
+          agent.machineName ? `Machine: ${agent.machineName}` : "",
+        ].filter(Boolean).join("\n\n"),
+        assignee: agent.agentId || agent.id,
+        tenant: agent.machineName || agent.runtime,
+        priority: taskRow.status === "failed" ? "high" : "normal",
+        status,
+        idempotencyKey: `agent-task:${agent.id}:${taskRow.id}`,
+      }),
+    });
+    const data = await response.json().catch(() => null) as KanbanResponse | null;
+    if (!response.ok || !data?.ok) {
+      setKanbanError(data?.error ?? "Could not track agent task on the Work board.");
+      setActiveView("kanban");
+      return;
+    }
+    if (data.board) {
+      setKanbanBoard(data.board);
+      setKanbanStorage(data.storage ?? null);
+    }
+    if (data.task?.id) setSelectedKanbanTaskId(data.task.id);
+    setActiveView("kanban");
+    await refreshKanbanOnce().catch((error) => setKanbanError(error instanceof Error ? error.message : "Kanban refresh failed."));
+  }
+
+  async function createKanbanTask(event: FormEvent, status: KanbanStatus) {
+    event.preventDefault();
+    const title = quickAddDrafts[status]?.trim();
+    if (!title) return;
+    const response = await fetch(`/api/openclaw/kanban?board=${encodeURIComponent(kanbanBoardSlug)}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        ...kanbanStorageBody(),
+        title,
+        body: "",
+        assignee: "",
+        tenant: "",
+        priority: "normal",
+        status,
       }),
     });
     const data = await response.json().catch(() => null) as KanbanResponse | null;
@@ -1558,7 +2588,8 @@ export default function Home() {
       setKanbanError(data?.error ?? "Could not create task.");
       return;
     }
-    setNewTaskDraft({ title: "", body: "", assignee: "", tenant: "", priority: "normal" });
+    setQuickAddDrafts((current) => ({ ...current, [status]: "" }));
+    setQuickAddStatus("");
     await refreshKanbanOnce().catch((error) => setKanbanError(error instanceof Error ? error.message : "Kanban refresh failed."));
   }
 
@@ -1568,7 +2599,7 @@ export default function Home() {
     const response = await fetch("/api/openclaw/kanban", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ action: "create-board", slug: newBoardDraft.slug, name: newBoardDraft.name }),
+      body: JSON.stringify({ ...kanbanStorageBody(), action: "create-board", slug: newBoardDraft.slug, name: newBoardDraft.name }),
     });
     const data = await response.json().catch(() => null) as KanbanResponse | null;
     if (!response.ok || !data?.ok || !data.board) {
@@ -1583,7 +2614,7 @@ export default function Home() {
     const response = await fetch(`/api/openclaw/kanban?board=${encodeURIComponent(kanbanBoardSlug)}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ taskId, patch }),
+      body: JSON.stringify({ ...kanbanStorageBody(), taskId, patch }),
     });
     const data = await response.json().catch(() => null) as KanbanResponse | null;
     if (!response.ok || !data?.ok) {
@@ -1597,7 +2628,7 @@ export default function Home() {
     const response = await fetch(`/api/openclaw/kanban?board=${encodeURIComponent(kanbanBoardSlug)}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ taskId, status }),
+      body: JSON.stringify({ ...kanbanStorageBody(), taskId, status }),
     });
     const data = await response.json().catch(() => null) as KanbanResponse | null;
     if (!response.ok || !data?.ok) {
@@ -1613,7 +2644,7 @@ export default function Home() {
     const response = await fetch(`/api/openclaw/kanban?board=${encodeURIComponent(kanbanBoardSlug)}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ action: "comment", taskId: selectedKanbanTask.id, body: commentDraft, author: "dashboard" }),
+      body: JSON.stringify({ ...kanbanStorageBody(), action: "comment", taskId: selectedKanbanTask.id, body: commentDraft, author: "dashboard" }),
     });
     const data = await response.json().catch(() => null) as KanbanResponse | null;
     if (!response.ok || !data?.ok) {
@@ -1642,10 +2673,13 @@ export default function Home() {
     const response = await fetch("/api/obsidian/status", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ vaultPath: sharedVault.vaultPath }),
+      body: JSON.stringify({ vaultPath: sharedVault.vaultPath.trim() || undefined }),
     });
     const data = (await response.json().catch(() => ({}))) as Record<string, unknown>;
     setVaultStatus(data);
+    if (data.ok && typeof data.vaultPath === "string" && data.vaultPath.trim()) {
+      updateSharedVault({ vaultPath: data.vaultPath });
+    }
   }
 
   async function checkControlRoomStatus() {
@@ -1657,6 +2691,110 @@ export default function Home() {
     });
     const data = (await response.json().catch(() => ({}))) as Record<string, unknown>;
     setControlRoomStatus(data);
+  }
+
+  async function inspectBrainNode(node: BrainGraphNode) {
+    if (brainDragMovedRef.current) {
+      brainDragMovedRef.current = false;
+      return;
+    }
+    if (selectedBrainNodeId === node.id) {
+      if (node.id.startsWith("unresolved:")) {
+        setBrainGraphStatus("That cell is an unresolved link, so there is no note file to open yet.");
+        return;
+      }
+      const response = await fetch("/api/obsidian/open", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ vaultPath: sharedVault.vaultPath, notePath: node.id, newtab: true }),
+      }).catch(() => null);
+      const data = await response?.json().catch(() => null) as { ok?: boolean; error?: string } | null;
+      setBrainGraphStatus(data?.ok ? `Opened ${node.label} in Obsidian.` : data?.error ?? "Could not open note in Obsidian.");
+      return;
+    }
+    setSelectedBrainNodeId(node.id);
+    if (node.id.startsWith("unresolved:")) return;
+    const response = await fetch("/api/obsidian/access", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        vaultPath: sharedVault.vaultPath,
+        notePath: node.id,
+        agentName: selectedAgent?.name ?? "Dashboard",
+        agentId: selectedAgent?.agentId || selectedAgent?.id,
+        runtime: selectedAgent?.runtime,
+        machineName: selectedAgent?.machineName || "local",
+        action: "inspect",
+      }),
+    }).catch(() => null);
+    const data = await response?.json().catch(() => null) as { ok?: boolean; event?: BrainAccessEvent; error?: string } | null;
+    if (!data?.ok || !data.event) {
+      setBrainGraphStatus(data?.error ?? "Could not record access.");
+      return;
+    }
+    setBrainGraph((current) => {
+      if (!current) return current;
+      return {
+        ...current,
+        recentAccesses: [data.event!, ...current.recentAccesses].slice(0, 24),
+        nodes: current.nodes.map((item) => item.id === node.id
+          ? {
+            ...item,
+            accessCount: item.accessCount + 1,
+            lastAccessedAt: data.event!.accessedAt,
+            recentAccesses: [data.event!, ...item.recentAccesses].slice(0, 6),
+          }
+          : item),
+      };
+    });
+    setBrainGraphStatus(`Recorded ${selectedAgent?.name ?? "Dashboard"} inspecting ${node.label}.`);
+  }
+
+  function startBrainPan(event: PointerEvent<SVGSVGElement>) {
+    if (event.button !== 0) return;
+    const target = event.target instanceof Element
+      ? event.target.closest("[data-brain-node-id]") as HTMLElement | null
+      : null;
+    brainDragRef.current = {
+      pointerId: event.pointerId,
+      startX: event.clientX,
+      startY: event.clientY,
+      panX: brainPan.x,
+      panY: brainPan.y,
+      moved: false,
+      nodeId: target?.dataset.brainNodeId ?? "",
+    };
+    brainDragMovedRef.current = false;
+    event.currentTarget.setPointerCapture(event.pointerId);
+  }
+
+  function moveBrainPan(event: PointerEvent<SVGSVGElement>) {
+    const drag = brainDragRef.current;
+    if (!drag || drag.pointerId !== event.pointerId) return;
+    const dx = event.clientX - drag.startX;
+    const dy = event.clientY - drag.startY;
+    if (!drag.moved && Math.hypot(dx, dy) < 4) return;
+    drag.moved = true;
+    brainDragMovedRef.current = true;
+    setBrainPan({ x: drag.panX - dx, y: drag.panY - dy });
+  }
+
+  function endBrainPan(event: PointerEvent<SVGSVGElement>) {
+    const drag = brainDragRef.current;
+    if (drag?.pointerId === event.pointerId) {
+      brainDragMovedRef.current = drag.moved;
+      brainDragRef.current = null;
+      if (!drag.moved && drag.nodeId) {
+        const node = brainGraph?.nodes.find((item) => item.id === drag.nodeId);
+        if (node) void inspectBrainNode(node);
+      }
+      if (drag.moved) window.setTimeout(() => {
+        brainDragMovedRef.current = false;
+      }, 0);
+    }
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    }
   }
 
   async function sendMessage(event: FormEvent) {
@@ -1672,6 +2810,8 @@ export default function Home() {
 
     setBusy(true);
     setBusyAgentId(selectedAgent.id);
+    setHasStreamingChunk(false);
+    setSelectedChatPreview(null);
     setText("");
     const taskId = `${selectedAgent.id}-${Date.now()}`;
     const contextMessages = (messagesByAgent[selectedAgent.id] ?? [])
@@ -1728,6 +2868,7 @@ export default function Home() {
           if (parsed.error) throw new Error(parsed.error);
           const chunk = parsed.choices?.[0]?.delta?.content;
           if (chunk) {
+            setHasStreamingChunk(true);
             let nextTaskMessage = "";
             setMessagesByAgent((current) => {
               const existing = current[selectedAgent.id] ?? [];
@@ -1754,6 +2895,7 @@ export default function Home() {
     } finally {
       setBusy(false);
       setBusyAgentId("");
+      setHasStreamingChunk(false);
     }
   }
 
@@ -1800,6 +2942,17 @@ export default function Home() {
           </nav>
 
           <div className="sidebarTrust">
+            <button
+              type="button"
+              className="themeToggle"
+              aria-label={dashboardTheme === "hive-light" ? "Switch to dark mode" : "Switch to light mode"}
+              aria-pressed={dashboardTheme === "hive-light"}
+              onClick={() => setDashboardTheme((current) => current === "hive-light" ? "dark" : "hive-light")}
+            >
+              <Sun aria-hidden="true" />
+              <span>{dashboardTheme === "hive-light" ? "Hive light" : "Night hive"}</span>
+              <Moon aria-hidden="true" />
+            </button>
             <Badge variant="success"><ShieldCheck aria-hidden="true" /> Tailnet private</Badge>
             <span>Collectors are read-only until you explicitly configure runtime chat or payments.</span>
           </div>
@@ -1827,18 +2980,18 @@ export default function Home() {
           </section>
 
       {activeView === "agents" ? (
-      <section className="agentRail tabPanel">
-        <div className="agentRailHeader">
+      <section className={fleetClass("agentRail", "tabPanel")}>
+        <div className={fleetClass("agentRailHeader")}>
           <div>
             <h2>Fleet</h2>
             <p className="text-xs text-[var(--muted)]">
               {fleetCheckedAt ? `Scanned ${formatRelativeTime(fleetCheckedAt)} · ` : ""}{tailscaleStatus}
             </p>
           </div>
-          <details className="quickConnect">
+          <details className={fleetClass("quickConnect")}>
             <summary>Connect an agent</summary>
-          <div className="addAgent">
-            <div className="addAgentIntro">
+          <div className={fleetClass("addAgent")}>
+            <div className={fleetClass("addAgentIntro")}>
               <strong>Add a saved shortcut</strong>
               <span>{connectableMachines.length > 0 ? "Pick a machine that is already connected." : "Connect a machine first."}</span>
             </div>
@@ -1871,7 +3024,7 @@ export default function Home() {
           </details>
         </div>
 
-        <div className="machineBoard">
+        <div className={fleetClass("machineBoard")}>
           {machineGroups.map((machine) => {
             const versionCopy = machineVersionCopy(machine, appVersion?.latestCommit || appVersion?.commit);
             const updateStatus = updateStatusByMachine[machine.key];
@@ -1932,7 +3085,7 @@ export default function Home() {
             // The update banner is rendered inline only while the machine is mid-update,
             // matching the "calm motion for live activity" guidance.
             const updateBanner = updateStatus?.detail ? (
-              <div className={`machineUpdateStatus ${updateStatus.tone}`}>
+              <div className={fleetClass("machineUpdateStatus", updateStatus.tone)}>
                 <div>
                 <strong>{updateStatus.label}</strong>
                 <pre>{updateStatus.detail}</pre>
@@ -1977,7 +3130,7 @@ export default function Home() {
                     items={machineMenuItems}
                     ariaLabel={`Actions for ${machine.self ? "This Mac" : machine.name}`}
                     triggerIcon={<Plus aria-hidden="true" />}
-                    className="size-7 rounded-full border border-[rgba(148,163,184,0.24)] bg-[rgba(15,23,42,0.7)]"
+                    className="!size-6 rounded-full border !border-[var(--line)] !bg-[var(--surface-soft)] !text-[var(--accent-strong)] hover:!border-[var(--accent-strong)] hover:!bg-[var(--surface-strong)] [&_svg]:!size-3"
                   />
                 )}
                 details={details}
@@ -2082,6 +3235,10 @@ export default function Home() {
                                   ].filter((message) => message.content.trim());
                                 startAgentChat(agent.id, { messageLimit: 5, seedMessages });
                               }}
+                              onTrackTask={(taskRow) => {
+                                const task = agentWork.find((item) => item.id === taskRow.id);
+                                void trackAgentTaskOnKanban(agent, taskRow, task);
+                              }}
                               emptyTitle={friendlyEmptyTitle(snapshot, hasMachineWiring)}
                               emptyBody="Activity will show up here as soon as this agent records work."
                             />
@@ -2103,107 +3260,98 @@ export default function Home() {
       ) : null}
 
       {activeView === "kanban" ? (
-      <section className="kanbanPanel tabPanel">
-        <div className="kanbanHeader">
+      <section className={kanbanClass("kanbanPanel", "tabPanel")}>
+        <div className={kanbanClass("kanbanHeader")}>
           <div>
-            <p className="eyebrow">Hermes-style durable work queue</p>
-            <h2>Multi-Agent Kanban</h2>
+            <p className="eyebrow">Shared work queue</p>
+            <h2>Work Board</h2>
             <p>
-              Tasks are stored locally by board, with assignees, comments, dependencies, status history,
-              and a human-friendly workflow for agent handoffs.
+              Create the next task, track agent handoffs, and keep every machine looking at the same queue.
             </p>
           </div>
-          <form className="kanbanBoardCreate" onSubmit={createKanbanBoard}>
-            <input
-              value={newBoardDraft.slug}
-              onChange={(event) => setNewBoardDraft((current) => ({ ...current, slug: event.target.value }))}
-              placeholder="new-board"
-            />
-            <input
-              value={newBoardDraft.name}
-              onChange={(event) => setNewBoardDraft((current) => ({ ...current, name: event.target.value }))}
-              placeholder="Display name"
-            />
-            <button type="submit">New board</button>
-          </form>
+          <div className={kanbanClass("kanbanHeaderActions")}>
+            <span
+              className={kanbanClass("kanbanSyncPill", kanbanStorage?.source === "obsidian" ? "synced" : "local")}
+              title={kanbanStorage?.file}
+            >
+              {kanbanStorage?.source === "obsidian" ? "Obsidian sync" : "Local fallback"}
+            </span>
+            <details className={kanbanClass("kanbanAdvanced")}>
+              <summary>Board options</summary>
+              <div className={kanbanClass("kanbanAdvancedPanel")}>
+                <label>
+                  Board
+                  <select value={kanbanBoardSlug} onChange={(event) => setKanbanBoardSlug(event.target.value)}>
+                    {kanbanBoards.length > 0 ? kanbanBoards.map((board) => (
+                      <option value={board.slug} key={board.slug}>{board.name}</option>
+                    )) : <option value="default">Default</option>}
+                  </select>
+                </label>
+                <form className={kanbanClass("kanbanBoardCreate")} onSubmit={createKanbanBoard}>
+                  <input
+                    value={newBoardDraft.slug}
+                    onChange={(event) => setNewBoardDraft((current) => ({ ...current, slug: event.target.value }))}
+                    placeholder="new-board"
+                  />
+                  <input
+                    value={newBoardDraft.name}
+                    onChange={(event) => setNewBoardDraft((current) => ({ ...current, name: event.target.value }))}
+                    placeholder="Display name"
+                  />
+                  <button type="submit">New board</button>
+                </form>
+                <small>{kanbanStorage?.file ?? "Storage path loading..."}</small>
+              </div>
+            </details>
+          </div>
         </div>
 
-        <div className="kanbanToolbar">
-          <label>
-            Board
-            <select value={kanbanBoardSlug} onChange={(event) => setKanbanBoardSlug(event.target.value)}>
-              {kanbanBoards.length > 0 ? kanbanBoards.map((board) => (
-                <option value={board.slug} key={board.slug}>{board.name}</option>
-              )) : <option value="default">Default</option>}
-            </select>
-          </label>
-          <label>
-            Tenant
-            <select value={kanbanTenantFilter} onChange={(event) => setKanbanTenantFilter(event.target.value)}>
-              <option value="">All tenants</option>
-              {kanbanTenants.map((tenant) => <option value={tenant} key={tenant}>{tenant}</option>)}
-            </select>
-          </label>
-          <label>
-            Assignee
-            <select value={kanbanAssigneeFilter} onChange={(event) => setKanbanAssigneeFilter(event.target.value)}>
-              <option value="">All assignees</option>
-              {kanbanAssigneeOptions.map((assignee) => <option value={assignee} key={assignee}>{assignee}</option>)}
-            </select>
-          </label>
-          <label>
-            Search
-            <input value={kanbanSearch} onChange={(event) => setKanbanSearch(event.target.value)} placeholder="Title, body, result..." />
-          </label>
-          <label className="toggleRow">
-            <input
-              type="checkbox"
-              checked={kanbanIncludeArchived}
-              onChange={(event) => setKanbanIncludeArchived(event.target.checked)}
-            />
-            Archived
-          </label>
-        </div>
+        {kanbanError ? <p className={kanbanClass("kanbanError")}>{kanbanError}</p> : null}
 
-        {kanbanError ? <p className="kanbanError">{kanbanError}</p> : null}
+        {hasKanbanTasks ? (
+          <details className={kanbanClass("kanbanFilters")}>
+            <summary>Filter tasks</summary>
+            <div className={kanbanClass("kanbanToolbar")}>
+              <label>
+                Tenant
+                <select value={kanbanTenantFilter} onChange={(event) => setKanbanTenantFilter(event.target.value)}>
+                  <option value="">All tenants</option>
+                  {kanbanTenants.map((tenant) => <option value={tenant} key={tenant}>{tenant}</option>)}
+                </select>
+              </label>
+              <label>
+                Assignee
+                <select value={kanbanAssigneeFilter} onChange={(event) => setKanbanAssigneeFilter(event.target.value)}>
+                  <option value="">All assignees</option>
+                  {kanbanAssigneeOptions.map((assignee) => <option value={assignee} key={assignee}>{assignee}</option>)}
+                </select>
+              </label>
+              <label>
+                Search
+                <input value={kanbanSearch} onChange={(event) => setKanbanSearch(event.target.value)} placeholder="Title, body, result..." />
+              </label>
+              <label className={kanbanClass("toggleRow")}>
+                <input
+                  type="checkbox"
+                  checked={kanbanIncludeArchived}
+                  onChange={(event) => setKanbanIncludeArchived(event.target.checked)}
+                />
+                Archived
+              </label>
+            </div>
+          </details>
+        ) : (
+          <div className={kanbanClass("kanbanFirstRun")}>
+            <strong>Create the first task</strong>
+            <span>Agent activity can also be tracked into this board from the Fleet view.</span>
+          </div>
+        )}
 
-        <form className="kanbanComposer" onSubmit={createKanbanTask}>
-          <input
-            value={newTaskDraft.title}
-            onChange={(event) => setNewTaskDraft((current) => ({ ...current, title: event.target.value }))}
-            placeholder="Task title"
-          />
-          <input
-            value={newTaskDraft.body}
-            onChange={(event) => setNewTaskDraft((current) => ({ ...current, body: event.target.value }))}
-            placeholder="Body or handoff instructions"
-          />
-          <select
-            value={newTaskDraft.assignee}
-            onChange={(event) => setNewTaskDraft((current) => ({ ...current, assignee: event.target.value }))}
-          >
-            <option value="">Unassigned</option>
-            {kanbanAssigneeOptions.map((assignee) => <option value={assignee} key={assignee}>{assignee}</option>)}
-          </select>
-          <input
-            value={newTaskDraft.tenant}
-            onChange={(event) => setNewTaskDraft((current) => ({ ...current, tenant: event.target.value }))}
-            placeholder="Tenant"
-          />
-          <select
-            value={newTaskDraft.priority}
-            onChange={(event) => setNewTaskDraft((current) => ({ ...current, priority: event.target.value as KanbanPriority }))}
-          >
-            {KANBAN_PRIORITIES.map((priority) => <option value={priority} key={priority}>{priority}</option>)}
-          </select>
-          <button type="submit">Create</button>
-        </form>
-
-        <div className="kanbanWorkspace">
-          <div className="kanbanBoard" aria-label="Multi-agent Kanban board">
-            {kanbanColumns.map((column) => (
+        <div className={kanbanClass("kanbanWorkspace", selectedKanbanTask ? "withDrawer" : "noDrawer")}>
+          <div className={kanbanClass("kanbanBoard")} aria-label="Multi-agent Kanban board">
+            {visibleKanbanColumns.map((column) => (
               <section
-                className={`kanbanColumn ${column.id}`}
+                className={kanbanClass("kanbanColumn", column.id)}
                 key={column.id}
                 onDragOver={(event) => event.preventDefault()}
                 onDrop={(event) => {
@@ -2211,25 +3359,48 @@ export default function Home() {
                   if (taskId) moveKanbanTask(taskId, column.id);
                 }}
               >
-                <div className="kanbanColumnHeader">
-                  <span className={`kanbanDot ${column.id}`} />
+                <div className={kanbanClass("kanbanColumnHeader")}>
+                  <span className={kanbanClass("kanbanDot", column.id)} />
                   <div>
                     <h3>{column.title}</h3>
                     <p>{column.description}</p>
                   </div>
                   <strong>{column.tasks.length}</strong>
+                  <button
+                    type="button"
+                    className={kanbanClass("kanbanAddColumnTask")}
+                    onClick={() => setQuickAddStatus((current) => current === column.id ? "" : column.id)}
+                    aria-label={`Add task to ${column.title}`}
+                    title={`Add task to ${column.title}`}
+                  >
+                    <Plus aria-hidden="true" />
+                  </button>
                 </div>
-                <div className="kanbanCards">
+                <div className={kanbanClass("kanbanCards")}>
+                  {quickAddStatus === column.id ? (
+                    <form className={kanbanClass("kanbanInlineAdd")} onSubmit={(event) => createKanbanTask(event, column.id)}>
+                      <input
+                        autoFocus
+                        value={quickAddDrafts[column.id] ?? ""}
+                        onChange={(event) => setQuickAddDrafts((current) => ({ ...current, [column.id]: event.target.value }))}
+                        placeholder={`Add to ${column.title}`}
+                      />
+                      <div>
+                        <button type="button" onClick={() => setQuickAddStatus("")}>Cancel</button>
+                        <button type="submit">Add</button>
+                      </div>
+                    </form>
+                  ) : null}
                   {column.tasks.map((task) => (
                     <button
                       type="button"
                       draggable
-                      className={`kanbanCard ${task.id === selectedKanbanTaskId ? "active" : ""}`}
+                      className={kanbanClass("kanbanCard", task.id === selectedKanbanTaskId && "active")}
                       key={task.id}
                       onClick={() => setSelectedKanbanTaskId(task.id)}
                       onDragStart={(event) => event.dataTransfer.setData("text/plain", task.id)}
                     >
-                      <span className={`priorityPill ${task.priority}`}>{task.priority}</span>
+                      <span className={kanbanClass("priorityPill", task.priority)}>{task.priority}</span>
                       <strong>{task.title}</strong>
                       <p>{task.body || task.result || "No task body yet."}</p>
                       <small>
@@ -2237,17 +3408,26 @@ export default function Home() {
                       </small>
                     </button>
                   ))}
-                  {column.tasks.length === 0 ? <p className="kanbanEmpty">Drop tasks here.</p> : null}
+                  {column.tasks.length === 0 && quickAddStatus !== column.id ? (
+                    <button
+                      type="button"
+                      className={kanbanClass("kanbanEmpty", "kanbanEmptyAction")}
+                      onClick={() => setQuickAddStatus(column.id)}
+                    >
+                      <Plus aria-hidden="true" />
+                      Add task
+                    </button>
+                  ) : null}
                 </div>
               </section>
             ))}
           </div>
 
-          <aside className="kanbanDrawer">
-            {selectedKanbanTask ? (
+          {selectedKanbanTask ? (
+          <aside className={kanbanClass("kanbanDrawer")}>
               <>
-                <div className="kanbanDrawerHeader">
-                  <span className={`priorityPill ${selectedKanbanTask.priority}`}>{selectedKanbanTask.priority}</span>
+                <div className={kanbanClass("kanbanDrawerHeader")}>
+                  <span className={kanbanClass("priorityPill", selectedKanbanTask.priority)}>{selectedKanbanTask.priority}</span>
                   <h3>{selectedKanbanTask.title}</h3>
                   <small>{selectedKanbanTask.id}</small>
                 </div>
@@ -2279,13 +3459,13 @@ export default function Home() {
                     placeholder="Completion summary, review notes, or blocker evidence"
                   />
                 </label>
-                <div className="kanbanMetaGrid">
+                <div className={kanbanClass("kanbanMetaGrid")}>
                   <span>Workspace: {selectedKanbanTask.workspace}</span>
                   <span>Created: {formatRelativeTime(selectedKanbanTask.createdAt)}</span>
                   <span>Comments: {selectedKanbanComments.length}</span>
                   <span>Links: {kanbanBoard?.links.filter((link) => link.parentId === selectedKanbanTask.id || link.childId === selectedKanbanTask.id).length ?? 0}</span>
                 </div>
-                <form className="kanbanCommentForm" onSubmit={addKanbanComment}>
+                <form className={kanbanClass("kanbanCommentForm")} onSubmit={addKanbanComment}>
                   <input
                     value={commentDraft}
                     onChange={(event) => setCommentDraft(event.target.value)}
@@ -2293,7 +3473,7 @@ export default function Home() {
                   />
                   <button type="submit">Comment</button>
                 </form>
-                <div className="kanbanThread">
+                <div className={kanbanClass("kanbanThread")}>
                   {selectedKanbanComments.map((comment) => (
                     <article key={comment.id}>
                       <strong>{comment.author}</strong>
@@ -2301,31 +3481,40 @@ export default function Home() {
                       <small>{formatRelativeTime(comment.createdAt)}</small>
                     </article>
                   ))}
-                  {selectedKanbanComments.length === 0 ? <p className="kanbanEmpty">No comments yet.</p> : null}
+                  {selectedKanbanComments.length === 0 ? <p className={kanbanClass("kanbanEmpty")}>No comments yet.</p> : null}
                 </div>
-                <div className="kanbanEvents">
+                <div className={kanbanClass("kanbanEvents")}>
                   <h4>Recent events</h4>
                   {selectedKanbanEvents.map((event) => (
                     <p key={event.id}><span>{event.kind}</span>{event.message}</p>
                   ))}
                 </div>
               </>
-            ) : (
-              <div className="kanbanDrawerEmpty">
-                <strong>No task selected</strong>
-                <p>Create a triage card or choose an existing task to inspect comments, evidence, and status controls.</p>
-              </div>
-            )}
           </aside>
+          ) : null}
         </div>
       </section>
       ) : null}
 
       {activeView === "swarm" ? (
-      <section className="swarmPanel">
-        <div className={`mirosharkControl ${mirosharkStatus?.ok ? "connected" : ""}`}>
-          <div className="mirosharkIdentity">
-            <span className="mirosharkDot" aria-hidden="true" />
+      <section className={mirosharkClass("swarmPanel")}>
+        <div className={mirosharkClass("mirosharkControl", mirosharkStatus?.ok && "connected")}>
+          <div className={mirosharkClass("mirosharkIdentity")}>
+            <span className={mirosharkClass("mirosharkAvatar")} aria-hidden="true">
+              {mirosharkStatus?.install.running ? (
+                <LottiePlayer src="/animations/Load%20HIVE.lottie" size={48} ariaLabel="MiroShark starting" />
+              ) : (
+                <Image
+                  src="/icons/miroshark.png"
+                  alt=""
+                  width={48}
+                  height={48}
+                  className={mirosharkClass("mirosharkAvatarImg")}
+                  priority
+                />
+              )}
+              <span className={mirosharkClass("mirosharkDot")} aria-hidden="true" />
+            </span>
             <div>
               <p>MiroShark</p>
               <h2>
@@ -2341,13 +3530,13 @@ export default function Home() {
             </div>
           </div>
 
-          <div className="mirosharkActions">
+          <div className={mirosharkClass("mirosharkActions")}>
             {(mirosharkStatus?.actions ?? [{ id: "install" as const, label: "Install & start" }]).map((action) => (
               <Button
                 key={action.id}
                 type="button"
                 size="sm"
-                variant={action.id === "open" ? "secondary" : "default"}
+                variant={action.id === "open" || action.id === "configure-admin" ? "secondary" : "default"}
                 onClick={() => runMirosharkAction(action.id)}
                 disabled={Boolean(action.disabled) || mirosharkActionPending === action.id}
               >
@@ -2372,7 +3561,7 @@ export default function Home() {
         </div>
 
         {!mirosharkStatus?.ok ? (
-          <details className="mirosharkSetup">
+          <details className={mirosharkClass("mirosharkSetup")}>
             <summary>Setup details</summary>
             <div>
                 <p>
@@ -2421,50 +3610,158 @@ export default function Home() {
           </details>
         ) : null}
 
-        <form className="mirosharkRunner" onSubmit={runMirosharkSwarm}>
-          <label className="mirosharkScenario">
-            <span>Scenario</span>
-            <textarea
-              value={mirosharkScenario}
-              onChange={(event) => setMirosharkScenario(event.target.value)}
-              placeholder="Describe the market, community, launch, crisis, or decision you want the agents to simulate."
-            />
-          </label>
-
-          <div className="mirosharkRunControls">
-            <label>
-              <span>Surface</span>
-              <select value={mirosharkPlatform} onChange={(event) => setMirosharkPlatform(event.target.value as "twitter" | "reddit" | "parallel")}>
-                <option value="twitter">Twitter</option>
-                <option value="reddit">Reddit</option>
-                <option value="parallel">Twitter + Reddit</option>
-              </select>
-            </label>
-            <label>
-              <span>Rounds</span>
-              <input
-                type="number"
-                min={1}
-                max={200}
-                value={mirosharkRounds}
-                onChange={(event) => setMirosharkRounds(Number(event.target.value))}
-              />
-            </label>
-            <Button type="submit" disabled={!mirosharkStatus?.ok || mirosharkRunPending || !mirosharkScenario.trim()}>
-              <Activity aria-hidden="true" />
-              {mirosharkRunPending ? "Running setup..." : "Run swarm"}
+        <div className={mirosharkClass("mirosharkWorkbench")}>
+          <aside className={mirosharkClass("mirosharkHistoryRail")} aria-label="MiroShark simulation history">
+            <Button
+              type="button"
+              className={mirosharkClass("mirosharkNewSimulation")}
+              onClick={startNewMirosharkSimulation}
+              disabled={mirosharkRunPending}
+            >
+              <Sparkles aria-hidden="true" />
+              New Simulation
             </Button>
-          </div>
-        </form>
 
-        {mirosharkRun ? (
-          <section className={`mirosharkRunResult ${mirosharkRun.ok ? "ready" : "failed"}`}>
+            <div className={mirosharkClass("mirosharkHistoryHeader")}>
+              <div>
+                <p>Past runs</p>
+                <h3>Saved simulations</h3>
+              </div>
+              <Button type="button" size="sm" variant="ghost" onClick={refreshMirosharkArchive}>
+                <RefreshCcw aria-hidden="true" />
+                Refresh
+              </Button>
+            </div>
+
+            <div className={mirosharkClass("mirosharkHistoryMeta")}>
+              <span>{sharedVault.enabled ? "Obsidian archive" : "Shared brain off"}</span>
+              <span>{mirosharkArchiveStatus || (sharedVault.enabled ? "Auto-saving runs" : "Enable vault sync to save")}</span>
+            </div>
+
+            {mirosharkArchiveRuns.length ? (
+              <ol className={mirosharkClass("mirosharkHistoryList")}>
+                {mirosharkArchiveRuns.slice(0, 12).map((run) => (
+                  <li key={run.simulationId}>
+                    <button
+                      type="button"
+                      className={mirosharkClass(mirosharkWorkspaceMode === "run" && mirosharkRun?.simulationId === run.simulationId && "active")}
+                      onClick={() => loadMirosharkArchivedRun(run.simulationId)}
+                    >
+                      <strong>{run.simulationId}</strong>
+                      <span>{run.postCount} posts · {run.platform ?? "surface"} · complete</span>
+                    </button>
+                  </li>
+                ))}
+              </ol>
+            ) : (
+              <p className={mirosharkClass("mirosharkHistoryEmpty")}>No saved simulations yet.</p>
+            )}
+          </aside>
+
+          <main className={mirosharkClass("mirosharkWorkbenchBody")} aria-label="MiroShark workspace">
+            {mirosharkWorkspaceMode === "new" ? (
+              <section className={mirosharkClass("mirosharkBuilderSurface")} aria-label="MiroShark run builder">
+                <div className={mirosharkClass("mirosharkBuilderHeader")}>
+                  <div>
+                    <p>New simulation</p>
+                    <h3>Design the swarm</h3>
+                  </div>
+                </div>
+
+                <form className={mirosharkClass("mirosharkRunner")} onSubmit={runMirosharkSwarm}>
+                  <label className={mirosharkClass("mirosharkScenario")}>
+                    <span>Scenario</span>
+                    <textarea
+                      value={mirosharkScenario}
+                      onChange={(event) => setMirosharkScenario(event.target.value)}
+                      placeholder="Describe the market, community, launch, crisis, policy fight, prediction market, or decision you want the agents to simulate."
+                    />
+                  </label>
+
+                  <div className={mirosharkClass("mirosharkRunControls")}>
+                    <label>
+                      <span>Surface</span>
+                      <select value={mirosharkPlatform} onChange={(event) => setMirosharkPlatform(event.target.value as "twitter" | "reddit" | "parallel" | "polymarket")}>
+                        <option value="twitter">X / Twitter</option>
+                        <option value="reddit">Reddit</option>
+                        <option value="polymarket">Polymarket</option>
+                        <option value="parallel">X + Reddit + markets</option>
+                      </select>
+                    </label>
+                    <label>
+                      <span>Rounds</span>
+                      <input
+                        type="number"
+                        min={1}
+                        max={200}
+                        value={mirosharkRounds}
+                        onChange={(event) => setMirosharkRounds(Number(event.target.value))}
+                      />
+                    </label>
+                    <Button type="submit" disabled={!mirosharkStatus?.ok || mirosharkRunPending || !mirosharkScenario.trim()} isLoading={mirosharkRunPending}>
+                      {mirosharkRunPending ? null : <Activity aria-hidden="true" />}
+                      {mirosharkRunPending ? "Starting..." : "Run swarm"}
+                    </Button>
+                  </div>
+                </form>
+
+                <div className={mirosharkClass("mirosharkTemplateShelf")}>
+                  <div className={mirosharkClass("mirosharkShelfHeader")}>
+                    <span><Sparkles aria-hidden="true" /> Templates</span>
+                    <div>
+                      <small>{mirosharkTemplates.length ? `${mirosharkTemplates.length} available` : "loading"}</small>
+                      <Button type="button" size="sm" variant="ghost" onClick={refreshMirosharkMetadata} disabled={!mirosharkStatus?.ok}>
+                        <RefreshCcw aria-hidden="true" />
+                        Refresh templates
+                      </Button>
+                    </div>
+                  </div>
+                  <div className={mirosharkClass("mirosharkTemplateList")}>
+                    {mirosharkTemplates.slice(0, 8).map((template) => (
+                      <button
+                        type="button"
+                        key={template.id ?? template.name}
+                        className={mirosharkClass(template.id === mirosharkSelectedTemplateId && "active")}
+                        onClick={() => applyMirosharkTemplate(template)}
+                      >
+                        <strong>{template.name ?? template.id}</strong>
+                        <span>{template.category ?? "Simulation"} · {template.difficulty ?? "standard"} · {template.platforms?.join(" + ") ?? "multi-surface"}</span>
+                      </button>
+                    ))}
+                    {!mirosharkTemplates.length ? <p>Connect MiroShark to load templates.</p> : null}
+                  </div>
+                </div>
+              </section>
+            ) : null}
+
+            {mirosharkWorkspaceMode === "run" && mirosharkRunIsWorking ? (
+              <section className={mirosharkClass("mirosharkRunLoading")} aria-live="polite" aria-busy="true">
+                <LottiePlayer src="/animations/Load%20HIVE.lottie" size={60} ariaLabel="MiroShark run in progress" />
+                <div>
+                  <strong>{mirosharkProgressLabel}</strong>
+                  <span>
+                    {mirosharkTotalRounds > 0
+                      ? `Round ${Math.min(mirosharkCurrentRound, mirosharkTotalRounds)} of ${mirosharkTotalRounds} · ${mirosharkProgressPercent}%`
+                      : (mirosharkRun?.message ?? "MiroShark is preparing the swarm")}
+                  </span>
+                </div>
+                <div className={mirosharkClass("mirosharkLoadingRail", mirosharkTotalRounds > 0 && "isDeterminate")} aria-hidden="true">
+                  <span style={mirosharkTotalRounds > 0 ? { width: `${mirosharkProgressPercent}%` } : undefined} />
+                </div>
+              </section>
+            ) : null}
+
+            {mirosharkWorkspaceMode === "run" && mirosharkRun ? (
+          <section className={mirosharkClass("mirosharkRunResult", mirosharkRun.ok ? "ready" : "failed")}>
             <header>
               <div>
-                <p>{mirosharkRun.ok ? (mirosharkRun.status === "started" ? "Run started" : "Run progress") : "Run failed"}</p>
+                <p>{mirosharkRun.ok ? (mirosharkRunIsArchived ? "Saved run" : mirosharkRun.status === "started" ? "Run started" : "Run progress") : "Run failed"}</p>
                 <h3>{mirosharkRun.simulationId ?? mirosharkRun.message ?? mirosharkRun.error}</h3>
+                {mirosharkRunIsArchived && mirosharkRun.archivedAt ? (
+                  <span className={mirosharkClass("mirosharkArchiveLoaded")}>Loaded from Obsidian · {mirosharkRun.archivedAt}</span>
+                ) : null}
               </div>
-              {mirosharkRun.jobId || mirosharkRun.simulationId ? (
+              {(mirosharkRun.jobId || mirosharkRun.simulationId) && !mirosharkRunIsArchived ? (
                 <Button type="button" size="sm" variant="ghost" onClick={refreshMirosharkRun}>
                   <RefreshCcw aria-hidden="true" />
                   Refresh run
@@ -2472,59 +3769,395 @@ export default function Home() {
               ) : null}
             </header>
             {mirosharkRun.ok ? (
-              <div className="mirosharkRunGrid">
-                <span><strong>Step</strong>{mirosharkRun.step ?? "queued"}</span>
-                <span><strong>Status</strong>{mirosharkRunStatus?.runner_status ?? mirosharkRun.status ?? "queued"}</span>
-                <span><strong>Posts</strong>{mirosharkPosts.count}</span>
-                <span><strong>Project</strong>{mirosharkRun.projectId}</span>
-                <span><strong>Graph</strong>{mirosharkRun.graphId}</span>
-                <span><strong>Surface</strong>{mirosharkRun.platform}</span>
-                <span><strong>Rounds</strong>{mirosharkRun.rounds}</span>
-              </div>
+              <>
+                <div className={mirosharkClass("mirosharkRunGrid")}>
+                  <span><strong>Step</strong>{mirosharkDisplayStep}</span>
+                  <span><strong>Status</strong>{mirosharkDisplayStatus}</span>
+                  <span><strong>Progress</strong>{mirosharkTotalRounds > 0 ? `${Math.min(mirosharkCurrentRound, mirosharkTotalRounds)} / ${mirosharkTotalRounds} rounds` : "pending"}</span>
+                  <span><strong>Posts</strong>{mirosharkPosts.count}</span>
+                  <span><strong>Project</strong>{mirosharkRun.projectId ?? mirosharkRun.archivedSummary?.projectId ?? "saved"}</span>
+                  <span><strong>Graph</strong>{mirosharkRun.graphId ?? mirosharkRun.archivedSummary?.graphId ?? "saved"}</span>
+                  <span><strong>Surface</strong>{mirosharkRun.platform ?? mirosharkRun.archivedSummary?.platform}</span>
+                  <span><strong>Rounds</strong>{mirosharkRun.rounds ?? mirosharkRun.archivedSummary?.rounds ?? (mirosharkTotalRounds || "saved")}</span>
+                </div>
+                {mirosharkTotalRounds > 0 ? (
+                  <div className={mirosharkClass("mirosharkRoundProgress")} aria-label={`MiroShark round progress ${mirosharkProgressPercent}%`}>
+                    <div>
+                      <span>Round progress</span>
+                      <strong>{mirosharkProgressPercent}%</strong>
+                    </div>
+                    <div>
+                      <span style={{ width: `${mirosharkProgressPercent}%` }} />
+                    </div>
+                  </div>
+                ) : null}
+              </>
             ) : null}
-            {mirosharkRun.error ? <p className="mirosharkRunError">{mirosharkRun.error}</p> : null}
+            {mirosharkRun.error ? <p className={mirosharkClass("mirosharkRunError")}>{mirosharkRun.error}</p> : null}
             {mirosharkRun.links ? (
-              <div className="mirosharkRunLinks">
+              <div className={mirosharkClass("mirosharkRunLinks")}>
                 {Object.entries(mirosharkRun.links).map(([label, href]) => (
                   <a href={href} target="_blank" rel="noreferrer" key={label}>{label}</a>
                 ))}
               </div>
             ) : null}
-            {mirosharkPosts.posts.length || mirosharkFeedIsWaiting ? (
-              <div className={`mirosharkRunFeed ${mirosharkFeedIsLive ? "isLive" : ""}`}>
-                <div>
-                  <strong>Live posts</strong>
+            <div className={mirosharkClass("mirosharkWorkbenchTabs")} role="tablist" aria-label="MiroShark workbench views">
+              {MIROSHARK_WORKBENCH_TABS.map((tab) => (
+                <button
+                  type="button"
+                  key={tab.id}
+                  role="tab"
+                  aria-selected={mirosharkWorkbenchTab === tab.id}
+                  className={mirosharkClass(mirosharkWorkbenchTab === tab.id && "active")}
+                  onClick={() => setMirosharkWorkbenchTab(tab.id)}
+                >
+                  {tab.icon}
+                  {tab.label}
+                </button>
+              ))}
+            </div>
+            {mirosharkWorkbenchTab === "surface" && (mirosharkPosts.posts.length || mirosharkFeedIsWaiting || mirosharkTimelineItems.length || mirosharkMarketItems.length) ? (
+              <div className={mirosharkClass("mirosharkRunFeed", mirosharkFeedIsLive && "isLive")}>
+                <div className={mirosharkClass("mirosharkRunFeedHeader")}>
+                  <strong>{mirosharkRunIsArchived ? "Saved surfaces" : "Live surfaces"}</strong>
                   <span>
                     {mirosharkFeedIsWaiting
                       ? "listening..."
-                      : `showing ${mirosharkPosts.count}${mirosharkPosts.sourceCount > mirosharkPosts.count ? ` · ${mirosharkPosts.sourceCount - mirosharkPosts.count} blank hidden` : ""}`}
+                      : `timeline order · showing ${mirosharkPosts.count}${mirosharkPosts.sourceCount > mirosharkPosts.count ? ` · ${mirosharkPosts.sourceCount - mirosharkPosts.count} blank hidden` : ""}`}
                   </span>
                 </div>
+                <div className={mirosharkClass("mirosharkSurfaceSwitch")} role="tablist" aria-label="Simulation surfaces">
+                  {[
+                    ["x", "X thread", mirosharkPosts.count],
+                    ["reddit", "Reddit", mirosharkActionCount],
+                    ["polymarket", "Markets", mirosharkMarketCount],
+                    ["timeline", "Timeline", mirosharkTimelineItems.length],
+                  ].map(([id, label, count]) => (
+                    <button
+                      type="button"
+                      key={String(id)}
+                      className={mirosharkClass(mirosharkSurfaceView === id && "active")}
+                      onClick={() => setMirosharkSurfaceView(id as MiroSharkSurfaceView)}
+                    >
+                      {label}
+                      <span>{count}</span>
+                    </button>
+                  ))}
+                </div>
                 {mirosharkFeedIsWaiting ? (
-                  <div className="mirosharkFeedLoading" aria-live="polite">
-                    <span />
+                  <div className={mirosharkClass("mirosharkFeedLoading")} aria-live="polite">
+                    <LottiePlayer src="/animations/Load%20HIVE.lottie" size={56} ariaLabel="Waiting for hive" />
                     <p>Waiting for MiroShark to publish the first posts</p>
                   </div>
-                ) : (
-                  <ol>
-                    {mirosharkPosts.posts.map((post, index) => (
-                      <li key={`${post.post_id ?? index}-${post.created_at ?? "tick"}`}>
-                        <span>User {post.user_id ?? "?"}{typeof post.post_id === "number" ? ` · post #${post.post_id}` : ""}</span>
-                        <p>{post.displayText}</p>
-                      </li>
+                ) : mirosharkSurfaceView === "x" ? (
+                  <div className={`${xThreadStyles.surface} ${mirosharkClass("mirosharkXSurfaceMount")}`}>
+                    {(() => {
+                      const [mainPost, ...comments] = mirosharkPosts.posts;
+                      if (!mainPost) return null;
+                      const mainReplyCount = comments.length;
+                      const mainRepostCount = mainPost.num_shares ?? mirosharkStat(mainPost.post_id, 4, 36);
+                      const mainLikeCount = mainPost.num_likes ?? mirosharkStat(mainPost.post_id, 18, 180);
+                      const mainViewCount = mirosharkStat(mainPost.post_id, 900, 4200);
+                      return (
+                        <>
+                          <article className={xThreadStyles.mainPost}>
+                            <div className={xThreadStyles.postHeader}>
+                              <div className={xThreadStyles.avatar} aria-hidden="true">
+                                {mirosharkAvatar(mainPost.user_id)}
+                              </div>
+                              <div>
+                                <strong>{mirosharkUserName(mainPost.user_id)}</strong>
+                                <span>{mirosharkHandle(mainPost.user_id)}</span>
+                              </div>
+                              <MoreHorizontal className={xThreadStyles.more} aria-hidden="true" />
+                            </div>
+                            <p className={xThreadStyles.mainText}>{mainPost.displayText}</p>
+                            <div className={xThreadStyles.timestamp}>
+                              Round {mainPost.created_at ?? "?"}
+                              {typeof mainPost.post_id === "number" ? ` · Post #${mainPost.post_id}` : ""}
+                              {" · "}
+                              Simulated on X
+                            </div>
+                            <footer className={xThreadStyles.actions} aria-label="Simulated X engagement">
+                              <span><MessageSquare aria-hidden="true" /> {mainReplyCount}</span>
+                              <span><Repeat2 aria-hidden="true" /> {mainRepostCount}</span>
+                              <span><Heart aria-hidden="true" /> {mainLikeCount}</span>
+                              <span><BarChart3 aria-hidden="true" /> {mainViewCount}</span>
+                            </footer>
+                          </article>
+
+                          <ol className={xThreadStyles.comments} aria-label="Simulated X comments">
+                            {comments.map((post, index) => {
+                              const replyCount = mirosharkStat(post.post_id, 0, 9);
+                              const repostCount = post.num_shares ?? mirosharkStat(post.post_id, 0, 13);
+                              const likeCount = post.num_likes ?? mirosharkStat(post.post_id, 1, 42);
+                              const viewCount = mirosharkStat(post.post_id, 90, 540);
+                              return (
+                                <li key={`${post.post_id ?? index}-${post.created_at ?? "tick"}`} className={xThreadStyles.comment}>
+                                  <div className={xThreadStyles.avatar} aria-hidden="true">
+                                    {mirosharkAvatar(post.user_id)}
+                                  </div>
+                                  <article>
+                                    <header>
+                                      <strong>{mirosharkUserName(post.user_id)}</strong>
+                                      <span>{mirosharkHandle(post.user_id)}</span>
+                                      <span>round {post.created_at ?? "?"}</span>
+                                      {typeof post.post_id === "number" ? <span>#{post.post_id}</span> : null}
+                                    </header>
+                                    <p className={xThreadStyles.replying}>Replying to {mirosharkHandle(mainPost.user_id)}</p>
+                                    <p className={xThreadStyles.commentText}>{post.displayText}</p>
+                                    <footer className={xThreadStyles.actions} aria-label="Simulated X engagement">
+                                      <span><MessageSquare aria-hidden="true" /> {replyCount}</span>
+                                      <span><Repeat2 aria-hidden="true" /> {repostCount}</span>
+                                      <span><Heart aria-hidden="true" /> {likeCount}</span>
+                                      <span><BarChart3 aria-hidden="true" /> {viewCount}</span>
+                                    </footer>
+                                  </article>
+                                </li>
+                              );
+                            })}
+                          </ol>
+                        </>
+                      );
+                    })()}
+                  </div>
+                ) : mirosharkSurfaceView === "reddit" ? (
+                  <div className={mirosharkClass("mirosharkRedditSurface")}>
+                    {(mirosharkActionItems.length ? mirosharkActionItems : mirosharkTimelineItems).slice(0, 12).map((item, index) => (
+                      <article key={`${compactValue(item)}-${index}`}>
+                        <header>
+                          <span>r/swarmrehearsal</span>
+                          <strong>{String(item.action_type ?? item.type ?? item.event_type ?? `thread ${index + 1}`)}</strong>
+                        </header>
+                        <p>{String(item.content ?? item.text ?? item.message ?? item.description ?? compactValue(item))}</p>
+                        <footer>{String(item.agent_name ?? item.user_name ?? item.platform ?? "MiroShark")} · {String(item.round ?? item.created_at ?? item.timestamp ?? "live")}</footer>
+                      </article>
                     ))}
-                  </ol>
+                  </div>
+                ) : mirosharkSurfaceView === "polymarket" ? (
+                  <div className={mirosharkClass("mirosharkMarketSurface")}>
+                    {mirosharkMarketItems.length ? mirosharkMarketItems.map((market, index) => (
+                      <article key={`${compactValue(market)}-${index}`}>
+                        <div>
+                          <span>Market</span>
+                          <strong>{String(market.question ?? market.title ?? market.name ?? `Prediction market ${index + 1}`)}</strong>
+                        </div>
+                        <p>{String(market.description ?? market.resolution_criteria ?? market.status ?? "No market description returned yet.")}</p>
+                        <div className={mirosharkClass("mirosharkMarketOdds")}>
+                          {payloadPreview(market, 4).map(([key, value]) => <span key={key}>{key}: {value}</span>)}
+                        </div>
+                      </article>
+                    )) : <p className={mirosharkClass("mirosharkEmptyState")}>This run did not return Polymarket markets yet. Use a market-enabled template or the Polymarket surface for the next run.</p>}
+                  </div>
+                ) : (
+                  <div className={mirosharkClass("mirosharkTimelineSurface")}>
+                    {mirosharkTimelineItems.map((item, index) => (
+                      <article key={`${compactValue(item)}-${index}`}>
+                        <span>{String(item.round ?? item.time ?? item.created_at ?? index + 1)}</span>
+                        <strong>{String(item.type ?? item.event_type ?? item.platform ?? "event")}</strong>
+                        <p>{String(item.content ?? item.text ?? item.message ?? item.description ?? compactValue(item))}</p>
+                      </article>
+                    ))}
+                  </div>
                 )}
               </div>
             ) : null}
+            {mirosharkWorkbenchTab === "analysis" ? (
+              <div className={mirosharkClass("mirosharkAnalysisGrid")}>
+                {([
+                  ["Belief drift", mirosharkRun.beliefDrift, <LineChart aria-hidden="true" key="belief" />],
+                  ["Influence", mirosharkRun.influence, <BarChart3 aria-hidden="true" key="influence" />],
+                  ["Network", mirosharkRun.interactionNetwork, <Network aria-hidden="true" key="network" />],
+                  ["Demographics", mirosharkRun.demographics, <Users aria-hidden="true" key="demo" />],
+                  ["Quality", mirosharkRun.quality, <ShieldCheck aria-hidden="true" key="quality" />],
+                  ["Surface stats", mirosharkRun.surfaceStats, <Layers3 aria-hidden="true" key="surface" />],
+                ] satisfies Array<[string, unknown, ReactNode]>).map(([title, payload, icon]) => (
+                  <article key={String(title)} className={mirosharkClass("mirosharkDataCard")}>
+                    <header>{icon}<strong>{String(title)}</strong><span>{payloadCount(payload)} fields</span></header>
+                    <div>
+                      {payloadPreview(payload).map(([key, value]) => <p key={key}><span>{key}</span>{value}</p>)}
+                      {!payloadPreview(payload).length ? <p><span>Status</span>No data returned yet</p> : null}
+                    </div>
+                  </article>
+                ))}
+              </div>
+            ) : null}
+            {mirosharkWorkbenchTab === "agents" ? (
+              <div className={mirosharkClass("mirosharkAgentGrid")}>
+                {mirosharkProfileItems.length ? mirosharkProfileItems.map((profile, index) => (
+                  <article key={`${compactValue(profile)}-${index}`}>
+                    <div className={mirosharkClass("mirosharkMiniAvatar")}>{mirosharkAvatar(Number(profile.user_id ?? index))}</div>
+                    <div>
+                      <strong>{String(profile.name ?? profile.agent_name ?? profile.username ?? `Agent ${index + 1}`)}</strong>
+                      <span>{String(profile.role ?? profile.entity_type ?? profile.platform ?? "simulation participant")}</span>
+                      <p>{String(profile.bio ?? profile.description ?? profile.personality ?? compactValue(profile))}</p>
+                    </div>
+                  </article>
+                )) : <p className={mirosharkClass("mirosharkEmptyState")}>Profiles will appear here after MiroShark prepares or loads the simulation agents.</p>}
+              </div>
+            ) : null}
+            {mirosharkWorkbenchTab === "experiments" ? (
+              <div className={mirosharkClass("mirosharkExperimentPanel")}>
+                <article className={mirosharkClass("mirosharkExperimentComposer")}>
+                  <FlaskConical aria-hidden="true" />
+                  <div>
+                    <strong>Director event</strong>
+                    <p>Inject a shock into a live run, or use it as the trigger for a fork/counterfactual branch.</p>
+                    {!mirosharkStatus?.adminAuth?.configured ? (
+                      <div className={mirosharkClass("mirosharkAuthNotice")}>
+                        <strong>Publish auth is not set up</strong>
+                        <span>{mirosharkStatus?.adminAuth?.hint ?? "MiroShark requires MIROSHARK_ADMIN_TOKEN for publish/export mutation endpoints."}</span>
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="secondary"
+                          onClick={() => runMirosharkAction("configure-admin")}
+                          disabled={mirosharkActionPending === "configure-admin" || Boolean(mirosharkStatus?.install.running)}
+                        >
+                          <PlugZap aria-hidden="true" />
+                          {mirosharkActionPending === "configure-admin" ? "Configuring..." : "Configure publish auth"}
+                        </Button>
+                      </div>
+                    ) : null}
+                    <textarea
+                      value={mirosharkExperimentEvent}
+                      onChange={(event) => setMirosharkExperimentEvent(event.target.value)}
+                      placeholder="Describe the intervention, shock, rumor, policy change, price move, or public statement."
+                    />
+                    <div>
+                      <Button
+                        type="button"
+                        size="sm"
+                        onClick={() => runMirosharkExperiment("inject")}
+                        disabled={mirosharkRunIsArchived || !mirosharkRun.simulationId || !mirosharkExperimentEvent.trim() || Boolean(mirosharkExperimentPending)}
+                        isLoading={mirosharkExperimentPending === "inject"}
+                      >
+                        Inject event
+                      </Button>
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="secondary"
+                        onClick={() => runMirosharkExperiment("fork")}
+                        disabled={!mirosharkRun.simulationId || !mirosharkExperimentEvent.trim() || Boolean(mirosharkExperimentPending)}
+                        isLoading={mirosharkExperimentPending === "fork"}
+                      >
+                        Fork run
+                      </Button>
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="secondary"
+                        onClick={() => runMirosharkExperiment("branch")}
+                        disabled={!mirosharkRun.simulationId || !mirosharkExperimentEvent.trim() || Boolean(mirosharkExperimentPending)}
+                        isLoading={mirosharkExperimentPending === "branch"}
+                      >
+                        Branch counterfactual
+                      </Button>
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="ghost"
+                        onClick={() => runMirosharkExperiment("publish")}
+                        disabled={!mirosharkRun.simulationId || !mirosharkStatus?.adminAuth?.configured || Boolean(mirosharkExperimentPending)}
+                        isLoading={mirosharkExperimentPending === "publish"}
+                      >
+                        Publish exports
+                      </Button>
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="ghost"
+                        onClick={() => runMirosharkExperiment("stop")}
+                        disabled={mirosharkRunIsArchived || !mirosharkRun.simulationId || Boolean(mirosharkExperimentPending)}
+                        isLoading={mirosharkExperimentPending === "stop"}
+                      >
+                        Stop live run
+                      </Button>
+                    </div>
+                    {mirosharkExperimentStatus ? <span>{mirosharkExperimentStatus}</span> : null}
+                  </div>
+                </article>
+                <article>
+                  <GitBranch aria-hidden="true" />
+                  <div>
+                    <strong>Branch records</strong>
+                    <p>{payloadCount(mirosharkRun.counterfactual)} counterfactual records returned for this run.</p>
+                  </div>
+                </article>
+                <article>
+                  <LineChart aria-hidden="true" />
+                  <div>
+                    <strong>Compare outcomes</strong>
+                    <p>Use saved runs to compare posts, influence, belief drift, markets, and lineage after variants are generated.</p>
+                  </div>
+                </article>
+              </div>
+            ) : null}
+            {mirosharkWorkbenchTab === "observability" ? (
+              <div className={mirosharkClass("mirosharkTelemetryPanel")}>
+                <div className={mirosharkClass("mirosharkTelemetryStats")}>
+                  <span><strong>{mirosharkTelemetryCount}</strong>events</span>
+                  <span><strong>{mirosharkLlmCallItems.length}</strong>LLM calls</span>
+                  <span><strong>{payloadCount(mirosharkRun?.observabilityStats ?? mirosharkMetadata?.observabilityStats)}</strong>stats</span>
+                </div>
+                <ol>
+                  {mirosharkObservabilityItems.map((event, index) => (
+                    <li key={`${compactValue(event)}-${index}`}>
+                      <strong>{String(event.event_type ?? event.type ?? event.name ?? `event ${index + 1}`)}</strong>
+                      <span>{String(event.message ?? event.status ?? event.phase ?? event.timestamp ?? compactValue(event))}</span>
+                    </li>
+                  ))}
+                  {!mirosharkObservabilityItems.length ? <li><strong>No events yet</strong><span>MiroShark telemetry will appear here when the companion emits observability records.</span></li> : null}
+                </ol>
+              </div>
+            ) : null}
+            {mirosharkWorkbenchTab === "exports" ? (
+              <div className={mirosharkClass("mirosharkExportPanel")}>
+                {!mirosharkStatus?.adminAuth?.configured ? (
+                  <div className={mirosharkClass("mirosharkExportAuth")}>
+                    <ShieldCheck aria-hidden="true" />
+                    <div>
+                      <strong>Exports are private until publish auth is configured</strong>
+                      <p>{mirosharkStatus?.adminAuth?.hint ?? "MiroShark requires an admin token before a simulation can be published for share/export endpoints."}</p>
+                    </div>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="secondary"
+                      onClick={() => runMirosharkAction("configure-admin")}
+                      disabled={mirosharkActionPending === "configure-admin" || Boolean(mirosharkStatus?.install.running)}
+                    >
+                      <PlugZap aria-hidden="true" />
+                      {mirosharkActionPending === "configure-admin" ? "Configuring..." : "Configure publish auth"}
+                    </Button>
+                  </div>
+                ) : null}
+                {[
+                  ["Thread JSON", mirosharkRun.links?.thread ?? (mirosharkStatus?.baseUrl && mirosharkRun.simulationId ? `${mirosharkStatus.baseUrl}/api/simulation/${mirosharkRun.simulationId}/thread.json` : "")],
+                  ["Thread text", mirosharkStatus?.baseUrl && mirosharkRun.simulationId ? `${mirosharkStatus.baseUrl}/api/simulation/${mirosharkRun.simulationId}/thread.txt` : ""],
+                  ["Chart SVG", mirosharkStatus?.baseUrl && mirosharkRun.simulationId ? `${mirosharkStatus.baseUrl}/api/simulation/${mirosharkRun.simulationId}/chart.svg` : ""],
+                  ["Reproduce JSON", mirosharkStatus?.baseUrl && mirosharkRun.simulationId ? `${mirosharkStatus.baseUrl}/api/simulation/${mirosharkRun.simulationId}/reproduce.json` : ""],
+                  ["Lineage", mirosharkRun.links?.lineage ?? (mirosharkStatus?.baseUrl && mirosharkRun.simulationId ? `${mirosharkStatus.baseUrl}/api/simulation/${mirosharkRun.simulationId}/lineage` : "")],
+                  ["Archive folder", mirosharkRun.archivedSummary?.folder ?? ""],
+                ].map(([label, href]) => (
+                  <a key={label} href={href || undefined} target="_blank" rel="noreferrer" aria-disabled={!href}>
+                    <Download aria-hidden="true" />
+                    <span>{label}</span>
+                  </a>
+                ))}
+              </div>
+            ) : null}
           </section>
-        ) : null}
+            ) : null}
+          </main>
+        </div>
       </section>
       ) : null}
 
       {activeView === "wallet" ? (
-      <section className="walletPanel tabPanel">
-        <div className="walletHeader">
+      <section className={walletClass("walletPanel", "tabPanel")}>
+        <div className={walletClass("walletHeader")}>
           <div>
             <p className="eyebrow">Spending safety</p>
             <h2>Wallets</h2>
@@ -2532,7 +4165,7 @@ export default function Home() {
               Decide which agents can spend, how much they can spend, and when they must stop or ask you.
             </p>
           </div>
-          <div className="walletTotals" aria-label="Wallet summary">
+          <div className={walletClass("walletTotals")} aria-label="Wallet summary">
             <span>
               Can spend
               <strong>{walletStats.enabled}</strong>
@@ -2548,8 +4181,8 @@ export default function Home() {
           </div>
         </div>
 
-        <div className="walletWorkspace">
-          <aside className="walletAgentList" aria-label="Agent wallet list">
+        <div className={walletClass("walletWorkspace")}>
+          <aside className={walletClass("walletAgentList")} aria-label="Agent wallet list">
             {displayAgents.map((agent) => {
               const wallet = walletsByAgent[agent.id] ?? createDefaultAgentWallet(agent.id);
               const snapshot = getSurvivalSnapshot(wallet);
@@ -2563,7 +4196,7 @@ export default function Home() {
               return (
                 <button
                   type="button"
-                  className={`walletAgentButton ${agent.id === selectedAgent?.id ? "active" : ""}`}
+                  className={walletClass("walletAgentButton", agent.id === selectedAgent?.id && "active")}
                   key={agent.id}
                   onClick={() => setSelectedAgentId(agent.id)}
                 >
@@ -2579,7 +4212,7 @@ export default function Home() {
           </aside>
 
           {selectedAgent && selectedWallet && selectedWalletSnapshot ? (
-            <div className="walletDetail">
+            <div className={walletClass("walletDetail")}>
               <WalletCell
                 agentName={selectedAgent.name}
                 wallet={selectedWallet}
@@ -2800,7 +4433,7 @@ export default function Home() {
               </Cell>
             </div>
           ) : (
-            <div className="walletEmpty">
+            <div className={walletClass("walletEmpty")}>
               <strong>No agent selected</strong>
               <p>Connect an agent first, then configure its spending limits and survival rails.</p>
             </div>
@@ -2810,16 +4443,185 @@ export default function Home() {
       ) : null}
 
       {activeView === "vault" ? (
-      <section className="vaultPanel tabPanel">
-        <div className="vaultHeader">
+      <section className={vaultClass("vaultPanel", "tabPanel")}>
+        <div className={vaultClass("vaultHeader")}>
           <div>
             <p className="eyebrow">Shared brain</p>
             <h2>One memory, many agents</h2>
             <p>Connect an Obsidian vault to give your agents a common place for memory, handoffs, and shared project context.</p>
           </div>
+          <Button type="button" size="sm" variant="secondary" onClick={refreshBrainGraph} disabled={brainGraphLoading}>
+            <RefreshCcw aria-hidden="true" />
+            {brainGraphLoading ? "Reading graph" : "Refresh graph"}
+          </Button>
         </div>
 
-        <div className="grid gap-4 lg:grid-cols-2">
+        <div className={vaultClass("brainWorkspace")}>
+          <section className={vaultClass("brainGraphPanel")} aria-label="Shared brain graph">
+            <div className={vaultClass("brainGraphStats")}>
+              {[
+                ["Notes", brainGraphStats.notes, <FileText aria-hidden="true" key="notes" />],
+                ["Links", brainGraphStats.links, <GitBranch aria-hidden="true" key="links" />],
+                ["Accessed", brainGraphStats.accessed, <Eye aria-hidden="true" key="accessed" />],
+                ["Recent", brainGraphStats.recent, <Clock3 aria-hidden="true" key="recent" />],
+              ].map(([label, value, icon]) => (
+                <span key={String(label)}>
+                  {icon}
+                  <strong>{value}</strong>
+                  {label}
+                </span>
+              ))}
+            </div>
+            <div className={vaultClass("brainLegend")} aria-label="Brain graph legend">
+              <span><i className={vaultClass("legendNote")} /> Note</span>
+              <span><i className={vaultClass("legendUnresolved")} /> Unresolved link</span>
+              <span><i className={vaultClass("legendSelected")} /> Selected</span>
+              <span><i className={vaultClass("legendTarget")} /> Target</span>
+            </div>
+
+            <div className={vaultClass("brainGraphCanvas")}>
+              {visibleBrainNodes.length ? (
+                <svg
+                  viewBox={`${brainPan.x} ${brainPan.y} ${brainLayout.width} ${brainLayout.height}`}
+                  role="img"
+                  aria-label="Hive shaped Obsidian graph"
+                  onPointerDown={startBrainPan}
+                  onPointerMove={moveBrainPan}
+                  onPointerUp={endBrainPan}
+                  onPointerCancel={endBrainPan}
+                  className={vaultClass("draggable")}
+                >
+                  <defs>
+                    <filter id="brainNodeGlow" x="-40%" y="-40%" width="180%" height="180%">
+                      <feGaussianBlur stdDeviation="5" result="blur" />
+                      <feMerge>
+                        <feMergeNode in="blur" />
+                        <feMergeNode in="SourceGraphic" />
+                      </feMerge>
+                    </filter>
+                  </defs>
+                  {visibleBrainNodes.map((node) => {
+                    const position = brainLayout.positions.get(node.id);
+                    if (!position) return null;
+                    const selected = selectedBrainNode?.id === node.id;
+                    const target = !selected && selectedBrainTargetIds.has(node.id);
+                    const unresolved = node.id.startsWith("unresolved:");
+                    const labelLines = splitBrainLabel(node.label);
+                    return (
+                      <g
+                        key={node.id}
+                        role="button"
+                        tabIndex={0}
+                        data-brain-node-id={node.id}
+                        aria-label={selected ? `Open ${node.label} in Obsidian` : `Inspect ${node.label}`}
+                        className={vaultClass("brainNode", selected && "selected", target && "target", unresolved && "unresolved")}
+                        onKeyDown={(event) => {
+                          if (event.key === "Enter" || event.key === " ") void inspectBrainNode(node);
+                        }}
+                      >
+                        <polygon
+                          points={brainNodePoints(position.x, position.y, brainLayout.radius)}
+                          filter={selected ? "url(#brainNodeGlow)" : undefined}
+                        />
+                        <text x={position.x} y={position.y - (labelLines.length > 1 ? 11 : 4)} textAnchor="middle">
+                          {labelLines.map((line, index) => (
+                            <tspan key={`${line}-${index}`} x={position.x} dy={index === 0 ? 0 : 15}>{line}</tspan>
+                          ))}
+                        </text>
+                        <text x={position.x} y={position.y + 31} textAnchor="middle" className={vaultClass("brainNodeMeta")}>
+                          {node.accessCount ? `${node.accessCount} reads` : `${node.incoming + node.outgoing} links`}
+                        </text>
+                      </g>
+                    );
+                  })}
+                  {brainGraph?.links
+                    .filter((link) => (
+                      selectedBrainNode
+                      && (link.source === selectedBrainNode.id || link.target === selectedBrainNode.id)
+                      && brainLayout.positions.has(link.source)
+                      && brainLayout.positions.has(link.target)
+                    ))
+                    .filter((link, index, links) => {
+                      const selectedId = selectedBrainNode!.id;
+                      const otherId = link.source === selectedId ? link.target : link.source;
+                      return links.findIndex((candidate) => (
+                        (candidate.source === selectedId ? candidate.target : candidate.source) === otherId
+                      )) === index;
+                    })
+                    .slice(0, 24)
+                    .map((link, index) => {
+                      const selectedId = selectedBrainNode!.id;
+                      const otherId = link.source === selectedId ? link.target : link.source;
+                      const source = brainLayout.coordsByNode.get(selectedId)!;
+                      const target = brainLayout.coordsByNode.get(otherId)!;
+                      return (
+                        <path
+                          key={`${selectedId}-${otherId}-${index}`}
+                          data-brain-route={`${selectedId}->${otherId}`}
+                          d={brainGraphEdgePath(source, target, brainLayout.positionsByCoord, brainLayout.radius)}
+                          className={vaultClass("brainEdgeActive")}
+                        />
+                      );
+                    })}
+                </svg>
+              ) : (
+                <div className={vaultClass("brainEmpty")}>
+                  <Hexagon aria-hidden="true" />
+                  <strong>No graph loaded</strong>
+                  <span>{brainGraphStatus || "Refresh the graph after the vault path is reachable."}</span>
+                </div>
+              )}
+            </div>
+            <p className={vaultClass("brainStatus")}>{brainGraphStatus || "Graph waits for the shared vault."}</p>
+          </section>
+
+          <aside className={vaultClass("brainInspector")}>
+            <div className={vaultClass("brainInspectorHeader")}>
+              <span><BrainCircuit aria-hidden="true" /> Note inspector</span>
+              <small>{selectedAgent?.name ?? "Dashboard"} is the active accessor</small>
+            </div>
+            {selectedBrainNode ? (
+              <>
+                <h3>{selectedBrainNode.label}</h3>
+                <p>{selectedBrainNode.folder}</p>
+                <dl>
+                  <div><dt>Incoming</dt><dd>{selectedBrainNode.incoming}</dd></div>
+                  <div><dt>Outgoing</dt><dd>{selectedBrainNode.outgoing}</dd></div>
+                  <div><dt>Accesses</dt><dd>{selectedBrainNode.accessCount}</dd></div>
+                  <div><dt>Last seen</dt><dd>{formatBrainDate(selectedBrainNode.lastAccessedAt)}</dd></div>
+                </dl>
+                {selectedBrainNode.tags.length ? (
+                  <div className={vaultClass("brainTags")}>
+                    {selectedBrainNode.tags.map((tag) => <span key={tag}>#{tag}</span>)}
+                  </div>
+                ) : null}
+                <div className={vaultClass("brainAccessList")}>
+                  <strong>Access history</strong>
+                  {(selectedBrainNode.recentAccesses.length ? selectedBrainNode.recentAccesses : brainGraph?.recentAccesses.slice(0, 5) ?? []).map((event) => (
+                    <article key={event.id}>
+                      <Bot aria-hidden="true" />
+                      <div>
+                        <span>{event.agentName} on {event.machineName}</span>
+                        <small>{formatBrainDate(event.accessedAt)} · {event.action} · {event.notePath}</small>
+                      </div>
+                    </article>
+                  ))}
+                  {!selectedBrainNode.recentAccesses.length && !brainGraph?.recentAccesses.length ? (
+                    <p>No agent access history yet. Click a note to seed the audit trail.</p>
+                  ) : null}
+                </div>
+              </>
+            ) : (
+              <div className={vaultClass("brainEmpty", "compact")}>
+                <Hexagon aria-hidden="true" />
+                <strong>Select a hive cell</strong>
+                <span>Agent and machine access history will appear here.</span>
+              </div>
+            )}
+          </aside>
+        </div>
+
+        <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
           <MemoryCell
             enabled={sharedVault.enabled}
             vaultPath={sharedVault.vaultPath}
@@ -2864,6 +4666,15 @@ export default function Home() {
                     />
                   </label>
                 </div>
+                <label className="flex flex-col gap-1 text-xs text-[var(--muted)]">
+                  Kanban folder
+                  <input
+                    value={sharedVault.kanbanFolder ?? DEFAULT_SHARED_VAULT.kanbanFolder}
+                    onChange={(event) => updateSharedVault({ kanbanFolder: event.target.value })}
+                    className="rounded-md border border-[rgba(148,163,184,0.18)] bg-[rgba(10,14,21,0.7)] px-2 py-1 text-[var(--foreground)]"
+                  />
+                  <small>The Work board stores `kanban.json` files here so synced machines and agents see the same queue.</small>
+                </label>
                 <label className="flex flex-col gap-1 text-xs text-[var(--muted)]">
                   Control Room folder
                   <input
@@ -2942,46 +4753,65 @@ export default function Home() {
       ) : null}
 
       {activeView === "chat" ? (
-        <section className="workspace tabPanel">
-          <aside className="settings">
-            <div className="settingsHeader">
+        <section className={chatClass("workspace", "tabPanel")}>
+          <aside className={chatClass("settings")}>
+            <div className={chatClass("settingsHeader")}>
               <div>
                 <p className="eyebrow">Chat</p>
-                <h2>Pick a machine</h2>
+                <h2>Machines</h2>
               </div>
-              <span className="runtimeBadge">{displayAgents.length} agents</span>
+              <span className={chatClass("runtimeBadge")}>{displayAgents.length} agents</span>
             </div>
 
-            <div className="machineChatList">
-              {machineGroups.length > 0 ? machineGroups.map((machine) => {
-                const primaryAgent = machine.agents[0];
-                const previousChats = machine.agents.filter((agent) => hasConversation(agent.id));
-                return (
-                  <article className="machineChatCard" key={machine.key}>
-                    <div>
-                      <strong>{machine.name}</strong>
-                      <small>{machine.collector === "ready" ? `${machine.agents.length} available` : "Collector not ready"}</small>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => primaryAgent ? startAgentChat(primaryAgent.id, { fresh: true }) : openSetupModal(machine)}
-                    >
-                      {primaryAgent ? "Chat" : "Connect"}
-                    </button>
-                    {previousChats.length > 0 ? (
-                      <div className="previousChats">
-                        {previousChats.map((agent) => (
-                          <button type="button" key={agent.id} onClick={() => startAgentChat(agent.id)}>
-                            <span>{conversationTitle(agent.id)}</span>
-                            <small>{agent.name}</small>
-                          </button>
-                        ))}
-                      </div>
-                    ) : null}
-                  </article>
-                );
-              }) : (
-                <div className="emptyMachineChat">
+            <div className={chatClass("machineTree")}>
+              {chatSidebarTree.length > 0 ? chatSidebarTree.map((machine) => (
+                <details className={chatClass("machineTreeNode")} key={machine.key} open>
+                  <summary>
+                    <span className={chatClass("treeDisclosure")} aria-hidden="true" />
+                    <Monitor className={chatClass("treeIcon")} aria-hidden="true" />
+                    <span className={chatClass("treeLabel")}>{machine.name}</span>
+                    <span className={chatClass("treeMeta")}>{machine.detail}</span>
+                  </summary>
+                  <div className={chatClass("machineTreeChildren")}>
+                    {machine.folders.length > 0 ? machine.folders.map((folder) => (
+                      <details className={chatClass("machineFolderNode")} key={folder.key} open>
+                        <summary>
+                          <span className={chatClass("treeDisclosure")} aria-hidden="true" />
+                          <Folder className={chatClass("treeIcon")} aria-hidden="true" />
+                          <span className={chatClass("treeLabel")}>{folder.label}</span>
+                        </summary>
+                        <div className={chatClass("machineChatLeaves")}>
+                          {(expandedChatFolders.has(folder.key) ? folder.chats : folder.chats.slice(0, 4)).map((chat) => (
+                            <button
+                              type="button"
+                              key={chat.key}
+                              className={chatClass(chat.active && "active")}
+                              aria-current={chat.active ? "true" : undefined}
+                              onClick={chat.onOpen}
+                            >
+                              <span>{chat.title}</span>
+                              {chat.updatedAt ? <time>{formatRelativeTime(chat.updatedAt)}</time> : null}
+                              <small>{chat.subtitle}</small>
+                            </button>
+                          ))}
+                          {!expandedChatFolders.has(folder.key) && folder.chats.length > 4 ? (
+                            <button
+                              type="button"
+                              className={chatClass("machineChatShowMore")}
+                              onClick={() => setExpandedChatFolders((current) => new Set(current).add(folder.key))}
+                            >
+                              Show {folder.chats.length - 4} more
+                            </button>
+                          ) : null}
+                        </div>
+                      </details>
+                    )) : (
+                      <div className={chatClass("machineTreeEmpty")}>No chats yet</div>
+                    )}
+                  </div>
+                </details>
+              )) : (
+                <div className={chatClass("emptyMachineChat")}>
                   <strong>No machines yet</strong>
                   <p>Connect a machine from Agents, then come back here to start chatting.</p>
                 </div>
@@ -2990,9 +4820,9 @@ export default function Home() {
 
             {selectedAgent ? (
             <>
-            <details className="advancedSettings">
+            <details className={chatClass("advancedSettings")}>
               <summary>Manual setup</summary>
-              <div className="advancedFields">
+              <div className={chatClass("advancedFields")}>
                 <label>
                   Name
                   <input value={selectedAgent.name} onChange={(event) => updateAgent({ name: event.target.value })} />
@@ -3007,7 +4837,7 @@ export default function Home() {
                   </select>
                 </label>
 
-                <label className="toggleRow">
+                <label className={fleetClass("toggleRow")}>
                   <input
                     type="checkbox"
                     checked={selectedAgent.useSharedVault !== false}
@@ -3078,7 +4908,7 @@ export default function Home() {
               </div>
             </details>
 
-            <div className="settingsActions">
+            <div className={chatClass("settingsActions")}>
               <button type="button" onClick={() => duplicateAgent()}>Duplicate</button>
               <button type="button" onClick={() => deleteAgent()} disabled={agents.length <= 1}>Delete</button>
             </div>
@@ -3087,8 +4917,8 @@ export default function Home() {
           </aside>
 
           {selectedAgent ? (
-          <section className="chat">
-            <div className="chatHeader">
+          <section className={chatClass("chat")}>
+            <div className={chatClass("chatHeader")}>
               <div>
                 <p className="eyebrow">Live conversation</p>
                 <h2>{selectedAgent.name}</h2>
@@ -3100,7 +4930,7 @@ export default function Home() {
               </Button>
             </div>
             {sessionNotice && visibleMessages.length > 0 ? (
-              <div className="chatSessionNote">
+              <div className={chatClass("chatSessionNote")}>
                 <MessageSquare aria-hidden="true" />
                 <span>{sessionNotice}</span>
               </div>
@@ -3124,27 +4954,27 @@ export default function Home() {
                 </details>
               </div>
             ) : null}
-            <div className={`messages ${visibleMessages.length === 0 ? "empty" : ""}`}>
+            <div className={chatClass("messages", visibleMessages.length === 0 && "empty")}>
               {visibleMessages.length === 0 ? (
-                <div className="chatEmptyPrompt">
+                <div className={chatClass("chatEmptyPrompt")}>
                   <strong>No messages yet</strong>
                   <p>Messages with {selectedAgent.name} will appear here.</p>
                 </div>
               ) : null}
               {visibleMessages.map((message, index) => (
-                <div className={`message ${message.role}`} key={`${message.role}-${index}`}>
-                  <span className="messageRole">{message.role}</span>
+                <div className={chatClass("message", message.role)} key={`${message.role}-${index}`}>
+                  <span className={chatClass("messageRole")}>{message.role}</span>
                   {message.content ? (
                     <ChatMarkdown text={message.content} />
                   ) : (
-                    <p>{message.role === "assistant" && busy ? "Streaming..." : ""}</p>
+                    <p>{message.role === "assistant" && busy ? "Waiting for response..." : ""}</p>
                   )}
                 </div>
               ))}
               <div ref={messagesEndRef} aria-hidden="true" />
             </div>
             {visibleMessages.length === 0 ? (
-              <div className="chatSuggestions" aria-label="Suggested prompts">
+              <div className={chatClass("chatSuggestions")} aria-label="Suggested prompts">
                 {[
                   "What are you working on?",
                   "Summarize latest task",
@@ -3157,7 +4987,7 @@ export default function Home() {
               </div>
             ) : null}
             <form onSubmit={sendMessage}>
-              <div className="chatComposerField">
+              <div className={chatClass("chatComposerField")}>
                 <textarea
                   value={text}
                   onChange={(event) => setText(event.target.value)}
@@ -3167,7 +4997,7 @@ export default function Home() {
               </div>
               <Button type="submit" disabled={busy || !text.trim()} isLoading={busy}>
                 {busy ? null : <Send aria-hidden="true" />}
-                {busy ? "Streaming" : "Send"}
+                {busy ? hasStreamingChunk ? "Streaming" : "Waiting" : "Send"}
               </Button>
             </form>
             <p className="hint">
@@ -3175,7 +5005,7 @@ export default function Home() {
             </p>
           </section>
           ) : (
-          <section className="chat chatEmptyState">
+          <section className={chatClass("chat", "chatEmptyState")}>
             <strong>No machine selected</strong>
             <p>Choose a connected machine on the left to start a chat.</p>
           </section>
@@ -3186,14 +5016,14 @@ export default function Home() {
 
       {setupMachine ? (
         <div
-          className="setupModalBackdrop"
+          className={fleetClass("setupModalBackdrop")}
           role="presentation"
           onMouseDown={(event) => {
             if (event.target === event.currentTarget) setSetupMachineKey("");
           }}
         >
-          <section className="setupModal" role="dialog" aria-modal="true" aria-labelledby="setup-modal-title">
-            <div className="setupModalHeader">
+          <section className={fleetClass("setupModal")} role="dialog" aria-modal="true" aria-labelledby="setup-modal-title">
+            <div className={fleetClass("setupModalHeader")}>
               <div>
                 <p className="eyebrow">Connect machine</p>
                 <h2 id="setup-modal-title">{setupMachine.self ? "This Mac" : setupMachine.name}</h2>
@@ -3205,7 +5035,7 @@ export default function Home() {
               </Button>
             </div>
 
-            <div className="setupGuide">
+            <div className={fleetClass("setupGuide")}>
               {/* Progressive five-step setup, "activating cells in a hive" — rule from the
                   design philosophy's Setup Rules section. */}
               <SetupCell
@@ -3251,7 +5081,7 @@ export default function Home() {
               />
             </div>
 
-            <div className="setupModalActions">
+            <div className={fleetClass("setupModalActions")}>
               <Button type="button" onClick={() => setSetupMachineKey("")}>
                 <Check aria-hidden="true" />
                 Done

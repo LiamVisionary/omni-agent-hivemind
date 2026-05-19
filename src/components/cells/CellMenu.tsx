@@ -65,6 +65,7 @@ export function CellMenu({ items, ariaLabel, triggerIcon, className }: CellMenuP
     <div ref={wrapperRef} className="relative inline-flex">
       <button
         type="button"
+        data-slot="cell-menu-trigger"
         aria-label={ariaLabel}
         aria-haspopup="menu"
         aria-expanded={open}
@@ -83,6 +84,7 @@ export function CellMenu({ items, ariaLabel, triggerIcon, className }: CellMenuP
       {open ? (
         <ul
           role="menu"
+          data-slot="cell-menu"
           className="absolute right-0 top-full z-30 mt-1 min-w-[170px] overflow-hidden rounded-md border border-[rgba(148,163,184,0.22)] bg-[rgba(12,16,24,0.96)] py-1 text-xs shadow-[0_18px_40px_rgba(0,0,0,0.42)] backdrop-blur"
         >
           {items.map((item, index) => {
@@ -91,11 +93,12 @@ export function CellMenu({ items, ariaLabel, triggerIcon, className }: CellMenuP
             return (
               <li key={item.key} role="none">
                 {showSeparator ? (
-                  <div aria-hidden="true" className="my-1 h-px bg-[rgba(148,163,184,0.16)]" />
+                  <div aria-hidden="true" data-slot="cell-menu-separator" className="my-1 h-px bg-[rgba(148,163,184,0.16)]" />
                 ) : null}
                 <button
                   type="button"
                   role="menuitem"
+                  data-slot={item.destructive ? "cell-menu-item-danger" : "cell-menu-item"}
                   disabled={item.disabled}
                   onClick={(event) => {
                     event.stopPropagation();

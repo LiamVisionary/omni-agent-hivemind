@@ -3,9 +3,241 @@
 This file records user-visible changes before they are committed. New work should
 be added here first, then marked `Committed` or `Pushed` after the git action.
 
+## 2026-05-19 16:09 WITA - Harden Open Source Defaults
+
+- Status: Pushed
+- Areas changed: Obsidian defaults, Obsidian vault auto-detection, environment example, ignore rules, dependency security updates, changelog sanitization, open-source readiness scan
+- Summary: Replace personal Obsidian vault and CLI defaults with generic configurable values, auto-detect common local Obsidian vault locations when no explicit vault is configured, keep secrets in env placeholders, add ignore guardrails for common secret/local artifact types, sanitize changelog verification notes that captured local machine paths, and update Next/ws/PostCSS resolution to clear known audit advisories.
+- Verification: `pnpm typecheck`; `pnpm lint` (warnings only: existing unused variables); `pnpm build` (passed with existing Turbopack NFT tracing warning); `pnpm audit --audit-level moderate` (no known vulnerabilities); `git diff --check`; branch-history and current-tree secret/path scans for private keys, API tokens, local absolute home paths, private Tailnet IPs, MagicDNS hostnames, Tailscale auth keys, and the old personal vault name returned no matches; local artifact scan found only `.env.example`.
+- Intended commit message: `Harden open source defaults and dependency security`
+
+## 2026-05-19 16:18 WITA - Stream Hermes Chat Collector Responses
+
+- Status: Pushed
+- Areas changed: Hermes telemetry collector chat bridge, Chat composer waiting/streaming labels, changelog
+- Summary: Make the collector `/chat` endpoint honor `stream: true` by spawning Hermes and forwarding stdout chunks as SSE deltas instead of always buffering `hermes -z` through `execFileAsync`; keep the existing JSON response path for non-streaming callers; update the Chat UI so it says Waiting until the first response chunk arrives and only says Streaming after real content starts.
+- Verification: `node --check scripts/agent-telemetry-collector.mjs`; `pnpm typecheck`; `pnpm lint` (warnings only, existing unused-variable warnings); `git diff --check -- src/app/page.tsx scripts/agent-telemetry-collector.mjs CHANGELOG.md`.
+- Intended commit message: `Stream Hermes collector chat responses`
+
+## 2026-05-19 16:00 WITA - Quiet Machine Card Actions
+
+- Status: Pushed
+- Areas changed: Machine cell action sizing, Fleet machine action menu, changelog
+- Summary: Reduce the visual weight of machine-card Connect and plus actions so they read as compact card controls instead of large competing CTAs.
+- Verification: `pnpm eslint src/app/page.tsx src/components/cells/MachineCell.tsx`; `git diff --check -- src/app/page.tsx src/components/cells/MachineCell.tsx CHANGELOG.md`.
+- Intended commit message: `Quiet machine card actions`
+
+## 2026-05-19 15:58 WITA - Restore Clean App Font Stack
+
+- Status: Pushed
+- Areas changed: Global typography, changelog
+- Summary: Replace the resurfaced `Avenir Next` / `DIN Alternate` body font stack with the intended native system UI stack so the chunky display face does not reappear across the dashboard.
+- Verification: `rg -n "Avenir Next|DIN Alternate" src package.json public .env.example` returned no matches; `git diff --check -- src/app/globals.css CHANGELOG.md`; `pnpm eslint src/app/globals.css` returned only the expected ignored-file warning because ESLint is not configured for CSS files.
+- Intended commit message: `Restore clean app font stack`
+
+## 2026-05-19 15:37 WITA - Add Beehive Light Theme Toggle
+
+- Status: Pushed
+- Areas changed: Dashboard theme state, shared global theme tokens, app shell sidebar controls, assimilation manifest
+- Summary: Add a sun/moon sidebar toggle that switches between the existing dark dashboard and a persisted hive-light mode with bee and beehive inspired honey, pollen, and comb colors, tune the light palette down to a washed-out wax/parchment range, restyle cell context-menu triggers/popovers, status chips, machine setup/update controls, and feature tab content so Fleet, Work, Swarm, Wallets, Brain, and Chat stay readable in light mode. Clean up the Chat panel layout so the composer fills its container and no longer leaves a large empty grid row below the input.
+- Verification: `pnpm typecheck`; `pnpm eslint src/app/page.tsx src/components/cells/CellMenu.tsx src/components/cells/MachineCell.tsx src/components/cells/StatusPill.tsx`; `pnpm build` (passed with the existing Turbopack NFT tracing warning for `next.config.ts` via `src/app/api/openclaw/skill-prefs/route.ts`); `git diff --check -- src/app/page.tsx src/app/globals.css src/app/fleet.module.css src/app/kanban-board.module.css src/app/miroshark.module.css src/app/wallets.module.css src/app/vault.module.css src/app/chat.module.css src/components/cells/CellMenu.tsx src/components/cells/MachineCell.tsx src/components/cells/StatusPill.tsx CHANGELOG.md`; `verify_assimilation_manifest.py`; Playwright production smoke against `next start -p 5021` verified the sun/moon toggle, persisted light/dark localStorage state, hive-light CSS variables/background, and Fleet, Work, Swarm, Wallets, Brain, and Chat tabs with no horizontal overflow at 1440x1000 and 390x844. Follow-up strict light-mode sweep at 1440x1000 and 390x844 clicked Fleet machine menus and visited Fleet, Work, Swarm, Wallets, Brain, and Chat with zero large dark-background leftovers and no overflow. Follow-up Swarm template shelf smoke injected a sample template card into the real CSS-module template list and verified the card background, border, title, and metadata colors resolve to hive-light tokens. Follow-up Chat rail smoke verified machine metadata and empty-state copy use warm hive-light muted text instead of blue-gray. Follow-up Chat layout smoke with a seeded Hermes profile verified the textarea fills the composer field, the composer-to-hint gap is 8px, the hint-to-panel-bottom gap is 19px, and there is no overflow.
+- Intended commit message: `Add beehive light theme toggle`
+
+## 2026-05-19 14:55 WITA - Clarify MiroShark Template Refresh
+
+- Status: Pushed
+- Areas changed: Swarm MiroShark run builder
+- Summary: Replace the vague builder-level Sync action with an explicit Refresh templates action beside the template count, making it clear the button reloads MiroShark-provided templates and metadata.
+- Verification: `pnpm typecheck`; `pnpm eslint src/app/page.tsx` (warnings only from unrelated brain graph helpers); `git diff --check -- src/app/page.tsx src/app/miroshark.module.css CHANGELOG.md`; Playwright verified the Swarm tab no longer shows `Sync` and the template shelf shows `Refresh templates`.
+- Intended commit message: `Clarify MiroShark template refresh`
+
+## 2026-05-19 14:53 WITA - Add Shared Brain Graph And Access History
+
+- Status: Pushed
+- Areas changed: Brain/Vault dashboard UI, Obsidian graph API, Obsidian access audit API, Obsidian note-open API, shared vault runtime instructions, Vault CSS module, assimilation manifest
+- Summary: Replace the bare shared-brain vault surface with a touching-cell hive graph built from markdown wikilinks, segmented cell-edge connection paths, selectable note inspection, drag-to-pan navigation, second-click note opening in Obsidian, graph stats, and per-note access history. Add vault-backed brain access logging under `Projects/OpenClaw/Brain Access/access-log.jsonl` so dashboard/agent note inspections record timestamp, agent, runtime, and machine.
+- Verification: `pnpm typecheck`; `pnpm eslint src/app/page.tsx src/app/api/obsidian/graph/route.ts src/app/api/obsidian/access/route.ts src/app/api/obsidian/open/route.ts src/lib/services/obsidian/brain-graph.ts src/app/api/chat/agent-runtime/route.ts`; `git diff --check -- src/lib/services/obsidian/brain-graph.ts src/app/api/obsidian/graph/route.ts src/app/api/obsidian/access/route.ts src/app/api/obsidian/open/route.ts src/app/api/chat/agent-runtime/route.ts src/app/page.tsx src/app/vault.module.css CHANGELOG.md ASSIMILATION.json`; local API smoke for `/api/obsidian/graph` returned the OpenClaw Vault graph; local API smoke for `/api/obsidian/access` wrote a Codex inspection event for `DAILY-BRIEF.md`; local API smoke for `/api/obsidian/open` opened `DAILY-BRIEF.md` in Obsidian; standalone Playwright SVG render using the real vault graph verified a continuous selected-cell border route with no diagonals through cell interiors; `verify_assimilation_manifest.py`.
+- Intended commit message: `Add shared brain graph and access history`
+
+## 2026-05-19 14:52 WITA - Scope Dashboard Feature Styles
+
+- Status: Pushed
+- Areas changed: Dashboard CSS ownership, Fleet/agent rail styles, Chat styles, Vault styles, Wallet styles, Swarm/MiroShark styles, global stylesheet
+- Summary: Move feature-owned dashboard rules out of `src/app/globals.css` into CSS modules for Fleet, Chat, Vault, Wallets, and MiroShark while preserving the existing JSX structure and UI appearance. Leave `globals.css` focused on imports, design tokens, reset/base element rules, shared app shell/navigation, `.tabPanel`, and the small `.hint` utility.
+- Verification: `pnpm typecheck`; `pnpm eslint src/app/page.tsx` (warnings only for existing unused brain graph code); `pnpm build` (passed with an existing Turbopack NFT tracing warning for `next.config.ts` via `src/app/api/openclaw/skill-prefs/route.ts`); `git diff --check`; `rg -n '\\.(agentRail|taskPanel|historyPanel|swarmPanel|miroshark|vaultPanel|walletPanel|settings|chat|messages|message|machineTree|setupModal|addAgent|quickConnect|machineBoard|wallet|vault|swarmGrid)' src/app/globals.css || true`; Playwright smoke verified Fleet, Work, Swarm, Wallets, Brain, and Chat tabs at 1440x1000 and 390x844 with no horizontal overflow.
+- Intended commit message: `Scope dashboard feature styles`
+
+## 2026-05-19 14:42 WITA - Remove MiroShark Capability Strip
+
+- Status: Pushed
+- Areas changed: Swarm MiroShark workspace
+- Summary: Remove the decorative MiroShark capability summary cards from the workspace body so the main area starts directly with the run builder or selected saved simulation.
+- Verification: Pending.
+- Intended commit message: `Remove MiroShark capability strip`
+
+## 2026-05-19 14:34 WITA - Add Tasks Directly To Kanban Lanes
+
+- Status: Pushed
+- Areas changed: Kanban Work board task creation UI, Kanban styling scope, changelog
+- Summary: Remove the top "What needs doing?" task input and let users add tasks directly from each board lane with a compact plus button or empty-lane add action. Move the Work board's section-specific styles into a dedicated CSS module instead of keeping Kanban layout rules in `globals.css`.
+- Verification: `pnpm typecheck`; `pnpm eslint src/app/page.tsx`; `git diff --check -- src/app/page.tsx src/app/globals.css src/app/kanban-board.module.css CHANGELOG.md`; `rg -n "kanban" src/app/globals.css` returned no matches. Playwright loaded the existing `127.0.0.1:5020` dashboard with no horizontal overflow and confirmed the old "What needs doing?" input is gone, but the already-running dev session would not switch tabs in headless mode and blocked starting a fresh second dev server, so lane visual QA still needs an interactive browser pass.
+- Intended commit message: `Add lane-level Kanban task creation`
+
+## 2026-05-19 14:22 WITA - Merge Manual Agents With Discovered Agents
+
+- Status: Pushed
+- Areas changed: Agent identity dedupe, agent activity history, add-agent defaults, changelog
+- Summary: Treat same-machine same-runtime manually added agents as aliases of the collector-discovered agent, hide the duplicate saved profile, and merge local dashboard chat/tasks from the saved profile into the visible discovered profile so newly sent work appears alongside collector history.
+- Verification: `pnpm typecheck`; `pnpm eslint src/app/page.tsx`; `git diff --check -- src/app/page.tsx`.
+- Intended commit message: `Merge manual agents with discovered agents`
+
+## 2026-05-19 14:18 WITA - Compact Fleet Task Actions
+
+- Status: Pushed
+- Areas changed: Fleet agent task rows, Radix tooltip usage
+- Summary: Replace cramped Track, Resume, and Working text labels in expanded Fleet task rows with icon-only controls and custom hover tooltips.
+- Verification: `pnpm typecheck`; `pnpm lint` (warnings only, pre-existing unused-variable warnings); browser smoke opened the local dashboard on the existing `127.0.0.1:5020` dev server, though no live collector tasks were present for a visual row check.
+- Intended commit message: `Compact fleet task action buttons`
+
+## 2026-05-19 14:07 WITA - Clean Up MiroShark History Status Copy
+
+- Status: Pushed
+- Areas changed: Swarm MiroShark history rail
+- Summary: Move archive status under the Saved simulations heading and remove the confusing companion rows label from the user-facing history rail.
+- Verification: `pnpm typecheck`; `pnpm eslint src/app/page.tsx`; `git diff --check -- src/app/page.tsx src/app/globals.css CHANGELOG.md`; Playwright verified the history rail now reads New Simulation, Past runs, Saved simulations, Refresh, Obsidian archive, Auto-saving runs with no companion rows copy and with the status below the heading.
+- Intended commit message: `Clean up MiroShark history status copy`
+
+## 2026-05-19 14:05 WITA - Add Playwright QA Dependency
+
+- Status: Pushed
+- Areas changed: Playwright dev dependency, package lock, changelog
+- Summary: Add Playwright as a development dependency and install its Chromium browser so local UI screenshot and browser-smoke checks can run from the workspace.
+- Verification: `pnpm add -D playwright`; `pnpm exec playwright install chromium`; `node -e "import('playwright').then(async ({ chromium }) => { const browser = await chromium.launch({ headless: true }); const version = await browser.version(); await browser.close(); console.log(version); })"` returned Chromium `148.0.7778.96`; `git diff --check -- package.json pnpm-lock.yaml CHANGELOG.md`.
+- Intended commit message: `Add Playwright QA dependency`
+
+## 2026-05-19 14:01 WITA - Simplify Kanban First Use
+
+- Status: Pushed
+- Areas changed: Kanban Work tab UI, Kanban responsive CSS, agent task tracking action, assimilation manifest
+- Summary: Reduce the Work board's first-screen complexity by renaming it to Work Board, replacing the full storage path with a compact sync pill, moving board creation and filters into disclosure controls, turning the task composer into a one-field command bar labeled "What needs doing?" with secondary fields behind an icon options popover, hiding the detail drawer until a task is selected, showing a first-run prompt on empty boards, and keeping only core empty lanes visible until optional statuses contain work.
+- Verification: `pnpm typecheck`; `pnpm eslint src/app/page.tsx src/components/cells/AgentTaskList.tsx src/lib/services/kanban/local-kanban-store.ts src/app/api/openclaw/kanban/route.ts` (one unrelated existing MiroShark unused-variable warning was observed before the targeted rerun passed); `git diff --check -- src/app/page.tsx src/app/globals.css CHANGELOG.md`; Playwright loaded the local app with no horizontal overflow, though the current dev session did not switch from Fleet to Work in headless mode, so final visual QA still needs an interactive browser pass.
+- Intended commit message: `Simplify Kanban first use`
+
+## 2026-05-19 13:43 WITA - Redesign MiroShark Workbench Navigation
+
+- Status: Pushed
+- Areas changed: Swarm MiroShark layout, history navigation, new simulation builder, saved run detail placement
+- Summary: Rework the Swarm MiroShark screen into a master-detail workspace with a left history rail, primary New Simulation action, body-level run builder, and selected saved runs opening in the same main body area instead of stacking below the builder.
+- Verification: `pnpm typecheck`; `pnpm eslint src/app/page.tsx`; `git diff --check -- src/app/page.tsx src/app/globals.css CHANGELOG.md`; Playwright QA on `http://localhost:5020` verified Swarm opens with a left history rail and right body builder, New Simulation shows only the builder in the body, selecting a saved run replaces the body with the run detail, the old archive block is gone, active history state is visible, and desktop/mobile have no horizontal overflow.
+- Intended commit message: `Redesign MiroShark workbench navigation`
+
+## 2026-05-19 12:23 WITA - Integrate Kanban With Obsidian Sync
+
+- Status: Pushed
+- Areas changed: Kanban storage/API, shared vault config, dashboard Work/Vault UI, agent task tracking action, agent runtime context, README, roadmap, environment example, assimilation manifest
+- Summary: Make the Work board prefer the configured Obsidian Sync vault for shared `kanban.json` board storage, migrate existing local boards into the vault when first opened, expose storage metadata in the API/UI, let observed agent activity rows be promoted into Kanban tasks, pass the Kanban folder into agent runtime context, and keep `~/.openclaw/kanban` as an explicit local fallback.
+- Verification: `pnpm typecheck`; `pnpm eslint src/app/page.tsx src/components/cells/AgentTaskList.tsx src/lib/services/kanban/local-kanban-store.ts src/app/api/openclaw/kanban/route.ts`; `git diff --check -- src/lib/types/agent-runtime.ts src/lib/services/kanban/local-kanban-store.ts src/app/api/openclaw/kanban/route.ts src/app/api/chat/agent-runtime/route.ts src/app/page.tsx src/app/globals.css README.md ROADMAP.md .env.example CHANGELOG.md ASSIMILATION.json`; Kanban API smoke read against `127.0.0.1:5020` with the shared vault path returned `storage.source: "obsidian"` and created `~/Documents/Obsidian/OpenClaw Vault/Projects/OpenClaw/Kanban/kanban.json`; `verify_assimilation_manifest.py`.
+- Intended commit message: `Integrate Kanban with Obsidian sync`
+
+## 2026-05-19 11:54 WITA - Expand MiroShark Swarm Workbench
+
+- Status: Pushed
+- Areas changed: MiroShark API proxy, Swarm dashboard UI/UX, simulation surfaces, templates, analysis, observability, exports, publish admin auth, Kanban verification blockers
+- Summary: Replace the X-only Swarm experience with a broader MiroShark workbench that exposes multiple simulation surfaces, templates, live telemetry, analysis panels, director inject/fork/branch/stop/publish controls, one-click MiroShark publish-auth setup, archive history, and export links from the real companion API.
+- Verification: `pnpm typecheck`; `pnpm eslint src/app/page.tsx src/app/api/miroshark/swarm/route.ts src/app/api/miroshark/manage/route.ts src/lib/services/miroshark/companion-client.ts src/lib/services/kanban/local-kanban-store.ts`; `git diff --check -- src/app/page.tsx src/app/globals.css src/app/api/miroshark/swarm/route.ts src/app/api/miroshark/manage/route.ts src/lib/services/miroshark/companion-client.ts src/lib/services/kanban/local-kanban-store.ts .env.example CHANGELOG.md`; MiroShark metadata API returned 6 templates, 12 history rows, 30 telemetry events, and 20 LLM calls; run-data API for `sim_c7764ee3341b` returned 30 X posts plus analysis/telemetry payloads; Playwright UI QA passed Swarm nav, template selection, archive loading, all workbench tabs, all surface switches, disabled archived live-inject state, publish button presence, and horizontal-overflow checks; live run `sim_af3a74aeb083` started through OpenClaw and returned posts; fork `sim_a1daa9919117`, counterfactual branch `sim_ad271aca028d`, live injection, stop, publish-auth configuration, MiroShark restart, and successful publish for `sim_af3a74aeb083` were exercised against MiroShark.
+- Intended commit message: `Expand MiroShark swarm workbench`
+
+## 2026-05-19 11:27 WITA - Remove X Post Header Bar
+
+- Status: Pushed
+- Areas changed: MiroShark simulated X thread
+- Summary: Remove the top `Post` header bar from the simulated X surface so the thread starts directly with the central post.
+- Verification: `pnpm typecheck`; `pnpm eslint src/app/page.tsx`; `git diff --check -- src/app/page.tsx src/app/miroshark-x-thread.module.css CHANGELOG.md`; `rg` confirmed the header/topbar references are gone.
+- Intended commit message: `Remove X post header bar`
+
+## 2026-05-19 11:25 WITA - Remove Duplicate X Counts Row
+
+- Status: Pushed
+- Areas changed: MiroShark simulated X thread
+- Summary: Remove the separate main-post repost/like/view counts strip and keep those metrics only in the X-style icon action row.
+- Verification: `pnpm typecheck`; `pnpm eslint src/app/page.tsx`; `git diff --check -- src/app/page.tsx src/app/miroshark-x-thread.module.css CHANGELOG.md`; `rg` confirmed the removed counts strip selectors/usages are gone.
+- Intended commit message: `Remove duplicate X counts row`
+
+## 2026-05-19 11:22 WITA - Replace Chunky App Font
+
+- Status: Pushed
+- Areas changed: Global typography, Swarm navigation labels, MiroShark X thread typography
+- Summary: Remove the old `Avenir Next` / `DIN Alternate` global font stack, replace it with a cleaner native system UI stack, and reduce the heaviest weights in the nav and X thread labels so titles/usernames no longer render with the chunky display-face look.
+- Verification: `pnpm typecheck`; `pnpm eslint src/app/page.tsx`; `git diff --check -- src/app/globals.css src/app/miroshark-x-thread.module.css CHANGELOG.md`; `rg -n "Avenir Next|DIN Alternate" src package.json public .env.example` returned no matches.
+- Intended commit message: `Replace chunky app font`
+
+## 2026-05-19 11:09 WITA - Make MiroShark Feed A Real X Post Thread
+
+- Status: Pushed
+- Areas changed: Swarm dashboard MiroShark feed UI
+- Summary: Rework the simulated X surface around one central main post with comments beneath it, using X-like spacing, metadata, engagement counts, action row, top Post bar, and constrained single-column layout instead of treating every generated message as a standalone post. Move the X thread styling into a CSS Module and explicitly force the mounted surface to block layout so legacy feed flex rules cannot turn the post surface into columns again.
+- Verification: `pnpm typecheck`; `pnpm eslint src/app/page.tsx`; `git diff --check -- src/app/page.tsx src/app/globals.css src/app/miroshark-x-thread.module.css CHANGELOG.md`; `rg` confirmed there is no remaining broad `.mirosharkRunFeed > div` selector and the mounted X surface has a block-layout guard.
+- Intended commit message: `Make MiroShark feed a real X post thread`
+
+## 2026-05-19 10:08 WITA - Render MiroShark Posts As X Thread
+
+- Status: Pushed
+- Areas changed: Swarm dashboard MiroShark feed UI
+- Summary: Replace the plain log-style MiroShark post list with an X-style simulated thread, including root post emphasis, reply cards, avatars, handles, round/post metadata, and familiar reply/repost/like/view actions.
+- Verification: `pnpm typecheck`; `pnpm eslint src/app/page.tsx`; `git diff --check -- src/app/page.tsx src/app/globals.css CHANGELOG.md` passed.
+- Intended commit message: `Render MiroShark posts as X thread`
+
+## 2026-05-19 09:59 WITA - Show Archived MiroShark Runs As Complete
+
+- Status: Pushed
+- Areas changed: MiroShark archive summaries, Swarm dashboard history cards, loaded archive run status
+- Summary: Normalize saved MiroShark run history to display `complete` instead of stale captured `running` status, and show loaded archive run step/status as complete.
+- Verification: `pnpm typecheck`; `pnpm eslint src/app/page.tsx src/app/api/miroshark/runs/route.ts`; `git diff --check -- src/app/page.tsx src/app/api/miroshark/runs/route.ts CHANGELOG.md`; archive list API now returns `complete` for both saved runs with posts.
+- Intended commit message: `Show archived MiroShark runs as complete`
+
+## 2026-05-19 02:50 WITA - Clarify Loaded MiroShark Archives
+
+- Status: Pushed
+- Areas changed: Swarm dashboard archived MiroShark run display
+- Summary: Mark loaded Obsidian MiroShark runs as archived snapshots, show `Saved run`/`saved snapshot` instead of live runner status, hide the live refresh button for archive loads, and rename the feed to `Saved posts` so snapshots are not mistaken for active simulations.
+- Verification: `pnpm typecheck`; `pnpm eslint src/app/page.tsx`; `git diff --check -- src/app/page.tsx src/app/globals.css CHANGELOG.md` passed.
+- Intended commit message: `Clarify loaded MiroShark archives`
+
+## 2026-05-19 02:37 WITA - Fix Default Obsidian Vault Path
+
+- Status: Pushed
+- Areas changed: Shared vault defaults, MiroShark run archive, Obsidian status API, environment example
+- Summary: Replace the stale `Omni Agent Vault` default with the configured `OpenClaw Vault`, migrate stale browser-stored vault config on load, and make server-side MiroShark archive/status requests fall back to the real vault when old clients still send the legacy path.
+- Verification: `pnpm typecheck`; `pnpm eslint src/app/page.tsx src/app/api/miroshark/runs/route.ts src/app/api/obsidian/status/route.ts src/lib/types/agent-runtime.ts`; `git diff --check -- src/lib/types/agent-runtime.ts .env.example src/app/page.tsx src/app/api/miroshark/runs/route.ts src/app/api/obsidian/status/route.ts CHANGELOG.md`; legacy `~/Documents/Obsidian/Omni Agent Vault` status/archive requests now resolve to `~/Documents/Obsidian/OpenClaw Vault`.
+- Intended commit message: `Fix default Obsidian vault path`
+
+## 2026-05-19 02:31 WITA - Order MiroShark Timeline And Progress
+
+- Status: Pushed
+- Areas changed: Swarm dashboard MiroShark feed ordering, round labels, progress UI
+- Summary: Sort MiroShark posts into explicit timeline order by simulation round and post id, label each post with its round, add a determinate round-progress bar when total rounds are known, and reuse observed post rounds when MiroShark's run-status current round lags behind the posts API.
+- Verification: `pnpm typecheck`; `pnpm eslint src/app/page.tsx`; `git diff --check -- src/app/page.tsx src/app/globals.css CHANGELOG.md`; live API check confirmed MiroShark returned shuffled descending ids/ticks for `sim_c7764ee3341b`, so ordering is now imposed in the dashboard instead of trusting backend order.
+- Intended commit message: `Order MiroShark timeline and progress`
+
+## 2026-05-19 02:25 WITA - Add MiroShark Run Loading State
+
+- Status: Pushed
+- Areas changed: Swarm dashboard run controls, MiroShark run progress UI
+- Summary: Add a visible animated MiroShark run-progress panel that appears during queued/setup/ontology/graph/profile-prep/start phases, uses the hive Lottie plus a CSS animated progress rail, and keeps the run button in a true loading state while setup is in flight.
+- Verification: `pnpm typecheck`; `pnpm eslint src/app/page.tsx`; `git diff --check -- src/app/page.tsx src/app/globals.css CHANGELOG.md` passed.
+- Intended commit message: `Add MiroShark run loading state`
+
+## 2026-05-19 02:15 WITA - Archive MiroShark Runs In Obsidian
+
+- Status: Pushed
+- Areas changed: MiroShark swarm proxy, MiroShark run archive API, Swarm dashboard history controls, Obsidian project archive
+- Summary: Save MiroShark simulation runs into the configured Obsidian vault under `Projects/OpenClaw/MiroShark Simulations`, including an index, per-run Markdown summaries, exact JSON payloads, post exports, timeline exports, automatic save-on-update behavior, and Swarm-tab controls to reload saved runs after the app is closed.
+- Verification: `pnpm typecheck`; `pnpm eslint src/app/page.tsx src/app/api/miroshark/swarm/route.ts src/app/api/miroshark/runs/route.ts`; `git diff --check -- src/app/page.tsx src/app/globals.css src/app/api/miroshark/swarm/route.ts src/app/api/miroshark/runs/route.ts CHANGELOG.md`; saved `sim_c7764ee3341b` through `/api/miroshark/runs` into `~/Documents/Obsidian/OpenClaw Vault/Projects/OpenClaw/MiroShark Simulations`, verified the archive index, and loaded the run back with 30 visible posts. Full `pnpm lint` is still blocked by unrelated existing lint errors in `src/components/ui/lottie-player.tsx`.
+- Intended commit message: `Archive MiroShark runs in Obsidian`
+
 ## 2026-05-19 02:05 WITA - Replace Square Background With Honeycomb
 
-- Status: Uncommitted
+- Status: Pushed
 - Areas changed: Global site background
 - Summary: Replace the square page grid with layered shared-edge CSS honeycomb cells while preserving the existing teal and amber ambient washes.
 - Verification: `git diff --check -- src/app/globals.css CHANGELOG.md` passed; in-app browser visual check on `http://localhost:5020` confirmed the honeycomb background before the tile spacing correction, but screenshot capture now times out while the dev server reports unrelated duplicate declarations of `mirosharkRunStatus` and `mirosharkPosts` in `src/app/page.tsx`. `pnpm typecheck` is blocked by the same pre-existing declarations.
@@ -13,7 +245,7 @@ be added here first, then marked `Committed` or `Pushed` after the git action.
 
 ## 2026-05-19 02:03 WITA - Center Sidebar Brand Logo
 
-- Status: Uncommitted
+- Status: Pushed
 - Areas changed: Sidebar brand layout
 - Summary: Center the Omni-Agent Hivemind logo and title stack in the command sidebar, including the narrow/mobile layout, and make the logo image block-level with auto margins so it cannot start-align inside the grid.
 - Verification: `pnpm typecheck`; `git diff --check -- src/app/globals.css src/app/page.tsx CHANGELOG.md` passed. Local visual QA was not run because `localhost:5023` was not serving and the project rules say not to start `pnpm dev`.
@@ -21,7 +253,7 @@ be added here first, then marked `Committed` or `Pushed` after the git action.
 
 ## 2026-05-19 01:44 WITA - Make MiroShark Feed Live
 
-- Status: Uncommitted
+- Status: Pushed
 - Areas changed: Swarm dashboard live post feed, MiroShark swarm proxy
 - Summary: Poll started MiroShark runs automatically, fetch a larger post window, filter blank MiroShark post rows before rendering, hide raw round-style timestamps in favor of post ids, expose raw versus visible counts from the proxy, show a listening state before first posts arrive, animate live feed activity, and make the full post list scrollable instead of showing only five items.
 - Verification: `/api/miroshark/swarm?simulation_id=sim_c7764ee3341b&platform=twitter` returned 19 visible posts from 25 raw rows with 0 blank posts after filtering; `pnpm typecheck`; `pnpm lint` (warnings only, pre-existing unused-variable warnings).
@@ -29,7 +261,7 @@ be added here first, then marked `Committed` or `Pushed` after the git action.
 
 ## 2026-05-19 01:37 WITA - Add Full MiroShark Swarm Controls
 
-- Status: Uncommitted
+- Status: Pushed
 - Areas changed: Swarm dashboard tab, MiroShark swarm API route, MiroShark companion runtime patch, assimilation manifest
 - Summary: Replace the Swarm tab's connection-only surface with in-app scenario, surface, round, run, refresh, status, result links, and live post controls; drive the real MiroShark ontology/graph/prepare/start lifecycle from OpenClaw; enrich short scenarios with named participants so MiroShark builds usable graphs; normalize short runs so agents activate immediately; fetch Twitter posts correctly; and patch the local MiroShark companion so detached stdout logging does not crash profile preparation.
 - Verification: `pnpm typecheck`; MiroShark backend restarted on `http://127.0.0.1:5101`; real OpenClaw `/api/miroshark/swarm` e2e created project `proj_92b4e7494715`, graph `887928da-e834-4df9-9618-ee60e18ed1e4`, simulation `sim_30dcc84523a2`, prepared 5 profiles, started the Twitter simulation, and verified 20 Twitter posts through MiroShark plus the OpenClaw proxy; stopped the verification simulation via `/api/simulation/stop`.
@@ -37,15 +269,15 @@ be added here first, then marked `Committed` or `Pushed` after the git action.
 
 ## 2026-05-19 01:27 WITA - Improve Chat View Layout
 
-- Status: Uncommitted
-- Areas changed: Chat panel layout, empty chat state, message transcript styling, machine picker cards, composer styling
-- Summary: Replace the giant system-message slab with a compact session note, make the empty transcript a subtle two-line placeholder, move starter prompts into small suggestion pills above the composer, quiet the machine picker/actions, reduce header and composer scale, remove neon-heavy treatment, and auto-scroll to the latest visible message.
-- Verification: `pnpm typecheck`; `pnpm lint` (warnings only, pre-existing unused-variable warnings); `python3 verify_assimilation_manifest.py`; `git diff --check -- src/app/page.tsx src/app/globals.css CHANGELOG.md ASSIMILATION.json` passed. Browser connection opened the local app but did not visually render the dashboard content in the in-app screenshot, so visual QA is limited to code inspection and automated checks.
+- Status: Pushed
+- Areas changed: Chat panel layout, empty chat state, message transcript styling, machine tree sidebar, composer styling
+- Summary: Replace the machine card chat picker with a Codex-like collapsible Machines tree, grouped by machine and workspace folder with Stray chats fallbacks, include recent remote/collector task metadata even when full transcripts are not locally cached, open historical leaves into their corresponding cached/metadata preview instead of the generic agent transcript, suppress assistant-only direct fallback rows when real session history exists, dedupe sidebar rows by normalized title and preview text while preferring higher-quality session rows, sort chats newest-first with relative timestamps, show only the latest four chats per folder with a subtle folder-local show-more control, keep selected chats visibly aqua with readable dark text, make the empty transcript a subtle placeholder, move starter prompts into small suggestion pills above the composer, and reduce header/composer scale.
+- Verification: `pnpm typecheck`; `pnpm lint` (warnings only, pre-existing unused-variable warnings); `git diff --check -- src/app/page.tsx CHANGELOG.md`; previous `python3 verify_assimilation_manifest.py`; previous `git diff --check -- src/app/page.tsx src/app/globals.css CHANGELOG.md ASSIMILATION.json` passed. Browser connection opened the local app but did not visually render the dashboard content in the in-app screenshot, so visual QA is limited to code inspection and automated checks.
 - Intended commit message: `Improve chat view layout`
 
 ## 2026-05-19 00:50 WITA - Tighten Swarm Navigation And Panel UI
 
-- Status: Uncommitted
+- Status: Pushed
 - Areas changed: Sidebar view tab CSS, Swarm dashboard panel
 - Summary: Fix overlapping sidebar icons by giving nav icons a fixed grid lane, remove the oversized Swarm tab layout and attribution filler card, and collapse the screen into a compact MiroShark connection console.
 - Verification: `pnpm typecheck`; `pnpm lint` (warnings only, pre-existing unused-variable warnings); Playwright verified all sidebar nav items report no icon/text overlap and the Swarm panel shows the compact MiroShark connection UI; screenshot saved to `/tmp/openclaw-swarm-ui-fixed.png`.
@@ -53,7 +285,7 @@ be added here first, then marked `Committed` or `Pushed` after the git action.
 
 ## 2026-05-19 00:48 WITA - Verify Collector Capability Repairs
 
-- Status: Uncommitted
+- Status: Pushed
 - Areas changed: Fleet updater API, machine update actions, update result feedback
 - Summary: Keep update/repair visible when a collector is missing the Hermes chat bridge even if its checkout has local edits, run capability repairs through the synchronous remote updater instead of the collector's detached background endpoint, and only return success after the collector reports the required capability.
 - Verification: Pending.
@@ -61,7 +293,7 @@ be added here first, then marked `Committed` or `Pushed` after the git action.
 
 ## 2026-05-19 00:52 WITA - Simplify Machine Update Command
 
-- Status: Uncommitted
+- Status: Pushed
 - Areas changed: Fleet updater API, machine update controls
 - Summary: Make the Update action always run the machine update command through SSH/Tailscale instead of the collector's detached endpoint, keep the Update button visible for dirty machines, and report success only after the command finishes.
 - Verification: `pnpm typecheck`; `pnpm lint` (warnings only, pre-existing unused-variable warnings); `git diff --check -- src/app/api/fleet/update/route.ts src/app/page.tsx src/components/cells/MachineCell.tsx CHANGELOG.md` passed.
@@ -69,7 +301,7 @@ be added here first, then marked `Committed` or `Pushed` after the git action.
 
 ## 2026-05-19 01:05 WITA - Run Local Machine Updates Locally
 
-- Status: Uncommitted
+- Status: Pushed
 - Areas changed: Fleet updater API
 - Summary: Detect when an update target's app directory is on the same machine as the dashboard API and run the update command locally instead of trying Tailscale SSH, so updating This Mac does not require SSH to be enabled.
 - Verification: `pnpm typecheck`; `pnpm lint` (warnings only, pre-existing unused-variable warnings); `git diff --check -- src/app/api/fleet/update/route.ts CHANGELOG.md` passed.
@@ -77,7 +309,7 @@ be added here first, then marked `Committed` or `Pushed` after the git action.
 
 ## 2026-05-19 01:12 WITA - Make Collector Updates Lightweight
 
-- Status: Uncommitted
+- Status: Pushed
 - Areas changed: Fleet updater API, telemetry collector advertised update command, update success copy
 - Summary: Replace the full setup/build updater path with a lighter collector update path that pulls latest code, installs dependencies, and restarts the telemetry collector without running a production dashboard build on every update click.
 - Verification: `node --check scripts/agent-telemetry-collector.mjs`; `pnpm typecheck`; `pnpm lint` (warnings only, pre-existing unused-variable warnings); `git diff --check -- src/app/api/fleet/update/route.ts scripts/agent-telemetry-collector.mjs src/app/page.tsx CHANGELOG.md` passed.
@@ -85,7 +317,7 @@ be added here first, then marked `Committed` or `Pushed` after the git action.
 
 ## 2026-05-19 01:18 WITA - Stop Showing Update For Local Worktree Changes
 
-- Status: Uncommitted
+- Status: Pushed
 - Areas changed: Machine version state logic
 - Summary: Treat collectors with local uncommitted work as synced for the Update button so a successful update on This Mac does not keep showing Update just because the dashboard checkout is a dirty local feature branch.
 - Verification: `pnpm typecheck`; `pnpm lint` (warnings only, pre-existing unused-variable warnings); `git diff --check -- src/app/page.tsx CHANGELOG.md` passed.
@@ -93,7 +325,7 @@ be added here first, then marked `Committed` or `Pushed` after the git action.
 
 ## 2026-05-19 01:21 WITA - Remove Premature Update Success
 
-- Status: Uncommitted
+- Status: Pushed
 - Areas changed: Machine update status flow, fleet updater fallback
 - Summary: Remove the frontend effect that marked updating machines as Updated based only on existing discovery state, and add a collector fallback for machines without SSH that starts the collector update then waits for capability verification before reporting success.
 - Verification: `pnpm typecheck`; `pnpm lint` (warnings only, pre-existing unused-variable warnings); `git diff --check -- src/app/page.tsx src/app/api/fleet/update/route.ts CHANGELOG.md` passed.
@@ -101,7 +333,7 @@ be added here first, then marked `Committed` or `Pushed` after the git action.
 
 ## 2026-05-19 01:29 WITA - Fail Faster When Remote Update Is Unreachable
 
-- Status: Uncommitted
+- Status: Pushed
 - Areas changed: Fleet updater API
 - Summary: Shorten unreachable SSH and collector verification timeouts and remove the SSH host-key preflight so machines without working remote command access fail quickly instead of leaving the dashboard on Updating for minutes.
 - Verification: `pnpm typecheck`; `pnpm lint` (warnings only, pre-existing unused-variable warnings); `git diff --check -- src/app/api/fleet/update/route.ts CHANGELOG.md` passed.
@@ -109,7 +341,7 @@ be added here first, then marked `Committed` or `Pushed` after the git action.
 
 ## 2026-05-19 01:47 WITA - Block Bridge Repair Until Code Is Published
 
-- Status: Uncommitted
+- Status: Pushed
 - Areas changed: Machine update action gating
 - Summary: Detect when a machine is missing the Hermes chat bridge but the dashboard code that adds it only exists in the local uncommitted checkout, and replace the repair/update action with Publish update first guidance instead of running a pull that cannot fetch unpublished code.
 - Verification: `pnpm typecheck`; `pnpm lint` (warnings only, pre-existing unused-variable warnings); `git diff --check -- src/app/page.tsx CHANGELOG.md` passed.
@@ -117,7 +349,7 @@ be added here first, then marked `Committed` or `Pushed` after the git action.
 
 ## 2026-05-19 00:41 WITA - Streamline MiroShark Connection Flow
 
-- Status: Uncommitted
+- Status: Pushed
 - Areas changed: MiroShark companion manager, MiroShark status/manage API routes, Swarm dashboard UX, Swarm cell copy, MiroShark docs, environment example, assimilation manifest
 - Summary: Replace passive "start companion separately" messaging with local MiroShark install detection, richer prerequisite/config status, one-click install/start/open actions, managed setup state/log reporting, and auto-detected backend selection for known local installs.
 - Verification: Reused audited MiroShark runtime paths; `pnpm typecheck`; `pnpm lint` (warnings only, pre-existing unused-variable warnings); `/api/miroshark/status` on local Next dev returned connected with detected Codex-cache install and all prerequisites ready; `/api/miroshark/manage` start action returned connected; Playwright opened `http://localhost:5023`, clicked Swarm, verified the Swarm panel shows `MiroShark connected` and `Open MiroShark`; screenshot saved to `/tmp/openclaw-miroshark-streamlined.png`.
@@ -125,7 +357,7 @@ be added here first, then marked `Committed` or `Pushed` after the git action.
 
 ## 2026-05-19 00:38 WITA - Prefer Collector Chat For Discovered Hermes
 
-- Status: Uncommitted
+- Status: Pushed
 - Areas changed: Hermes chat routing, collector capability detection, machine version affordance
 - Summary: Route discovered Hermes agents through their machine collector chat bridge even if a stale runtime gateway URL is saved, surface collector chat-bridge capability in discovery and machine details, block sends before runtime fetch when the bridge is missing, and show an explicit Local edits pill on dirty machine cards instead of making the missing Update button look like success.
 - Verification: `pnpm typecheck`; `pnpm lint` (warnings only, pre-existing unused-variable warnings); `git diff --check -- src/app/api/chat/agent-runtime/route.ts src/app/api/fleet/discover/route.ts src/lib/types/agent-runtime.ts src/app/page.tsx src/components/cells/MachineCell.tsx CHANGELOG.md` passed; live API check on port 5023 reports Ubuntu collector `capabilities.chat: false`; chat send with stale localhost gateway is blocked before fetch with bridge-missing guidance.
@@ -133,7 +365,7 @@ be added here first, then marked `Committed` or `Pushed` after the git action.
 
 ## 2026-05-19 00:17 WITA - Clarify Collector Update Feedback
 
-- Status: Uncommitted
+- Status: Pushed
 - Areas changed: Machine update controls, collector update status feedback
 - Summary: Replace the ambiguous refresh-only collector update header control with a labeled Update pill, keep accepted updates visible while discovery checks the new collector version, show a distinct Updated state when the version is current, and add a subtle success animation to the update banner.
 - Verification: `pnpm typecheck`; `pnpm lint` (warnings only, pre-existing unused-variable warnings); `git diff --check -- src/app/page.tsx src/components/cells/MachineCell.tsx src/app/globals.css CHANGELOG.md` passed.
@@ -141,7 +373,7 @@ be added here first, then marked `Committed` or `Pushed` after the git action.
 
 ## 2026-05-19 00:25 WITA - Add Collector Update Verification Timeout
 
-- Status: Uncommitted
+- Status: Pushed
 - Areas changed: Collector update verification feedback
 - Summary: Make the accepted-update message explicit that the detached update is not verified yet, poll discovery for longer, and turn the banner into an actionable error if the collector still reports the old version after the verification window.
 - Verification: `pnpm typecheck`; `pnpm lint` (warnings only, pre-existing unused-variable warnings); `git diff --check -- src/app/page.tsx CHANGELOG.md` passed.
@@ -149,7 +381,7 @@ be added here first, then marked `Committed` or `Pushed` after the git action.
 
 ## 2026-05-19 00:33 WITA - Pause Auto Update For Dirty Collectors
 
-- Status: Uncommitted
+- Status: Pushed
 - Areas changed: Machine update controls, collector version state copy
 - Summary: Stop showing the collector Update action for machines whose collector reports local edits, show Local edits instead, and guard the update handler so automatic updates only run for stale or unknown collectors.
 - Verification: `pnpm typecheck`; `pnpm lint` (warnings only, pre-existing unused-variable warnings); `git diff --check -- src/app/page.tsx src/components/cells/MachineCell.tsx CHANGELOG.md` passed.
@@ -157,7 +389,7 @@ be added here first, then marked `Committed` or `Pushed` after the git action.
 
 ## 2026-05-19 00:07 WITA - Remove Full History Chat Footer
 
-- Status: Uncommitted
+- Status: Pushed
 - Areas changed: Dashboard agent task list, shared task list comment
 - Summary: Remove the "Open chat for full history" footer from expanded agent task lists while keeping per-task Resume actions intact.
 - Verification: `pnpm typecheck`; `rg -n "Open chat for full history|full history|view full history" src/app/page.tsx src/components/cells/AgentTaskList.tsx` returned no matches; `git diff --check -- src/app/page.tsx src/components/cells/AgentTaskList.tsx CHANGELOG.md` passed.
@@ -165,7 +397,7 @@ be added here first, then marked `Committed` or `Pushed` after the git action.
 
 ## 2026-05-19 00:09 WITA - Surface Collector Update Action
 
-- Status: Uncommitted
+- Status: Pushed
 - Areas changed: Machine quick actions
 - Summary: Add an explicit Update collector row to machine card plus menus whenever a collector is outdated, with updating and synced states matching the existing header refresh action.
 - Verification: `pnpm typecheck`; `pnpm lint` (warnings only, pre-existing unused-variable warnings); `git diff --check -- src/app/page.tsx CHANGELOG.md` passed.
@@ -173,7 +405,7 @@ be added here first, then marked `Committed` or `Pushed` after the git action.
 
 ## 2026-05-18 23:39 WITA - Make Add Agent Feedback Visible
 
-- Status: Uncommitted
+- Status: Pushed
 - Areas changed: Machine quick actions, dashboard chat selection feedback
 - Summary: After adding an agent from a machine card, immediately switch to the new agent's chat and seed a clear confirmation message so the action is visible.
 - Verification: `pnpm typecheck`; `pnpm lint` (warnings only, pre-existing unused-variable warnings); `git diff --check -- src/app/page.tsx CHANGELOG.md` passed.
@@ -181,7 +413,7 @@ be added here first, then marked `Committed` or `Pushed` after the git action.
 
 ## 2026-05-18 23:33 WITA - Add Machine Quick Actions Menu
 
-- Status: Uncommitted
+- Status: Pushed
 - Areas changed: Machine cards, dashboard fleet actions, shared MachineCell header controls
 - Summary: Add a compact plus action menu to every machine card with New chat and Add agent actions, reusing the cell menu pattern while keeping setup-required machines guarded behind Connect.
 - Verification: `pnpm typecheck`; `pnpm lint` (warnings only, pre-existing unused-variable warnings); `git diff --check -- src/app/page.tsx src/components/cells/MachineCell.tsx CHANGELOG.md` passed.
@@ -189,7 +421,7 @@ be added here first, then marked `Committed` or `Pushed` after the git action.
 
 ## 2026-05-18 23:27 WITA - Add Collector Hermes Chat Bridge
 
-- Status: Uncommitted
+- Status: Pushed
 - Areas changed: Telemetry collector, agent runtime chat API, dashboard chat setup guard
 - Summary: Add a narrow private `/chat` endpoint to the Tailscale collector that sends messages to local Hermes via `hermes -z`, advertise collector chat capability from `/health`, and route discovered Hermes agents through their collector URL when no separate HTTP runtime URL is configured.
 - Verification: `node --check scripts/agent-telemetry-collector.mjs`; `pnpm typecheck`; `pnpm lint` (warnings only, pre-existing unused-variable warnings); restarted the local collector with `./scripts/install-telemetry-collector.sh`; `/health` reports `capabilities.chat`; direct collector `/chat` returned `collector bridge works`; `/api/chat/agent-runtime` returned SSE text `dashboard bridge works` through the collector; `git diff --check` passed. Remote Ubuntu collector currently lacks `capabilities.chat` and needs update/restart before remote chat works.
@@ -197,7 +429,7 @@ be added here first, then marked `Committed` or `Pushed` after the git action.
 
 ## 2026-05-18 22:24 WITA - Add Task Resume Hover Action
 
-- Status: Uncommitted
+- Status: Pushed
 - Areas changed: Agent task list, dashboard chat resume flow
 - Summary: Show a hover-only Resume action on agent task rows, replace it with a spinning Working... state only for fresh active task rows, and open resumed chats with the latest five conversation messages while sending those messages as runtime context.
 - Verification: `pnpm typecheck`; `pnpm lint` (warnings only, pre-existing unused-variable warnings); `git diff --check -- src/components/cells/AgentTaskList.tsx src/app/page.tsx CHANGELOG.md`; `verify_assimilation_manifest.py`; local browser check against existing `127.0.0.1:5020` dev server confirmed dashboard shell loads with no console errors.
@@ -205,7 +437,7 @@ be added here first, then marked `Committed` or `Pushed` after the git action.
 
 ## 2026-05-18 22:38 WITA - Ignore Stale Task Busy State
 
-- Status: Uncommitted
+- Status: Pushed
 - Areas changed: Agent task hover action state, fleet snapshot task message history, chat resume seeding
 - Summary: Stop showing Working... for every task row when an agent has stale active telemetry; only fresh active task rows or the current streaming chat task show the loading state, while finished or stale rows show Resume. Include fuller recent Hermes session messages in fleet task snapshots, seed the chat pane from the task's latest five messages when Resume opens a collector-backed conversation, and render chat content as compact Markdown.
 - Verification: `pnpm typecheck`; `pnpm lint` (warnings only, pre-existing unused-variable warnings); `git diff --check -- src/app/api/fleet/snapshot/route.ts src/app/page.tsx src/app/globals.css CHANGELOG.md` passed.
@@ -213,7 +445,7 @@ be added here first, then marked `Committed` or `Pushed` after the git action.
 
 ## 2026-05-18 22:15 WITA - Hide Dead Starter Chat Profiles
 
-- Status: Uncommitted
+- Status: Pushed
 - Areas changed: Dashboard agent filtering, chat starter profile handling
 - Summary: Remove newly seeded fake Hermes/Aeon localhost chat shortcuts, force legacy seeded non-OpenClaw starter shortcuts to stay hidden unless attached to a collector, and block direct sends from stale starter selections with setup guidance instead of calling dead localhost URLs.
 - Verification: Confirmed no service is listening on the seeded Hermes ports 8642-8647 while the Hermes CLI is installed; `pnpm typecheck`; `pnpm lint` (warnings only, pre-existing unused-variable warnings); `git diff --check` passed.
@@ -221,7 +453,7 @@ be added here first, then marked `Committed` or `Pushed` after the git action.
 
 ## 2026-05-18 22:03 WITA - Handle Offline Runtime Chat URLs
 
-- Status: Uncommitted
+- Status: Pushed
 - Areas changed: Agent runtime chat API
 - Summary: Catch network failures when Hermes/Aeon runtime chat URLs are configured but offline, returning a clear unreachable-runtime error instead of a blank HTTP 500.
 - Verification: Reproduced the offline Aeon request against `/api/chat/agent-runtime` and confirmed it now returns HTTP 502 JSON with the unreachable-runtime message instead of HTTP 500; confirmed discovered read-only Hermes still returns HTTP 400 setup guidance; `pnpm typecheck`; `pnpm lint` (warnings only, pre-existing unused-variable warnings); `git diff --check` passed.
@@ -229,7 +461,7 @@ be added here first, then marked `Committed` or `Pushed` after the git action.
 
 ## 2026-05-18 21:07 WITA - Add Optional MiroShark Companion Status
 
-- Status: Uncommitted
+- Status: Pushed
 - Areas changed: MiroShark companion adapter, status API route, dashboard Swarm view, shared Button primitive, environment example, MiroShark companion docs, roadmap, assimilation manifest
 - Summary: Add optional MiroShark support as an external companion runtime with health/status detection, documented endpoint mapping, dashboard readiness copy, and a roadmap split between OpenClaw-owned real swarm coordination and MiroShark-powered scenario rehearsal.
 - Verification: Audited selected MiroShark source/docs paths; Playwright browser e2e against `next start -p 5021` opened the dashboard, clicked the Swarm tab, verified the MiroShark panel, endpoint copy, and safe non-MiroShark port mismatch for local port 5001; live MiroShark e2e set up Neo4j in Docker, started the MiroShark backend on `127.0.0.1:5101`, generated a Nom project/graph/simulation, prepared 4 agents, ran the Twitter simulation script, and verified OpenClaw shows MiroShark connected; `pnpm typecheck`; `pnpm lint` (warnings only, pre-existing unused-variable warnings); `pnpm build` (pre-existing Turbopack NFT trace warning); `git diff --check`; `verify_assimilation_manifest.py` passed.
@@ -237,7 +469,7 @@ be added here first, then marked `Committed` or `Pushed` after the git action.
 
 ## 2026-05-18 21:01 WITA - Redesign Control Room With Modern UI Primitives
 
-- Status: Uncommitted
+- Status: Pushed
 - Areas changed: Dashboard shell, navigation, fleet summary, action controls, shadcn-style UI primitives, Tailwind/Motion/Lucide integration, assimilation manifest
 - Summary: Replace the hero-first dashboard with a persistent operational command shell, icon-led sidebar navigation, compact status metrics, clearer trust copy, Lucide action affordances, Motion entry animation, and adapted Button/Card/Badge/Tooltip primitives using the newly installed UI stack.
 - Verification: `pnpm typecheck`, `pnpm lint` (warnings only, pre-existing unused-variable warnings), `pnpm build` (pre-existing Turbopack NFT trace warning), local `/` HTTP 200, `git diff --check`, audited selected donor paths, and `verify_assimilation_manifest.py` passed. Browser plugin was not available through tool discovery; visual verification was limited to compile and local HTTP checks.
@@ -245,7 +477,7 @@ be added here first, then marked `Committed` or `Pushed` after the git action.
 
 ## 2026-05-18 20:51 WITA - Explain Chat Runtime Setup Failures
 
-- Status: Uncommitted
+- Status: Pushed
 - Areas changed: Agent runtime chat API, chat view setup validation
 - Summary: Detect discovered read-only collector agents that do not have a Hermes/Aeon chat runtime URL and return a clear setup error instead of an unhandled 500.
 - Verification: Reproduced the discovered-Hermes request against `/api/chat/agent-runtime` and confirmed it now returns HTTP 400 with a setup message instead of 500; `pnpm typecheck`; `pnpm lint` (warnings only, pre-existing unused-variable warnings); `git diff --check` passed.
@@ -253,7 +485,7 @@ be added here first, then marked `Committed` or `Pushed` after the git action.
 
 ## 2026-05-18 20:50 WITA - Install Modern UI Foundation
 
-- Status: Uncommitted
+- Status: Pushed
 - Areas changed: UI dependencies, Tailwind/PostCSS setup, shadcn-compatible component config, shared class-name utility
 - Summary: Install a modern React/Next UI foundation with Tailwind CSS v4, Radix primitives, Lucide icons, Motion, CVA, clsx, tailwind-merge, and shadcn-compatible project configuration for future component work.
 - Verification: `pnpm typecheck`, `pnpm lint` (warnings only, pre-existing unused-variable warnings), `pnpm build` (pre-existing Turbopack NFT trace warning), `pnpm exec shadcn --help`, and `git diff --check` passed.
@@ -261,7 +493,7 @@ be added here first, then marked `Committed` or `Pushed` after the git action.
 
 ## 2026-05-18 20:46 WITA - Simplify Dashboard UI
 
-- Status: Uncommitted
+- Status: Pushed
 - Areas changed: Dashboard navigation, fleet overview, agent cards, wallet management UI, dashboard styling, assimilation manifest
 - Summary: Redesign the primary UI around the layman-first rules: plain navigation labels, calmer fleet header, collapsed agent connection setup, simpler machine and agent cards, and a wallet view that foregrounds spend permission, balance, days remaining, and safe limits while hiding provider and protocol details behind disclosures.
 - Verification: `pnpm typecheck`, `pnpm lint` (warnings only, pre-existing unused-variable warnings), `git diff --check`, `verify_assimilation_manifest.py`, and local `/` HTTP 200 passed.
@@ -269,7 +501,7 @@ be added here first, then marked `Committed` or `Pushed` after the git action.
 
 ## 2026-05-18 20:45 WITA - Refine Connect Command Card
 
-- Status: Uncommitted
+- Status: Pushed
 - Areas changed: Shared machine Connect modal layout and copy control styling
 - Summary: Merge the setup instruction, terminal command, and return guidance into one coherent command card and replace the oversized Copy button with a compact copy icon button.
 - Verification: `pnpm typecheck`, `pnpm lint` (warnings only, pre-existing unused-variable warnings), `git diff --check`, and local browser verification of the unified command card passed.
@@ -277,7 +509,7 @@ be added here first, then marked `Committed` or `Pushed` after the git action.
 
 ## 2026-05-18 20:39 WITA - Cross-Link UI Guidance
 
-- Status: Uncommitted
+- Status: Pushed
 - Areas changed: UI rules and design philosophy documentation
 - Summary: Link the concise UI rules checklist to the full design philosophy and link the philosophy back to the implementation checklist.
 - Verification: `git diff --check -- docs/design-philosophy.md docs/UI_RULES.md CHANGELOG.md` passed.
@@ -285,7 +517,7 @@ be added here first, then marked `Committed` or `Pushed` after the git action.
 
 ## 2026-05-18 20:38 WITA - Repair Design Philosophy Markdown
 
-- Status: Uncommitted
+- Status: Pushed
 - Areas changed: Design philosophy documentation
 - Summary: Fix the broken Markdown structure in the expanded UI/UX philosophy by closing code fences and converting raw outline text into proper headings, bullets, and examples.
 - Verification: `git diff --check -- docs/design-philosophy.md CHANGELOG.md` passed.
@@ -293,7 +525,7 @@ be added here first, then marked `Committed` or `Pushed` after the git action.
 
 ## 2026-05-18 20:26 WITA - Tighten Connect Modal Wording
 
-- Status: Uncommitted
+- Status: Pushed
 - Areas changed: Shared machine Connect modal instruction copy
 - Summary: Change the primary setup instruction to explicitly tell lay users to open Terminal, paste the command, and press Return.
 - Verification: `pnpm typecheck`, `pnpm lint` (warnings only, pre-existing unused-variable warnings), `git diff --check`, and local browser verification of the modal copy passed.

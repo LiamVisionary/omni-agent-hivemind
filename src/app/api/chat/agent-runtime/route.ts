@@ -25,6 +25,10 @@ function buildVaultContext(sharedVault: SharedVaultConfig | null): string {
     `- Vault path: ${sharedVault.vaultPath}`,
     `- Agent inbox folder: ${sharedVault.inboxFolder || "(not set)"}`,
     `- Shared note: ${sharedVault.sharedNotePath || "(not set)"}`,
+    `- Shared Kanban folder: ${sharedVault.kanbanFolder || "Projects/OpenClaw/Kanban"}`,
+    "- Kanban API: use the dashboard's /api/openclaw/kanban endpoint for task creation, status moves, comments, and board reads when available.",
+    "- Kanban storage: boards are stored as kanban.json files under the shared Kanban folder so machines using Obsidian Sync can collaborate on the same work queue.",
+    "- Brain access tracking: when you inspect a vault note through the dashboard, call /api/obsidian/access with vaultPath, notePath, agentName, agentId, runtime, machineName, and action so the shared brain records who accessed what and when.",
     `- Hermes Agent Control Room path: ${sharedVault.controlRoomPath || "(not set)"}`,
     `- Instructions: ${sharedVault.instructions || "Read AGENTS.md before durable vault edits."}`,
   ];

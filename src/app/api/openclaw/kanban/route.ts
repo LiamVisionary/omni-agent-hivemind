@@ -10,6 +10,8 @@ import {
   moveTask,
   patchTask,
   readBoard,
+  resolveKanbanStorage,
+  type KanbanStorageOptions,
 } from "@/lib/services/kanban/local-kanban-store";
 import { filterKanbanTasks, groupKanbanTasks } from "@/lib/utils/kanban-board";
 
@@ -23,11 +25,13 @@ export async function GET(request: NextRequest) {
     const tenant = request.nextUrl.searchParams.get("tenant") || undefined;
     const assignee = request.nextUrl.searchParams.get("assignee") || undefined;
     const query = request.nextUrl.searchParams.get("q") || undefined;
-    const boards = await listBoards();
-    const board = await readBoard(boardSlug);
+    const storageOptions = storageOptionsFromRequest(request);
+    const boards = await listBoards(storageOptions);
+    const board = await readBoard(boardSlug, storageOptions);
     const tasks = filterKanbanTasks(board, { tenant, assignee, query, includeArchived });
     const tenants = [...new Set(board.tasks.map((task) => task.tenant).filter(Boolean))].sort();
     const assignees = [...new Set(board.tasks.map((task) => task.assignee).filter(Boolean))].sort();
+    const storage = resolveKanbanStorage(board.meta.slug, storageOptions);
 
     return NextResponse.json({
       ok: true,
@@ -36,6 +40,7 @@ export async function GET(request: NextRequest) {
       columns: groupKanbanTasks(tasks, includeArchived),
       tenants,
       assignees,
+      storage,
     });
   } catch (error) {
     return errorResponse(error);
@@ -46,24 +51,25 @@ export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
     const boardSlug = request.nextUrl.searchParams.get("board") || body.board;
+    const storageOptions = storageOptionsFromRequest(request, body);
     if (body.action === "create-board") {
-      const board = await createBoard(body);
-      return NextResponse.json({ ok: true, board });
+      const board = await createBoard(body, storageOptions);
+      return NextResponse.json({ ok: true, board, storage: resolveKanbanStorage(board.meta.slug, storageOptions) });
     }
     if (body.action === "archive-board") {
-      await archiveBoard(body.slug);
+      await archiveBoard(body.slug, storageOptions);
       return NextResponse.json({ ok: true });
     }
     if (body.action === "comment") {
-      const result = await addComment(boardSlug, body.taskId, body.body, body.author);
-      return NextResponse.json({ ok: true, ...result });
+      const result = await addComment(boardSlug, body.taskId, body.body, body.author, storageOptions);
+      return NextResponse.json({ ok: true, ...result, storage: resolveKanbanStorage(result.board.meta.slug, storageOptions) });
     }
     if (body.action === "link") {
-      const result = await addLink(boardSlug, body.parentId, body.childId);
-      return NextResponse.json({ ok: true, ...result });
+      const result = await addLink(boardSlug, body.parentId, body.childId, storageOptions);
+      return NextResponse.json({ ok: true, ...result, storage: resolveKanbanStorage(result.board.meta.slug, storageOptions) });
     }
-    const result = await createTask(boardSlug, body);
-    return NextResponse.json({ ok: true, ...result });
+    const result = await createTask(boardSlug, body, storageOptions);
+    return NextResponse.json({ ok: true, ...result, storage: resolveKanbanStorage(result.board.meta.slug, storageOptions) });
   } catch (error) {
     return errorResponse(error);
   }
@@ -73,14 +79,22 @@ export async function PATCH(request: NextRequest) {
   try {
     const body = await request.json();
     const boardSlug = request.nextUrl.searchParams.get("board") || body.board;
+    const storageOptions = storageOptionsFromRequest(request, body);
     if (!body.taskId) throw new Error("taskId is required.");
     const result = body.status
-      ? await moveTask(boardSlug, body.taskId, body.status as KanbanStatus)
-      : await patchTask(boardSlug, body.taskId, body.patch ?? body);
-    return NextResponse.json({ ok: true, ...result });
+      ? await moveTask(boardSlug, body.taskId, body.status as KanbanStatus, storageOptions)
+      : await patchTask(boardSlug, body.taskId, body.patch ?? body, storageOptions);
+    return NextResponse.json({ ok: true, ...result, storage: resolveKanbanStorage(result.board.meta.slug, storageOptions) });
   } catch (error) {
     return errorResponse(error);
   }
+}
+
+function storageOptionsFromRequest(request: NextRequest, body?: { vaultPath?: string; kanbanFolder?: string }): KanbanStorageOptions {
+  return {
+    vaultPath: request.nextUrl.searchParams.get("vaultPath") ?? body?.vaultPath,
+    kanbanFolder: request.nextUrl.searchParams.get("kanbanFolder") ?? body?.kanbanFolder,
+  };
 }
 
 function errorResponse(error: unknown) {

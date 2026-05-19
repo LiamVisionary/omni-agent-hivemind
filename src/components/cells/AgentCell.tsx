@@ -1,14 +1,23 @@
 "use client";
 
+import Image from "next/image";
 import type { ReactNode } from "react";
 
 import { cn } from "@/lib/utils/cn";
 
 import type { AgentRuntime } from "@/lib/types/agent-runtime";
 import { RUNTIME_LABELS } from "@/lib/types/agent-runtime";
+import { LottiePlayer } from "@/components/ui/lottie-player";
 
 import { agentStatus } from "./statusCopy";
 import type { StatusKind } from "./StatusPill";
+
+const ORCHESTRATOR_HINT = /orchestrat|main|queen|lead|control/i;
+
+function isOrchestrator(name: string, runtime: AgentRuntime) {
+  if (runtime === "openclaw") return true;
+  return ORCHESTRATOR_HINT.test(name);
+}
 
 /**
  * AgentCell — two-line, readable agent row.
@@ -79,6 +88,10 @@ export function AgentCell({
   const state = agentStatus({ hasTelemetryUrl, activeCount, snapshotOk, snapshotError });
   const showExpanded = Boolean(selected && expandedContent);
   const workSummary = primaryWork?.title || emptyTitle || state.body;
+  const queen = isOrchestrator(name, runtime);
+  const beeIcon = queen ? "/icons/queen-bee.png" : "/icons/worker-bee.png";
+  const beeLabel = queen ? "Queen bee (orchestrator)" : "Worker bee";
+  const isBusy = state.kind === "running" && activeCount > 0;
 
   // Compose line 2 — "Hermes · 12h ago · Working on …". Each piece is
   // optional; only the runtime label is guaranteed.
@@ -99,10 +112,37 @@ export function AgentCell({
     >
       <div className="flex items-start gap-2 px-2 py-2">
         <span
-          aria-hidden="true"
-          className={cn("mt-1.5 inline-block size-1.5 shrink-0 rounded-full", DOT_TONE[state.kind])}
-          title={state.body}
-        />
+          className={cn(
+            "relative mt-0.5 inline-flex size-6 shrink-0 items-center justify-center",
+            queen ? "agentAvatar--queen" : "agentAvatar--worker",
+          )}
+          title={`${beeLabel} · ${state.body}`}
+          aria-label={beeLabel}
+        >
+          {isBusy ? (
+            <LottiePlayer
+              src="/animations/Honey%20bee.lottie"
+              size={24}
+              ariaLabel={`${beeLabel}, active`}
+            />
+          ) : (
+            <Image
+              src={beeIcon}
+              alt=""
+              width={24}
+              height={24}
+              className="size-6 object-contain"
+              aria-hidden="true"
+            />
+          )}
+          <span
+            aria-hidden="true"
+            className={cn(
+              "absolute -right-0.5 -bottom-0.5 inline-block size-2 rounded-full ring-2 ring-[var(--background,#0b0f14)]",
+              DOT_TONE[state.kind],
+            )}
+          />
+        </span>
         <button
           type="button"
           onClick={onSelect}

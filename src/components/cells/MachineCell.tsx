@@ -96,11 +96,12 @@ export function MachineCell({
     statusAction = (
       <button
         type="button"
+        data-slot="machine-connect-chip"
         onClick={(event) => {
           event.stopPropagation();
           onConnect();
         }}
-        className="inline-flex items-center gap-1.5 rounded-full border border-[rgba(250,204,21,0.36)] bg-[rgba(202,138,4,0.16)] px-2.5 py-1 text-[0.68rem] font-semibold text-[#fde68a] transition-colors hover:bg-[rgba(250,204,21,0.22)] focus-visible:ring-2 focus-visible:ring-[rgba(250,204,21,0.45)] focus-visible:outline-none [&_svg]:size-3"
+        className="inline-flex h-6 items-center gap-1 rounded-full border border-[rgba(250,204,21,0.26)] bg-[rgba(202,138,4,0.1)] px-2 text-[0.62rem] font-semibold leading-none text-[#fde68a]/90 transition-colors hover:border-[rgba(250,204,21,0.38)] hover:bg-[rgba(250,204,21,0.16)] focus-visible:ring-2 focus-visible:ring-[rgba(250,204,21,0.38)] focus-visible:outline-none [&_svg]:size-2.5"
         aria-label={`Connect ${name}`}
       >
         <PlugZap aria-hidden="true" />
@@ -111,6 +112,7 @@ export function MachineCell({
     statusAction = (
       <button
         type="button"
+        data-slot={syncSucceeded ? "machine-update-chip-success" : "machine-update-chip"}
         onClick={(event) => {
           event.stopPropagation();
           onSyncUpdate();

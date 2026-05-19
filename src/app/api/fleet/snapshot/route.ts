@@ -121,6 +121,35 @@ function compact(value: unknown, fallback = "No details reported.", maxLength = 
   return fallback;
 }
 
+function readableChatContent(value: unknown): string {
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    if (!trimmed) return "";
+    if (/^[\[{]/.test(trimmed)) {
+      try {
+        return readableChatContent(JSON.parse(trimmed));
+      } catch {
+        return trimmed;
+      }
+    }
+    return trimmed;
+  }
+  if (!value || typeof value !== "object") return "";
+  const record = value as Record<string, unknown>;
+  const choices = Array.isArray(record.choices) ? record.choices : [];
+  for (const choice of choices) {
+    const content = readableChatContent((choice as Record<string, unknown>)?.message)
+      || readableChatContent((choice as Record<string, unknown>)?.delta)
+      || readableChatContent((choice as Record<string, unknown>)?.text);
+    if (content) return content;
+  }
+  for (const key of ["response", "answer", "content", "text", "message", "output", "result", "summary"]) {
+    const content = readableChatContent(record[key]);
+    if (content) return content;
+  }
+  return "";
+}
+
 function titleFromText(text: string) {
   const first = text.split(/\r?\n/).find((line) => line.trim().length > 0)?.trim() ?? "Observed activity";
   return first.replace(/^#+\s*/, "").slice(0, 140);
@@ -251,14 +280,18 @@ async function scanHermesStateDb(agent: AgentProfile, hermesDir: string): Promis
       order by timestamp desc
       limit 30;
     `], []);
-    const latestAssistant = messages.find((message) => message.role === "assistant" && message.content?.trim());
-    const latestUser = messages.find((message) => message.role === "user" && message.content?.trim());
-    const latestTool = messages.find((message) => message.role === "tool" && message.content?.trim());
+    const readableMessages = messages.map((message) => ({
+      ...message,
+      content: readableChatContent(message.content),
+    })).filter((message) => message.content.trim());
+    const latestAssistant = readableMessages.find((message) => message.role === "assistant");
+    const latestUser = readableMessages.find((message) => message.role === "user");
+    const latestTool = readableMessages.find((message) => message.role === "tool");
     const latest = latestAssistant ?? latestTool ?? messages.find((message) => message.content?.trim());
-    const chatMessages = messages
+    const chatMessages = readableMessages
       .filter((message) => (
         (message.role === "user" || message.role === "assistant")
-        && message.content?.trim()
+        && message.content.trim()
       ))
       .sort((a, b) => a.timestamp - b.timestamp)
       .map((message) => ({

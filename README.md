@@ -20,6 +20,7 @@ The goal is simple: clone the repo, run one setup command, and get a private das
 - Hermes session, log, process, and task snapshots from local runtime folders.
 - Multi-runtime agent profiles for Hermes, OpenClaw, and Aeon.
 - Shared Obsidian vault configuration, forwarded to opted-in agents.
+- Shared Kanban work board backed by Obsidian Sync, with local fallback.
 - Local Hermes Agent Control Room path checks and bootstrap-risk inspection.
 - OpenClaw gateway chat proxy, skill APIs, channel helpers, cron helpers, and security proxy.
 - One-command setup script that installs dependencies, installs the collector, builds the app, starts the dashboard when possible, and prints local plus Tailscale URLs.
@@ -71,10 +72,11 @@ The dashboard includes shared vault settings for:
 
 - agent inbox folder
 - shared context note
+- shared Kanban folder
 - shared memory and handoff instructions
 - local control-room path
 
-Today, the app validates the configured vault and forwards the shared context to agent runtimes. Durable vault automation, kanban workflows, shared encrypted environment management, and shared skill syncing are on the roadmap.
+Today, the app auto-detects common local Obsidian vault locations, validates an explicitly configured vault when provided, forwards the shared context to agent runtimes, and stores Work board `kanban.json` files under the shared Kanban folder. With Obsidian Sync enabled on each machine, agents and dashboards share the same board for handoffs, blockers, queued work, comments, and completion notes. If the vault is unavailable, the board falls back to `~/.openclaw/kanban`.
 
 ## Hermes Control Room
 

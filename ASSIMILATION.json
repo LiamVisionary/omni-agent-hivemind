@@ -1,244 +1,41 @@
 {
-  "created_at": "2026-05-18T13:02:38.106243+00:00",
+  "created_at": "2026-05-19T06:54:25.083276+00:00",
   "custom_code_assessment": "balanced",
   "entries": [
     {
-      "source_repo": "internal/source-app",
-      "source_path": "src/lib/services/openclaw",
-      "target_path": "src/lib/services/openclaw",
-      "reuse_type": "copied_code",
-      "note": "OpenClaw gateway, memory sync, health, and security services"
-    },
-    {
-      "source_repo": "internal/source-app",
-      "source_path": "src/app/api/openclaw",
-      "target_path": "src/app/api/openclaw",
-      "reuse_type": "copied_code",
-      "note": "OpenClaw API route surface"
-    },
-    {
-      "source_repo": "pareto8751/vercel-ai-sdk-agent",
-      "source_path": "components/ChatMessage.tsx",
-      "target_path": "src/components/ChatMessage.tsx",
-      "reuse_type": "copied_code",
-      "note": "AI SDK UI message renderer"
-    },
-    {
-      "source_repo": "pareto8751/vercel-ai-sdk-agent",
-      "source_path": "app/api/chat/route.ts",
-      "target_path": "src/app/api/chat/agent/route.ts",
+      "source_repo": "castroi/obsidian-clone",
+      "source_path": "src/lib/markdown/wikilinks.ts",
+      "target_path": "src/lib/services/obsidian/brain-graph.ts",
       "reuse_type": "adapted_code",
-      "note": "AI SDK streaming agent route"
+      "note": "Obsidian wikilink extraction and note target resolution"
     },
     {
-      "source_repo": "nlkitai/nlux",
-      "source_path": "examples/dev-examples/aiChat/next/src/app/globals.css",
-      "target_path": "src/app/nlux-base.css",
-      "reuse_type": "copied_code",
-      "note": "Next AI chat CSS baseline"
-    },
-    {
-      "source_repo": "Hazel-Lin/weclaw-dashboard",
-      "source_path": "src/lib/types.ts",
-      "target_path": "src/lib/types/agent-runtime.ts",
+      "source_repo": "castroi/obsidian-clone",
+      "source_path": "src/lib/graph/buildGraph.ts",
+      "target_path": "src/lib/services/obsidian/brain-graph.ts",
       "reuse_type": "adapted_code",
-      "note": "multi-agent config type shape for runtime profiles"
+      "note": "vault graph node/link model for markdown notes"
     },
     {
-      "source_repo": "Hazel-Lin/weclaw-dashboard",
-      "source_path": "src/components/agent-card.tsx",
+      "source_repo": "dougss/flow-board",
+      "source_path": "src/components/graph/graph-view.tsx",
       "target_path": "src/app/page.tsx",
       "reuse_type": "adapted_code",
-      "note": "agent card/list management UI concepts"
+      "note": "interactive graph node/edge selection and focused edge highlighting"
     },
     {
-      "source_repo": "nandezer/obsidian-fathom-sync",
-      "source_path": "src/settings.ts",
-      "target_path": "src/lib/types/agent-runtime.ts",
-      "reuse_type": "adapted_code",
-      "note": "Obsidian vault folder/path settings pattern"
-    },
-    {
-      "source_repo": "nandezer/obsidian-fathom-sync",
-      "source_path": "src/services/fileSyncService.ts",
-      "target_path": "src/app/api/obsidian/status/route.ts",
-      "reuse_type": "adapted_code",
-      "note": "vault path validation and folder existence approach"
-    },
-    {
-      "source_repo": "shannhk/hermes-agent-control-room",
-      "source_path": "skills/setup-control-room/assets/bootstrap.sh",
-      "target_path": "src/app/api/control-room/status/route.ts",
-      "reuse_type": "adapted_code",
-      "note": "safe bootstrap inspection and live-installer warning checks"
-    },
-    {
-      "source_repo": "shannhk/hermes-agent-control-room",
-      "source_path": "README.md",
-      "target_path": "docs/hermes-local-setup.md",
-      "reuse_type": "adapted_code",
-      "note": "local Control Room setup and safety handoff"
-    },
-    {
-      "source_repo": "qntx/x402-openai-typescript",
-      "source_path": "src/policies.ts",
-      "target_path": "src/lib/utils/agent-wallet.ts",
-      "reuse_type": "adapted_code",
-      "note": "x402 payment requirement policy filters"
-    },
-    {
-      "source_repo": "Conway-Research/automaton",
-      "source_path": "src/conway/credits.ts",
-      "target_path": "src/lib/utils/agent-wallet.ts",
-      "reuse_type": "adapted_code",
-      "note": "survival tier threshold derivation"
-    },
-    {
-      "source_repo": "elvismusli/moneyclaw",
-      "source_path": "moneyclaw-skill/SKILL.md",
-      "target_path": "src/lib/config/agent-payments.ts",
-      "reuse_type": "adapted_code",
-      "note": "bounded prepaid payment task safety rules"
-    },
-    {
-      "source_repo": "MiladJoodi/Simple_Admin_Dashboard",
-      "source_path": "app/admin/layout.tsx",
+      "source_repo": "Choaib-ELMADI/dark-light-mode",
+      "source_path": "darkLight.jsx",
       "target_path": "src/app/page.tsx",
       "reuse_type": "adapted_code",
-      "note": "simple dashboard shell pattern with compact navigation and overview cards"
+      "note": "localStorage-backed light/dark toggle state pattern adapted for the dashboard theme switch"
     },
     {
-      "source_repo": "Kiranism/next-shadcn-dashboard-starter",
-      "source_path": "src/components/ui/button.tsx",
-      "target_path": "src/components/ui/button.tsx",
-      "reuse_type": "adapted_code",
-      "note": "CVA/Radix Slot button primitive adapted to the control-room theme with loading and Lucide icon support"
-    },
-    {
-      "source_repo": "Kiranism/next-shadcn-dashboard-starter",
-      "source_path": "src/components/ui/card.tsx",
-      "target_path": "src/components/ui/card.tsx",
-      "reuse_type": "adapted_code",
-      "note": "shadcn-style card primitive adapted for compact metric and panel surfaces"
-    },
-    {
-      "source_repo": "Kiranism/next-shadcn-dashboard-starter",
-      "source_path": "src/components/ui/badge.tsx",
-      "target_path": "src/components/ui/badge.tsx",
-      "reuse_type": "adapted_code",
-      "note": "CVA badge primitive adapted for status, warning, and trust chips"
-    },
-    {
-      "source_repo": "Kiranism/next-shadcn-dashboard-starter",
-      "source_path": "src/components/ui/tooltip.tsx",
-      "target_path": "src/components/ui/tooltip.tsx",
-      "reuse_type": "adapted_code",
-      "note": "Radix tooltip primitive adapted for icon navigation hints"
-    },
-    {
-      "source_repo": "salimi-my/shadcn-ui-sidebar",
-      "source_path": "src/components/admin-panel/admin-panel-layout.tsx",
-      "target_path": "src/app/page.tsx",
-      "reuse_type": "adapted_code",
-      "note": "persistent sidebar layout behavior adapted into the Omni command shell"
-    },
-    {
-      "source_repo": "salimi-my/shadcn-ui-sidebar",
-      "source_path": "src/components/admin-panel/sidebar-toggle.tsx",
+      "source_repo": "Choaib-ELMADI/dark-light-mode",
+      "source_path": "darkLight.css",
       "target_path": "src/app/globals.css",
       "reuse_type": "style_adapted",
-      "note": "compact sidebar/navigation interaction styling adapted to the control-room layout"
-    },
-    {
-      "source_repo": "aaronjmars/MiroShark",
-      "source_path": "backend/app/__init__.py",
-      "target_path": "src/lib/services/miroshark/companion-client.ts",
-      "reuse_type": "adapted_code",
-      "note": "health endpoint detection and service-name validation"
-    },
-    {
-      "source_repo": "aaronjmars/MiroShark",
-      "source_path": "docs/API.md",
-      "target_path": "src/lib/services/miroshark/companion-client.ts",
-      "reuse_type": "adapted_code",
-      "note": "documented REST endpoint map for templates, simulations, docs, and create simulation"
-    },
-    {
-      "source_repo": "aaronjmars/MiroShark",
-      "source_path": "docs/API.md",
-      "target_path": "src/app/api/miroshark/swarm/route.ts",
-      "reuse_type": "adapted_code",
-      "note": "documented ontology, graph build, simulation create, prepare, start, status, posts, and actions lifecycle adapted into the OpenClaw swarm control route"
-    },
-    {
-      "source_repo": "aaronjmars/MiroShark",
-      "source_path": "backend/app/api/graph.py",
-      "target_path": "src/app/api/miroshark/swarm/route.ts",
-      "reuse_type": "adapted_code",
-      "note": "ontology generation, graph build task polling, graph id, and node-count handling adapted for scenario-driven runs"
-    },
-    {
-      "source_repo": "aaronjmars/MiroShark",
-      "source_path": "backend/app/api/simulation.py",
-      "target_path": "src/app/api/miroshark/swarm/route.ts",
-      "reuse_type": "adapted_code",
-      "note": "simulation create, prepare polling, start, run-status, posts, actions, and profiles endpoint usage adapted for in-dashboard swarm controls"
-    },
-    {
-      "source_repo": "aaronjmars/MiroShark",
-      "source_path": "backend/scripts/run_twitter_simulation.py",
-      "target_path": "src/app/api/miroshark/swarm/route.ts",
-      "reuse_type": "adapted_code",
-      "note": "round activation assumptions and Twitter platform result selection reflected in short-run config normalization"
-    },
-    {
-      "source_repo": "aaronjmars/MiroShark",
-      "source_path": ".env.example",
-      "target_path": ".env.example",
-      "reuse_type": "config_adapted",
-      "note": "optional companion base URL configuration without importing the MiroShark stack"
-    },
-    {
-      "source_repo": "aaronjmars/MiroShark",
-      "source_path": "backend/run.py",
-      "target_path": "src/lib/services/miroshark/companion-client.ts",
-      "reuse_type": "adapted_code",
-      "note": "managed backend start command, Flask host/port defaults, and local .env expectations"
-    },
-    {
-      "source_repo": "aaronjmars/MiroShark",
-      "source_path": "backend/pyproject.toml",
-      "target_path": "src/lib/services/miroshark/companion-client.ts",
-      "reuse_type": "config_adapted",
-      "note": "uv/python backend install readiness checks for one-click setup"
-    },
-    {
-      "source_repo": "aaronjmars/MiroShark",
-      "source_path": "README.md",
-      "target_path": "docs/MIROSHARK_COMPANION.md",
-      "reuse_type": "adapted_code",
-      "note": "local setup expectations reframed as dashboard-managed detection, install, and start workflow"
-    },
-    {
-      "source_repo": "LiamVisionary/ai-chatbot",
-      "source_path": "components/messages-old-backup.tsx",
-      "target_path": "src/app/page.tsx",
-      "reuse_type": "adapted_code",
-      "note": "message-end scroll anchor behavior adapted for the dashboard chat transcript"
-    },
-    {
-      "source_repo": "Shodydosh/AI-Chat-App",
-      "source_path": "components/Chat/MessageDisplayer.tsx",
-      "target_path": "src/app/globals.css",
-      "reuse_type": "style_adapted",
-      "note": "bounded scrollable message column adapted into the machine chat workspace"
-    },
-    {
-      "source_repo": "Shodydosh/AI-Chat-App",
-      "source_path": "components/Chat/InputForm.tsx",
-      "target_path": "src/app/globals.css",
-      "reuse_type": "style_adapted",
-      "note": "textarea-plus-send composer structure adapted into the dashboard chat composer"
+      "note": "CSS-variable light/dark theme switch approach adapted into the bee and beehive palette"
     }
   ]
 }

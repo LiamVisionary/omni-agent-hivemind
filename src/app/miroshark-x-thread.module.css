@@ -1,0 +1,173 @@
+.surface {
+  display: block !important;
+  max-height: 720px;
+  max-width: 650px;
+  margin: 0 auto;
+  overflow: auto;
+  border: 1px solid rgb(207, 217, 222);
+  background: #fff;
+  color: #0f1419;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI Variable", "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+}
+
+.mainPost,
+.comment {
+  border-bottom: 1px solid rgb(239, 243, 244);
+  background: #fff;
+}
+
+.mainPost {
+  padding: 16px 16px 0;
+}
+
+.postHeader {
+  display: grid;
+  grid-template-columns: 48px minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: center;
+}
+
+.avatar {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 48px;
+  height: 48px;
+  border-radius: 999px;
+  background: #1d9bf0;
+  color: #fff;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.postHeader strong,
+.comment header strong {
+  color: #0f1419;
+  font-size: 15px;
+  font-weight: 700;
+  line-height: 1.2;
+}
+
+.postHeader strong,
+.postHeader span {
+  display: block;
+}
+
+.postHeader span,
+.comment header span,
+.timestamp,
+.replying {
+  color: #536471;
+  font-size: 15px;
+}
+
+.more {
+  align-self: start;
+  color: #536471;
+}
+
+.mainText {
+  color: #0f1419;
+  font-size: 24px;
+  line-height: 1.32;
+  margin: 30px 0;
+  white-space: pre-wrap;
+}
+
+.timestamp {
+  padding-bottom: 14px;
+}
+
+.actions {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+  color: #536471;
+}
+
+.mainPost > .actions {
+  padding: 12px 0;
+}
+
+.actions span {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 7px;
+  min-width: 0;
+  color: #536471;
+  font-size: 13px;
+}
+
+.actions svg {
+  width: 20px;
+  height: 20px;
+}
+
+.actions span:nth-child(1):hover,
+.actions span:nth-child(4):hover {
+  color: #1d9bf0;
+}
+
+.actions span:nth-child(2):hover {
+  color: #00ba7c;
+}
+
+.actions span:nth-child(3):hover {
+  color: #f91880;
+}
+
+.comments {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.comment {
+  position: relative;
+  display: grid;
+  grid-template-columns: 48px minmax(0, 1fr);
+  gap: 12px;
+  padding: 12px 16px;
+}
+
+.comment article {
+  min-width: 0;
+}
+
+.comment header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 5px;
+}
+
+.comment header span:not(:first-of-type)::before {
+  margin-right: 5px;
+  content: "·";
+}
+
+.replying {
+  margin: 2px 0 4px;
+}
+
+.commentText {
+  color: #0f1419;
+  font-size: 16px;
+  line-height: 1.35;
+  margin: 0;
+  white-space: pre-wrap;
+}
+
+.comment .actions {
+  max-width: 430px;
+  margin-top: 10px;
+}
+
+@media (max-width: 720px) {
+  .surface {
+    max-width: none;
+    border-right: 0;
+    border-left: 0;
+  }
+}

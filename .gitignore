@@ -13,6 +13,18 @@ npm-debug.log*
 pnpm-debug.log*
 yarn-debug.log*
 yarn-error.log*
+coverage/
+
+*.db
+*.sqlite
+*.sqlite3
+*.pem
+*.key
+*.p12
+*.pfx
+*.crt
+*.cert
+*.keystore
 
 .DS_Store
 .idea/

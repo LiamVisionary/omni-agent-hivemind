@@ -1,4 +1,7 @@
+import Image from "next/image";
 import type { ReactNode } from "react";
+
+import { LottiePlayer } from "@/components/ui/lottie-player";
 
 import { Cell } from "./Cell";
 import type { StatusKind } from "./StatusPill";
@@ -20,6 +23,8 @@ type SwarmCellProps = {
   connected: boolean;
   /** Is the companion installed locally but not reachable yet? */
   installed?: boolean;
+  /** Is the companion mid-install/start (animate the loader). */
+  starting?: boolean;
   /** Optional short description of what the companion is set up to do. */
   role?: string;
   /** Latency or backend status hint — kept short. */
@@ -30,14 +35,32 @@ type SwarmCellProps = {
   details?: ReactNode;
 };
 
-export function SwarmCell({ connected, installed, role, hint, primaryAction, details }: SwarmCellProps) {
+export function SwarmCell({ connected, installed, starting, role, hint, primaryAction, details }: SwarmCellProps) {
   const status: StatusKind = connected ? "running" : installed ? "needs-setup" : "offline";
   const showDetails = !connected && details;
   const showBody = !connected && hint;
 
+  const icon = starting ? (
+    <LottiePlayer src="/animations/Load%20HIVE.lottie" size={28} ariaLabel="MiroShark starting" />
+  ) : (
+    <Image
+      src="/icons/miroshark.png"
+      alt=""
+      width={28}
+      height={28}
+      className="size-7 shrink-0 rounded-md object-contain"
+      aria-hidden="true"
+    />
+  );
+
   return (
     <Cell
-      title={connected ? "MiroShark" : installed ? "MiroShark detected" : "MiroShark not installed"}
+      title={
+        <span className="flex items-center gap-2">
+          {icon}
+          <span>{connected ? "MiroShark" : installed ? "MiroShark detected" : "MiroShark not installed"}</span>
+        </span>
+      }
       subtitle={connected ? "Connected" : role ?? "OpenClaw can install and start it from here."}
       status={status}
       statusLabel={connected ? undefined : installed ? "Start" : "Install"}
