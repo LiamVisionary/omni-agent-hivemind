@@ -4,6 +4,15 @@ set -euo pipefail
 PORT="${PORT:-5020}"
 COLLECTOR_PORT="${AGENT_TELEMETRY_PORT:-8787}"
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+CLI_SHARED_SKILLS=""
+CLI_SHARED_SKILL_IMPORTS=""
+CLI_SHARED_SKILL_TARGETS=""
+CLI_INTERACTIVE=""
+CLI_FORCE="false"
+CLI_SKIP_DEPS="false"
+CLI_SKIP_BUILD="false"
+CLI_SKIP_COLLECTOR="false"
+CLI_SKIP_DASHBOARD="false"
 
 info() { printf "\033[1;36m%s\033[0m\n" "$*"; }
 ok() { printf "\033[1;32m✓\033[0m %s\n" "$*"; }
@@ -12,7 +21,106 @@ fail() { printf "\033[1;31m✗\033[0m %s\n" "$*"; }
 
 missing=()
 
+usage() {
+  cat <<'EOF'
+Usage: ./setup.sh [options]
+
+Options:
+  --import-skills[=AGENTS]      Import skills into the shared notes hive.
+                                With no AGENTS value, imports all supported agents.
+                                AGENTS: all,none,codex,claude,hermes,gemini,openclaw,aeon
+  --share-skills[=AGENTS]       Advertise/mirror the shared skill shelf to agents.
+                                With no AGENTS value, targets all supported agents.
+  --no-shared-skills            Seed the shared shelf only; do not import from or advertise to agents.
+  --non-interactive             Do not prompt. Uses explicit flags/env or safe defaults.
+  --interactive                 Force prompts when running in a TTY.
+  --skip-deps                   Skip pnpm install.
+  --skip-build                  Skip next build.
+  --skip-collector              Skip collector service installation/restart.
+  --skip-dashboard              Skip starting/restarting the dashboard dev server.
+  --force                       Re-run setup work even when cached checks say it is current.
+  -h, --help                    Show this help.
+
+Environment overrides:
+  HIVE_SHARED_SKILLS=true|false
+  HIVE_SHARED_SKILL_IMPORTS=all|none|codex,hermes,aeon
+  HIVE_SHARED_SKILL_TARGETS=all|none|codex,hermes,aeon
+  HIVE_SETUP_INTERACTIVE=false
+EOF
+}
+
+consume_optional_value() {
+  local current="$1"
+  local next="${2:-}"
+  if [[ "$current" == *=* ]]; then
+    printf "%s" "${current#*=}"
+    return 0
+  fi
+  if [[ -n "$next" && "$next" != -* ]]; then
+    printf "%s" "$next"
+    return 0
+  fi
+  printf "all"
+}
+
+parse_args() {
+  while (( $# > 0 )); do
+    case "$1" in
+      --import-skills|--import-skills=*)
+        CLI_SHARED_SKILLS="true"
+        CLI_SHARED_SKILL_IMPORTS="$(consume_optional_value "$1" "${2:-}")"
+        if [[ "$1" != *=* && -n "${2:-}" && "$2" != -* ]]; then shift; fi
+        ;;
+      --share-skills|--share-skills=*|--shared-skill-agents|--shared-skill-agents=*)
+        CLI_SHARED_SKILLS="true"
+        CLI_SHARED_SKILL_IMPORTS="${CLI_SHARED_SKILL_IMPORTS:-none}"
+        CLI_SHARED_SKILL_TARGETS="$(consume_optional_value "$1" "${2:-}")"
+        if [[ "$1" != *=* && -n "${2:-}" && "$2" != -* ]]; then shift; fi
+        ;;
+      --no-shared-skills)
+        CLI_SHARED_SKILLS="false"
+        CLI_SHARED_SKILL_IMPORTS="none"
+        CLI_SHARED_SKILL_TARGETS="none"
+        ;;
+      --non-interactive|--yes|-y)
+        CLI_INTERACTIVE="false"
+        ;;
+      --interactive)
+        CLI_INTERACTIVE="true"
+        ;;
+      --skip-deps)
+        CLI_SKIP_DEPS="true"
+        ;;
+      --skip-build)
+        CLI_SKIP_BUILD="true"
+        ;;
+      --skip-collector)
+        CLI_SKIP_COLLECTOR="true"
+        ;;
+      --skip-dashboard|--no-start)
+        CLI_SKIP_DASHBOARD="true"
+        ;;
+      --force)
+        CLI_FORCE="true"
+        ;;
+      -h|--help)
+        usage
+        exit 0
+        ;;
+      *)
+        fail "Unknown setup option: $1"
+        echo
+        usage
+        exit 2
+        ;;
+    esac
+    shift
+  done
+}
+
 cd "$ROOT"
+
+parse_args "$@"
 
 info "Agent Control Room setup"
 
@@ -91,6 +199,89 @@ enable_tailscale_ssh() {
   fi
 }
 
+install_hive_env_add() {
+  local bin_dir="${HOME}/.local/bin"
+  local command_path="$bin_dir/hive-env-add"
+  mkdir -p "$bin_dir"
+  chmod +x "$ROOT/scripts/hive-env-add"
+  if ln -sf "$ROOT/scripts/hive-env-add" "$command_path" 2>/dev/null; then
+    ok "hive-env-add installed: $command_path"
+  else
+    cp "$ROOT/scripts/hive-env-add" "$command_path"
+    chmod +x "$command_path"
+    ok "hive-env-add installed: $command_path"
+  fi
+  case ":$PATH:" in
+    *":$bin_dir:"*) ;;
+    *) warn "Add $bin_dir to PATH to run hive-env-add from any folder" ;;
+  esac
+}
+
+setup_is_interactive() {
+  if [[ "$CLI_INTERACTIVE" == "false" ]]; then return 1; fi
+  if [[ "$CLI_INTERACTIVE" == "true" ]]; then [[ -t 0 && -t 1 ]] && return 0 || return 1; fi
+  [[ -t 0 && -t 1 && "${CI:-}" != "true" && "${HIVE_SETUP_INTERACTIVE:-true}" != "false" ]]
+}
+
+normalize_agent_list() {
+  printf "%s" "$1" | tr '[:upper:]' '[:lower:]' | tr -d '[:space:]'
+}
+
+interactive_skill_multiselect() {
+  node "$ROOT/scripts/shared-skill-select.mjs"
+}
+
+configure_shared_skills() {
+  local enable="${CLI_SHARED_SKILLS:-${HIVE_SHARED_SKILLS:-}}"
+  local imports="${CLI_SHARED_SKILL_IMPORTS:-${HIVE_SHARED_SKILL_IMPORTS:-}}"
+  local targets="${CLI_SHARED_SKILL_TARGETS:-${HIVE_SHARED_SKILL_TARGETS:-}}"
+
+  if [[ -n "$enable" ]]; then
+    case "$(normalize_agent_list "$enable")" in
+      0|false|no|off)
+        imports="none"
+        targets="none"
+        ;;
+      *)
+        imports="${imports:-all}"
+        if [[ "$(normalize_agent_list "${imports:-}")" == "all" ]]; then
+          targets="${targets:-all}"
+        else
+          targets="${targets:-$imports}"
+        fi
+        ;;
+    esac
+  elif setup_is_interactive; then
+    echo
+    info "Shared skill setup"
+    echo "Share skills between local agent runtimes through the shared notes Skills shelf?"
+    read -r -p "Allow shared skills? [Y/n] " enable
+    case "$(normalize_agent_list "$enable")" in
+      n|no|0|false|off)
+        imports="none"
+        targets="none"
+        ;;
+      *)
+        selection="$(interactive_skill_multiselect)"
+        if [[ "$selection" == "all" ]]; then
+          imports="all"
+          targets="all"
+        else
+          imports="$selection"
+          targets="$selection"
+        fi
+        ;;
+    esac
+  else
+    imports="${imports:-none}"
+    targets="${targets:-all}"
+  fi
+
+  imports="$(normalize_agent_list "${imports:-none}")"
+  targets="$(normalize_agent_list "${targets:-none}")"
+  ./scripts/seed-shared-skills.sh --import-sources "$imports" --share-targets "$targets"
+}
+
 if command -v node >/dev/null 2>&1; then
   ok "Node found: $(node --version)"
 else
@@ -116,22 +307,28 @@ if command -v corepack >/dev/null 2>&1; then
 fi
 
 tailscale_ip=""
+tailnet_sync_enabled="false"
 if command -v tailscale >/dev/null 2>&1; then
   if tailscale status >/dev/null 2>&1; then
     ok "Tailscale is running"
     tailscale_ip="$(tailscale ip -4 2>/dev/null | head -1 || true)"
+    tailnet_sync_enabled="true"
     enable_tailscale_ssh
   else
     warn "Tailscale is installed but not connected"
-    missing+=("Run: tailscale up")
+    warn "Multi-machine collaboration and shared memory sync are disabled until you run: tailscale up"
   fi
 else
   warn "Tailscale is not installed"
-  missing+=("Install Tailscale and log in")
+  warn "Multi-machine collaboration and shared memory sync are disabled. Local-only dashboard, agents, and local vault features will still work."
 fi
 
-install_rsync_if_missing
-install_syncthing_if_missing
+if [[ "$tailnet_sync_enabled" == "true" ]]; then
+  install_rsync_if_missing
+  install_syncthing_if_missing
+else
+  warn "Skipping Tailnet rsync/Syncthing setup because Tailscale is not connected"
+fi
 
 if (( ${#missing[@]} > 0 )); then
   echo
@@ -145,39 +342,104 @@ if (( ${#missing[@]} > 0 )); then
   exit 1
 fi
 
-info "Installing app dependencies"
-pnpm install --frozen-lockfile
-ok "Dependencies installed"
+set_env_local() {
+  local key="$1"
+  local value="$2"
+  local env_file="$ROOT/.env.local"
+  touch "$env_file"
+  if grep -q "^${key}=" "$env_file"; then
+    local tmp_file
+    tmp_file="$(mktemp)"
+    awk -v key="$key" -v value="$value" 'BEGIN { replaced=0 } $0 ~ "^" key "=" { print key "=" value; replaced=1; next } { print } END { if (!replaced) print key "=" value }' "$env_file" > "$tmp_file"
+    mv "$tmp_file" "$env_file"
+  else
+    printf "%s=%s\n" "$key" "$value" >> "$env_file"
+  fi
+}
 
-info "Installing local telemetry collector"
-AGENT_TELEMETRY_PORT="$COLLECTOR_PORT" ./scripts/install-telemetry-collector.sh
-ok "Collector installed"
+set_env_local "NEXT_PUBLIC_TAILNET_SYNC_ENABLED" "$tailnet_sync_enabled"
+set_env_local "HIVE_ENV_TAILNET_SYNC" "$tailnet_sync_enabled"
+set_env_local "HIVE_ENV_TAILNET_USER" "$(id -un 2>/dev/null || printf "%s" "${USER:-}")"
 
-info "Building dashboard"
-pnpm build
-ok "Dashboard built"
+install_hive_env_add
+
+configure_shared_skills
+
+setup_cache_dir="$ROOT/.setup-cache"
+mkdir -p "$setup_cache_dir"
+
+hash_files() {
+  if command -v shasum >/dev/null 2>&1; then
+    shasum "$@" | shasum | awk '{print $1}'
+  else
+    sha256sum "$@" | sha256sum | awk '{print $1}'
+  fi
+}
+
+deps_stamp="$setup_cache_dir/deps.sha"
+deps_hash="$(hash_files package.json pnpm-lock.yaml)"
+if [[ "$CLI_SKIP_DEPS" == "true" ]]; then
+  warn "Skipping dependency install because --skip-deps was provided"
+elif [[ "$CLI_FORCE" != "true" && -d "$ROOT/node_modules" && -f "$deps_stamp" && "$(cat "$deps_stamp" 2>/dev/null)" == "$deps_hash" ]]; then
+  ok "Dependencies already installed"
+else
+  info "Installing app dependencies"
+  NODE_OPTIONS="${NODE_OPTIONS:+$NODE_OPTIONS }--no-deprecation" pnpm install --frozen-lockfile
+  printf "%s\n" "$deps_hash" > "$deps_stamp"
+  ok "Dependencies installed"
+fi
+
+if [[ "$CLI_SKIP_COLLECTOR" == "true" ]]; then
+  warn "Skipping local telemetry collector because --skip-collector was provided"
+else
+  info "Installing local telemetry collector"
+  hermes_restart_mode="now"
+  if setup_is_interactive; then
+    hermes_restart_mode="ask"
+  fi
+  AGENT_TELEMETRY_PORT="$COLLECTOR_PORT" AGENT_TELEMETRY_HERMES_RESTART="${AGENT_TELEMETRY_HERMES_RESTART:-$hermes_restart_mode}" ./scripts/install-telemetry-collector.sh
+  ok "Collector installed"
+fi
+
+build_stamp="$setup_cache_dir/build.sha"
+build_hash="$(hash_files package.json pnpm-lock.yaml next.config.ts tsconfig.json)"
+if [[ "$CLI_SKIP_BUILD" == "true" ]]; then
+  warn "Skipping dashboard build because --skip-build was provided"
+elif [[ "$CLI_FORCE" != "true" && -d "$ROOT/.next" && -f "$build_stamp" && "$(cat "$build_stamp" 2>/dev/null)" == "$build_hash" ]]; then
+  ok "Dashboard build already current"
+else
+  info "Building dashboard"
+  pnpm build
+  printf "%s\n" "$build_hash" > "$build_stamp"
+  ok "Dashboard built"
+fi
 
 start_dashboard() {
   info "Starting dashboard dev server on port $PORT"
-  nohup pnpm exec next dev -p "$PORT" > "$ROOT/.next/agent-control-room.log" 2>&1 &
+  mkdir -p "$ROOT/.next"
+  nohup ./scripts/run-with-memory-limit.sh --limit-mb 5000 -- pnpm exec next dev --webpack -p "$PORT" > "$ROOT/.next/agent-control-room.log" 2>&1 &
   sleep 2
 }
 
-port_pid="$(lsof -tiTCP:"$PORT" -sTCP:LISTEN 2>/dev/null | head -1 || true)"
-if [[ -n "$port_pid" ]]; then
-  port_cmd="$(ps -p "$port_pid" -o command= 2>/dev/null || true)"
-  port_cwd="$(lsof -a -p "$port_pid" -d cwd -Fn 2>/dev/null | sed -n 's/^n//p' | head -1 || true)"
-  if [[ "$port_cwd" == "$ROOT" && "$port_cmd" == *"next"* ]]; then
-    info "Restarting existing dashboard on port $PORT"
-    kill "$port_pid"
-    sleep 2
-    start_dashboard
-  else
-    warn "Port $PORT is already in use by another process; leaving it alone"
-    warn "Use PORT=<free-port> ./setup.sh or stop PID $port_pid first"
-  fi
+if [[ "$CLI_SKIP_DASHBOARD" == "true" ]]; then
+  warn "Skipping dashboard start because --skip-dashboard was provided"
 else
-  start_dashboard
+  port_pid="$(lsof -tiTCP:"$PORT" -sTCP:LISTEN 2>/dev/null | head -1 || true)"
+  if [[ -n "$port_pid" ]]; then
+    port_cmd="$(ps -p "$port_pid" -o command= 2>/dev/null || true)"
+    port_cwd="$(lsof -a -p "$port_pid" -d cwd -Fn 2>/dev/null | sed -n 's/^n//p' | head -1 || true)"
+    if [[ "$port_cwd" == "$ROOT" && "$port_cmd" == *"next"* ]]; then
+      info "Restarting existing dashboard on port $PORT"
+      kill "$port_pid"
+      sleep 2
+      start_dashboard
+    else
+      warn "Port $PORT is already in use by another process; leaving it alone"
+      warn "Use PORT=<free-port> ./setup.sh or stop PID $port_pid first"
+    fi
+  else
+    start_dashboard
+  fi
 fi
 
 local_url="http://localhost:$PORT"
@@ -202,10 +464,15 @@ echo "Collector:"
 if [[ -n "$collector_url" ]]; then
   echo "  $collector_url"
 else
-  echo "  http://<tailscale-ip>:$COLLECTOR_PORT"
+  echo "  http://localhost:$COLLECTOR_PORT"
 fi
 echo
-echo "On other Tailscale machines that run agents, clone the repo and run only:"
-echo "  ./scripts/install-telemetry-collector.sh"
+if [[ "$tailnet_sync_enabled" == "true" ]]; then
+  echo "On other Tailscale machines that run agents, clone the repo and run only:"
+  echo "  ./scripts/install-telemetry-collector.sh"
+  echo
+  echo "The dashboard will discover collectors automatically. Realtime folder sync uses Syncthing over your Tailnet by default; Tailscale SSH + rsync remains an advanced fallback."
+else
+  echo "Local-only mode is ready. Install and log in to Tailscale later to enable multi-machine collaboration and shared memory sync."
+fi
 echo
-echo "The dashboard will discover collectors automatically. Realtime folder sync uses Syncthing over your Tailnet by default; Tailscale SSH + rsync remains an advanced fallback."

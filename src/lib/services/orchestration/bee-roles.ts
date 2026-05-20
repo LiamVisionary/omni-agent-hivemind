@@ -67,36 +67,31 @@ export function chooseBeeAssignment(task: KanbanTask, agents: AgentProfile[]): B
     .sort((left, right) => agentDispatchScore(right) - agentDispatchScore(left));
   const queen = available.find((agent) => agent.beeRole === "queen")
     ?? available.find((agent) => /queen|orchestrat|lead|main/i.test(agent.name));
-  const exactWorker = available.find((agent) => agent.beeRole === "worker" && (agent.workerClass ?? "general") === workerClass);
-  const generalWorker = available.find((agent) => agent.beeRole === "worker" && (agent.workerClass ?? "general") === "general");
-  const worker = exactWorker ?? generalWorker;
-
-  if (worker) {
-    return {
-      queen,
-      worker,
-      workerClass,
-      mode: "worker",
-      reason: exactWorker
-        ? `${worker.name} matches the ${workerClass} worker class.`
-        : `${worker.name} is the best available general worker for ${workerClass} work.`,
-    };
-  }
-
   if (queen) {
     return {
       queen,
       worker: queen,
       workerClass,
       mode: "queen",
-      reason: `No matching worker is available, so ${queen.name} will hold or take the task.`,
+      reason: `${queen.name} is the Queen Bee and will review or delegate this ${workerClass} work.`,
+    };
+  }
+
+  const worker = available.find((agent) => agent.beeRole === "worker")
+    ?? available[0];
+  if (worker) {
+    return {
+      worker,
+      workerClass,
+      mode: "worker",
+      reason: `No Queen Bee is online, so the dashboard pickup loop chose ${worker.name} as the best available ${workerClass} worker.`,
     };
   }
 
   return {
     workerClass,
     mode: "pending",
-    reason: "No Queen Bee or eligible worker is available yet.",
+    reason: "No online agent is available for this task yet.",
   };
 }
 

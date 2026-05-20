@@ -7,9 +7,10 @@ import { Cell } from "./Cell";
  * described in the design philosophy. Each step is one short phrase
  * and a state — pending / current / done — never a configuration form.
  *
- *   1. Connect          — Tailscale detected
- *   2. Verify           — Collector verified
- *   3. Configure        — Optional feature rails kept behind disclosure
+ *   1. Optional: Install Tailscale — Private Tailnet ready
+ *   2. Connect           — Setup command run
+ *   3. Verify machine    — Collector verified
+ *   4. Configure         — Optional feature rails kept behind disclosure
  */
 export type SetupStepState = "pending" | "current" | "done";
 
@@ -46,11 +47,8 @@ export function SetupCell({ title, subtitle, steps, details }: SetupCellProps) {
 
   return (
     <Cell
-      glyph="SET"
-      eyebrow="Setup"
       title={title}
       subtitle={subtitle ?? (allDone ? "All steps are done." : currentStep?.hint ?? "Activate one cell at a time.")}
-      status={allDone ? "healthy" : "needs-setup"}
       tone={allDone ? "success" : "warning"}
       details={details}
       detailsLabel="Setup command"

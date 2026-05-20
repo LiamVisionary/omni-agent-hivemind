@@ -263,6 +263,85 @@
   padding-inline: 22px;
 }
 
+.mirosharkTemplateInputs {
+  display: grid;
+  gap: 10px;
+  border: 1px solid rgba(45, 212, 191, 0.16);
+  border-radius: 8px;
+  background: rgba(5, 8, 14, 0.36);
+  padding: 10px;
+}
+
+.mirosharkTemplateInputsHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.mirosharkTemplateInputsHeader > div {
+  display: grid;
+  gap: 2px;
+}
+
+.mirosharkTemplateInputsHeader span {
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.mirosharkTemplateInputsHeader strong {
+  color: var(--foreground);
+  font-size: 13px;
+}
+
+.mirosharkTemplateInputsHeader small {
+  border: 1px solid rgba(148, 163, 184, 0.12);
+  border-radius: 999px;
+  background: rgba(15, 23, 42, 0.58);
+  color: var(--muted);
+  font-size: 11px;
+  padding: 3px 8px;
+}
+
+.mirosharkTemplateInputGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.mirosharkTemplateInputGrid label.wide {
+  grid-column: 1 / -1;
+}
+
+.mirosharkTemplateInputGrid label > span {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.mirosharkTemplateInputGrid em {
+  color: var(--accent-strong);
+  font-size: 9px;
+  font-style: normal;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.mirosharkTemplateInputGrid small {
+  color: var(--muted);
+  font-size: 10px;
+  line-height: 1.35;
+}
+
+.mirosharkTemplateInputGrid textarea {
+  min-height: 82px;
+  resize: vertical;
+}
+
 .mirosharkTemplateShelf {
   display: grid;
   gap: 8px;
@@ -1115,7 +1194,7 @@
 @media (max-width: 880px) {
   .mirosharkWorkbench,
   .mirosharkRunControls,
-  .mirosharkCapabilityStrip,
+  .mirosharkTemplateInputGrid,
   .mirosharkAnalysisGrid,
   .mirosharkExperimentPanel,
   .mirosharkTelemetryStats,
@@ -1145,6 +1224,7 @@
 :global(:root[data-theme="hive-light"]) .mirosharkHistoryRail,
 :global(:root[data-theme="hive-light"]) .mirosharkWorkbenchBody,
 :global(:root[data-theme="hive-light"]) .mirosharkBuilderSurface,
+:global(:root[data-theme="hive-light"]) .mirosharkTemplateInputs,
 :global(:root[data-theme="hive-light"]) .mirosharkHistoryCard,
 :global(:root[data-theme="hive-light"]) .mirosharkRunSummary,
 :global(:root[data-theme="hive-light"]) .mirosharkRunControls,

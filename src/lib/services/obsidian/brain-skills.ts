@@ -1,11 +1,11 @@
 import { constants } from "fs";
-import { access, cp, mkdir, readdir, readFile, stat, writeFile } from "fs/promises";
+import { access, cp, mkdir, readdir, readFile, rm, stat, writeFile } from "fs/promises";
 import { createHash } from "crypto";
 import { homedir } from "os";
 import { basename, dirname, join, relative, resolve } from "path";
 import { resolveObsidianVaultPath } from "@/lib/services/obsidian/vault-path";
 
-export type BrainSkillProviderId = "claude" | "codex" | "hermes" | "gemini" | "openclaw";
+export type BrainSkillProviderId = "claude" | "codex" | "hermes" | "gemini" | "openclaw" | "aeon";
 
 export type BrainSkillSummary = {
   id: string;
@@ -46,6 +46,26 @@ export type BrainSkillImportResult = BrainSkillInventory & {
   imported: BrainSkillSummary[];
   skipped: BrainSkillSummary[];
   provider: BrainSkillProviderId | "all";
+};
+
+export type BrainSkillAeonSyncResult = {
+  vaultPath: string;
+  aeonRoot: string;
+  skillsFolder: string;
+  manifestPath: string;
+  synced: BrainSkillSummary[];
+  skipped: Array<BrainSkillSummary & { reason: string }>;
+  totalShared: number;
+};
+
+export type RemoteBrainSkillInput = {
+  slug?: string;
+  name?: string;
+  description?: string;
+  source?: string;
+  category?: string;
+  skillMdUrl?: string;
+  githubUrl?: string;
 };
 
 const PROVIDERS: Array<{
@@ -100,10 +120,28 @@ const PROVIDERS: Array<{
       { path: "~/Documents/code/projects/my-anime-waifu-web/openclaw-next/skills", maxDepth: 4 },
     ],
   },
+  {
+    id: "aeon",
+    label: "Aeon",
+    home: "~/.aeon",
+    roots: [
+      { path: "~/.aeon/skills", maxDepth: 4 },
+      { path: "~/.aeon/plugins", maxDepth: 8 },
+      { path: "~/.aeon/agents", maxDepth: 6 },
+      { path: process.env.AEON_LOCAL_PATH ? `${process.env.AEON_LOCAL_PATH}/skills` : "~/.aeon/repo/skills", maxDepth: 3 },
+    ],
+  },
 ];
 
 const SKIPPED_DIRS = new Set([".git", "node_modules", ".next", "dist", "build", ".cache"]);
-const SOURCE_METADATA_FILE = ".openclaw-skill-source.json";
+const SOURCE_METADATA_FILE = ".hivemind-skill-source.json";
+const BUNDLED_SHARED_SKILLS = [
+  {
+    slug: "karpathy-guidelines",
+    providerLabel: "Bundled skills",
+    sourceUrl: "https://github.com/multica-ai/andrej-karpathy-skills/tree/main/skills/karpathy-guidelines",
+  },
+];
 
 function expandHome(path: string) {
   return path === "~" || path.startsWith("~/") ? join(homedir(), path.slice(2)) : path;
@@ -221,6 +259,16 @@ async function readSourceMetadata(skillDir: string): Promise<{ providerLabel?: s
   }
 }
 
+async function readManagedMetadata(skillDir: string): Promise<Record<string, unknown> | null> {
+  const metadata = await readText(join(skillDir, SOURCE_METADATA_FILE));
+  if (!metadata) return null;
+  try {
+    return JSON.parse(metadata) as Record<string, unknown>;
+  } catch {
+    return null;
+  }
+}
+
 function firstParagraph(markdown: string) {
   return markdown
     .replace(/^---\n[\s\S]*?\n---/, "")
@@ -233,7 +281,7 @@ async function readSharedSkills(vaultPath: string) {
   const skillsFolder = join(vaultPath, "Skills");
   const files = await findSkillFiles(skillsFolder, 3);
   const blank = new Map<string, BrainSkillSummary>();
-  const shared = await Promise.all(files.map((skillPath) => skillSummary({
+  const summaries = await Promise.all(files.map((skillPath) => skillSummary({
     skillPath,
     provider: "shared",
     providerLabel: "Shared brain",
@@ -241,13 +289,60 @@ async function readSharedSkills(vaultPath: string) {
     sharedByChecksum: blank,
     sharedBySlug: blank,
   })));
-  return shared.sort((a, b) => a.name.localeCompare(b.name));
+  const unique = new Map<string, BrainSkillSummary>();
+  for (const skill of summaries.sort((a, b) => (
+    sourcePriority(a) - sourcePriority(b)
+    || a.slug.length - b.slug.length
+    || a.relativePath.localeCompare(b.relativePath)
+  ))) {
+    const key = sanitizeSlug(skill.name || skill.slug);
+    if (!unique.has(key)) unique.set(key, skill);
+  }
+  return [...unique.values()].sort((a, b) => a.name.localeCompare(b.name));
+}
+
+async function ensureSharedSkillsFolder(vaultPath: string) {
+  const skillsFolder = join(vaultPath, "Skills");
+  await mkdir(skillsFolder, { recursive: true });
+
+  let seeded = false;
+  for (const skill of BUNDLED_SHARED_SKILLS) {
+    const sourceDir = join(process.cwd(), "skills", skill.slug);
+    const sourceSkillPath = join(sourceDir, "SKILL.md");
+    if (!(await exists(sourceSkillPath))) continue;
+
+    const destinationDir = join(skillsFolder, skill.slug);
+    const destinationSkillPath = join(destinationDir, "SKILL.md");
+    if (await exists(destinationSkillPath)) continue;
+
+    await cp(sourceDir, destinationDir, {
+      recursive: true,
+      errorOnExist: false,
+      force: false,
+      filter: (path) => !path.split("/").some((part) => SKIPPED_DIRS.has(part)),
+    });
+    await writeFile(join(destinationDir, SOURCE_METADATA_FILE), JSON.stringify({
+      provider: "bundled",
+      providerLabel: skill.providerLabel,
+      sourceUrl: skill.sourceUrl,
+      importedAt: new Date().toISOString(),
+    }, null, 2), "utf8");
+    seeded = true;
+  }
+
+  return seeded;
+}
+
+function sourcePriority(skill: BrainSkillSummary) {
+  if (skill.providerLabel === "Shared brain") return 0;
+  return 1;
 }
 
 export async function getBrainSkillInventory(vaultPath?: string): Promise<BrainSkillInventory> {
   const resolvedVault = resolveObsidianVaultPath(vaultPath);
   const skillsFolder = join(resolvedVault, "Skills");
   const readmePath = join(skillsFolder, "README.md");
+  const seeded = await ensureSharedSkillsFolder(resolvedVault);
   const shared = await readSharedSkills(resolvedVault);
   const sharedByChecksum = new Map(shared.map((skill) => [skill.checksum, skill]));
   const sharedBySlug = new Map(shared.map((skill) => [skill.slug, skill]));
@@ -279,7 +374,7 @@ export async function getBrainSkillInventory(vaultPath?: string): Promise<BrainS
   const providerSkills = providers.reduce((sum, provider) => sum + provider.skills.length, 0);
   const importable = providers.reduce((sum, provider) => sum + provider.skills.filter((skill) => !skill.imported).length, 0);
 
-  return {
+  const inventory = {
     vaultPath: resolvedVault,
     skillsFolder,
     readmePath,
@@ -291,6 +386,32 @@ export async function getBrainSkillInventory(vaultPath?: string): Promise<BrainS
       importable,
     },
   };
+  if (seeded) await writeSkillsReadme(inventory);
+  return inventory;
+}
+
+export async function getSharedBrainSkills(vaultPath?: string): Promise<{
+  vaultPath: string;
+  skillsFolder: string;
+  readmePath: string;
+  shared: BrainSkillSummary[];
+}> {
+  const resolvedVault = resolveObsidianVaultPath(vaultPath);
+  const skillsFolder = join(resolvedVault, "Skills");
+  const readmePath = join(skillsFolder, "README.md");
+  const seeded = await ensureSharedSkillsFolder(resolvedVault);
+  const shared = await readSharedSkills(resolvedVault);
+  if (seeded) {
+    await writeSkillsReadme({
+      vaultPath: resolvedVault,
+      skillsFolder,
+      readmePath,
+      shared,
+      providers: [],
+      totals: { shared: shared.length, providerSkills: 0, importable: 0 },
+    });
+  }
+  return { vaultPath: resolvedVault, skillsFolder, readmePath, shared };
 }
 
 export async function importBrainSkills(input: {
@@ -307,7 +428,8 @@ export async function importBrainSkills(input: {
   const skipped: BrainSkillSummary[] = [];
 
   for (const source of selectedProviders.flatMap((item) => item.skills)) {
-    if (source.imported) {
+    const existingSharedSkill = sharedBySlug.get(source.slug);
+    if (source.imported || existingSharedSkill) {
       skipped.push(source);
       continue;
     }
@@ -330,6 +452,7 @@ export async function importBrainSkills(input: {
     const copied = { ...source, imported: true, importedAs: destinationSlug };
     imported.push(copied);
     sharedBySlug.set(destinationSlug, copied);
+    sharedBySlug.set(source.slug, copied);
   }
 
   const after = await getBrainSkillInventory(input.vaultPath);
@@ -339,6 +462,122 @@ export async function importBrainSkills(input: {
     imported,
     skipped,
     provider,
+  };
+}
+
+export async function importRemoteBrainSkill(input: {
+  vaultPath?: string;
+  skill: RemoteBrainSkillInput;
+}): Promise<BrainSkillInventory> {
+  const before = await getBrainSkillInventory(input.vaultPath);
+  await mkdir(before.skillsFolder, { recursive: true });
+  const skill = input.skill;
+  const slug = sanitizeSlug(skill.slug || skill.name || "skill");
+  const sharedBySlug = new Map(before.shared.map((item) => [item.slug, item]));
+  const destinationSlug = await nextDestinationSlug(before.skillsFolder, slug, "shared", sharedBySlug);
+  const destinationDir = join(before.skillsFolder, destinationSlug);
+  await mkdir(destinationDir, { recursive: true });
+
+  let markdown = "";
+  if (skill.skillMdUrl) {
+    const response = await fetch(skill.skillMdUrl, { signal: AbortSignal.timeout(12_000) });
+    if (response.ok) markdown = await response.text();
+  }
+
+  if (!markdown.trim()) {
+    markdown = [
+      "---",
+      `name: "${(skill.name || slugToName(destinationSlug)).replace(/"/g, "'")}"`,
+      `description: "${(skill.description || "Shared agent skill.").replace(/"/g, "'")}"`,
+      "---",
+      "",
+      `# ${skill.name || slugToName(destinationSlug)}`,
+      "",
+      skill.description || "Use this skill when its title matches the task.",
+      "",
+      "## Source",
+      "",
+      skill.githubUrl ? `- Repository: ${skill.githubUrl}` : "",
+      skill.skillMdUrl ? `- SKILL.md: ${skill.skillMdUrl}` : "",
+    ].filter(Boolean).join("\n");
+  }
+
+  await writeFile(join(destinationDir, "SKILL.md"), markdown.endsWith("\n") ? markdown : `${markdown}\n`, "utf8");
+  await writeFile(join(destinationDir, SOURCE_METADATA_FILE), JSON.stringify({
+    provider: "remote",
+    providerLabel: skill.source || "Skill browser",
+    sourceUrl: skill.skillMdUrl || skill.githubUrl || "",
+    importedAt: new Date().toISOString(),
+  }, null, 2), "utf8");
+
+  const after = await getBrainSkillInventory(input.vaultPath);
+  await writeSkillsReadme(after);
+  return after;
+}
+
+function resolveAeonRoot(aeonLocalPath?: string) {
+  const configured = aeonLocalPath?.trim()
+    || process.env.AEON_LOCAL_PATH?.trim()
+    || process.env.AEON_HOME?.trim()
+    || "~/.aeon";
+  return resolve(expandHome(configured));
+}
+
+export async function syncSharedBrainSkillsToAeon(input: {
+  vaultPath?: string;
+  aeonLocalPath?: string;
+}): Promise<BrainSkillAeonSyncResult> {
+  const inventory = await getBrainSkillInventory(input.vaultPath);
+  const aeonRoot = resolveAeonRoot(input.aeonLocalPath);
+  const skillsFolder = join(aeonRoot, "skills");
+  const manifestPath = join(aeonRoot, "skills.json");
+  await mkdir(skillsFolder, { recursive: true });
+
+  const synced: BrainSkillSummary[] = [];
+  const skipped: Array<BrainSkillSummary & { reason: string }> = [];
+
+  for (const skill of inventory.shared) {
+    const sourceDir = dirname(skill.path);
+    const destinationDir = join(skillsFolder, skill.slug);
+    const destinationSkill = join(destinationDir, "SKILL.md");
+    const destinationExists = await exists(destinationSkill);
+    const destinationMetadata = destinationExists ? await readManagedMetadata(destinationDir) : null;
+    const destinationText = destinationExists ? await readText(destinationSkill) : "";
+    const destinationChecksum = destinationText ? checksum(destinationText) : "";
+    const managedByHivemind = destinationMetadata?.managedBy === "omni-agent-hivemind" || destinationMetadata?.provider === "shared-brain";
+
+    if (destinationExists && destinationChecksum !== skill.checksum && !managedByHivemind) {
+      skipped.push({ ...skill, reason: `Aeon already has an unmanaged skill at ${destinationDir}` });
+      continue;
+    }
+
+    if (managedByHivemind) await rm(destinationDir, { recursive: true, force: true });
+    await cp(sourceDir, destinationDir, {
+      recursive: true,
+      errorOnExist: false,
+      force: true,
+      filter: (path) => !path.split("/").some((part) => SKIPPED_DIRS.has(part)),
+    });
+    await writeFile(join(destinationDir, SOURCE_METADATA_FILE), JSON.stringify({
+      managedBy: "omni-agent-hivemind",
+      provider: "shared-brain",
+      providerLabel: "Shared brain",
+      sourcePath: skill.path,
+      sourceChecksum: skill.checksum,
+      syncedAt: new Date().toISOString(),
+    }, null, 2), "utf8");
+    synced.push(skill);
+  }
+
+  await writeAeonSkillsManifest(manifestPath, inventory.shared, skipped);
+  return {
+    vaultPath: inventory.vaultPath,
+    aeonRoot,
+    skillsFolder,
+    manifestPath,
+    synced,
+    skipped,
+    totalShared: inventory.shared.length,
   };
 }
 
@@ -369,6 +608,49 @@ async function exists(path: string) {
   }
 }
 
+async function writeAeonSkillsManifest(
+  manifestPath: string,
+  shared: BrainSkillSummary[],
+  skipped: Array<BrainSkillSummary & { reason: string }>,
+) {
+  let existingSkills: Array<Record<string, unknown>> = [];
+  const existing = await readText(manifestPath);
+  if (existing.trim()) {
+    try {
+      const parsed = JSON.parse(existing) as { skills?: Array<Record<string, unknown>> };
+      existingSkills = Array.isArray(parsed.skills) ? parsed.skills : [];
+    } catch {
+      existingSkills = [];
+    }
+  }
+
+  const skippedSlugs = new Set(skipped.map((skill) => skill.slug));
+  const retained = existingSkills.filter((skill) => {
+    const slug = typeof skill.slug === "string" ? skill.slug : "";
+    if (!slug) return false;
+    if (skill.source === "shared-brain") return false;
+    return true;
+  });
+  const sharedEntries = shared
+    .filter((skill) => !skippedSlugs.has(skill.slug))
+    .map((skill) => ({
+      slug: skill.slug,
+      name: skill.name,
+      description: skill.description,
+      source: "shared-brain",
+      skillMdPath: skill.path,
+      checksum: skill.checksum,
+    }));
+
+  const manifest = {
+    managedBy: "omni-agent-hivemind",
+    updatedAt: new Date().toISOString(),
+    skills: [...retained, ...sharedEntries].sort((a, b) => String(a.slug).localeCompare(String(b.slug))),
+  };
+  await mkdir(dirname(manifestPath), { recursive: true });
+  await writeFile(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`, "utf8");
+}
+
 async function writeSkillsReadme(inventory: BrainSkillInventory) {
   const grouped = new Map<string, BrainSkillSummary[]>();
   for (const skill of inventory.shared) {
@@ -381,7 +663,7 @@ async function writeSkillsReadme(inventory: BrainSkillInventory) {
     "",
     "Operational know-how distilled into self-contained recipes. Each subfolder is a single skill: a `SKILL.md` with frontmatter plus optional helper files.",
     "",
-    "This index is maintained by OpenClaw Brain skill import. Edit individual `SKILL.md` files at the source when a provider owns them, then import again to mirror them here.",
+    "This index is maintained by Omni-Agent Hivemind skill import. Edit individual `SKILL.md` files at the source when a provider owns them, then import again to mirror them here.",
     "",
     "## Index",
     "",

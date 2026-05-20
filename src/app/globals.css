@@ -358,6 +358,9 @@ h1 {
 }
 
 .viewTab span {
+  display: flex;
+  gap: 8px;
+  align-items: center;
   grid-column: 2;
   grid-row: 1;
   min-width: 0;

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import {
+  createAgentNotification,
   listAgentNotifications,
   markAgentNotificationRead,
   markAllAgentNotificationsRead,
@@ -15,6 +16,17 @@ export async function GET(request: NextRequest) {
     const cursor = Number(request.nextUrl.searchParams.get("cursor") ?? 0);
     const limit = Number(request.nextUrl.searchParams.get("limit") ?? 40);
     const result = await listAgentNotifications({ ...options, cursor, limit });
+    return NextResponse.json({ ok: true, ...result });
+  } catch (error) {
+    return errorResponse(error);
+  }
+}
+
+export async function POST(request: NextRequest) {
+  try {
+    const body = await request.json();
+    const options = optionsFromRequest(request, body);
+    const result = await createAgentNotification(body.notification ?? body, options);
     return NextResponse.json({ ok: true, ...result });
   } catch (error) {
     return errorResponse(error);

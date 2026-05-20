@@ -1,9 +1,9 @@
 /**
- * OpenClaw Security Proxy
+ * Agent Security Proxy
  *
- * Sits between the client and the OpenClaw gateway on both sides:
+ * Sits between the client and any agent runtime on both sides:
  *
- *   Client → [InputProxy] → Gateway/LLM → [OutputProxy] → Client
+ *   Client → [InputProxy] → Runtime/LLM → [OutputProxy] → Client
  *
  * Input side:
  *   - Input filter:        length limits, null-byte stripping, encoding normalization
@@ -153,7 +153,7 @@ function redactSecrets(text: string): { text: string; redacted: string[] } {
 // ── Input Proxy ──────────────────────────────────────────────────────────────
 
 /**
- * Runs all input-side checks on a message before it reaches the OpenClaw gateway.
+ * Runs all input-side checks on a message before it reaches an agent runtime.
  *
  * Pipeline:
  *   1. Input filter  — length, encoding normalization
@@ -180,7 +180,7 @@ export function proxyInput(text: string): ProxyResult {
   // ── 2. Injection detector ────────────────────────────────────────────────
   for (const { pattern, label } of INJECTION_PATTERNS) {
     if (pattern.test(normalized)) {
-      console.warn(`[OpenClaw SecurityProxy] Input blocked — injection detected: ${label}`);
+      console.warn(`[Agent SecurityProxy] Input blocked — injection detected: ${label}`);
       return {
         verdict: 'block',
         text: '',
@@ -193,7 +193,7 @@ export function proxyInput(text: string): ProxyResult {
   // ── 3. Policy classifier ─────────────────────────────────────────────────
   for (const { pattern, label } of POLICY_PATTERNS) {
     if (pattern.test(normalized)) {
-      console.warn(`[OpenClaw SecurityProxy] Input blocked — policy violation: ${label}`);
+      console.warn(`[Agent SecurityProxy] Input blocked — policy violation: ${label}`);
       return {
         verdict: 'block',
         text: '',
@@ -222,20 +222,20 @@ export function proxyOutput(text: string): ProxyResult {
   }
 
   if (text.length > MAX_OUTPUT_LENGTH) {
-    console.warn(`[OpenClaw SecurityProxy] Output truncated — exceeded ${MAX_OUTPUT_LENGTH} chars`);
+    console.warn(`[Agent SecurityProxy] Output truncated — exceeded ${MAX_OUTPUT_LENGTH} chars`);
     text = text.slice(0, MAX_OUTPUT_LENGTH) + '\n[Response truncated by security policy]';
   }
 
   // ── 1 + 2. Output scanner + Secret detector ──────────────────────────────
   const { text: redactedText, redacted } = redactSecrets(text);
   if (redacted.length > 0) {
-    console.warn(`[OpenClaw SecurityProxy] Output redacted — secrets detected: ${redacted.join(', ')}`);
+    console.warn(`[Agent SecurityProxy] Output redacted — secrets detected: ${redacted.join(', ')}`);
   }
 
   // ── 3. Policy validator ──────────────────────────────────────────────────
   for (const { pattern, label } of OUTPUT_POLICY_PATTERNS) {
     if (pattern.test(redactedText)) {
-      console.warn(`[OpenClaw SecurityProxy] Output blocked — policy violation: ${label}`);
+      console.warn(`[Agent SecurityProxy] Output blocked — policy violation: ${label}`);
       return {
         verdict: 'block',
         text: '',
@@ -322,7 +322,7 @@ export function proxySkillAction(slug: string, args: string[]): SkillActionProxy
   // Only enforce allowlist when we can read the installed skills.
   // If the directory is unreadable (e.g. wrong env), fail open so skills still work.
   if (installedSlugs !== null && !installedSlugs.has(slug)) {
-    console.warn(`[OpenClaw SecurityProxy] Skill action blocked — '${slug}' not in installed skills`);
+    console.warn(`[Agent SecurityProxy] Skill action blocked — '${slug}' not in installed skills`);
     return { verdict: 'block', args: [], reason: `Skill '${slug}' is not installed`, trigger: 'skill-allowlist' };
   }
 
@@ -342,12 +342,12 @@ export function proxySkillAction(slug: string, args: string[]): SkillActionProxy
     }
 
     if (SHELL_INJECTION.test(arg)) {
-      console.warn(`[OpenClaw SecurityProxy] Skill action blocked — shell injection in arg: ${arg.slice(0, 80)}`);
+      console.warn(`[Agent SecurityProxy] Skill action blocked — shell injection in arg: ${arg.slice(0, 80)}`);
       return { verdict: 'block', args: [], reason: 'Blocked by security policy', trigger: 'shell-injection' };
     }
 
     if (PATH_TRAVERSAL.test(arg)) {
-      console.warn(`[OpenClaw SecurityProxy] Skill action blocked — path traversal in arg: ${arg.slice(0, 80)}`);
+      console.warn(`[Agent SecurityProxy] Skill action blocked — path traversal in arg: ${arg.slice(0, 80)}`);
       return { verdict: 'block', args: [], reason: 'Blocked by security policy', trigger: 'path-traversal' };
     }
 

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import {
   getBrainSkillInventory,
   importBrainSkills,
+  importRemoteBrainSkill,
   type BrainSkillProviderId,
 } from "@/lib/services/obsidian/brain-skills";
 
@@ -20,9 +21,27 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json().catch(() => ({})) as {
+      action?: "import-remote";
       vaultPath?: string;
       provider?: BrainSkillProviderId | "all";
+      skill?: {
+        slug?: string;
+        name?: string;
+        description?: string;
+        source?: string;
+        category?: string;
+        skillMdUrl?: string;
+        githubUrl?: string;
+      };
     };
+    if (body.action === "import-remote") {
+      if (!body.skill) throw new Error("Missing skill to import.");
+      const result = await importRemoteBrainSkill({
+        vaultPath: body.vaultPath,
+        skill: body.skill,
+      });
+      return NextResponse.json({ ok: true, ...result, imported: [body.skill], skipped: [] });
+    }
     const result = await importBrainSkills({
       vaultPath: body.vaultPath,
       provider: body.provider ?? "all",

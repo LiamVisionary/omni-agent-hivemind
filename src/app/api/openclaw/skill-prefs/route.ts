@@ -39,15 +39,15 @@ interface ParsedSchema {
 /** Find the workspace skills directory for a given skill slug */
 function findSkillDir(slug: string): string | null {
   try {
-    const configPath = join(homedir(), '.openclaw', 'openclaw.json');
+    const configPath = join(/*turbopackIgnore: true*/ homedir(), '.openclaw', 'openclaw.json');
     if (!existsSync(configPath)) return null;
     const raw = readFileSync(configPath, 'utf-8').replace(/\/\/[^\n]*/g, '');
     const config = JSON.parse(raw);
 
     const agentList = (config.agents?.list ?? []) as Record<string, unknown>[];
     for (const agent of agentList) {
-      const workspace = (agent.workspace as string) ?? join(homedir(), '.openclaw', `workspace-${agent.id}`);
-      const skillDir = join(workspace, 'skills', slug);
+      const workspace = (agent.workspace as string) ?? join(/*turbopackIgnore: true*/ homedir(), '.openclaw', `workspace-${agent.id}`);
+      const skillDir = join(/*turbopackIgnore: true*/ workspace, 'skills', slug);
       if (existsSync(skillDir)) return skillDir;
     }
   } catch { /* ignore */ }
@@ -57,8 +57,8 @@ function findSkillDir(slug: string): string | null {
 /** Find EXTEND.md for a skill. Priority: project → user home → workspace skill dir */
 function findExtendMd(slug: string, skillDir: string | null): string | null {
   const candidates = [
-    join(homedir(), '.baoyu-skills', slug, 'EXTEND.md'),
-    ...(skillDir ? [join(skillDir, 'EXTEND.md')] : []),
+    join(/*turbopackIgnore: true*/ homedir(), '.baoyu-skills', slug, 'EXTEND.md'),
+    ...(skillDir ? [join(/*turbopackIgnore: true*/ skillDir, 'EXTEND.md')] : []),
   ];
   for (const p of candidates) {
     if (existsSync(p)) return p;
@@ -68,7 +68,7 @@ function findExtendMd(slug: string, skillDir: string | null): string | null {
 
 /** Get the writable path for EXTEND.md (user home level) */
 function getExtendMdWritePath(slug: string): string {
-  return join(homedir(), '.baoyu-skills', slug, 'EXTEND.md');
+  return join(/*turbopackIgnore: true*/ homedir(), '.baoyu-skills', slug, 'EXTEND.md');
 }
 
 /** Extract YAML between --- delimiters */
@@ -267,12 +267,12 @@ export async function GET(request: NextRequest) {
   const skillDir = findSkillDir(slug);
 
   // Try to find and parse the preferences schema (structured UI)
-  const schemaPath = skillDir ? join(skillDir, 'references', 'config', 'preferences-schema.md') : null;
+  const schemaPath = skillDir ? join(/*turbopackIgnore: true*/ skillDir, 'references', 'config', 'preferences-schema.md') : null;
   const schema = schemaPath && existsSync(schemaPath) ? parsePreferencesSchema(schemaPath) : null;
 
   // Read current EXTEND.md — check user override first, then skill default
   const userExtendPath = getExtendMdWritePath(slug);
-  const skillExtendPath = skillDir ? join(skillDir, 'EXTEND.md') : null;
+  const skillExtendPath = skillDir ? join(/*turbopackIgnore: true*/ skillDir, 'EXTEND.md') : null;
   const extendPath = findExtendMd(slug, skillDir);
 
   const values: Record<string, string> = {};
@@ -313,7 +313,7 @@ export async function GET(request: NextRequest) {
   // Check if the skill supports EXTEND.md (mentioned in SKILL.md) even if none exists yet
   let supportsExtend = schema !== null || rawExtend !== null || defaultExtend !== null;
   if (!supportsExtend && skillDir) {
-    const skillMdPath = join(skillDir, 'SKILL.md');
+    const skillMdPath = join(/*turbopackIgnore: true*/ skillDir, 'SKILL.md');
     if (existsSync(skillMdPath)) {
       const skillMd = readFileSync(skillMdPath, 'utf-8');
       supportsExtend = skillMd.includes('EXTEND.md');
@@ -341,7 +341,7 @@ export async function POST(request: NextRequest) {
 
   const { slug } = body;
   const writePath = getExtendMdWritePath(slug);
-  const dir = join(writePath, '..');
+  const dir = join(/*turbopackIgnore: true*/ writePath, '..');
 
   // Reset to default = delete user override
   if (body.resetToDefault) {
@@ -365,7 +365,7 @@ export async function POST(request: NextRequest) {
     if (!skillDir) {
       return Response.json({ error: 'Skill not found' }, { status: 404 });
     }
-    const schemaPath = join(skillDir, 'references', 'config', 'preferences-schema.md');
+    const schemaPath = join(/*turbopackIgnore: true*/ skillDir, 'references', 'config', 'preferences-schema.md');
     const schema = existsSync(schemaPath) ? parsePreferencesSchema(schemaPath) : null;
     if (!schema) {
       return Response.json({ error: 'No schema found for this skill' }, { status: 404 });

@@ -34,7 +34,7 @@ type CreateTaskInput = {
   idempotencyKey?: string;
 };
 
-type PatchTaskInput = Partial<Pick<KanbanTask, "title" | "body" | "result" | "assignee" | "tenant" | "status" | "priority" | "workspace" | "skills">>;
+type PatchTaskInput = Partial<Pick<KanbanTask, "title" | "body" | "result" | "assignee" | "tenant" | "status" | "priority" | "workspace" | "skills" | "agentSession">>;
 
 export type KanbanStorageOptions = {
   vaultPath?: string | null;
@@ -235,8 +235,12 @@ export async function patchTask(slug: string | null, taskId: string, patch: Patc
     assignee: patch.assignee === "" ? undefined : patch.assignee ?? task.assignee,
     tenant: patch.tenant === "" ? undefined : patch.tenant ?? task.tenant,
     updatedAt: Date.now(),
-    completedAt: nextStatus === "done" ? Date.now() : task.completedAt,
+    completedAt: nextStatus ? (nextStatus === "done" ? Date.now() : undefined) : task.completedAt,
   };
+  if (isUnpollableAcceptedWorking(changed)) {
+    changed.status = "needs-human";
+    changed.result = "Agent accepted the task but did not attach a pollable session or return output. Check the agent runtime/auth, then move this card back to Ready for Queen.";
+  }
   board.tasks = board.tasks.map((item) => item.id === taskId ? changed : item);
   board.events.unshift(event(
     nextStatus && nextStatus !== fromStatus ? "task.moved" : "task.updated",
@@ -252,9 +256,31 @@ export async function moveTask(slug: string | null, taskId: string, status: Kanb
   const task = board.tasks.find((item) => item.id === taskId);
   if (!task) throw new Error("Task not found.");
   board.tasks = moveTaskBetweenColumns(board.tasks, taskId, status);
+  const moved = board.tasks.find((item) => item.id === taskId);
+  if (moved && status === "working" && isRetryBlockerResult(moved.result)) {
+    moved.result = "";
+    moved.agentSession = null;
+  }
+  if (moved && isUnpollableAcceptedWorking(moved)) {
+    moved.status = "needs-human";
+    moved.result = "This task cannot be marked Working because the assigned agent has no active session. Fix the agent runtime/auth, then move it back to Waiting for Queen.";
+    board.events.unshift(event("task.blocked", `${moved.title} needs agent runtime/auth before it can work`, taskId));
+  }
   board.events.unshift(event("task.moved", `Moved ${task.title} to ${status}`, taskId));
   await writeBoard(touch(board), options);
   return { board, task: board.tasks.find((item) => item.id === taskId)! };
+}
+
+export async function deleteTask(slug: string | null, taskId: string, options: KanbanStorageOptions = {}) {
+  const board = await readBoard(slug, options);
+  const task = board.tasks.find((item) => item.id === taskId);
+  if (!task) throw new Error("Task not found.");
+  board.tasks = board.tasks.filter((item) => item.id !== taskId);
+  board.comments = board.comments.filter((comment) => comment.taskId !== taskId);
+  board.links = board.links.filter((link) => link.parentId !== taskId && link.childId !== taskId);
+  board.events.unshift(event("task.deleted", `Deleted ${task.title}`));
+  await writeBoard(touch(board), options);
+  return { board, task };
 }
 
 export async function addComment(slug: string | null, taskId: string, body: string, author = "dashboard", options: KanbanStorageOptions = {}) {
@@ -326,6 +352,16 @@ function boardPathFor(root: string, boardsRoot: string, slug: string) {
 
 function cleanOptional(value?: string | null) {
   return value?.trim() || undefined;
+}
+
+function isUnpollableAcceptedWorking(task: KanbanTask) {
+  return task.status === "working"
+    && !task.agentSession?.sessionId
+    && /accepted the delegated work|accepted the task|produced no output|no pollable session|waiting for agent update|dashboard response before timeout|auth is failing|needs Hermes\/Codex/i.test(task.result ?? "");
+}
+
+function isRetryBlockerResult(result?: string) {
+  return /cannot be marked Working|signed out of Codex|auth is failing|no active session|no pollable session|needs Hermes\/Codex/i.test(result ?? "");
 }
 
 function safeVaultFolder(folder?: string | null) {

@@ -24,6 +24,19 @@ type NotificationStorageOptions = {
   notificationsFolder?: string | null;
 };
 
+export type CreateAgentNotificationInput = {
+  id?: string;
+  title: string;
+  body: string;
+  priority?: AgentNotificationPriority;
+  kind?: AgentNotificationKind;
+  agentName?: string;
+  agentId?: string;
+  source?: string;
+  tags?: string[];
+  createdAt?: string;
+};
+
 type ReadState = {
   read: Record<string, string>;
   updatedAt: string;
@@ -109,6 +122,33 @@ export async function updateAgentNotificationSettings(patch: Partial<AgentNotifi
     updatedAt: new Date().toISOString(),
   };
   await writeJsonAtomic(storage.settingsFile, next);
+  return listAgentNotifications({ ...options, cursor: 0, limit: 40 });
+}
+
+export async function createAgentNotification(input: CreateAgentNotificationInput, options: NotificationStorageOptions = {}) {
+  const storage = resolveNotificationStorage(options);
+  await ensureNotificationRoot(storage);
+  const createdAt = parseDate(input.createdAt) ?? new Date().toISOString();
+  const id = notificationId(input.id || `${input.agentName || "agent"}-${input.title}`);
+  const date = createdAt.slice(0, 10).split("-");
+  const dir = join(storage.notificationsRoot, date[0], date[1], date[2]);
+  const file = join(dir, `${id}.md`);
+  const tags = [...new Set((input.tags ?? []).map((tag) => tag.replace(/^#/, "").trim()).filter(Boolean))];
+  const frontmatter = [
+    "---",
+    `id: ${yamlScalar(id)}`,
+    `title: ${yamlScalar(input.title.trim() || "Agent notification")}`,
+    `createdAt: ${yamlScalar(createdAt)}`,
+    `priority: ${normalizePriority(input.priority)}`,
+    `kind: ${normalizeKind(input.kind)}`,
+    `agentName: ${yamlScalar(input.agentName?.trim() || "Agent")}`,
+    input.agentId?.trim() ? `agentId: ${yamlScalar(input.agentId.trim())}` : "",
+    input.source?.trim() ? `source: ${yamlScalar(input.source.trim())}` : "",
+    tags.length ? `tags: ${tags.join(", ")}` : "",
+    "---",
+  ].filter(Boolean).join("\n");
+  await mkdir(dir, { recursive: true, mode: 0o700 });
+  await writeFile(file, `${frontmatter}\n\n${input.body.trim()}\n`, { mode: 0o600 });
   return listAgentNotifications({ ...options, cursor: 0, limit: 40 });
 }
 
@@ -304,4 +344,17 @@ function parseTags(value?: string) {
 
 function idFromPath(path: string, root: string) {
   return relative(root, path).replace(/\.md$/i, "").split(sep).join("/");
+}
+
+function notificationId(value: string) {
+  return value
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9_-]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 96) || `notification-${Date.now().toString(36)}`;
+}
+
+function yamlScalar(value: string) {
+  return JSON.stringify(value);
 }

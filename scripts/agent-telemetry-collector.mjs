@@ -4,7 +4,7 @@ import { execFile, spawn } from "node:child_process";
 import { randomBytes } from "node:crypto";
 import { access, mkdir, readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { constants } from "node:fs";
-import { homedir, hostname } from "node:os";
+import { homedir, hostname, userInfo } from "node:os";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
@@ -13,18 +13,21 @@ const execFileAsync = promisify(execFile);
 const port = Number(process.env.AGENT_TELEMETRY_PORT || 8787);
 const appDir = resolve(join(fileURLToPath(import.meta.url), "..", ".."));
 const defaultHermesDir = process.env.HERMES_HOME || join(homedir(), ".hermes");
+const defaultAeonDir = process.env.AEON_LOCAL_PATH || process.env.AEON_HOME || join(homedir(), ".aeon");
 const maxChars = 1000;
 const maxChatChars = 12_000;
 const chatTimeoutMs = Number(process.env.AGENT_TELEMETRY_CHAT_TIMEOUT_MS || 180_000);
+const sessionDiscoveryTimeoutMs = Number(process.env.AGENT_TELEMETRY_SESSION_DISCOVERY_TIMEOUT_MS || 15_000);
 const hermesApiHost = process.env.AGENT_TELEMETRY_HERMES_API_HOST || "127.0.0.1";
 const hermesApiPort = Number(process.env.AGENT_TELEMETRY_HERMES_API_PORT || process.env.API_SERVER_PORT || 8642);
 const hermesApiBaseUrl = `http://${hermesApiHost}:${hermesApiPort}`;
+const hermesApiKey = process.env.AGENT_TELEMETRY_HERMES_API_KEY || process.env.API_SERVER_KEY || "";
 const hermesApiStartTimeoutMs = Number(process.env.AGENT_TELEMETRY_HERMES_API_START_TIMEOUT_MS || 15_000);
 const syncthingApiBaseUrl = process.env.SYNCTHING_API_URL || "http://127.0.0.1:8384";
 const defaultSyncPath = expandHome(
   process.env.OMNI_HIVEMIND_SYNC_PATH
     || process.env.NEXT_PUBLIC_OBSIDIAN_VAULT_PATH
-    || "~/Documents/Obsidian/Omni-Agent Hivemind Vault",
+    || "~/Documents/Obsidian/omni-agent-hivemind-vault",
 );
 let hermesApiProcess = null;
 let hermesApiStartPromise = null;
@@ -37,8 +40,23 @@ function jsonResponse(response, status, payload) {
   response.writeHead(status, { "content-type": "application/json" }).end(JSON.stringify(payload));
 }
 
+function currentUsername() {
+  try {
+    return userInfo().username;
+  } catch {
+    return process.env.USER || process.env.LOGNAME || "";
+  }
+}
+
 function ssePayload(payload) {
   return `data: ${JSON.stringify(payload)}\n\n`;
+}
+
+function hermesApiHeaders(extra = {}) {
+  return {
+    ...extra,
+    ...(hermesApiKey ? { Authorization: `Bearer ${hermesApiKey}` } : {}),
+  };
 }
 
 function sleep(ms) {
@@ -498,7 +516,7 @@ async function resolveHermesBin() {
 }
 
 function startUpdate() {
-  const command = `cd ${shellQuote(appDir)} && mkdir -p .next && { echo "--- update $(date -u +%Y-%m-%dT%H:%M:%SZ) ---"; git pull --ff-only; if command -v corepack >/dev/null 2>&1; then corepack prepare pnpm@8.6.12 --activate; hash -r 2>/dev/null || true; fi; CI=true pnpm install --frozen-lockfile; pnpm build; ./setup.sh; } >> .next/agent-update.log 2>&1`;
+  const command = `cd ${shellQuote(appDir)} && mkdir -p .next && { echo "--- update $(date -u +%Y-%m-%dT%H:%M:%SZ) ---"; git pull --ff-only; if command -v corepack >/dev/null 2>&1; then corepack prepare pnpm@8.6.12 --activate; hash -r 2>/dev/null || true; fi; CI=true NODE_OPTIONS="\${NODE_OPTIONS:+\$NODE_OPTIONS }--no-deprecation" pnpm install --frozen-lockfile; pnpm build; ./setup.sh; } >> .next/agent-update.log 2>&1`;
   const child = spawn("sh", ["-lc", command], {
     detached: true,
     stdio: "ignore",
@@ -575,6 +593,68 @@ async function scanFiles(agent, dataDir) {
   return tasks;
 }
 
+async function scanRuntimeSchedules(agent, dataDir) {
+  const safeDir = resolve(expandHome(dataDir || ""));
+  if (agent.runtime === "aeon") {
+    const configPath = join(safeDir, "aeon.yml");
+    const content = await readFile(configPath, "utf-8").catch(() => "");
+    if (!content.trim()) return [];
+    const schedules = [];
+    for (const line of content.split(/\r?\n/)) {
+      const inline = line.match(/^  ([a-zA-Z0-9_-]+):\s*\{(.+)\}/);
+      if (!inline) continue;
+      const slug = inline[1];
+      const fields = inline[2];
+      const enabled = /enabled:\s*true/.test(fields);
+      const schedule = fields.match(/schedule:\s*"([^"]+)"/)?.[1] ?? fields.match(/schedule:\s*([^,}]+)/)?.[1]?.trim() ?? "workflow_dispatch";
+      const skillVar = fields.match(/var:\s*"([^"]+)"/)?.[1] ?? "";
+      schedules.push({
+        id: slug,
+        runtime: "aeon",
+        agentId: agent.id,
+        name: slug.split(/[-_]/).map((part) => part.charAt(0).toUpperCase() + part.slice(1)).join(" "),
+        every: schedule,
+        schedule,
+        message: skillVar || `Run Aeon skill ${slug}`,
+        enabled,
+        source: "collector/aeon.yml",
+      });
+    }
+    return schedules;
+  }
+  const cronDir = join(safeDir, "cron");
+  const entries = await readdir(cronDir, { withFileTypes: true }).catch(() => []);
+  const schedules = [];
+  for (const entry of entries.filter((item) => item.isFile()).slice(0, 40)) {
+    if (!/\.(md|txt|json|jsonl|yaml|yml)$/i.test(entry.name)) continue;
+    const filePath = join(cronDir, entry.name);
+    const content = await readFile(filePath, "utf-8").catch(() => "");
+    if (!content.trim()) continue;
+    const stats = await stat(filePath).catch(() => null);
+    let parsed = {};
+    if (/\.json$/i.test(entry.name)) {
+      try { parsed = JSON.parse(content); } catch { parsed = {}; }
+    }
+    const firstLine = content.split(/\r?\n/).find((line) => line.trim())?.replace(/^#+\s*/, "").trim();
+    const name = parsed.name || parsed.title || firstLine || entry.name.replace(/\.[^.]+$/, "");
+    const every = parsed.every || parsed.interval || parsed.schedule || "";
+    const message = parsed.message || parsed.prompt || parsed.task || content.slice(0, 1200);
+    schedules.push({
+      id: `${agent.runtime}:${agent.id}:${entry.name}`,
+      runtime: agent.runtime,
+      agentId: agent.id,
+      name,
+      every,
+      schedule: every || "runtime file",
+      message,
+      enabled: parsed.enabled !== false,
+      updatedAt: stats?.mtimeMs ?? Date.now(),
+      source: `collector/${entry.name}`,
+    });
+  }
+  return schedules;
+}
+
 async function processSeen(agent) {
   const { stdout } = await execFileAsync("ps", ["-axo", "command="], { timeout: 4000, maxBuffer: 800_000 }).catch(() => ({ stdout: "" }));
   const needles = [agent.id, agent.agentId, agent.name]
@@ -599,6 +679,35 @@ async function localAgents() {
       gatewayUrl: "",
       agentId: "local-hermes",
       localDataDir: defaultHermesDir,
+      machineName: hostname(),
+    });
+  }
+  const aeonConfig = join(defaultAeonDir, "aeon.yml");
+  const aeonAvailable = await access(aeonConfig, constants.R_OK).then(() => true).catch(() => false);
+  if (aeonAvailable) {
+    agents.push({
+      id: `aeon-${hostname().toLowerCase().replace(/[^a-z0-9]+/g, "-")}`,
+      name: "Aeon",
+      runtime: "aeon",
+      runtimeKind: "background",
+      runtimeCapabilities: {
+        status: true,
+        skills: true,
+        schedules: true,
+        runs: true,
+        outputs: true,
+        memory: true,
+        notifications: true,
+        setup: true,
+      },
+      gatewayUrl: process.env.AEON_A2A_URL || "http://127.0.0.1:41241",
+      a2aUrl: process.env.AEON_A2A_URL || "http://127.0.0.1:41241",
+      aeonLocalPath: defaultAeonDir,
+      aeonRepo: process.env.AEON_REPO || "",
+      aeonBranch: process.env.AEON_BRANCH || "main",
+      aeonMode: process.env.AEON_A2A_URL ? "a2a" : "github",
+      agentId: "local-aeon",
+      localDataDir: defaultAeonDir,
       machineName: hostname(),
     });
   }
@@ -643,7 +752,10 @@ async function hermesApiHealthy() {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), 800);
   try {
-    const response = await fetch(`${hermesApiBaseUrl}/health`, { signal: controller.signal });
+    const response = await fetch(`${hermesApiBaseUrl}/health`, {
+      headers: hermesApiHeaders(),
+      signal: controller.signal,
+    });
     return response.ok;
   } catch {
     return false;
@@ -659,16 +771,17 @@ async function ensureHermesApiServer(hermesHome) {
 
   hermesApiStartPromise = (async () => {
     const bin = await resolveHermesBin();
-    hermesApiProcess = spawn(bin, ["gateway", "run"], {
+    hermesApiProcess = spawn(bin, ["gateway", "run", "--accept-hooks"], {
       env: {
         ...process.env,
         HERMES_HOME: hermesHome,
-        API_SERVER_ENABLED: "1",
+        API_SERVER_ENABLED: "true",
         API_SERVER_HOST: hermesApiHost,
         API_SERVER_PORT: String(hermesApiPort),
+        ...(hermesApiKey ? { API_SERVER_KEY: hermesApiKey } : {}),
         PAGER: "cat",
       },
-      stdio: ["ignore", "ignore", "ignore"],
+      stdio: ["ignore", "inherit", "inherit"],
     });
     hermesApiProcess.on("exit", () => {
       hermesApiProcess = null;
@@ -706,14 +819,93 @@ function apiServerMessages(body, text) {
   return [{ role: "user", content: text }];
 }
 
+function normalizeHermesSessionId(input) {
+  const value = String(input || "").trim();
+  if (!value) return "";
+  return value.replace(/^session_/, "").replace(/\.json$/, "");
+}
+
+function hermesSessionIdFromFile(name) {
+  return normalizeHermesSessionId(name);
+}
+
+function readableSessionMessageContent(message) {
+  const content = readableChatContent(message?.content ?? message?.text ?? message?.message ?? "");
+  if (/^---\s*name:\s*kanban-worker\b/i.test(content.trim())) return "";
+  return content;
+}
+
+async function readHermesApiSession(hermesHome, sessionId) {
+  const normalized = normalizeHermesSessionId(sessionId);
+  if (!normalized) return null;
+  const filePath = join(hermesHome, "sessions", `session_${normalized}.json`);
+  try {
+    const [raw, fileStats] = await Promise.all([readFile(filePath, "utf-8"), stat(filePath)]);
+    const parsed = JSON.parse(raw);
+    const messages = Array.isArray(parsed.messages)
+      ? parsed.messages.map((message, index) => ({
+        index,
+        role: message?.role === "user" || message?.role === "assistant" || message?.role === "tool" ? message.role : "assistant",
+        content: readableSessionMessageContent(message),
+        createdAt: Number(message?.created_at || message?.timestamp || 0) > 1_000_000_000_000
+          ? Number(message?.created_at || message?.timestamp)
+          : fileStats.mtimeMs,
+      })).filter((message) => message.content.trim())
+      : [];
+    return {
+      sessionId: normalizeHermesSessionId(parsed.session_id || normalized),
+      file: filePath,
+      startedAt: parsed.session_start ? Date.parse(parsed.session_start) || fileStats.birthtimeMs : fileStats.birthtimeMs,
+      updatedAt: parsed.last_updated ? Date.parse(parsed.last_updated) || fileStats.mtimeMs : fileStats.mtimeMs,
+      messageCount: parsed.message_count ?? messages.length,
+      messages,
+    };
+  } catch {
+    return null;
+  }
+}
+
+async function listRecentHermesApiSessions(hermesHome, sinceMs = 0) {
+  const dir = join(hermesHome, "sessions");
+  const entries = await readdir(dir, { withFileTypes: true }).catch(() => []);
+  const files = [];
+  for (const entry of entries) {
+    if (!entry.isFile() || !/^session_api-.*\.json$/.test(entry.name)) continue;
+    const filePath = join(dir, entry.name);
+    const fileStats = await stat(filePath).catch(() => null);
+    if (!fileStats || fileStats.mtimeMs < sinceMs) continue;
+    files.push({ name: entry.name, mtimeMs: fileStats.mtimeMs });
+  }
+  files.sort((a, b) => b.mtimeMs - a.mtimeMs);
+  return (await Promise.all(files.slice(0, 20).map((file) => (
+    readHermesApiSession(hermesHome, hermesSessionIdFromFile(file.name))
+  )))).filter(Boolean);
+}
+
+async function waitForHermesApiSession(hermesHome, sinceMs, text) {
+  const needle = text.trim().slice(0, 80);
+  const deadline = Date.now() + sessionDiscoveryTimeoutMs;
+  while (Date.now() < deadline) {
+    const sessions = await listRecentHermesApiSessions(hermesHome, sinceMs);
+    const matched = sessions.find((session) => (
+      !needle || session.messages.some((message) => message.role === "user" && message.content.includes(needle))
+    ));
+    if (matched) return matched;
+    if (sessions[0]) return sessions[0];
+    await sleep(250);
+  }
+  return null;
+}
+
 async function proxyHermesApiChat(body, response, text, hermesHome) {
+  const requestStartedAt = Date.now();
   if (!(await ensureHermesApiServer(hermesHome))) return false;
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), chatTimeoutMs);
   try {
     const upstream = await fetch(`${hermesApiBaseUrl}/v1/chat/completions`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: hermesApiHeaders({ "Content-Type": "application/json" }),
       body: JSON.stringify({
         model: "hermes-agent",
         stream: true,
@@ -736,14 +928,36 @@ async function proxyHermesApiChat(body, response, text, hermesHome) {
       return false;
     }
 
-    response.writeHead(200, {
-      "content-type": "text/event-stream",
-      "cache-control": "no-cache",
-      connection: "keep-alive",
-      "x-hermes-stream-source": "api-server",
-    });
-
     response.on("close", () => controller.abort());
+
+    const ensureHeaders = () => {
+      if (response.headersSent || response.writableEnded) return;
+      response.writeHead(200, {
+        "content-type": "text/event-stream",
+        "cache-control": "no-cache",
+        connection: "keep-alive",
+        "x-hermes-stream-source": "api-server",
+      });
+    };
+
+    let emittedSession = false;
+    async function emitSession() {
+      if (emittedSession || response.writableEnded) return;
+      const session = await waitForHermesApiSession(hermesHome, requestStartedAt - 2_000, text);
+      if (!session) return;
+      ensureHeaders();
+      response.write(ssePayload({
+        session: {
+          id: session.sessionId,
+          startedAt: session.startedAt,
+          updatedAt: session.updatedAt,
+          messageCount: session.messages.length,
+        },
+      }));
+      emittedSession = true;
+    }
+
+    await emitSession();
 
     const reader = upstream.body.getReader();
     const decoder = new TextDecoder();
@@ -763,9 +977,9 @@ async function proxyHermesApiChat(body, response, text, hermesHome) {
         const raw = dataLine.replace(/^data:\s*/, "");
         if (raw === "[DONE]") {
           if (hasMultimodal && !wroteContent) {
+            ensureHeaders();
             response.write(ssePayload({ error: "Hermes accepted the attached media but returned no text. Check that the active Hermes model supports the attached image/audio type." }));
           }
-          response.write("data: [DONE]\n\n");
           wroteDone = true;
           continue;
         }
@@ -774,6 +988,7 @@ async function proxyHermesApiChat(body, response, text, hermesHome) {
           const content = parsed?.choices?.[0]?.delta?.content;
           if (typeof content === "string" && content.length > 0) {
             wroteContent = true;
+            ensureHeaders();
             response.write(ssePayload({ choices: [{ delta: { content } }] }));
           }
         } catch {
@@ -782,9 +997,14 @@ async function proxyHermesApiChat(body, response, text, hermesHome) {
       }
     }
     if (hasMultimodal && !wroteContent && !wroteDone) {
+      ensureHeaders();
       response.write(ssePayload({ error: "Hermes accepted the attached media but returned no text. Check that the active Hermes model supports the attached image/audio type." }));
-      response.write("data: [DONE]\n\n");
+      wroteDone = true;
     }
+    await emitSession();
+    if (!wroteContent && !emittedSession && !response.headersSent) return false;
+    ensureHeaders();
+    response.write("data: [DONE]\n\n");
     if (!response.writableEnded) response.end();
     return true;
   } catch {
@@ -931,6 +1151,8 @@ function readBody(request) {
 }
 
 createServer(async (request, response) => {
+  const requestUrl = new URL(request.url || "/", "http://127.0.0.1");
+  const pathname = requestUrl.pathname;
   response.setHeader("access-control-allow-origin", "*");
   response.setHeader("access-control-allow-methods", "GET,POST,OPTIONS");
   response.setHeader("access-control-allow-headers", "content-type");
@@ -938,16 +1160,29 @@ createServer(async (request, response) => {
     response.writeHead(204).end();
     return;
   }
-  if (request.url === "/health") {
+  if (pathname === "/health") {
+    const syncthing = await syncthingInstalled();
+    const agents = await localAgents();
+    const runtimes = [...new Set(agents.map((agent) => agent.runtime))];
     jsonResponse(response, 200, {
       ok: true,
       host: hostname(),
       version: await appVersion(),
-      capabilities: { chat: true, runtimes: ["hermes"], syncthing: true, defaultSyncPath },
+      envSync: {
+        ready: true,
+        user: currentUsername(),
+        command: "hive-env-add",
+      },
+      capabilities: {
+        chat: runtimes.includes("hermes"),
+        runtimes,
+        syncthing: syncthing.installed,
+        defaultSyncPath,
+      },
     });
     return;
   }
-  if (request.url === "/update" && request.method === "POST") {
+  if (pathname === "/update" && request.method === "POST") {
     const version = await appVersion();
     const command = startUpdate();
     jsonResponse(response, 202, {
@@ -960,17 +1195,23 @@ createServer(async (request, response) => {
     });
     return;
   }
-  if (request.url === "/agents") {
+  if (pathname === "/agents") {
     const agents = await localAgents();
     jsonResponse(response, 200, { ok: true, host: hostname(), agents });
     return;
   }
-  if (request.url === "/syncthing/status") {
+  if (pathname === "/schedules") {
+    const agents = await localAgents();
+    const schedules = (await Promise.all(agents.map((agent) => scanRuntimeSchedules(agent, agent.localDataDir)))).flat();
+    jsonResponse(response, 200, { ok: true, host: hostname(), schedules });
+    return;
+  }
+  if (pathname === "/syncthing/status") {
     const status = await syncthingStatus();
     jsonResponse(response, status.ok ? 200 : 503, status);
     return;
   }
-  if (request.url === "/syncthing/configure" && request.method === "POST") {
+  if (pathname === "/syncthing/configure" && request.method === "POST") {
     try {
       const rawBody = await readBody(request);
       const body = rawBody ? JSON.parse(rawBody) : {};
@@ -984,7 +1225,7 @@ createServer(async (request, response) => {
     }
     return;
   }
-  if (request.url === "/syncthing/test-note" && request.method === "POST") {
+  if (pathname === "/syncthing/test-note" && request.method === "POST") {
     try {
       const rawBody = await readBody(request);
       const body = rawBody ? JSON.parse(rawBody) : {};
@@ -998,7 +1239,16 @@ createServer(async (request, response) => {
     }
     return;
   }
-  if (request.url === "/chat" && request.method === "POST") {
+  if (pathname === "/sessions" && request.method === "GET") {
+    const sessionId = requestUrl.searchParams.get("sessionId") || requestUrl.searchParams.get("id") || "";
+    const sinceMs = Number(requestUrl.searchParams.get("sinceMs") || 0);
+    const session = sessionId
+      ? await readHermesApiSession(defaultHermesDir, sessionId)
+      : (await listRecentHermesApiSessions(defaultHermesDir, sinceMs))[0] ?? null;
+    jsonResponse(response, session ? 200 : 404, session ? { ok: true, session } : { ok: false, error: "session not found" });
+    return;
+  }
+  if (pathname === "/chat" && request.method === "POST") {
     try {
       const rawBody = await readBody(request);
       const body = rawBody ? JSON.parse(rawBody) : {};
@@ -1016,7 +1266,7 @@ createServer(async (request, response) => {
     }
     return;
   }
-  if (request.url !== "/snapshot") {
+  if (pathname !== "/snapshot") {
     jsonResponse(response, 404, { ok: false, error: "not found" });
     return;
   }

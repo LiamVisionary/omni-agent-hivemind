@@ -5,7 +5,6 @@ import { resolve } from "path";
 import {
   configuredObsidianVaultPath,
   expandHomePath,
-  LEGACY_OBSIDIAN_VAULT_PATH,
   resolveObsidianVaultPath,
 } from "@/lib/services/obsidian/vault-path";
 
@@ -52,9 +51,6 @@ export async function POST(request: NextRequest) {
 
   const requestedVaultPath = vaultPath || configuredObsidianVaultPath();
   const resolvedVaultPath = resolveObsidianVaultPath(vaultPath);
-  const fallbackVaultPath = requestedVaultPath === LEGACY_OBSIDIAN_VAULT_PATH || requestedVaultPath.endsWith("/Omni Agent Vault")
-    ? configuredObsidianVaultPath()
-    : "";
 
   try {
     const result = await checkVaultPath(resolvedVaultPath);
@@ -63,17 +59,6 @@ export async function POST(request: NextRequest) {
       detected: resolve(expandHome(requestedVaultPath)) !== result.vaultPath,
     });
   } catch (error) {
-    if (fallbackVaultPath) {
-      try {
-        const fallback = await checkVaultPath(resolveObsidianVaultPath(fallbackVaultPath));
-        return Response.json({
-          ...fallback,
-          migratedFrom: resolve(expandHome(requestedVaultPath)),
-        });
-      } catch {
-        // Fall through to the original error so the user sees what failed.
-      }
-    }
     return Response.json({
       ok: false,
       vaultPath: resolve(expandHome(requestedVaultPath)),

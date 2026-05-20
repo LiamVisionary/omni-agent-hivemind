@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
-import { MoreVertical } from "lucide-react";
+import { ChevronRight, MoreVertical } from "lucide-react";
 
 import { cn } from "@/lib/utils/cn";
 
@@ -23,6 +23,7 @@ export type CellMenuItem = {
   label?: ReactNode;
   icon?: ReactNode;
   onClick: () => void;
+  children?: CellMenuItem[];
   disabled?: boolean;
   /** Renders as a danger-tinted row, used for Remove / Delete / etc. */
   destructive?: boolean;
@@ -40,6 +41,7 @@ type CellMenuProps = {
 
 export function CellMenu({ items, ariaLabel, triggerIcon, className }: CellMenuProps) {
   const [open, setOpen] = useState(false);
+  const [expandedKey, setExpandedKey] = useState("");
   const wrapperRef = useRef<HTMLDivElement>(null);
 
   // Close on click-outside and ESC.
@@ -90,6 +92,7 @@ export function CellMenu({ items, ariaLabel, triggerIcon, className }: CellMenuP
           {items.map((item, index) => {
             const previous = items[index - 1];
             const showSeparator = item.destructive && previous && !previous.destructive;
+            const expanded = expandedKey === item.key;
             return (
               <li key={item.key} role="none">
                 {showSeparator ? (
@@ -100,10 +103,16 @@ export function CellMenu({ items, ariaLabel, triggerIcon, className }: CellMenuP
                   role="menuitem"
                   data-slot={item.destructive ? "cell-menu-item-danger" : "cell-menu-item"}
                   disabled={item.disabled}
+                  aria-expanded={item.children?.length ? expanded : undefined}
                   onClick={(event) => {
                     event.stopPropagation();
                     if (item.disabled) return;
+                    if (item.children?.length) {
+                      setExpandedKey((current) => current === item.key ? "" : item.key);
+                      return;
+                    }
                     setOpen(false);
+                    setExpandedKey("");
                     item.onClick();
                   }}
                   className={cn(
@@ -117,7 +126,40 @@ export function CellMenu({ items, ariaLabel, triggerIcon, className }: CellMenuP
                 >
                   {item.icon}
                   <span className="flex-1 truncate">{item.label ?? item.key}</span>
+                  {item.children?.length ? <ChevronRight aria-hidden="true" className={cn("transition-transform", expanded && "rotate-90")} /> : null}
                 </button>
+                {item.children?.length && expanded ? (
+                  <ul role="menu" className="mb-1 ml-2 border-l border-[rgba(148,163,184,0.14)] pl-1">
+                    {item.children.map((child) => (
+                      <li key={child.key} role="none">
+                        <button
+                          type="button"
+                          role="menuitem"
+                          data-slot={child.destructive ? "cell-menu-item-danger" : "cell-menu-item"}
+                          disabled={child.disabled}
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            if (child.disabled) return;
+                            setOpen(false);
+                            setExpandedKey("");
+                            child.onClick();
+                          }}
+                          className={cn(
+                            "flex w-full items-center gap-2 px-2.5 py-1.5 text-left transition-colors",
+                            "disabled:cursor-not-allowed disabled:opacity-45",
+                            child.destructive
+                              ? "text-[#fecdd3] enabled:hover:bg-[rgba(225,29,72,0.16)]"
+                              : "text-[var(--foreground)] enabled:hover:bg-[rgba(45,212,191,0.12)] enabled:hover:text-[var(--accent-strong)]",
+                            "[&_svg]:size-3.5 [&_svg]:shrink-0",
+                          )}
+                        >
+                          {child.icon}
+                          <span className="flex-1 truncate">{child.label ?? child.key}</span>
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                ) : null}
               </li>
             );
           })}

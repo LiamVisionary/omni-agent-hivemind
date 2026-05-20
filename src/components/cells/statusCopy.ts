@@ -20,6 +20,7 @@ export type AgentLike = {
   hasTelemetryUrl: boolean;
   activeCount: number;
   snapshotOk?: boolean;
+  processRunning?: boolean;
   snapshotError?: string;
 };
 
@@ -94,6 +95,12 @@ export function agentStatus(agent: AgentLike): {
         agent.activeCount === 1
           ? "Working on one task right now."
           : `Working on ${agent.activeCount} tasks right now.`,
+    };
+  }
+  if (agent.snapshotOk && agent.processRunning) {
+    return {
+      kind: "running",
+      body: "Agent is running.",
     };
   }
   if (agent.snapshotOk) {

@@ -1,6 +1,6 @@
 import { execFile } from "child_process";
 import { promisify } from "util";
-import type { AgentProfile } from "@/lib/types/agent-runtime";
+import type { AgentProfile, AgentRuntime } from "@/lib/types/agent-runtime";
 
 export const runtime = "nodejs";
 
@@ -48,6 +48,20 @@ type CollectorCapabilities = {
   defaultSyncPath?: string;
 };
 
+const QUEEN_RUNTIME_PRIORITY: AgentRuntime[] = ["hermes", "openclaw", "aeon"];
+
+function localDevice(): Device {
+  return {
+    self: true,
+    name: "This machine",
+    dnsName: "",
+    os: process.platform,
+    online: true,
+    ip: "127.0.0.1",
+    collectorUrl: "http://127.0.0.1:8787",
+  };
+}
+
 function simplifyDevice(peer: TailscalePeer, self = false): Device {
   const ip = peer.TailscaleIPs?.find((value) => /^\d+\.\d+\.\d+\.\d+$/.test(value)) ?? peer.TailscaleIPs?.[0] ?? "";
   const dnsName = peer.DNSName?.replace(/\.$/, "") ?? "";
@@ -67,12 +81,13 @@ async function tailscaleDevices() {
     timeout: 5_000,
     maxBuffer: 1_500_000,
   }).catch(() => ({ stdout: "" }));
-  if (!stdout) return [];
+  if (!stdout) return [localDevice()];
   const status = JSON.parse(stdout) as TailscaleStatus;
-  return [
+  const devices = [
     ...(status.Self ? [simplifyDevice(status.Self, true)] : []),
     ...Object.values(status.Peer ?? {}).map((peer) => simplifyDevice(peer)),
   ];
+  return devices.length ? devices : [localDevice()];
 }
 
 async function fetchJson(url: string, init?: RequestInit) {
@@ -85,8 +100,45 @@ async function fetchJson(url: string, init?: RequestInit) {
   return response.json() as Promise<Record<string, unknown>>;
 }
 
+function hasQueenAgent(agents: AgentProfile[]) {
+  return agents.some((agent) => (
+    agent.beeRole === "queen"
+    || /queen|orchestrat|lead/i.test(agent.name)
+  ));
+}
+
+function queenRuntimeRank(runtime: AgentRuntime) {
+  const index = QUEEN_RUNTIME_PRIORITY.indexOf(runtime);
+  return index === -1 ? QUEEN_RUNTIME_PRIORITY.length : index;
+}
+
+function defaultQueenAgent(device: Device, agents: AgentProfile[], capabilities?: CollectorCapabilities): AgentProfile | null {
+  if (hasQueenAgent(agents)) return null;
+  const configuredRuntimes = new Set((capabilities?.runtimes ?? [])
+    .filter((runtime): runtime is AgentRuntime => ["hermes", "openclaw", "aeon"].includes(runtime)));
+  const candidates = agents
+    .filter((agent) => configuredRuntimes.size === 0 || configuredRuntimes.has(agent.runtime))
+    .sort((left, right) => queenRuntimeRank(left.runtime) - queenRuntimeRank(right.runtime));
+  const base = candidates[0];
+  if (!base) return null;
+  const machineSlug = (device.name || device.ip || "machine").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "machine";
+  return {
+    ...base,
+    id: `queen-bee-${machineSlug}-${base.runtime}`,
+    name: "Queen Bee",
+    agentId: base.agentId || base.id,
+    beeRole: "queen",
+    workerClass: "planner",
+    runtimeKind: base.runtimeKind,
+    runtimeCapabilities: base.runtimeCapabilities,
+    telemetryUrl: device.collectorUrl,
+    machineName: device.name,
+    collectorCapabilities: capabilities,
+  };
+}
+
 export async function GET() {
-  const devices = await tailscaleDevices().catch(() => []);
+  const devices = await tailscaleDevices().catch(() => [localDevice()]);
   const machines = await Promise.all(devices.map(async (device) => {
     if (!device.collectorUrl) {
       return { device, collector: "missing", agents: [], snapshots: [] };
@@ -124,21 +176,29 @@ export async function GET() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ agents }),
       }) as { snapshots?: unknown[] };
+      const visibleAgents = [
+        ...agents,
+        ...[defaultQueenAgent(device, agents, capabilities)].filter((agent): agent is AgentProfile => Boolean(agent)),
+      ];
       return {
         device,
         collector: "ready",
         version,
         capabilities,
-        agents,
+        agents: visibleAgents,
         snapshots: snapshotData.snapshots ?? [],
       };
     } catch {
+      const visibleAgents = [
+        ...agents,
+        ...[defaultQueenAgent(device, agents, capabilities)].filter((agent): agent is AgentProfile => Boolean(agent)),
+      ];
       return {
         device,
         collector: "ready",
         version,
         capabilities,
-        agents,
+        agents: visibleAgents,
         snapshots: [],
       };
     }

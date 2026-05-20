@@ -30,6 +30,16 @@ export type KanbanLink = {
   createdAt: number;
 };
 
+export type KanbanAgentSession = {
+  agentId: string;
+  agentName: string;
+  telemetryUrl?: string;
+  sessionId: string;
+  startedAt: number;
+  updatedAt: number;
+  lastMessageCount?: number;
+};
+
 export type KanbanTask = {
   id: string;
   title: string;
@@ -41,6 +51,7 @@ export type KanbanTask = {
   priority: KanbanPriority;
   workspace: "scratch" | "worktree" | `dir:${string}`;
   skills: string[];
+  agentSession?: KanbanAgentSession | null;
   idempotencyKey?: string;
   createdAt: number;
   updatedAt: number;
@@ -69,12 +80,12 @@ export type KanbanColumnGroup = KanbanColumn & {
 };
 
 export const KANBAN_COLUMNS: KanbanColumn[] = [
-  { id: "ideas", title: "Ideas", description: "Park thoughts here. Nothing is automated until you move them onward." },
-  { id: "ready", title: "Ready for Queen", description: "Work waiting for the Queen Bee to review, assign, or take herself." },
-  { id: "working", title: "Working", description: "The Queen Bee or a worker bee has claimed this." },
-  { id: "needs-human", title: "Needs Human", description: "Only used when the colony needs a decision, access, or approval." },
-  { id: "done", title: "Done", description: "Finished work with notes, evidence, or a result summary." },
-  { id: "archived", title: "Archived", description: "Hidden by default, preserved for audit history." },
+  { id: "ideas", title: "Ideas", description: "Capture rough thoughts. Nothing runs from here." },
+  { id: "ready", title: "Waiting for Queen", description: "Ready for the Queen Bee to assign or take on." },
+  { id: "working", title: "Working", description: "Claimed by an agent and actively being handled." },
+  { id: "needs-human", title: "Needs You", description: "Blocked on access, approval, or a decision." },
+  { id: "done", title: "Done", description: "Finished with notes, evidence, or a result." },
+  { id: "archived", title: "Archived", description: "Hidden from the main board, kept for history." },
 ];
 
 export const KANBAN_STATUSES = KANBAN_COLUMNS.map((column) => column.id);

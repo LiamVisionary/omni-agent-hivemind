@@ -67,7 +67,7 @@ export async function POST(request: Request) {
     if (!remotePath) throw new Error("remotePath is required because the remote collector did not report a default sync path.");
 
     const folderId = body.folderId?.trim() || "omni-agent-hivemind-vault";
-    const label = body.label?.trim() || "Omni-Agent Hivemind Vault";
+    const label = body.label?.trim() || "omni-agent-hivemind-vault";
     const [localConfig, remoteConfig] = await Promise.all([
       collectorJson(localBase, "/syncthing/configure", {
         method: "POST",

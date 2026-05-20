@@ -3,8 +3,10 @@ import type { AgentProfile, SharedVaultConfig } from "@/lib/types/agent-runtime"
 import { getRuntimeUrl } from "@/lib/types/agent-runtime";
 import { sendMessageViaGateway } from "@/lib/services/openclaw/gateway-client";
 import { getGatewayAuthToken } from "@/lib/services/openclaw/gateway-health";
+import { proxyInput, proxyOutput } from "@/lib/services/agent-security-proxy";
 import type { AgentWalletConfig } from "@/lib/types/agent-wallet";
 import { summarizeX402Policy } from "@/lib/services/wallet/x402-agent-fetch";
+import { getRuntimeAdapter } from "@/lib/services/runtime-adapters/registry";
 
 export const runtime = "nodejs";
 export const maxDuration = 120;
@@ -19,6 +21,15 @@ type IncomingMessage = {
   }>;
 };
 
+function buildWorkingDirectoryContext(workingDirectory?: string): string {
+  const trimmed = workingDirectory?.trim();
+  if (!trimmed) return "";
+  return [
+    "Working directory context:",
+    `- Use this directory for the chat unless the user says otherwise: ${trimmed}`,
+  ].join("\n");
+}
+
 function activeSharedVault(profile: AgentProfile, sharedVault?: SharedVaultConfig): SharedVaultConfig | null {
   if (!sharedVault?.enabled || profile.useSharedVault === false) return null;
   if (!sharedVault.vaultPath.trim()) return null;
@@ -30,6 +41,7 @@ function buildVaultContext(sharedVault: SharedVaultConfig | null): string {
   const lines = [
     "Shared Obsidian vault context:",
     `- Vault path: ${sharedVault.vaultPath}`,
+    "- Shared skills folder: Skills/. Read Skills/README.md for the index, then read the relevant Skills/<slug>/SKILL.md before using a shared skill.",
     `- Agent inbox folder: ${sharedVault.inboxFolder || "(not set)"}`,
     `- Shared note: ${sharedVault.sharedNotePath || "(not set)"}`,
     `- Shared Kanban folder: ${sharedVault.kanbanFolder || "Projects/Omni-Agent Hivemind/Kanban"}`,
@@ -123,7 +135,7 @@ function validateHttpRuntimeProfile(profile: AgentProfile): string | null {
   const gatewayUrl = profile.gatewayUrl?.trim();
   if (!gatewayUrl) {
     return profile.telemetryUrl
-      ? "This discovered agent is connected through the read-only telemetry collector. Add a Hermes/Aeon chat runtime URL before sending messages."
+      ? "This discovered agent is connected through the read-only telemetry collector. Add a runtime chat URL before sending messages."
       : "Missing runtime chat URL.";
   }
 
@@ -137,6 +149,17 @@ function validateHttpRuntimeProfile(profile: AgentProfile): string | null {
   }
 
   return null;
+}
+
+function runtimeFetchError(profile: AgentProfile, url: string, error: unknown) {
+  const reason = error instanceof Error ? error.message : "Runtime did not respond";
+  if (error instanceof Error && error.name === "TimeoutError") {
+    return `${profile.name || profile.runtime} accepted the chat connection at ${url}, but the delegated work did not produce a response before the dashboard timeout. The runtime may still be working; check the agent activity before retrying. (${reason})`;
+  }
+  if (error instanceof Error && error.name === "AbortError") {
+    return `${profile.name || profile.runtime} chat request was interrupted at ${url}. The runtime may still be working; check the agent activity before retrying. (${reason})`;
+  }
+  return `${profile.name || profile.runtime} is not reachable at ${url}. Check that the ${profile.runtime} runtime is running and that the chat URL is correct. (${reason})`;
 }
 
 function collectorChatProfile(profile: AgentProfile): AgentProfile | null {
@@ -154,12 +177,23 @@ async function streamHttpRuntime(
   messages: IncomingMessage[],
   userText: string,
   sharedVault: SharedVaultConfig | null,
+  workingDirectory?: string,
   wallet?: AgentWalletConfig,
 ) {
+  const inputCheck = proxyInput(userText);
+  if (inputCheck.verdict === "block") {
+    return Response.json({ error: inputCheck.reason ?? "Message blocked by security policy" }, { status: 400 });
+  }
   const url = getRuntimeUrl(profile, profile.chatPath || "/chat");
   const vaultContext = buildVaultContext(sharedVault);
   const walletContext = buildWalletToolContext(wallet);
-  const context = [vaultContext, walletContext].filter(Boolean).join("\n\n");
+  const context = [buildWorkingDirectoryContext(workingDirectory), vaultContext, walletContext].filter(Boolean).join("\n\n");
+  const runtimeMessages = context
+    ? [{ role: "system", content: context }, ...messages]
+    : messages;
+  const runtimeMessage = context
+    ? `${context}\n\nUser message:\n${inputCheck.text}`
+    : inputCheck.text;
   let upstream: Response;
   try {
     upstream = await fetch(url, {
@@ -171,11 +205,12 @@ async function streamHttpRuntime(
       body: JSON.stringify({
         agentId: profile.agentId || profile.id,
         sessionKey: profile.sessionKey,
-        message: userText,
-        messages,
+        message: runtimeMessage,
+        messages: runtimeMessages,
         stream: true,
         sharedVault,
         obsidianVault: sharedVault,
+        workingDirectory,
         controlRoomPath: sharedVault?.controlRoomPath,
         wallet,
         walletTools: wallet ? { x402Fetch: "/api/wallet/x402" } : undefined,
@@ -184,10 +219,9 @@ async function streamHttpRuntime(
       signal: AbortSignal.timeout(110_000),
     });
   } catch (error) {
-    const reason = error instanceof Error ? error.message : "Runtime did not respond";
     return Response.json(
       {
-        error: `${profile.name || profile.runtime} is not reachable at ${url}. Check that the ${profile.runtime} runtime is running and that the chat URL is correct. (${reason})`,
+        error: runtimeFetchError(profile, url, error),
       },
       { status: 502 },
     );
@@ -207,7 +241,14 @@ async function streamHttpRuntime(
   const contentType = upstream.headers.get("content-type") ?? "";
   if (!contentType.includes("text/event-stream")) {
     const json = await upstream.json().catch(async () => ({ text: await upstream.text().catch(() => "") }));
-    const chunk = extractChunk(json);
+    const outputCheck = proxyOutput(extractChunk(json));
+    if (outputCheck.verdict === "block") {
+      return new Response(
+        ssePayload({ error: outputCheck.reason ?? "Response blocked by security policy" }) + "data: [DONE]\n\n",
+        { headers: { "Content-Type": "text/event-stream", "Cache-Control": "no-cache" } },
+      );
+    }
+    const chunk = outputCheck.text;
     return new Response(
       ssePayload({ choices: [{ delta: { content: chunk || JSON.stringify(json) } }] }) + "data: [DONE]\n\n",
       { headers: { "Content-Type": "text/event-stream", "Cache-Control": "no-cache" } },
@@ -240,12 +281,20 @@ async function streamHttpRuntime(
           if (raw === "[DONE]") continue;
           try {
             const parsed = JSON.parse(raw);
-            const chunk = extractChunk(parsed);
+            const outputCheck = proxyOutput(extractChunk(parsed));
+            if (outputCheck.verdict === "block") {
+              controller.enqueue(encoder.encode(ssePayload({ error: outputCheck.reason ?? "Response blocked by security policy" })));
+              continue;
+            }
+            const chunk = outputCheck.text;
             controller.enqueue(encoder.encode(chunk
               ? ssePayload({ choices: [{ delta: { content: chunk } }] })
               : ssePayload(parsed)));
           } catch {
-            controller.enqueue(encoder.encode(ssePayload({ choices: [{ delta: { content: raw } }] })));
+            const outputCheck = proxyOutput(raw);
+            controller.enqueue(encoder.encode(outputCheck.verdict === "block"
+              ? ssePayload({ error: outputCheck.reason ?? "Response blocked by security policy" })
+              : ssePayload({ choices: [{ delta: { content: outputCheck.text } }] })));
           }
         }
       }
@@ -267,18 +316,21 @@ export async function POST(request: NextRequest) {
   let profile: AgentProfile;
   let messages: IncomingMessage[];
   let sharedVault: SharedVaultConfig | undefined;
+  let workingDirectory: string | undefined;
   let wallet: AgentWalletConfig | undefined;
   try {
     const body = (await request.json()) as {
       agent?: AgentProfile;
       messages?: IncomingMessage[];
       sharedVault?: SharedVaultConfig;
+      workingDirectory?: string;
       wallet?: AgentWalletConfig;
     };
     if (!body.agent || !Array.isArray(body.messages)) throw new Error("Missing agent or messages");
     profile = body.agent;
     messages = body.messages;
     sharedVault = body.sharedVault;
+    workingDirectory = body.workingDirectory;
     wallet = body.wallet;
   } catch {
     return Response.json({ error: "Expected { agent, messages }" }, { status: 400 });
@@ -288,13 +340,23 @@ export async function POST(request: NextRequest) {
   const userText = extractUserText(messages).trim();
   const userPrompt = userText || attachmentPromptSummary(userMessage);
   if (!userMessage || !userPrompt) return Response.json({ error: "User message is empty" }, { status: 400 });
+  const promptCheck = proxyInput(userPrompt);
+  if (promptCheck.verdict === "block") {
+    return Response.json({ error: promptCheck.reason ?? "Message blocked by security policy" }, { status: 400 });
+  }
   const vault = activeSharedVault(profile, sharedVault);
-  const runtimeContexts = [buildVaultContext(vault), buildWalletToolContext(wallet)].filter(Boolean).join("\n\n");
+  const runtimeContexts = [buildWorkingDirectoryContext(workingDirectory), buildVaultContext(vault), buildWalletToolContext(wallet)].filter(Boolean).join("\n\n");
   const textWithVaultContext = runtimeContexts
     ? `${runtimeContexts}\n\nUser message:\n${userPrompt}`
-    : userPrompt;
+    : promptCheck.text;
 
   if (profile.runtime !== "openclaw") {
+    const adapter = getRuntimeAdapter(profile.runtime);
+    if (!adapter.capabilities.chat) {
+      return Response.json({
+        error: `${adapter.label} is configured as a ${adapter.kind} runtime here and does not expose interactive chat. Use Scheduler, skills, or runs for this runtime.`,
+      }, { status: 400 });
+    }
     if (profile.runtime === "hermes" && profile.telemetryUrl?.trim() && profile.collectorCapabilities?.chat === false) {
       return Response.json({
         error: `${profile.machineName || "This machine"} is connected, but its collector does not have the Hermes chat bridge installed yet. Run setup/update on that machine after these dashboard changes are available there.`,
@@ -303,7 +365,7 @@ export async function POST(request: NextRequest) {
     const effectiveProfile = collectorChatProfile(profile) ?? profile;
     const profileError = validateHttpRuntimeProfile(effectiveProfile);
     if (profileError) return Response.json({ error: profileError }, { status: 400 });
-    return streamHttpRuntime(effectiveProfile, messages, userPrompt, vault, wallet);
+    return streamHttpRuntime(effectiveProfile, messages, promptCheck.text, vault, workingDirectory, wallet);
   }
 
   const token = await getGatewayAuthToken(profile.token);

@@ -3,6 +3,518 @@
 This file records user-visible changes before they are committed. New work should
 be added here first, then marked `Committed` or `Pushed` after the git action.
 
+## 2026-05-21 02:16 WITA - Sanitize Public Commit Details
+
+- Status: Pushed
+- Areas changed: Remotion showcase fixture data, generated media ignores, changelog verification notes
+- Summary: Tighten generated Remotion media ignores so rendered videos stay out of Git, and replace local machine names, private Tailnet-style IPs, and absolute personal vault paths in demo fixtures and changelog verification notes with sample-safe values.
+- Verification: Sensitive-pattern scan for personal paths, private Tailnet-style IPs, real local machine names, and common token prefixes; `node --check scripts/capture-remotion-showcase.mjs`; `git diff --check`; `pnpm typecheck --pretty false`; `pnpm eslint src/app/page.tsx scripts/capture-remotion-showcase.mjs src/lib/services/runtime-adapters/aeon.ts src/lib/services/obsidian/brain-skills.ts src/lib/services/kanban/local-kanban-store.ts`; `pnpm test:kanban`.
+- Intended commit message: `Publish hivemind dashboard updates`
+
+## 2026-05-21 02:05 WITA - Remove Duplicate Chat Navigation Tab
+
+- Status: Pushed
+- Areas changed: Dashboard navigation tabs, dashboard nav regression script, changelog
+- Summary: Remove the leftover temporary `New` tab state and nav entry, keep a single Chat tab in the dashboard sidebar, and update the nav regression script to reject duplicate navigation ids.
+- Verification: `node scripts/test-dashboard-nav.mjs`; `pnpm eslint src/app/page.tsx scripts/test-dashboard-nav.mjs`.
+- Intended commit message: `Remove duplicate chat navigation tab`
+
+## 2026-05-21 01:58 WITA - Show Fleet Agent Role Badges
+
+- Status: Pushed
+- Areas changed: Fleet agent rows, agent settings header, changelog
+- Summary: Show each fleet agent's Bee role as a compact badge beside its name in the fleet list and settings header, while allowing the settings name to wrap instead of being silently truncated.
+- Verification: `pnpm eslint src/app/page.tsx src/components/cells/AgentCell.tsx`; `pnpm typecheck --pretty false`; `git diff --check -- src/components/cells/AgentCell.tsx src/app/page.tsx src/app/fleet.module.css CHANGELOG.md`.
+- Intended commit message: `Show fleet agent role badges`
+
+## 2026-05-21 01:52 WITA - Add Test New Navigation Tab
+
+- Status: Pushed
+- Areas changed: Dashboard navigation tabs, changelog
+- Summary: Add a temporary `New` tab to the dashboard sidebar navigation as a test.
+- Verification: Pending.
+- Intended commit message: `Add test new navigation tab`
+
+## 2026-05-21 01:48 WITA - Add Kanban Task Edit And Delete Actions
+
+- Status: Pushed
+- Areas changed: Work board task context menu, Kanban edit modal, Kanban API, Kanban storage, changelog
+- Summary: Add Delete task to the Kanban task context menu, remove deleted tasks with their notes and links, and add an Edit & interrupt action that updates the task and immediately resends the revised instruction to the currently assigned agent instead of spawning a new worker.
+- Verification: `pnpm eslint src/app/page.tsx src/app/api/kanban/route.ts src/lib/services/kanban/local-kanban-store.ts`; `pnpm typecheck --pretty false`; `git diff --check -- src/app/page.tsx src/app/api/kanban/route.ts src/lib/services/kanban/local-kanban-store.ts src/app/kanban-board.module.css CHANGELOG.md`; Browser smoke on `http://localhost:5020` verified task menus show Edit & interrupt and Delete task, and the edit modal opens with title/body fields and same-agent interrupt copy.
+- Intended commit message: `Add Kanban task edit and delete actions`
+
+## 2026-05-21 01:52 WITA - Add Test New Navigation Tab
+
+- Status: Pushed
+- Areas changed: Dashboard navigation tabs, dashboard nav regression script, changelog
+- Summary: Add a temporary `New` navigation tab to the dashboard as a test.
+- Verification: Pending.
+- Intended commit message: `Add test new navigation tab`
+
+## 2026-05-21 01:38 WITA - Reuse Composer In Kanban Agent Chat
+
+- Status: Pushed
+- Areas changed: Work board agent chat modal, shared composer wiring, Kanban chat styling, changelog
+- Summary: Replace the bespoke Kanban agent chat input with the shared chat composer so steering messages support voice transcription, image/file attachments, and linked directories, remove the standalone Send text button, and add a subtle Send to status picker that excludes Needs Human.
+- Verification: `pnpm typecheck --pretty false`; `git diff --check -- src/app/page.tsx src/app/kanban-board.module.css CHANGELOG.md`; Playwright smoke on `http://localhost:5020` opened Work > agent chat, clicked `Send to Working`, confirmed the menu opens with Ideas, Waiting for Queen, Working, and Done, and confirmed Needs Human is not offered. `pnpm eslint src/app/page.tsx ...` is currently blocked by unrelated existing `kanban-edit-*` purity errors around `Date.now()`/mutable `fullText`.
+- Intended commit message: `Reuse composer in kanban agent chat`
+
+## 2026-05-21 01:34 WITA - Polish Task Events Modal
+
+- Status: Pushed
+- Areas changed: Work board task events modal, Kanban event styles, changelog
+- Summary: Replace raw event kind IDs like `task.updated` and `comment.created` with readable labels, and render event activity as spaced rows with label/time metadata above the message.
+- Verification: `pnpm eslint src/app/page.tsx src/components/cells/CellMenu.tsx`; `pnpm typecheck --pretty false`; `git diff --check -- src/app/page.tsx src/app/kanban-board.module.css CHANGELOG.md`; Browser smoke on `http://localhost:5020` verified Task events shows friendly labels and proper spacing between event label, message, and timestamp.
+- Intended commit message: `Polish task events modal`
+
+## 2026-05-21 01:31 WITA - Add Default Queen Bee Profiles
+
+- Status: Pushed
+- Areas changed: Fleet discovery, agent dedupe, Queen Bee role defaults, changelog
+- Summary: Add a default Queen Bee profile for each collector-ready machine when no Queen Bee is already configured, backing it with the machine's preferred runtime in Hermes-first order, and keep role-scoped agent profiles from being deduped into their underlying worker runtime.
+- Verification: `pnpm eslint src/app/api/fleet/discover/route.ts src/lib/services/orchestration/bee-roles.ts src/app/page.tsx`; `pnpm typecheck --pretty false`; `pnpm test:kanban`; `git diff --check -- src/app/api/fleet/discover/route.ts src/lib/services/orchestration/bee-roles.ts src/app/page.tsx CHANGELOG.md`; `/api/fleet/discover` smoke showed default Hermes-backed Queen Bee profiles on the local Mac and `lab-linux-1`; `/api/orchestrator` smoke selected the Queen Bee for the ready test card.
+- Intended commit message: `Add default queen bee profiles`
+
+## 2026-05-21 01:28 WITA - Remove Fleet Test Hello
+
+- Status: Pushed
+- Areas changed: Fleet page, changelog
+- Summary: Remove the temporary `test hello` line from the top of the Fleet view.
+- Verification: Pending.
+- Intended commit message: `Remove fleet test hello`
+
+## 2026-05-21 01:28 WITA - Fix Add Agent Security Cards
+
+- Status: Pushed
+- Areas changed: Add agent settings modal security panel, Fleet styles, changelog
+- Summary: Reflow the add-agent security cards so icon, heading, and body text stay inside their cards across narrow modal widths, and clarify that Prompt guard blocks obvious prompt-injection or dangerous local-action requests locally.
+- Verification: `pnpm eslint src/app/page.tsx`; `git diff --check -- src/app/fleet.module.css CHANGELOG.md`; Browser smoke on `http://localhost:5020` opened Fleet > This Mac actions > Add agent > Security and verified all security-card child bounds stay inside their cards.
+- Intended commit message: `Fix add agent security cards`
+
+## 2026-05-21 01:23 WITA - Let Ready Tasks Fall Back To Workers
+
+- Status: Pushed
+- Areas changed: Queen/worker assignment routing, Work board ready pickup, changelog
+- Summary: Make the Ready for Queen lane keep using a real Queen Bee when one is online, but fall back to the best available worker when no Queen Bee profile exists so moved cards do not sit idle without delegation.
+- Verification: `pnpm eslint src/app/api/fleet/discover/route.ts src/lib/services/orchestration/bee-roles.ts src/app/page.tsx`; `pnpm typecheck --pretty false`; `pnpm test:kanban`; `git diff --check -- src/app/api/fleet/discover/route.ts src/lib/services/orchestration/bee-roles.ts src/app/page.tsx CHANGELOG.md`; `/api/orchestrator` smoke with only a worker agent returned `mode: "worker"` instead of pending.
+- Intended commit message: `Let ready tasks fall back to workers`
+
+## 2026-05-21 01:14 WITA - Detect Kanban Tool Output Stalls
+
+- Status: Pushed
+- Areas changed: Work board Hermes session polling, Kanban stale-state handling, changelog
+- Summary: Stop treating Hermes tool output as a completed assistant response, detect Working cards whose latest pollable session message is terminal/tool output with no final assistant reply, and move those stalled cards to Needs You with a clear explanation instead of leaving them silently Working.
+- Verification: `pnpm eslint src/app/page.tsx`; `pnpm typecheck --pretty false`; `git diff --check -- src/app/page.tsx CHANGELOG.md`; confirmed live Kanban task `t_mpdz5min_vtn8v` moved from Working to Needs You after its Hermes session stopped on terminal/tool output without a final assistant response.
+- Intended commit message: `Detect kanban tool output stalls`
+
+## 2026-05-21 01:12 WITA - Keep Queen Lane Queen-Owned
+
+- Status: Pushed
+- Areas changed: Work board Queen Bee assignment routing, live Kanban task state, changelog
+- Summary: Stop cards moved to Waiting for Queen from being auto-claimed by a worker when no Queen Bee is available, make Queen Bee routing prefer the actual queen profile, replace the confusing fallback note with Queen Bee review/delegation copy, and return the affected test card to Waiting for Queen.
+- Verification: `pnpm eslint src/lib/services/orchestration/bee-roles.ts src/app/page.tsx`; `pnpm typecheck --pretty false`; `git diff --check -- src/lib/services/orchestration/bee-roles.ts src/app/page.tsx CHANGELOG.md`; `/api/orchestrator` smoke verified worker-only assignments stay pending and queen-plus-worker assignments choose the Queen Bee; patched task `t_mpebcduf_obrj4` back to `ready` and confirmed it stayed unassigned after a delay.
+- Intended commit message: `Keep queen lane queen-owned`
+
+## 2026-05-21 01:01 WITA - Clamp Kanban Card Previews
+
+- Status: Pushed
+- Areas changed: Work board task card previews, Kanban card markdown styles, changelog
+- Summary: Prevent Work board cards from expanding into full agent/tool dumps by using a compact card message summary for long results, clamping previews by default, rendering shell-like output in a bounded terminal-style panel, bounding expanded card text inside a scroll area, and giving card markdown headings card-sized typography.
+- Verification: `pnpm eslint src/app/page.tsx`; `git diff --check -- src/app/page.tsx src/app/kanban-board.module.css CHANGELOG.md`; Playwright mobile-width smoke on `http://localhost:5020` confirmed long agent/tool output cards render as compact summaries and shell output renders in a bounded rounded terminal panel.
+- Intended commit message: `Clamp kanban card previews`
+
+## 2026-05-21 00:54 WITA - Sync Aeon Env Secrets
+
+- Status: Pushed
+- Areas changed: Aeon runtime adapter, generic runtime env sync API, Aeon settings UI, hive-env-add, changelog
+- Summary: Add an explicit selected-key bridge from local Hivemind/Aeon env stores to Aeon GitHub Actions secrets, expose it through `/api/runtimes/aeon/env/sync`, add an Aeon settings control for syncing selected keys to the configured Aeon repo, and teach `hive-env-add --runtime aeon` to optionally push the same key to GitHub secrets with `--sync-aeon-github-secret`.
+- Verification: `pnpm typecheck --pretty false`; `pnpm eslint src/app/page.tsx 'src/app/api/runtimes/[runtime]/env/sync/route.ts' src/lib/services/runtime-adapters/aeon.ts src/lib/services/runtime-adapters/types.ts scripts/hive-env-add` (script ignored by eslint config); `python3 -m py_compile scripts/hive-env-add`; `git diff --check -- CHANGELOG.md src/app/page.tsx 'src/app/api/runtimes/[runtime]/env/sync/route.ts' src/lib/services/runtime-adapters/aeon.ts src/lib/services/runtime-adapters/types.ts src/lib/services/runtime-adapters/registry.ts scripts/hive-env-add`; real fork-backed API smoke wrote fake `OMNI_AEON_E2E_SECRET` from `/tmp/omni-aeon-fork-e2e/.env` to `LiamVisionary/aeon` with `/api/runtimes/aeon/env/sync`, verified it with `gh secret list`, then deleted the temporary secret and removed the temp `.env`.
+- Intended commit message: `Sync Aeon env secrets`
+
+## 2026-05-21 00:52 WITA - Reuse Composer For Quick Add
+
+- Status: Pushed
+- Areas changed: Work board quick-add composer, shared chat composer UI, chat composer styles, changelog
+- Summary: Extract the chat input into a reusable composer with compact mode, replace the quick-add Cancel/Add text buttons with icon controls, and add quick-add attachment actions for images, files, directory picker links, and microphone dictation.
+- Verification: `pnpm eslint src/app/page.tsx src/components/cells/CellMenu.tsx`; `pnpm typecheck --pretty false`; `git diff --check -- src/app/page.tsx src/app/chat.module.css src/app/kanban-board.module.css src/components/cells/CellMenu.tsx CHANGELOG.md`; Browser smoke on `http://localhost:5030` verified the compact quick-add composer renders correctly and its attachment menu exposes Images, Files, and Directory.
+- Intended commit message: `Reuse composer for quick add`
+
+## 2026-05-21 00:47 WITA - Refine Work Card Hierarchy
+
+- Status: Pushed
+- Areas changed: Work board task cards, changelog
+- Summary: Put the task title back at the top of each card, keep only action icons in the header, move time into a quiet footer, reduce the title scale, and separate preview copy from the headline so cards scan better on narrow columns.
+- Verification: `pnpm eslint src/app/page.tsx src/components/cells/CellMenu.tsx`; `pnpm typecheck --pretty false`; `git diff --check -- src/app/page.tsx src/app/kanban-board.module.css src/app/chat.module.css src/components/cells/CellMenu.tsx CHANGELOG.md`; Browser smoke on `http://localhost:5020` verified the Work card title is first, actions stay as a compact top-right cluster, time is in the footer, and the utility row no longer creates blank space.
+- Intended commit message: `Refine work card hierarchy`
+
+## 2026-05-21 00:39 WITA - Add Fleet Test Hello
+
+- Status: Pushed
+- Areas changed: Fleet page, changelog
+- Summary: Add a visible `test hello` line at the top of the Fleet page.
+- Verification: Confirmed `test hello` renders before the Fleet header in `src/app/page.tsx`; `pnpm eslint src/app/page.tsx`; `pnpm typecheck --pretty false`; `git diff --check -- src/app/page.tsx CHANGELOG.md`.
+- Intended commit message: `Add fleet test hello`
+
+## 2026-05-21 00:28 WITA - Fix Kanban Worker Pickup
+
+- Status: Pushed
+- Areas changed: Work board agent discovery normalization, Kanban assigned-agent matching, runtime chat working-directory context, collector session discovery, live Kanban task state, changelog
+- Summary: Normalize collector-discovered agents so Hermes agents without saved role metadata are treated as general worker bees, match legacy `Hermes on This Mac` assignees to the discovered local Mac agent, inject the dashboard repo path into Hermes chat as a system context for Kanban dispatch/steering, give the collector more time to attach a Hermes API session before long work streams output, and diagnose the stuck Work card path from board state through fleet discovery and Hermes chat reachability.
+- Verification: Confirmed the stuck card had no `agentSession`, direct Hermes collector chat and dashboard `/api/chat/agent-runtime` both respond, discovered local Hermes now normalizes to a worker, `localhost:5020` hydrates and dispatches while `127.0.0.1` is blocked by Next dev-origin HMR, Hermes now receives the dashboard repo as its working directory, restarted the local collector with the longer session-discovery window, moved the affected card to `Needs You` with the diagnostic note, `pnpm eslint src/app/page.tsx src/app/api/chat/agent-runtime/route.ts scripts/agent-telemetry-collector.mjs src/lib/services/kanban/local-kanban-store.ts src/lib/types/kanban.ts`; `pnpm test:kanban`; `pnpm typecheck --pretty false`; `git diff --check -- src/app/page.tsx src/app/api/chat/agent-runtime/route.ts scripts/agent-telemetry-collector.mjs src/lib/services/kanban/local-kanban-store.ts src/lib/types/kanban.ts CHANGELOG.md`.
+- Intended commit message: `Fix Kanban worker pickup`
+
+## 2026-05-21 00:31 WITA - Compact Kanban Task Actions
+
+- Status: Pushed
+- Areas changed: Work board task cards, selected-task drawer, shared cell context menu, Kanban modal styling, changelog
+- Summary: Replace the busy task detail drawer controls with a vertical-ellipsis context menu, move status changes into an expandable Move to menu, add task-level chat buttons, and move chat, notes, assignment, and events into focused modals while removing the inline result field and agent stream from the drawer.
+- Verification: `pnpm eslint src/app/page.tsx src/components/cells/CellMenu.tsx`; `pnpm typecheck --pretty false`; `git diff --check -- src/app/page.tsx src/app/kanban-board.module.css src/components/cells/CellMenu.tsx CHANGELOG.md`; Browser smoke on `http://localhost:5020` verified the Work board renders with title/time first, compact icon action row, simplified card body, and task detail modal actions.
+- Intended commit message: `Compact Kanban task actions`
+
+## 2026-05-21 00:12 WITA - Verify Aeon Real E2E
+
+- Status: Pushed
+- Areas changed: Aeon runtime adapter parser, changelog
+- Summary: Clone the real `aaronjmars/aeon` repository and run the dashboard's Aeon runtime endpoints against its actual `aeon.yml`, `skills.json`, skills, workflows, and GitHub Actions API, fixing the inline `aeon.yml` parser so schedules with trailing comments are discovered.
+- Verification: Cloned `https://github.com/aaronjmars/aeon.git` fresh to `/tmp/omni-aeon-e2e` at `b77b201`; ran `/api/runtimes/aeon/status`, `/skills`, `/schedules`, `/runs`, and `/outputs` against the real clone; verified real `aeon.yml` schedule discovery returns 121 skills after parser fixes; synced the real shared Brain shelf into the real Aeon clone through `/api/runtimes/aeon/skills/sync`, writing 146 managed shared skills and skipping one unmanaged slug collision; verified `skills.json` contains 267 total skills with 146 shared-brain entries; ran `/api/scheduler/import` against the real Aeon agent and got 121 schedules; exercised real enable/disable actions on `heartbeat` in the clone's `aeon.yml` and restored it to enabled; created fork `LiamVisionary/aeon`, pushed empty commit `d0f7c3a` to register workflows, dispatched real `heartbeat` run through `/api/scheduler/runtime-action` against the fork, verified GitHub run `26176176117` exists at `https://github.com/LiamVisionary/aeon/actions/runs/26176176117`, and verified `/api/runtimes/aeon/runs` returns that queued run; built and ran Aeon's real A2A server on port `41241`, verified its live agent card exposes 267 skills, and verified A2A-only adapter status/skill discovery; `pnpm typecheck --pretty false`; `pnpm eslint src/lib/services/runtime-adapters/aeon.ts`; `git diff --check -- src/lib/services/runtime-adapters/aeon.ts CHANGELOG.md`.
+- Intended commit message: `Verify Aeon real e2e`
+
+## 2026-05-21 00:10 WITA - Ban Silent UI Truncation
+
+- Status: Pushed
+- Areas changed: Project UI rules, Work board lane/card text wrapping, changelog
+- Summary: Add a project rule against silent user-facing text truncation unless an explicit expand affordance exists, remove Work board lane-description clamping, and let Work board assignee/agent labels wrap instead of ellipsizing.
+- Verification: `pnpm eslint src/app/page.tsx`; `git diff --check -- AGENTS.md src/app/kanban-board.module.css CHANGELOG.md`; searched Work board styles for remaining clamp/ellipsis rules and confirmed only timestamp/button no-wrap plus the expand-chevron task-body preview clamp remain.
+- Intended commit message: `Ban silent UI truncation`
+
+## 2026-05-21 00:05 WITA - Remove Redundant Kanban Card Badges
+
+- Status: Pushed
+- Areas changed: Work board task card status badges, changelog
+- Summary: Remove normal per-card status badges because the Kanban lane already communicates the card state, while keeping exceptional quiet/stale signals.
+- Verification: `pnpm eslint src/app/page.tsx`; `pnpm typecheck --pretty false`; `git diff --check -- src/app/page.tsx CHANGELOG.md`.
+- Intended commit message: `Remove redundant Kanban card badges`
+
+## 2026-05-21 00:02 WITA - Remove Redundant Working Card Copy
+
+- Status: Pushed
+- Areas changed: Work board task card footer, changelog
+- Summary: Remove the repeated “agent is working” footer text from Working cards because the card already shows Working in the top-right status area.
+- Verification: `pnpm eslint src/app/page.tsx`; `pnpm typecheck --pretty false`; `git diff --check -- src/app/page.tsx CHANGELOG.md`.
+- Intended commit message: `Remove redundant Working card copy`
+
+## 2026-05-20 23:58 WITA - Block Unpollable Working Cards
+
+- Status: Pushed
+- Areas changed: Kanban task state guard, shared board state, changelog
+- Summary: Move the stuck Hermes task out of Working, surface the Codex sign-in blocker, prevent accepted/no-output failures from being left in Working, and clear old blocker text when a card is manually retried.
+- Verification: Cleared the stale blocker result from live card `t_mpdz5min_vtn8v` while preserving its Working retry state; `pnpm eslint src/lib/services/kanban/local-kanban-store.ts`; `pnpm test:kanban`; `pnpm typecheck --pretty false`; `git diff --check -- src/lib/services/kanban/local-kanban-store.ts CHANGELOG.md`.
+- Intended commit message: `Block unpollable Working cards`
+
+## 2026-05-20 23:56 WITA - Sync Brain Skills To Aeon
+
+- Status: Pushed
+- Areas changed: Brain skill service, Aeon runtime adapter, generic runtime skill sync API, Brain shared-skills UI, shared-skill setup script, changelog
+- Summary: Make the shared Brain `Skills/` shelf a first-class Aeon skill source, merge shared skills into Aeon runtime skill discovery, add a runtime skill sync endpoint that mirrors managed shared skills into Aeon's local `skills/` folder and `skills.json`, expose a Brain UI action to sync shared skills to Aeon, include Aeon in the page-local provider inventory, and teach setup's shared-skill seed script to sync the shared shelf into Aeon when Aeon is a share target.
+- Verification: `pnpm typecheck --pretty false`; `pnpm eslint src/app/page.tsx src/app/api/obsidian/skills/route.ts 'src/app/api/runtimes/[runtime]/skills/route.ts' 'src/app/api/runtimes/[runtime]/skills/sync/route.ts' src/lib/services/runtime-adapters/aeon.ts src/lib/services/runtime-adapters/types.ts src/lib/services/obsidian/brain-skills.ts`; `bash -n scripts/seed-shared-skills.sh`; `git diff --check -- CHANGELOG.md src/app/page.tsx src/app/api/runtimes src/lib/services/runtime-adapters src/lib/services/obsidian/brain-skills.ts scripts/seed-shared-skills.sh`; API smoke with temporary vault/Aeon root verified `/api/runtimes/aeon/skills` reads shared Brain skills with `aeon.yml` config and `/api/runtimes/aeon/skills/sync` writes Aeon `skills/<slug>/SKILL.md` plus `skills.json`; Playwright smoke on `http://127.0.0.1:5020` verified the dashboard renders without app console errors.
+- Intended commit message: `Sync brain skills to Aeon`
+
+## 2026-05-20 23:52 WITA - Rewrite Launch README
+
+- Status: Pushed
+- Areas changed: README positioning, README generated images, quick start, feature table, Tailscale/Syncthing/env-sync explanation, changelog
+- Summary: Reframe the README around Omni-Agent Hivemind as a virtual private network and private control room for agents, keep Bankr as a launch badge only, simplify cross-machine/Tailscale language, elevate shared env sync, clarify that env sync uses Tailscale SSH while shared brain sync uses Syncthing over Tailscale, and add generated README visuals for the cyber-bee agent network plus the hub-and-spoke sharing model.
+- Verification: `git diff --check -- README.md CHANGELOG.md`; verified README-referenced local files exist; searched README for stale Bankr-as-product and private-fleet/collector-backed phrasing.
+- Intended commit message: `Rewrite launch README`
+
+## 2026-05-20 23:18 WITA - Add Remotion Showcase Project
+
+- Status: Pushed
+- Areas changed: Remotion dependencies, Remotion composition, Playwright showcase capture script, generated media ignores, package scripts, dashboard render guard, changelog, assimilation manifest
+- Summary: Install Remotion, add a `HivemindShowcase` video project that renders the actual dashboard UI from a Playwright-recorded walkthrough, add a capture script that seeds simulated Fleet, Work, Scheduler, X-thread Swarm comments, wallet, alert, and Hermes chat state while letting the Brain tab load the live Obsidian graph, force the headless-captured shell visible so the recording is not just the background, use `REMOTION_APP_URL` to capture against an already-running app without starting or stopping dev servers, stage the Chat sequence as user message, loading state, then delayed Hermes response, click Brain cells to show golden path tracing, trim the composition to the captured walkthrough length, and fix the render-time Aeon skill sync callback reference that blocked the dashboard before `displayAgents` was initialized.
+- Verification: `node --check scripts/capture-remotion-showcase.mjs`; `REMOTION_APP_URL=http://localhost:5020 pnpm remotion:capture`; inspected captured source frames for Work, X thread comments, Brain golden path tracing, Hermes Chat loading/response timing, and Fleet; `pnpm remotion:render-showcase`; `ffprobe` confirmed `out/remotion/hivemind-showcase.mp4` is 1920x1080, 30 fps, about 40 seconds; inspected rendered frames at 5s, 13s, 25s, 32s, and 34s to verify Work activity, simulated X post/comments UI, live Brain hive graph with golden path tracing, and the delayed Hermes chat response; `pnpm typecheck --pretty false`; `pnpm eslint remotion scripts/capture-remotion-showcase.mjs src/app/page.tsx`; `python3 verify_assimilation_manifest.py`; `git diff --check -- .gitignore package.json pnpm-lock.yaml CHANGELOG.md ASSIMILATION.json remotion scripts/capture-remotion-showcase.mjs public/remotion/.gitkeep src/app/page.tsx`.
+- Intended commit message: `Add Remotion showcase project`
+
+## 2026-05-20 22:44 WITA - Canonicalize Shared Vault Folder
+
+- Status: Pushed
+- Areas changed: Shared Obsidian vault folder, default vault paths, browser vault migration, shared-skill seed paths, Syncthing label, package scripts, memory guard, setup/build diagnostics, changelog
+- Summary: Merge the current `Omni-Agent Hivemind Vault` contents into the synced old `Agent Team Vault`, rename the synced local vault folder to `omni-agent-hivemind-vault`, keep a timestamped backup of the old current Omni vault folder, update repo defaults/setup/runtime collector paths to the new lowercase folder name, migrate stale browser-stored vault paths to the new default, refresh managed shared-skill pointers for local agent runtimes, switch dashboard dev/build paths to Next's Webpack mode to avoid the Turbopack memory/NFT issue, and wrap setup/dev/build commands in a 5 GB resident-memory process-tree guard so runaway local servers/builds are killed before they can freeze the machine.
+- Verification: Read both vault `AGENTS.md` files before durable vault changes; `rsync -a --backup --suffix=.pre-omni-merge-20260520-224203.bak` merged current Omni vault contents into the synced vault; moved `Omni-Agent Hivemind Vault` to `Omni-Agent Hivemind Vault.merged-20260520-224203.bak`; renamed `Agent Team Vault` to `omni-agent-hivemind-vault`; ran `NEXT_PUBLIC_OBSIDIAN_VAULT_PATH=~/Documents/Obsidian/omni-agent-hivemind-vault ./scripts/seed-shared-skills.sh --import-sources none --share-targets all`; propagated the same repo/vault default to the reachable Ubuntu Tailscale machine at `~/omni-agent-hivemind`; merged its recreated uppercase vault folder into `~/Documents/Obsidian/omni-agent-hivemind-vault`; restarted its collector and verified `/health` reports `~/Documents/Obsidian/omni-agent-hivemind-vault`; `bash -n setup.sh`; `bash -n scripts/seed-shared-skills.sh`; `bash -n scripts/install-telemetry-collector.sh`; `bash -n scripts/run-with-memory-limit.sh`; `node --check scripts/agent-telemetry-collector.mjs`; `pnpm typecheck --pretty false`; bounded `pnpm build` now runs as `next build --webpack` and passes without the Turbopack NFT warning; `MEMORY_TIMEOUT_SECONDS=60 pnpm dev` served `/` on port 5020 under the guard and was stopped by the test timeout; an artificial memory-growth command with `--limit-mb 50` was killed with exit 137.
+- Intended commit message: `Canonicalize shared vault folder`
+
+## 2026-05-20 22:05 WITA - Match Ami Scheduler Attachments
+
+- Status: Pushed
+- Areas changed: Scheduler attachment menu, Scheduler skill/path chips, Brain skill browser inventory, changelog
+- Summary: Replace the Scheduler's direct skill-browser button with an Ami-style `+` attachment popover for attaching skills, folders, files, and paths; show removable attachment chips on new schedules and schedule cards; load installed/shared provider skills into Scheduler and the Skill Browser so it no longer appears as a one-card catalog.
+- Verification: `pnpm typecheck`; `pnpm eslint src/app/page.tsx`; `git diff --check -- src/app/page.tsx src/app/fleet.module.css CHANGELOG.md`; Playwright smoke on `http://localhost:5020` verified the Scheduler `+` menu, skill-search subpopover, 147 discovered skill buttons, and no horizontal overflow.
+- Intended commit message: `Match Ami scheduler attachments`
+
+## 2026-05-20 22:52 WITA - Refine Kanban Lane Headers
+
+- Status: Pushed
+- Areas changed: Work board lane names, lane descriptions, Kanban lane header styles, changelog
+- Summary: Improve the Kanban column cells themselves with cleaner lane names, shorter descriptions, stronger title hierarchy, calmer count badges, and subtler add controls.
+- Verification: `pnpm eslint src/app/page.tsx src/lib/types/kanban.ts`; `rm -rf .next/dev/types && pnpm typecheck --pretty false`; `git diff --check -- src/app/kanban-board.module.css src/lib/types/kanban.ts CHANGELOG.md`.
+- Intended commit message: `Refine Kanban lane headers`
+
+## 2026-05-20 21:42 WITA - Refactor Runtime Adapters
+
+- Status: Pushed
+- Areas changed: Runtime adapter registry, Aeon adapter, Scheduler runtime import/actions, Fleet collector discovery, Brain skill metadata, local storage keys, agent settings, README, changelog
+- Summary: Add a neutral runtime adapter contract and registry, make OpenClaw just one adapter, add Aeon background-runtime support for `aeon.yml` schedules, GitHub Actions runs, local skills/outputs, and optional A2A skill discovery, remove legacy OpenClaw-named localStorage and skill metadata shims, prevent background runtimes from being forced through Chat, let collectors discover explicit Aeon installs, and update docs around agent-agnostic runtime support.
+- Verification: `pnpm typecheck --pretty false`; `pnpm eslint src/app/page.tsx src/app/api/scheduler/import/route.ts src/app/api/scheduler/runtime-action/route.ts src/app/api/agents/status/route.ts src/app/api/chat/agent-runtime/route.ts src/app/api/obsidian/status/route.ts src/app/api/miroshark/runs/route.ts 'src/app/api/runtimes/[runtime]/schedules/route.ts' 'src/app/api/runtimes/[runtime]/schedules/action/route.ts' 'src/app/api/runtimes/[runtime]/skills/route.ts' 'src/app/api/runtimes/[runtime]/runs/route.ts' 'src/app/api/runtimes/[runtime]/outputs/route.ts' 'src/app/api/runtimes/[runtime]/status/route.ts' src/lib/types/agent-runtime.ts src/lib/services/runtime-adapters/aeon.ts src/lib/services/runtime-adapters/openclaw.ts src/lib/services/runtime-adapters/hermes.ts src/lib/services/runtime-adapters/registry.ts src/lib/services/runtime-adapters/types.ts src/lib/services/obsidian/brain-skills.ts src/lib/services/obsidian/vault-path.ts src/lib/services/kanban/local-kanban-store.ts`; `node --check scripts/agent-telemetry-collector.mjs`; `bash -n scripts/seed-shared-skills.sh`; `python3 -m py_compile scripts/hive-env-add`; `python3 verify_assimilation_manifest.py`; `git diff --check -- .env.example README.md CHANGELOG.md ASSIMILATION.json src/lib/types/agent-runtime.ts src/lib/services/runtime-adapters src/app/api/runtimes src/app/api/scheduler src/app/api/agents/status/route.ts src/app/api/chat/agent-runtime/route.ts src/app/api/obsidian/status/route.ts src/app/api/miroshark/runs/route.ts src/app/page.tsx src/lib/services/obsidian/brain-skills.ts src/lib/services/obsidian/vault-path.ts src/lib/services/kanban/local-kanban-store.ts scripts/agent-telemetry-collector.mjs scripts/seed-shared-skills.sh scripts/hive-env-add`; Playwright smoke on `http://127.0.0.1:5020` verified the zero-agent app renders with Fleet, Scheduler, and Chat empty states without app console errors.
+- Intended commit message: `Refactor runtime adapters`
+
+## 2026-05-20 21:49 WITA - Refine Work Board UI
+
+- Status: Pushed
+- Areas changed: Work board layout, Kanban card/column/drawer styles, selected-task drawer close affordance, changelog
+- Summary: Return the Work board to a non-polygonal responsive Kanban layout with normal rounded columns and task cards, quieter controls, subtle background comb texture, sticky task details, and a low-friction close button while preserving the existing bee icon and animation treatment.
+- Verification: `pnpm eslint src/app/page.tsx`; `git diff --check -- src/app/page.tsx src/app/kanban-board.module.css CHANGELOG.md ASSIMILATION.json`; `verify_assimilation_manifest.py`; in-app browser smoke on `http://localhost:5020` confirmed the Work board renders without clipped polygonal lane/card shapes.
+- Intended commit message: `Refine work board UI`
+
+## 2026-05-20 21:31 WITA - Fix Setup Build Failure
+
+- Status: Pushed
+- Areas changed: Setup dependency install, remote collector update install, local collector Hermes setup, Next config, setup cache storage, alert notification rendering, README, changelog
+- Summary: Suppress the Node 24 `url.parse()` deprecation noise from the pinned pnpm 8 install path without migrating the lockfile, apply the same install environment to remote collector updates, make alert source-label rendering accept the full notification object so the dashboard type-checks during `next build`, keep Hermes API setup out-of-the-box, make interactive setup ask before starting/reloading the Hermes gateway when needed, use `hermes gateway start` instead of foreground-style `restart` so setup can create the missing launchd service and leave the API server healthy on macOS, move setup cache stamps out of `.next` so builds cannot delete them, and remove the dynamic Turbopack root override that caused whole-project NFT tracing warnings.
+- Verification: `NODE_OPTIONS="${NODE_OPTIONS:+$NODE_OPTIONS }--no-deprecation" pnpm install --frozen-lockfile`; `pnpm typecheck --pretty false`; `node --check scripts/agent-telemetry-collector.mjs`; `bash -n setup.sh`; `bash -n scripts/install-telemetry-collector.sh`; `pnpm build`; killed hung local `hermes gateway restart` and `launchctl kickstart` children; confirmed `hermes gateway start` regenerated the missing launchd service and `curl --max-time 3 http://127.0.0.1:8642/health` returned healthy; reran `./scripts/install-telemetry-collector.sh` and it skipped Hermes changes because the API server was already healthy.
+- Intended commit message: `Fix setup build failure`
+
+## 2026-05-20 21:24 WITA - Make Scheduler Runtime Agnostic
+
+- Status: Pushed
+- Areas changed: Scheduler import/action API, telemetry collector schedule endpoint, Scheduler UI import flow, README, changelog
+- Summary: Move Scheduler imports and runtime actions behind generic `/api/scheduler/*` routes, add a collector `/schedules` endpoint for non-OpenClaw runtimes to expose local schedule files, make the Scheduler import copy runtime-neutral, and keep OpenClaw as only one adapter behind the generic schedule contract.
+- Verification: `pnpm typecheck`; `pnpm eslint src/app/page.tsx src/app/api/scheduler/import/route.ts src/app/api/scheduler/runtime-action/route.ts`; `node --check scripts/agent-telemetry-collector.mjs`; `git diff --check -- src/app/page.tsx src/app/fleet.module.css src/app/api/scheduler/import/route.ts src/app/api/scheduler/runtime-action/route.ts scripts/agent-telemetry-collector.mjs README.md CHANGELOG.md`; Playwright smoke on `http://localhost:5020` verified the Scheduler import action renders without OpenClaw-specific cron/automation copy and without horizontal overflow.
+- Intended commit message: `Make scheduler runtime agnostic`
+
+## 2026-05-20 22:24 WITA - Polish Alert Actor Metadata
+
+- Status: Pushed
+- Areas changed: Alerts notification metadata, alert actor/source styles, changelog
+- Summary: Replace raw notification author/source text such as `queen-bee · kanban:t_...` with polished actor metadata, make Hermes auth alerts show the failed worker instead of the alert author, style the task chip with clear label/name hierarchy, and rewrite Hermes auth copy in a calmer plain-language format.
+- Verification: `pnpm eslint src/app/page.tsx`; `rm -rf .next/dev/types && pnpm typecheck --pretty false`; `git diff --check -- src/app/page.tsx src/app/notifications.module.css CHANGELOG.md`.
+- Intended commit message: `Polish alert actor metadata`
+
+## 2026-05-20 21:15 WITA - Import Existing Runtime Schedules
+
+- Status: Pushed
+- Areas changed: Scheduler import controls, OpenClaw cron import/management bridge, fleet styles, changelog
+- Summary: Add an Import existing action to Scheduler that pulls local OpenClaw cron jobs into the Hivemind schedule list, preserves their runtime job IDs, shows imported runtime/source status, and routes Run now, Pause, and Resume actions back through the real OpenClaw cron API.
+- Verification: `pnpm typecheck`; `pnpm eslint src/app/page.tsx`; Playwright smoke on `http://localhost:5020` verified the Import existing button renders in Scheduler without horizontal overflow.
+- Intended commit message: `Import existing runtime schedules`
+
+## 2026-05-20 22:14 WITA - Render Kanban Card Markdown
+
+- Status: Pushed
+- Areas changed: Work board task card messages, Kanban agent stream messages, Kanban styles, changelog
+- Summary: Render Kanban card and selected-task agent messages with the shared markdown formatter so inline code, links, emphasis, lists, and code fences no longer show as raw markdown on the board.
+- Verification: `pnpm eslint src/app/page.tsx`; `pnpm typecheck --pretty false`; `git diff --check -- src/app/page.tsx src/app/kanban-board.module.css CHANGELOG.md`.
+- Intended commit message: `Render Kanban card markdown`
+
+## 2026-05-20 21:58 WITA - Add Kanban Card Expand Control
+
+- Status: Pushed
+- Areas changed: Work board card message expansion, Kanban card styles, changelog
+- Summary: Replace the clunky long-message text hint with a compact chevron button that expands or collapses Kanban card messages inline.
+- Verification: `pnpm eslint src/app/page.tsx`; `pnpm typecheck --pretty false`; `git diff --check -- src/app/page.tsx src/app/kanban-board.module.css CHANGELOG.md`.
+- Intended commit message: `Add Kanban card expand control`
+
+## 2026-05-20 20:58 WITA - Restyle Scheduler Like Ami
+
+- Status: Pushed
+- Areas changed: Scheduler UI, fleet styles, changelog
+- Summary: Replace the generic Scheduler form with an Ami-inspired automation studio: compact glass sections, prompt/step segmented controls with icons, cadence preset chips, live step previews, inline skill attachment chips, and tighter schedule cards.
+- Verification: `pnpm typecheck`; `pnpm eslint src/app/page.tsx`; `git diff --check -- src/app/page.tsx src/app/fleet.module.css CHANGELOG.md`; Playwright smoke on `http://localhost:5020` verified the Scheduler tab renders without horizontal overflow and captured `/tmp/omni-scheduler-smoke.png`.
+- Intended commit message: `Restyle scheduler like Ami`
+
+## 2026-05-20 21:45 WITA - Render Alert Markdown
+
+- Status: Pushed
+- Areas changed: Alerts notification rendering, notification markdown styles, changelog
+- Summary: Render alert bodies as markdown with formatted code fences, inline code, links, lists, and headings, and remove the boxed title treatment so alert headings no longer look clipped at the left and right edges.
+- Verification: `pnpm eslint src/app/page.tsx`; `pnpm typecheck --pretty false`; `git diff --check -- src/app/page.tsx src/app/notifications.module.css CHANGELOG.md`.
+- Intended commit message: `Render alert markdown`
+
+## 2026-05-20 21:33 WITA - Clean Up Alerts Nav Badge
+
+- Status: Pushed
+- Areas changed: Dashboard nav alert detail, notification badge styles, Kanban card inspect hint, changelog
+- Summary: Move the unread alert count beside the Alerts label, make the badge upright/non-italic and smaller with proper spacing, change the sublabel from duplicate unread count copy to high-priority context, and add an explicit tap-to-read hint when Kanban card messages are truncated.
+- Verification: `pnpm eslint src/app/page.tsx`; `pnpm typecheck --pretty false`; `git diff --check -- src/app/page.tsx src/app/globals.css src/app/notifications.module.css src/app/kanban-board.module.css CHANGELOG.md`.
+- Intended commit message: `Clean up alerts nav badge`
+
+## 2026-05-20 21:27 WITA - Alert On Hermes Auth Failures
+
+- Status: Pushed
+- Areas changed: Shared notification writer, notifications API, Kanban delegation failure handling, shared alert state, changelog
+- Summary: Add a first-class notification creation API and raise a high-priority Alerts tab notification when Kanban delegation hits the Hermes/Codex refresh-token auth failure, including the machine, affected task, and exact `codex` / `hermes auth` recovery steps.
+- Verification: `pnpm typecheck --pretty false`; `pnpm eslint src/app/page.tsx src/app/api/openclaw/notifications/route.ts src/lib/services/obsidian/agent-notifications.ts`; `git diff --check -- src/app/page.tsx src/app/api/openclaw/notifications/route.ts src/lib/services/obsidian/agent-notifications.ts CHANGELOG.md`; created/read the live high-priority alert and confirmed it is unread, tagged `kanban/hermes/auth/runtime`, sourced to `kanban:t_mpdz5min_vtn8v`, and contains the `codex` plus `hermes auth` fix.
+- Intended commit message: `Alert on Hermes auth failures`
+
+## 2026-05-20 21:11 WITA - Add Kanban Workflow Regression Test
+
+- Status: Pushed
+- Areas changed: Kanban workflow retry guard, Kanban store invariants, Kanban move utility, API regression harness, package scripts, shared board state, changelog
+- Summary: Add an end-to-end Kanban API regression script covering Ideas to Ready to Working to Done, assigned Needs Human back to Working, unassigned Needs Human back to Ready, and accepted-without-session failures; prevent unpollable “accepted/waiting” Working writes from sticking in the shared store; clear stale completed timestamps when cards leave Done; keep the real stuck test card in Needs Human instead of letting stale clients flip it back to Working.
+- Verification: `pnpm test:kanban`; `pnpm typecheck --pretty false`; `pnpm eslint src/app/page.tsx src/lib/services/kanban/local-kanban-store.ts src/lib/utils/kanban-board.ts src/lib/types/kanban.ts scripts/agent-telemetry-collector.mjs`; `node --check scripts/agent-telemetry-collector.mjs`; `node --check scripts/test-kanban-workflow.mjs`; `git diff --check -- package.json src/app/page.tsx src/lib/services/kanban/local-kanban-store.ts src/lib/utils/kanban-board.ts scripts/test-kanban-workflow.mjs scripts/agent-telemetry-collector.mjs CHANGELOG.md`; waited 15 seconds after restoring the real stuck card to Needs Human and confirmed it stayed `needs-human` with no `agentSession`.
+- Intended commit message: `Add Kanban workflow regression test`
+
+## 2026-05-20 21:02 WITA - Clarify Kanban Assignment Copy
+
+- Status: Pushed
+- Areas changed: Work board Queen routing comment copy, shared Kanban board comments, changelog
+- Summary: Replace the confusing “No Queen Bee is assigned” routing note with “No agent was assigned yet” and update existing shared board comments to match.
+- Verification: `pnpm eslint src/app/page.tsx`; `pnpm typecheck --pretty false`; `git diff --check -- src/app/page.tsx CHANGELOG.md`; searched app and shared board JSON to confirm the old “No Queen Bee is assigned” / “dashboard pickup loop” wording is gone.
+- Intended commit message: `Clarify Kanban assignment copy`
+
+## 2026-05-20 20:39 WITA - Keep Mobile Ready Cards Ready
+
+- Status: Pushed
+- Areas changed: Work board Queen Bee pickup guard, local collector chat bridge, delegation failure handling, shared Kanban board state, changelog
+- Summary: Stop clients with an empty local Fleet inventory, such as mobile Safari, from interpreting a move to `Ready for Queen` as a no-agent failure and bouncing the card to `Needs Human`; keep accepted-but-empty worker responses out of Done; make empty Hermes API streams fall through to the fallback/error path instead of masquerading as successful work; mark the affected test task as Needs Human with the surfaced local Hermes auth failure.
+- Verification: `node --check scripts/agent-telemetry-collector.mjs`; `pnpm typecheck --pretty false`; `pnpm eslint src/app/page.tsx src/lib/types/kanban.ts scripts/agent-telemetry-collector.mjs`; `git diff --check -- src/app/page.tsx scripts/agent-telemetry-collector.mjs CHANGELOG.md`; local collector restart; direct `/chat` probe now exposes the Hermes auth failure through the `oneshot-fallback` stream instead of returning empty `[DONE]`; local `/api/chat/agent-runtime` smoke now surfaces the same auth failure; local Kanban API smoke confirmed `add a test hello to the top of the fleet page` is `needs-human` with the auth failure recorded.
+- Intended commit message: `Keep mobile ready cards ready`
+
+## 2026-05-20 20:31 WITA - Add Mobile Kanban Move Control
+
+- Status: Pushed
+- Areas changed: Work board card movement UI, Kanban mobile styles, changelog
+- Summary: Add a touch-friendly Move picker to each Kanban card on mobile/coarse-pointer devices so cards can be moved between lanes without relying on native HTML drag-and-drop.
+- Verification: `pnpm typecheck --pretty false`; `pnpm eslint src/app/page.tsx src/lib/types/kanban.ts`; `git diff --check -- src/app/page.tsx src/app/kanban-board.module.css CHANGELOG.md`.
+- Intended commit message: `Add mobile Kanban move control`
+
+## 2026-05-20 20:18 WITA - Recover Stale Kanban Work
+
+- Status: Pushed
+- Areas changed: Work board stale-session recovery, Kanban card/drawer UI, Kanban task typing, changelog
+- Summary: Detect Working cards whose delegated agent session has gone quiet for more than 30 minutes, mark them as stale in the board UI, expose a selected-task retry action, auto-requeue stale sessions by clearing the dead session, and briefly cool down the quiet worker so Queen Bee can pick another eligible agent.
+- Verification: `pnpm typecheck --pretty false`; `pnpm eslint src/app/page.tsx src/lib/types/kanban.ts`; `git diff --check -- src/app/page.tsx src/app/kanban-board.module.css src/lib/types/kanban.ts CHANGELOG.md`; local Kanban API smoke confirmed `Improve UI and UX` is now `done`, assigned to `Hermes on This Mac`, with the stale remote session cleared.
+- Intended commit message: `Recover stale Kanban work`
+
+## 2026-05-20 20:06 WITA - Add Hive Env Helper
+
+- Status: Pushed
+- Areas changed: Env helper CLI, setup script, environment example, README, changelog
+- Summary: Add an agent-agnostic `hive-env-add` command that setup installs into `~/.local/bin`, updates local app and generic hive agent env stores by default, imports existing Hermes env keys with `--import-env`, discovers ready Tailnet peers through setup-installed collector health identity instead of guessing SSH users, supports explicit Hermes/Aeon/OpenClaw compatibility targets, and refreshes an encrypted shared-note backup when GPG configuration is available.
+- Verification: Temp E2E harness verified `--import-env` imports valid Hermes env keys without printing secret values, `hive-env-add` updates local app plus generic agent env, fake Tailscale status with one online peer triggers Tailscale SSH replication, the remote peer receives the secret through stdin and updates its own app plus generic agent env defaults, offline peers are skipped, and secret values do not appear in stdout/stderr; real Tailnet smoke updated `lab-linux-1` collector health to publish `envSync.user=root`, installed the helper there, added a harmless `HIVE_TAILNET_COLLECTOR_ID_TEST_*` key on the Mac with `hive-env-add`, verified the identical key/value in Ubuntu `~/.omni-agent-hivemind/.env`, then removed the test keys from both machines; isolated fresh-clone smoke created temp clone/home folders on Mac and Ubuntu, installed only the new helper in each temp `~/.local/bin`, ran an isolated Ubuntu collector health endpoint on a temporary port, added a harmless env with normal `hive-env-add KEY=value` from the Mac temp clone, verified the same value in the Ubuntu temp hive env, and removed all temp folders/processes; `env PYTHONPYCACHEPREFIX=/private/tmp/hive-pycache python3 -m py_compile scripts/hive-env-add`; `node --check scripts/agent-telemetry-collector.mjs`; `bash -n setup.sh`; `git diff --check -- scripts/hive-env-add scripts/agent-telemetry-collector.mjs setup.sh .env.example README.md CHANGELOG.md ASSIMILATION.json`; `verify_assimilation_manifest.py`.
+- Intended commit message: `Add hive env helper`
+
+## 2026-05-20 18:29 WITA - Make Omni Vault Canonical
+
+- Status: Pushed
+- Areas changed: Shared Obsidian vault contents, Work board storage, browser vault migration, changelog
+- Summary: Merge the Agent Team Vault contents into `Omni-Agent Hivemind Vault`, merge both Kanban board histories into the Omni board, preserve overwritten vault files with migration backups, and migrate browsers with the old Agent Team path or old OpenClaw Kanban folder back to the default Omni vault on reload.
+- Verification: `pnpm typecheck --pretty false`; `pnpm eslint src/app/page.tsx`; `git diff --check -- src/app/page.tsx CHANGELOG.md`; merged `Agent Team Vault` into `Omni-Agent Hivemind Vault` with `.20260520-omni-migration.bak` backups for overwritten files; `GET /api/kanban?board=default&include_archived=true` now resolves to `~/Documents/Obsidian/omni-agent-hivemind-vault/Projects/Omni-Agent Hivemind/Kanban/kanban.json` and returns `Improve UI and UX`, `MiroShark Integration`, `Say ok if no input audio is sent.`, plus archived smoke cards; browser storage migration covers old `Agent Team Vault` and `Projects/OpenClaw/Kanban` settings.
+- Intended commit message: `Make Omni vault canonical`
+
+## 2026-05-20 12:50 WITA - Bundle Karpathy Shared Skill
+
+- Status: Pushed
+- Areas changed: Bundled shared skills, Obsidian brain skill seeding, setup script, shared skill seed script, runtime skill hints, agent runtime vault context, README, assimilation manifest, changelog
+- Summary: Bundle `multica-ai/andrej-karpathy-skills` as `karpathy-guidelines`, create the shared notes `Skills/` folder during setup and skill inventory reads, add an interactive arrow-key shared-skill checklist with an `Import all skills into shared hivemind` master checkbox plus per-agent choices for Codex, Claude, Hermes, Gemini, OpenClaw, and Aeon, import selected runtime skills into the shared shelf, mirror the baseline skill into selected runtime skill folders, write managed pointers so agents reached outside the dashboard know to consult the shared skill shelf, and add setup flags for import/share/skip/force workflows.
+- Verification: `bash -n setup.sh`; `bash -n scripts/seed-shared-skills.sh`; `./setup.sh --help`; fake Aeon smoke with `HOME=/private/tmp/openclaw-aeon-skill-test/home NEXT_PUBLIC_OBSIDIAN_VAULT_PATH=/private/tmp/openclaw-aeon-skill-test/vault ./scripts/seed-shared-skills.sh --import-sources aeon --share-targets aeon` imported an Aeon skill into the shared `Skills/` shelf, regenerated `Skills/README.md`, mirrored `karpathy-guidelines` into `~/.aeon/skills`, wrote `~/.aeon/AGENTS.md`, and a second run kept one managed block; skipped-stage setup smoke with `HOME=/private/tmp/openclaw-setup-flags-test/home NEXT_PUBLIC_OBSIDIAN_VAULT_PATH=/private/tmp/openclaw-setup-flags-test/vault HIVE_SETUP_INTERACTIVE=false PORT=5999 AGENT_TELEMETRY_PORT=5998 ./setup.sh --import-skills aeon --skip-deps --skip-build --skip-collector --skip-dashboard` exercised flag parsing and created only the expected fake-home Aeon/vault skill files; `pnpm eslint src/app/api/chat/agent-runtime/route.ts src/lib/services/obsidian/brain-skills.ts src/app/api/obsidian/skills/route.ts`; `pnpm typecheck --pretty false`; `git diff --check -- AGENTS.md README.md CHANGELOG.md setup.sh scripts/seed-shared-skills.sh src/app/api/chat/agent-runtime/route.ts src/lib/services/obsidian/brain-skills.ts ASSIMILATION.json skills/karpathy-guidelines/SKILL.md`; `verify_assimilation_manifest.py`.
+- Intended commit message: `Bundle Karpathy shared skill`
+
+## 2026-05-20 12:22 WITA - Allow Tailnet Dev Dashboard Origins
+
+- Status: Pushed
+- Areas changed: Next dev server config, environment example, changelog
+- Summary: Allow Tailnet dashboard access without hardcoding this machine's private IP by reading optional comma-separated `NEXT_ALLOWED_DEV_ORIGINS` values and auto-detecting the local Tailscale IPv4/MagicDNS host at dev-server startup.
+- Verification: `pnpm typecheck --pretty false`; `pnpm eslint next.config.ts`; restarted `next dev -H 0.0.0.0 -p 5020`; `curl -H 'Host: 192.0.2.10:5020' http://192.0.2.10:5020/` returned the dashboard page.
+- Intended commit message: `Allow Tailnet dev dashboard origin`
+
+## 2026-05-20 11:32 WITA - Add Async Kanban Session Bridge
+
+- Status: Pushed
+- Areas changed: Telemetry collector session API, chat runtime proxy, Kanban task session metadata, Work board polling, agent stream UI, changelog
+- Summary: Capture the remote Hermes API session id during delegation, persist it on the Kanban task, expose collector session messages, and poll them into the selected task's Agent stream so long-running worker output appears after the initial dashboard request times out.
+- Verification: `node --check scripts/agent-telemetry-collector.mjs`; `pnpm eslint src/app/page.tsx src/app/api/chat/agent-session/route.ts scripts/agent-telemetry-collector.mjs`; `pnpm typecheck`; deployed the patched collector to `lab-linux-1` and confirmed `/chat` streams a `session` event plus content, `/sessions?sessionId=...` returns the persisted remote Hermes transcript without internal skill prelude noise, `/api/chat/agent-session` proxies that transcript locally, and a Work board smoke task assigned to `Hermes on lab-linux-1` completed with `remote async ui ok` while the selected drawer showed the durable Agent stream after reload. Archived the temporary smoke tasks afterward.
+- Intended commit message: `Add async Kanban session bridge`
+
+## 2026-05-20 11:31 WITA - Fix Optional Tailscale Step State
+
+- Status: Pushed
+- Areas changed: Machine setup modal, changelog
+- Summary: Keep the optional Tailscale setup step pending for a selected machine unless that same machine has a Tailnet IP or DNS name, even when its local collector is already ready.
+- Verification: `pnpm eslint src/app/page.tsx`; `pnpm typecheck`; `git diff --check -- src/app/page.tsx`.
+- Intended commit message: `Fix optional Tailscale step state`
+
+## 2026-05-20 11:26 WITA - Generalize Agent Operations Controls
+
+- Status: Pushed
+- Areas changed: Agent settings modal, Scheduler nav/view, Brain shared skill browser, generalized agent security proxy, Obsidian skill import API, README, assimilation manifest
+- Summary: Expand agent settings into segmented Role, Memory, Runtime, and Security views; add a Scheduler tab for reusable prompt or step-by-step agent runs with shared skill attachments; add a bee-branded skill browser from the shared Brain skill shelf; let remote/catalog skills be mirrored into the Obsidian Skills folder; and make the chat security proxy apply across Hermes, OpenClaw, Aeon, and collector-backed runtimes.
+- Verification: `pnpm typecheck`; `pnpm eslint src/app/page.tsx src/app/api/chat/agent-runtime/route.ts src/app/api/obsidian/skills/route.ts src/lib/services/obsidian/brain-skills.ts src/lib/services/openclaw/gateway-client.ts src/lib/services/openclaw/security-proxy.ts src/lib/services/agent-security-proxy.ts` (warnings only: existing unused MiroShark template state/functions); `git diff --check -- src/app/page.tsx src/app/fleet.module.css src/app/vault.module.css src/app/api/chat/agent-runtime/route.ts src/app/api/obsidian/skills/route.ts src/lib/services/obsidian/brain-skills.ts src/lib/services/openclaw/gateway-client.ts src/lib/services/openclaw/security-proxy.ts src/lib/services/agent-security-proxy.ts README.md CHANGELOG.md ASSIMILATION.json`; `verify_assimilation_manifest.py`; Playwright smoke on `http://localhost:5020` verified the Scheduler tab renders, the Brain add-skill card renders, and the Skill Browser modal opens.
+- Intended commit message: `Generalize agent operations controls`
+
+## 2026-05-20 11:20 WITA - Add MiroShark Template-Specific Inputs
+
+- Status: Pushed
+- Areas changed: Swarm MiroShark template builder, crypto launch rehearsal inputs, template scenario composition
+- Summary: Add per-template detail fields so simulations are grounded in concrete rehearsal inputs, including token address and chain/network for Crypto Token Launch plus tailored fields for campus, corporate, historical, political, and product launch scenarios.
+- Verification: `pnpm typecheck`; `pnpm eslint src/app/page.tsx`; `git diff --check -- src/app/page.tsx src/app/miroshark.module.css CHANGELOG.md`; Playwright verified Crypto Token Launch exposes coin/contract address and chain/network fields, those values feed the generated scenario, the run button enables after required token fields are filled, all six MiroShark templates expose relevant input labels, and the Swarm view has no horizontal overflow.
+- Intended commit message: `Add MiroShark template-specific inputs`
+
+## 2026-05-20 11:14 WITA - Make Tailscale Optional
+
+- Status: Pushed
+- Areas changed: Setup script, collector installer, collector health, Fleet discovery, setup modal copy, shared vault Tailnet default, README, security copy, env example, changelog
+- Summary: Let setup complete in local-only mode when Tailscale is missing or logged out, warn that multi-machine collaboration and shared memory sync are disabled, skip Tailnet rsync/Syncthing setup unless Tailscale is connected, advertise Syncthing capability only when installed, fall back to the localhost collector for local Fleet use, default Tailnet sync off unless setup detects Tailscale, and frame Tailscale as optional in the connect-machine modal and README.
+- Verification: `bash -n setup.sh`; `bash -n scripts/install-telemetry-collector.sh`; `node --check scripts/agent-telemetry-collector.mjs`; `pnpm eslint src/app/page.tsx src/app/api/fleet/discover/route.ts src/lib/types/agent-runtime.ts src/components/cells/SetupCell.tsx src/components/cells/SecurityCell.tsx scripts/agent-telemetry-collector.mjs` (warnings only: unrelated unused state/functions in `src/app/page.tsx`); `pnpm typecheck`; `git diff --check -- setup.sh scripts/install-telemetry-collector.sh scripts/agent-telemetry-collector.mjs src/app/api/fleet/discover/route.ts src/app/page.tsx src/components/cells/SetupCell.tsx src/components/cells/SecurityCell.tsx src/lib/types/agent-runtime.ts .env.example README.md CHANGELOG.md`; local-mode Fleet discovery smoke with `tailscale` removed from `PATH` returned a ready `127.0.0.1:8787` collector; targeted sensitive-info scan of changed files found no new secrets or private Tailnet IPs, with matches only in older unrelated changelog verification notes.
+- Intended commit message: `Make Tailscale optional`
+
+## 2026-05-20 11:08 WITA - Clarify Machine Connect Setup Steps
+
+- Status: Pushed
+- Areas changed: Machine setup modal, setup cell step documentation, changelog
+- Summary: Add Tailscale as the first setup step with private-network copy, move the setup command copy action onto the Connect step, shift Verify into the next step, and keep Configure features last.
+- Verification: `pnpm eslint src/app/page.tsx src/components/cells/SetupCell.tsx`; `pnpm typecheck`; `git diff --check -- src/app/page.tsx src/components/cells/SetupCell.tsx CHANGELOG.md`.
+- Intended commit message: `Clarify machine connect setup steps`
+
+## 2026-05-20 10:55 WITA - Add Kanban Active Work Stream
+
+- Status: Pushed
+- Areas changed: Work board task cards, selected task drawer, agent steering controls, Kanban styles, changelog
+- Summary: Add a bee-based active work animation to assigned Working cards, show the selected task's agent conversation in a newest-first scroll panel with message timestamps, and add a compact Steer input that sends follow-up guidance to the assigned agent.
+- Verification: `pnpm eslint src/app/page.tsx`; `pnpm typecheck`; `git diff --check -- src/app/page.tsx src/app/kanban-board.module.css CHANGELOG.md`; Playwright smoke on `http://localhost:5020` verified the Work board renders the Agent stream panel, Steer control, and bee working indicators without obvious drawer overlap.
+- Intended commit message: `Add Kanban active work stream`
+
+## 2026-05-20 11:04 WITA - Stop Kanban Waiting Comment Loop
+
+- Status: Pushed
+- Areas changed: Work board retry gating, transient delegation handling, shared Kanban board state, changelog
+- Summary: Treat dashboard timeouts and transient fetch failures as a quiet waiting state, stop adding repetitive Queen Bee comments when an assigned Working task is awaiting an agent update, and prevent the retry watcher from redispatching those waiting cards.
+- Verification: `pnpm eslint src/app/page.tsx`; `pnpm typecheck`; `git diff --check -- src/app/page.tsx CHANGELOG.md`; parsed the shared Kanban board JSON, removed 12 repeated timeout/failure comments from `Improve UI and UX`, confirmed the task is `working`, and confirmed zero noisy delegation failure comments remain for that task.
+- Intended commit message: `Stop Kanban waiting comment loop`
+
+## 2026-05-20 10:54 WITA - Add Chat Folder Creation
+
+- Status: Pushed
+- Areas changed: Chat sidebar machine actions, chat folder creation API, chat runtime directory context, chat styles, changelog
+- Summary: Replace the machine availability label in Chat with a compact add-folder icon, add a folder creation dialog for choosing a parent location and folder name, persist created chat folders, auto-select the new folder, and pass the selected working directory into new chats.
+- Verification: `pnpm typecheck`; `pnpm eslint src/app/page.tsx src/app/api/chat/agent-runtime/route.ts src/app/api/chat/folders/route.ts` (warnings only: existing unused Kanban active-work helpers); `git diff --check -- src/app/page.tsx src/app/chat.module.css src/app/api/chat/agent-runtime/route.ts src/app/api/chat/folders/route.ts CHANGELOG.md`; Playwright smoke on `localhost:5020` verified Chat machine rows show 20px create-folder buttons instead of availability text and the folder creation dialog opens with location/name inputs.
+- Intended commit message: `Add chat folder creation`
+
+## 2026-05-20 10:38 WITA - Keep Slow Delegations In Working
+
+- Status: Pushed
+- Areas changed: Work board delegation failure handling, Hermes runtime error copy, shared Kanban board state, changelog
+- Summary: Stop treating a manually retried Working task timeout as a reachability failure, keep reachable-but-slow delegated work in Working for follow-up instead of bouncing it back to Needs Human, report runtime timeout copy accurately, and restore the current shared card to Working with non-contradictory status text.
+- Verification: `node -e` JSON parse smoke for the shared Kanban board; `node --check scripts/agent-telemetry-collector.mjs`; `bash -n scripts/install-telemetry-collector.sh`; `pnpm eslint src/app/page.tsx src/app/api/chat/agent-runtime/route.ts scripts/agent-telemetry-collector.mjs`; `pnpm typecheck`; `git diff --check -- src/app/page.tsx src/app/api/chat/agent-runtime/route.ts scripts/agent-telemetry-collector.mjs scripts/install-telemetry-collector.sh CHANGELOG.md`; remote collector `/chat` streamed `reachable ok`.
+- Intended commit message: `Keep slow delegations in working`
+
+## 2026-05-20 02:00 WITA - Fix Remote Hermes Chat Reachability
+
+- Status: Pushed
+- Areas changed: Telemetry collector chat bridge, collector installer, Work board delegation retry gating, remote Hermes gateway setup, changelog
+- Summary: Enable the Hermes loopback API server during collector setup, pass API host/port/key through the collector service environment, make the collector send auth headers when an API key is configured, avoid treating old failure comments as a permanent retry block, and repair the Ubuntu gateway so Queen Bee delegation can reach the agent through `/chat`.
+- Verification: `node --check scripts/agent-telemetry-collector.mjs`; `bash -n scripts/install-telemetry-collector.sh`; `pnpm typecheck`; `pnpm eslint scripts/agent-telemetry-collector.mjs src/app/page.tsx`; `git diff --check -- scripts/agent-telemetry-collector.mjs scripts/install-telemetry-collector.sh src/app/page.tsx CHANGELOG.md`; configured the Ubuntu Hermes gateway API on `127.0.0.1:8642`; remote `/v1/chat/completions` returned `remote api ok`; remote collector `/chat` streamed `collector still ok`.
+- Intended commit message: `Fix remote Hermes chat reachability`
+
 ## 2026-05-20 01:59 WITA - Create Syncthing Folder Markers
 
 - Status: Pushed
@@ -10,6 +522,14 @@ be added here first, then marked `Committed` or `Pushed` after the git action.
 - Summary: Create Syncthing's `.stfolder` marker whenever the collector configures a shared folder so existing vault directories do not enter the `folder marker missing` error state.
 - Verification: `node --check scripts/agent-telemetry-collector.mjs`; `git diff --cached --check`; restarted the local collector; updated the Ubuntu collector to `272dd7d`; re-paired without a remote folder path; local Syncthing folder status returned `idle` with no marker error; no-path E2E smoke passed Mac to Ubuntu in 5 attempts and Ubuntu to Mac in 6 attempts; cleaned up hidden `.omni-sync-test` notes.
 - Intended commit message: `Create Syncthing folder markers`
+
+## 2026-05-20 01:54 WITA - Clarify Shared Skill Imports
+
+- Status: Pushed
+- Areas changed: Brain shared skills inventory, Obsidian skill import dedupe, changelog
+- Summary: Show every unique shared-brain skill instead of only the first twelve, label imported provider skills as `Shared brain` with a secondary source chip, update provider copy to distinguish shared versus importable skills, and prevent provider imports from adding duplicate normalized skill slugs during the same sync.
+- Verification: `pnpm eslint src/app/page.tsx src/lib/services/obsidian/brain-skills.ts`; `git diff --check -- src/app/page.tsx src/app/vault.module.css src/lib/services/obsidian/brain-skills.ts CHANGELOG.md`; local `/api/obsidian/skills` smoke against `~/Documents/Obsidian/agent-team-vault` returned 37 unique shared skills and Claude `0` importable; Playwright smoke verified 37 shared skill cards render with `Shared brain` labels and provider source chips.
+- Intended commit message: `Clarify shared skill imports`
 
 ## 2026-05-20 01:49 WITA - Auto-Pair Tailnet Syncthing
 
@@ -19,33 +539,89 @@ be added here first, then marked `Committed` or `Pushed` after the git action.
 - Verification: `node --check scripts/agent-telemetry-collector.mjs`; `pnpm typecheck`; `git diff --check`; local collector restart advertised default sync path; Ubuntu collector updated to `72c8e0f` and advertised its default sync path; pair API accepted a request with no remote folder path and selected the Ubuntu collector default.
 - Intended commit message: `Auto-pair Tailnet Syncthing`
 
+## 2026-05-20 01:45 WITA - Retry Delegation With Reachable Agents
+
+- Status: Pushed
+- Areas changed: Queen Bee Work board delegation, unreachable agent cooldowns, changelog
+- Summary: Stop repeatedly assigning Ready tasks to agents with recent unreachable chat failures, put failed dispatch targets on cooldown, and retry the same task with another eligible worker before moving it to Needs Human.
+- Verification: `pnpm typecheck`; `pnpm eslint src/app/page.tsx` (warning only from unrelated existing `localTailscaleIp` symbol); `git diff --check -- src/app/page.tsx CHANGELOG.md`.
+- Intended commit message: `Retry delegation with reachable agents`
+
+## 2026-05-20 01:41 WITA - Move Vault Project Data To Hivemind
+
+- Status: Pushed
+- Areas changed: MiroShark run archive API, Kanban vault storage, Obsidian project data folders, changelog
+- Summary: Move the existing saved MiroShark archive, brain access log, and Kanban data into the canonical `Projects/Omni-Agent Hivemind` folder, remove the redundant legacy OpenClaw project folder, keep the MiroShark API pointed at the single Hivemind archive path, and normalize stale Kanban folder requests to the canonical Hivemind Kanban folder.
+- Verification: `pnpm typecheck`; `pnpm eslint src/lib/services/kanban/local-kanban-store.ts src/app/api/miroshark/runs/route.ts`; `git diff --check -- src/app/api/miroshark/runs/route.ts src/lib/services/kanban/local-kanban-store.ts CHANGELOG.md`; canonical archive smoke found `sim_c7764ee3341b` with 30 posts and `sim_f64f2186bd42` with 74 posts in `~/Documents/Obsidian/agent-team-vault/Projects/Omni-Agent Hivemind/MiroShark Simulations`, verified every indexed `run.json` exists, merged 79 brain access log entries, moved the populated Kanban board with 2 tasks, 7 comments, and 24 events, confirmed the old project folder no longer exists, searched for stale legacy project-folder references, and verified a stale Kanban request resolves to the Hivemind Kanban path without recreating the old folder.
+- Intended commit message: `Move vault project data to Hivemind`
+
+## 2026-05-20 01:38 WITA - Move Brain Skill Imports To Providers
+
+- Status: Pushed
+- Areas changed: Brain shared skills provider controls, vault styles, changelog
+- Summary: Move Brain skill import actions out of the section header and into each provider cell, with a nearby provider-toolbar import-all action so the provider inventory can be acted on directly.
+- Verification: `pnpm eslint src/app/page.tsx` (warning only: existing unused `kanbanDispatchCooldownRef`); `git diff --check -- src/app/page.tsx src/app/vault.module.css CHANGELOG.md`; Playwright smoke with the Agent Team Vault path verified provider cells show subtle per-provider import buttons and the nearby import-all action. `pnpm typecheck` is currently blocked by unrelated `dispatchKanbanTaskToAgent` return typing in `src/app/page.tsx`.
+- Intended commit message: `Move brain skill imports to providers`
+
+## 2026-05-20 01:38 WITA - Remove Setup Header Redundancy
+
+- Status: Pushed
+- Areas changed: Setup cell header, changelog
+- Summary: Remove the redundant `SET` glyph, `Setup` eyebrow, and `Needs setup` status pill from the machine setup cell header so the modal leads with the actual task title.
+- Verification: `pnpm eslint src/components/cells/SetupCell.tsx`; `git diff --check -- src/components/cells/SetupCell.tsx CHANGELOG.md`; Playwright smoke verified the setup cell starts with `Add this machine` and no longer contains the `SET`, `SETUP`, or `Needs setup` header labels.
+- Intended commit message: `Remove setup header redundancy`
+
+## 2026-05-20 01:35 WITA - Animate Running Idle Agents
+
+- Status: Pushed
+- Areas changed: Agent status copy, Fleet agent cell, changelog
+- Summary: Treat a reachable running agent process as active for the Fleet avatar state so running-but-idle agents show the green dot and Lottie bee instead of a gray idle dot.
+- Verification: `pnpm typecheck`; `pnpm eslint src/app/page.tsx src/components/cells/AgentCell.tsx src/components/cells/statusCopy.ts`; `git diff --check -- src/app/page.tsx src/components/cells/AgentCell.tsx src/components/cells/statusCopy.ts CHANGELOG.md`; Playwright mocked a running idle agent snapshot and verified the running copy appears with the Lottie/canvas avatar mounted.
+- Intended commit message: `Animate running idle agents`
+
+## 2026-05-20 01:34 WITA - Pin Collector Update Package Manager
+
+- Status: Pushed
+- Areas changed: Package metadata, setup script, collector self-update command, changelog
+- Summary: Pin the repo to `pnpm@8.6.12` and make setup/self-update activate that version through Corepack before installing, so remote collectors do not fail against the v6 lockfile with newer global pnpm releases.
+- Verification: Pending: syntax checks, typecheck, and remote collector update retry.
+- Intended commit message: `Pin collector update package manager`
+
+## 2026-05-20 01:29 WITA - Keep Duplicate Agent Histories Separate
+
+- Status: Pushed
+- Areas changed: Fleet discovered-agent aliasing, changelog
+- Summary: Prevent a newly re-added saved agent from inheriting another saved agent's discovered collector task history when both point at the same Hermes runtime.
+- Verification: `pnpm typecheck`; `pnpm eslint src/app/page.tsx`; `git diff --check -- src/app/page.tsx CHANGELOG.md`; Playwright mocked two saved Hermes profiles receiving duplicate snapshot payloads from the same collector and verified only the first profile shows collector history while the re-added profile stays clean.
+- Intended commit message: `Keep duplicate agent histories separate`
+
 ## 2026-05-20 01:28 WITA - Simplify Machine Setup Modal
 
-- Status: Uncommitted
+- Status: Pushed
 - Areas changed: Fleet machine setup modal, setup cell component, changelog
 - Summary: Reduce the machine setup guide to Connect, Verify, and Configure features; move the setup command copy action inline with the Verify step; rename it to a compact `Copy command`; and remove the separate shared-brain step because setup already installs the default Syncthing-backed shared brain path.
-- Verification: Pending.
+- Verification: `pnpm typecheck`; `pnpm eslint src/components/cells/SetupCell.tsx src/app/page.tsx`; `git diff --check -- src/components/cells/SetupCell.tsx src/app/page.tsx CHANGELOG.md`; localhost health check returned HTTP 200; Playwright smoke verified the modal shows `Copy command` inline with step 2, uses `3. Configure features`, and no longer shows `Enable shared brain` or `Copy setup command`.
 - Intended commit message: `Simplify machine setup modal`
 
 ## 2026-05-20 01:28 WITA - Remove Header Agent Connector
 
-- Status: Uncommitted
+- Status: Pushed
 - Areas changed: Fleet header add-agent shortcut, Fleet styles, changelog
 - Summary: Remove the redundant `Connect an agent` header disclosure now that agent creation happens from the machine-card `Add agent` action.
-- Verification: Pending.
+- Verification: `pnpm typecheck`; `pnpm eslint src/app/page.tsx`; `git diff --check -- src/app/page.tsx src/app/fleet.module.css CHANGELOG.md`. `pnpm eslint src/app/page.tsx src/app/fleet.module.css` also passed with the expected warning that CSS files are ignored by the ESLint config.
 - Intended commit message: `Remove header agent connector`
 
 ## 2026-05-20 01:24 WITA - Add Brain Skill Imports
 
-- Status: Uncommitted
+- Status: Pushed
 - Areas changed: Brain shared skills UI, Obsidian skills inventory/import API, provider skill scanner, vault styles, changelog
 - Summary: Add a prominent shared-brain Skills panel that reads Obsidian `Skills/`, scans installed Claude/Codex/Hermes/Gemini/OpenClaw skill folders, supports import-all and provider-specific import modal flows with loading/success states, mirrors skill directories into the vault, and refreshes the Brain view after sync.
-- Verification: Pending.
+- Verification: `pnpm typecheck`; `pnpm eslint src/app/page.tsx src/app/api/obsidian/skills/route.ts src/lib/services/obsidian/brain-skills.ts`; `git diff --check -- src/app/page.tsx src/app/vault.module.css src/app/api/obsidian/skills/route.ts src/lib/services/obsidian/brain-skills.ts CHANGELOG.md ASSIMILATION.json`; `verify_assimilation_manifest.py`; local `/api/obsidian/skills` smoke against `~/Documents/Obsidian/agent-team-vault` returned 12 shared skills and 140 provider skills; Playwright desktop/mobile smokes verified the Brain skills panel and provider import modal render with provider rows.
 - Intended commit message: `Add brain skill imports`
 
 ## 2026-05-20 01:22 WITA - Show Created Agents In Fleet
 
-- Status: Uncommitted
+- Status: Pushed
 - Areas changed: Fleet agent dedupe/merge logic, changelog
 - Summary: Preserve user-created agent profile fields when they overlap auto-discovered collector agents so newly added agents immediately appear under their machine.
 - Verification: `pnpm typecheck`; `pnpm eslint src/app/page.tsx` (warnings only from unrelated existing unused Brain skill symbols); `git diff --check -- src/app/page.tsx CHANGELOG.md`; Playwright mocked a saved created agent plus a matching discovered collector/history agent and verified the created name remains visible under the machine after history loads.
@@ -53,15 +629,15 @@ be added here first, then marked `Committed` or `Pushed` after the git action.
 
 ## 2026-05-20 01:18 WITA - Add Syncthing Tailnet Sync
 
-- Status: Uncommitted
+- Status: Pushed
 - Areas changed: Collector Syncthing service management, Syncthing pairing APIs, shared vault sync UI, setup scripts, README, roadmap, agent runtime context, assimilation manifest, changelog
 - Summary: Make built-in multi-machine vault/folder sync use managed Syncthing over Tailscale by default, install/start Syncthing from setup on macOS and Linux collectors, pair local and remote folders through collector APIs, keep Tailscale SSH plus rsync as an advanced fallback, and add a scoped `.omni-sync-test` note endpoint for real bidirectional E2E verification without SSH.
-- Verification: `node --check scripts/agent-telemetry-collector.mjs`; `bash -n scripts/run-syncthing.sh`; `bash -n setup.sh`; `bash -n scripts/install-telemetry-collector.sh`; `pnpm typecheck`; `pnpm lint` (warnings only: 8 existing unused-variable warnings); `pnpm build` (passed with existing Turbopack NFT trace warning and bigint fallback notices); `git diff --check`; `python3 /Users/liam/.codex/skills/github-assimilator/scripts/verify_assimilation_manifest.py`; local collector `/syncthing/status` reports Syncthing v2.1.0 running with a device ID; current-tree token/private-path scan found no matches outside changelog verification notes. Remote Mac-to-Ubuntu and Ubuntu-to-Mac sync test will run after this commit is pushed so the Ubuntu collector can update to these endpoints.
+- Verification: `node --check scripts/agent-telemetry-collector.mjs`; `bash -n scripts/run-syncthing.sh`; `bash -n setup.sh`; `bash -n scripts/install-telemetry-collector.sh`; `pnpm typecheck`; `pnpm lint` (warnings only: 8 existing unused-variable warnings); `pnpm build` (passed with existing Turbopack NFT trace warning and bigint fallback notices); `git diff --check`; `python3 verify_assimilation_manifest.py`; local collector `/syncthing/status` reports Syncthing v2.1.0 running with a device ID; current-tree token/private-path scan found no matches outside changelog verification notes. Remote Mac-to-Ubuntu and Ubuntu-to-Mac sync test will run after this commit is pushed so the Ubuntu collector can update to these endpoints.
 - Intended commit message: `Add Syncthing Tailnet sync`
 
 ## 2026-05-20 01:12 WITA - Align Chat Start Tooltips
 
-- Status: Uncommitted
+- Status: Pushed
 - Areas changed: Chat sidebar tree start-chat controls, changelog
 - Summary: Reuse the same tooltip pattern as Fleet agent action buttons for machine and folder start-chat controls, with contextual `New chat in ...` tooltips.
 - Verification: `pnpm eslint src/app/page.tsx`; `git diff --check -- src/app/page.tsx CHANGELOG.md`.
@@ -69,7 +645,7 @@ be added here first, then marked `Committed` or `Pushed` after the git action.
 
 ## 2026-05-20 01:08 WITA - Add Agent Creation Modal
 
-- Status: Uncommitted
+- Status: Pushed
 - Areas changed: Fleet add-agent flow, agent settings modal, changelog
 - Summary: Change machine Add agent actions to open a settings-style creation modal with name/runtime/role controls, create the profile attached to that machine, and stop redirecting to Chat after creation.
 - Verification: `pnpm typecheck`; `pnpm eslint src/app/page.tsx`; `git diff --check -- src/app/page.tsx CHANGELOG.md`; Playwright smoke on `localhost:5020` with a mocked ready machine verified Add agent opens the creation modal, creates the new profile under that machine, and leaves Fleet active instead of switching to Chat.
@@ -77,7 +653,7 @@ be added here first, then marked `Committed` or `Pushed` after the git action.
 
 ## 2026-05-20 01:03 WITA - Shrink Chat Tree Action Icons
 
-- Status: Uncommitted
+- Status: Pushed
 - Areas changed: Chat sidebar tree action icon sizing, changelog
 - Summary: Reduce the machine/folder start-chat action target in the Chat sidebar and force its SVG to a small fixed size so it no longer appears as an oversized speech bubble.
 - Verification: `git diff --check -- src/app/chat.module.css CHANGELOG.md`.
@@ -85,7 +661,7 @@ be added here first, then marked `Committed` or `Pushed` after the git action.
 
 ## 2026-05-20 01:01 WITA - Fix Agent Rename Icon Button
 
-- Status: Uncommitted
+- Status: Pushed
 - Areas changed: Fleet agent settings modal styles, changelog
 - Summary: Prevent the broad setup-modal header button style from turning the rename pencil control into a large filled square.
 - Verification: `pnpm eslint src/app/page.tsx`; `git diff --check -- src/app/fleet.module.css CHANGELOG.md`; Playwright smoke on `localhost:5020` verified the rename control renders as a 32px icon button with the pencil SVG visible.
@@ -93,7 +669,7 @@ be added here first, then marked `Committed` or `Pushed` after the git action.
 
 ## 2026-05-20 00:44 WITA - Add Chat Context Choosers
 
-- Status: Uncommitted
+- Status: Pushed
 - Areas changed: Chat panel header, machine/agent chooser, directory chooser, chat styles, changelog
 - Summary: Replace the static runtime URL subtitle in the Chat panel with two compact tooltip-backed chooser buttons: one for selecting the machine/agent and one for selecting the working directory.
 - Verification: `pnpm typecheck`; `pnpm eslint src/app/page.tsx`; `git diff --check -- src/app/page.tsx src/app/chat.module.css CHANGELOG.md`.
@@ -101,7 +677,7 @@ be added here first, then marked `Committed` or `Pushed` after the git action.
 
 ## 2026-05-20 00:39 WITA - Add Chat Tree Start Controls
 
-- Status: Uncommitted
+- Status: Pushed
 - Areas changed: Chat sidebar tree, machine/folder start chat controls, Chat manual actions, chat styles, changelog
 - Summary: Remove Duplicate/Delete controls from the Chat sidebar, add compact chat buttons to each machine and workspace folder row, and keep empty folders visible so a new chat can be started in that location.
 - Verification: `pnpm typecheck`; `pnpm eslint src/app/page.tsx`; `git diff --check -- src/app/page.tsx src/app/chat.module.css CHANGELOG.md`.
@@ -109,7 +685,7 @@ be added here first, then marked `Committed` or `Pushed` after the git action.
 
 ## 2026-05-20 00:34 WITA - Add Agent Rename Settings
 
-- Status: Uncommitted
+- Status: Pushed
 - Areas changed: Fleet agent settings modal, Work board detail ordering, changelog
 - Summary: Add inline agent renaming to the settings modal with edit/save/cancel controls, and sort Work board comments/events newest-first so recent delegation failures appear at the top.
 - Verification: `pnpm typecheck`; `pnpm eslint src/app/page.tsx`; `git diff --check -- src/app/page.tsx src/app/fleet.module.css CHANGELOG.md`; Playwright smoke on `localhost:5020` verified the settings modal rename control opens with the current name prefilled and shows save/cancel buttons.
@@ -117,7 +693,7 @@ be added here first, then marked `Committed` or `Pushed` after the git action.
 
 ## 2026-05-20 00:30 WITA - Transcribe Chat Voice Input
 
-- Status: Uncommitted
+- Status: Pushed
 - Areas changed: Chat composer voice input, attachment content parts, runtime chat API, telemetry collector, chat styles, changelog
 - Summary: Stop sending microphone recordings as `input_audio` attachments; use browser speech recognition to transcribe voice into the chat input instead, show a real microphone analyser waveform while listening, and keep images/files as the only non-text content parts forwarded to Hermes.
 - Verification: `node --check scripts/agent-telemetry-collector.mjs`; `pnpm typecheck`; `pnpm eslint src/app/page.tsx src/app/api/chat/agent-runtime/route.ts scripts/agent-telemetry-collector.mjs`; `pnpm lint` (warnings only, existing unused-variable warnings); `git diff --check -- src/app/page.tsx src/app/chat.module.css src/app/api/chat/agent-runtime/route.ts scripts/agent-telemetry-collector.mjs CHANGELOG.md`; restarted the local collector; collector chat smoke returned streamed `ok` without any `input_audio` content part.
@@ -125,7 +701,7 @@ be added here first, then marked `Committed` or `Pushed` after the git action.
 
 ## 2026-05-20 00:27 WITA - Add Solana x402 Signing
 
-- Status: Uncommitted
+- Status: Pushed
 - Areas changed: x402 wallet executor, local x402 smoke endpoint, x402/Solana dependencies, chat voice AudioContext typing, changelog
 - Summary: Extend the x402 paid HTTP executor from Base/Base Sepolia to Solana mainnet/devnet by mapping dashboard Solana wallet networks to x402 CAIP-2 network IDs, creating SVM signers from the encrypted local wallet secret, registering the x402 SVM exact scheme with the configured Solana RPC, and adding Solana devnet requirements to the local mock paid endpoint.
 - Verification: `pnpm typecheck`; `pnpm lint` (warnings only, existing unused-variable warnings plus an unrelated `attachmentFormat` warning); `git diff --check`; `verify_assimilation_manifest.py`; local `/api/wallet/create` Solana devnet smoke passed; local `/api/wallet/x402` successfully signed and retried the mock paid call with a Solana devnet wallet; negative Solana x402 smokes rejected missing approval, too-low per-payment caps, and network mismatches.
@@ -133,7 +709,7 @@ be added here first, then marked `Committed` or `Pushed` after the git action.
 
 ## 2026-05-20 00:20 WITA - Wire x402 Paid Agent Calls
 
-- Status: Uncommitted
+- Status: Pushed
 - Areas changed: x402 wallet executor, x402 wallet API route, local x402 smoke endpoint, Wallets UI money-moving controls, agent runtime wallet/tool context, orchestrator tool list, x402 dependencies, AgentCell role props, assimilation manifest
 - Summary: Add a real x402 paid HTTP execution path for local Base/Base Sepolia wallets, including x402 payment signing/retry via the encrypted wallet vault, per-payment caps, provider checks, base URL restrictions, `PAY_X402` approval gates, a local dev-only mock paid endpoint for signing smoke tests, and agent-runtime/orchestrator context that exposes `x402_fetch` as a payment tool.
 - Verification: `pnpm typecheck`; `pnpm lint` (warnings only, existing unused-variable warnings); `git diff --check`; `verify_assimilation_manifest.py`; local `/api/wallet/create` Base Sepolia smoke passed; local `/api/wallet/x402/mock-paid` returned a 402 challenge; local `/api/wallet/x402` successfully signed and retried the mock paid call with a $0.01 x402 payment; negative x402 smokes rejected missing approval, too-low per-payment caps, and non-x402 providers; `/api/orchestrator` advertises `x402_fetch`.
@@ -141,7 +717,7 @@ be added here first, then marked `Committed` or `Pushed` after the git action.
 
 ## 2026-05-20 00:19 WITA - Auto Close Chat Attachment Menu
 
-- Status: Uncommitted
+- Status: Pushed
 - Areas changed: Chat composer attachment menu, changelog
 - Summary: Close the Chat composer attachment menu when clicking/tapping outside it or pressing Escape.
 - Verification: `pnpm eslint src/app/page.tsx` (warning only: existing unused `beeRoleLabel` import); `git diff --check -- src/app/page.tsx CHANGELOG.md`.
@@ -149,7 +725,7 @@ be added here first, then marked `Committed` or `Pushed` after the git action.
 
 ## 2026-05-20 00:10 WITA - Restore Fleet Agent Cards
 
-- Status: Uncommitted
+- Status: Pushed
 - Areas changed: Fleet machine card agent rows, agent role settings modal, changelog
 - Summary: Remove only the inline role editor from Fleet machine cards, keep the selected-agent task actions with their tooltips, and move agent role/class management into a dedicated context-menu settings modal.
 - Verification: `pnpm eslint src/app/page.tsx src/components/cells/AgentCell.tsx` (warning only from existing unused chat attachment helper); `git diff --check -- src/app/page.tsx src/components/cells/AgentCell.tsx src/app/fleet.module.css CHANGELOG.md`; Playwright smoke on `localhost:5020` verified Fleet renders and inline role controls are absent from machine cards. `pnpm typecheck` is still blocked by existing chat audio typing around `window.webkitAudioContext`.
@@ -157,7 +733,7 @@ be added here first, then marked `Committed` or `Pushed` after the git action.
 
 ## 2026-05-20 00:04 WITA - Restore Chat Composer Icons
 
-- Status: Uncommitted
+- Status: Pushed
 - Areas changed: Chat composer icon button styles, changelog
 - Summary: Fix the compact Chat composer controls so the plus, mic, and send icons render instead of being overridden by the older broad chat button styling.
 - Verification: `pnpm eslint src/app/page.tsx src/app/chat.module.css` (CSS ignored by ESLint config, page lint clean); `git diff --check -- src/app/chat.module.css CHANGELOG.md`.
@@ -165,7 +741,7 @@ be added here first, then marked `Committed` or `Pushed` after the git action.
 
 ## 2026-05-19 23:42 WITA - Import Note Tasks Into Ideas
 
-- Status: Uncommitted
+- Status: Pushed
 - Areas changed: Markdown note task intake service/API, Work board note intake controls, shared vault settings, changelog
 - Summary: Scan folder-backed markdown notes using the existing vault project-tracking conventions, import unchecked tasks and `Next action` sections into Kanban Ideas with idempotency keys, and add an off-by-default auto-import toggle that works with Obsidian, Tailnet-synced folders, or any markdown note provider.
 - Verification: `pnpm typecheck`; `pnpm eslint src/app/page.tsx src/app/api/note-intake/route.ts src/lib/services/notes/note-task-intake.ts src/lib/types/agent-runtime.ts`; `git diff --check -- src/app/page.tsx src/app/kanban-board.module.css src/app/api/note-intake/route.ts src/lib/services/notes/note-task-intake.ts src/lib/types/agent-runtime.ts CHANGELOG.md`; local API scan against the configured shared vault found note tasks from `Projects` and `Inbox`.
@@ -173,7 +749,7 @@ be added here first, then marked `Committed` or `Pushed` after the git action.
 
 ## 2026-05-19 23:39 WITA - Slim Chat Composer Controls
 
-- Status: Uncommitted
+- Status: Pushed
 - Areas changed: Chat composer controls, attachment menu, file attachment forwarding, chat styles, runtime chat API, telemetry collector
 - Summary: Replace the clunky Attach/Record/Send button row with a single compact composer surface: a plus button opens a small menu for images and files, mic and send controls sit as icon-only buttons in the lower-right corner, and generic file attachments are represented and forwarded alongside images and audio.
 - Verification: `node --check scripts/agent-telemetry-collector.mjs`; `pnpm typecheck`; `pnpm eslint src/app/page.tsx src/app/api/chat/agent-runtime/route.ts scripts/agent-telemetry-collector.mjs`; `pnpm lint` (warnings only, existing unused-variable warnings); `git diff --check -- src/app/page.tsx src/app/chat.module.css src/app/api/chat/agent-runtime/route.ts scripts/agent-telemetry-collector.mjs CHANGELOG.md ASSIMILATION.json`.
@@ -181,7 +757,7 @@ be added here first, then marked `Committed` or `Pushed` after the git action.
 
 ## 2026-05-19 23:31 WITA - Retry Working Assignments
 
-- Status: Uncommitted
+- Status: Pushed
 - Areas changed: Kanban Working retry dispatch, changelog
 - Summary: Treat a user move back into Working with an existing assignee as an explicit retry, dispatching the task to that assigned agent instead of requiring the card to pass through Ready again.
 - Verification: `pnpm typecheck`; `pnpm eslint src/app/page.tsx` (warnings only from unrelated existing unused icon imports); `git diff --check -- src/app/page.tsx CHANGELOG.md`.
@@ -189,7 +765,7 @@ be added here first, then marked `Committed` or `Pushed` after the git action.
 
 ## 2026-05-19 23:20 WITA - Add Ready Queue Pickup Dispatch
 
-- Status: Uncommitted
+- Status: Pushed
 - Areas changed: Kanban Queen Bee pickup loop, automatic task dispatch, bee assignment ranking, changelog
 - Summary: Add a dashboard-side Ready for Queen pickup loop so existing Ready tasks are retried when agents/roles become available, move eligible tasks into Working, dispatch the assignment to the chosen agent runtime, prefer local/chat-capable workers before remote collectors, and mark the task Done with the result or Needs Human if dispatch fails.
 - Verification: `pnpm typecheck`; `pnpm eslint src/app/page.tsx src/lib/services/orchestration/bee-roles.ts`; `git diff --check -- src/app/page.tsx src/lib/services/orchestration/bee-roles.ts CHANGELOG.md`; Chrome visual check on `localhost:5020` verified the stale Ready card was picked up automatically and moved out of Ready, with a visible Needs Human error when the selected remote Hermes runtime timed out.
@@ -197,15 +773,15 @@ be added here first, then marked `Committed` or `Pushed` after the git action.
 
 ## 2026-05-19 23:27 WITA - Neutralize Generic Storage Names
 
-- Status: Uncommitted
+- Status: Pushed
 - Areas changed: Tailnet vault sync state, local Kanban fallback storage, neutral Kanban/orchestrator/note-intake APIs, Obsidian vault autodetect scoring, MiroShark archive/run labels, changelog
 - Summary: Replace generic OpenClaw-branded storage, API, and archive defaults with Omni-Agent Hivemind names while preserving explicit OpenClaw integration references only where they describe the OpenClaw runtime; remove the old OpenClaw Kanban/orchestrator/note-intake compatibility routes so generic work queues and note intake are only exposed through `/api/kanban`, `/api/orchestrator`, and `/api/note-intake`; make bidirectional sync stop after a failed remote snapshot instead of showing a misleading merge plan.
-- Verification: `pnpm typecheck`; `pnpm lint` (warnings only: 8 existing unused-variable warnings); `pnpm build` (passed with the existing Turbopack NFT tracing warning and non-blocking bigint fallback notices); `bash -n setup.sh`; `bash -n scripts/install-telemetry-collector.sh`; `git diff --check`; `python3 /Users/liam/.codex/skills/github-assimilator/scripts/verify_assimilation_manifest.py`; current-tree sensitive path/token scans returned no matches; generic storage/API scan returned no OpenClaw-branded defaults outside explicit OpenClaw integration docs.
+- Verification: `pnpm typecheck`; `pnpm lint` (warnings only: 8 existing unused-variable warnings); `pnpm build` (passed with the existing Turbopack NFT tracing warning and non-blocking bigint fallback notices); `bash -n setup.sh`; `bash -n scripts/install-telemetry-collector.sh`; `git diff --check`; `python3 verify_assimilation_manifest.py`; current-tree sensitive path/token scans returned no matches; generic storage/API scan returned no OpenClaw-branded defaults outside explicit OpenClaw integration docs.
 - Intended commit message: `Neutralize generic storage names`
 
 ## 2026-05-20 00:46 WITA - Verify Tailnet SSH Setup
 
-- Status: Uncommitted
+- Status: Pushed
 - Areas changed: Setup script, telemetry collector installer, Tailnet vault sync docs, changelog
 - Summary: Make setup and collector install advertise Tailscale SSH more reliably by trying user and passwordless-sudo paths, accepting both supported `tailscale set --ssh` syntaxes, verifying `RunSSH=true`, and printing the exact remaining admin command when automatic enablement is blocked.
 - Verification: `bash -n setup.sh`; `bash -n scripts/install-telemetry-collector.sh`; `git diff --check`; `pnpm typecheck`; reviewed current Tailscale SSH docs for host advertisement and ACL requirements.
@@ -213,7 +789,7 @@ be added here first, then marked `Committed` or `Pushed` after the git action.
 
 ## 2026-05-19 23:12 WITA - Clarify Done Card Completion
 
-- Status: Uncommitted
+- Status: Pushed
 - Areas changed: Kanban Done card assignment/provenance copy, changelog
 - Summary: Stop Done cards from showing contradictory worker assignment labels when they have no assignee; show `Completed by:` with the completing agent when known, or `user` for manually completed cards.
 - Verification: `pnpm eslint src/app/page.tsx`; `git diff --check -- src/app/page.tsx CHANGELOG.md`; Chrome visual check on `localhost:5020` verified the Done card and selected task drawer both show `Completed by: user` for a manually completed task.
@@ -221,7 +797,7 @@ be added here first, then marked `Committed` or `Pushed` after the git action.
 
 ## 2026-05-19 23:06 WITA - Add Real Crypto Wallet Rails
 
-- Status: Uncommitted
+- Status: Pushed
 - Areas changed: Wallet API routes, encrypted local wallet vault, Base/Solana USDC balance and transfer services, Wallets UI controls, dependencies, Obsidian sync type fixes
 - Summary: Add real throwaway wallet creation for Base and Solana, local encrypted secret storage under the user's home directory, live USDC/native balance polling, explicit capped USDC send actions gated by a `SEND_USDC` confirmation, and dashboard controls to create wallets, refresh balances, and test tiny transfers.
 - Verification: `pnpm typecheck`; `pnpm lint` (warnings only, pre-existing unused-variable warnings); `git diff --check`; `pnpm build` (passed with the existing Turbopack NFT tracing warning and non-blocking bigint fallback notices); local `/api/wallet/create` smokes for Solana devnet and Base Sepolia passed; local `/api/wallet/balance` smokes for Solana devnet and Base Sepolia passed; local `/api/wallet/send` safety checks rejected over-cap and missing-confirmation sends; unfunded Solana devnet/Base Sepolia sends reached chain simulation and failed for expected no-funds/no-gas reasons; Playwright browser smoke on `localhost:5020` verified the Wallets tab hydrates and opens after restarting the dev server.
@@ -229,7 +805,7 @@ be added here first, then marked `Committed` or `Pushed` after the git action.
 
 ## 2026-05-19 22:56 WITA - Contain Fleet Role Controls
 
-- Status: Uncommitted
+- Status: Pushed
 - Areas changed: Fleet selected-agent role controls, AgentCell expanded layout, changelog
 - Summary: Move the Queen Bee/worker role selectors into a compact per-agent disclosure and constrain the selected row content so role controls cannot overflow machine cards.
 - Verification: `pnpm eslint src/app/page.tsx src/components/cells/AgentCell.tsx`; `git diff --check -- src/app/page.tsx src/app/fleet.module.css src/components/cells/AgentCell.tsx CHANGELOG.md`; Chrome visual check on `localhost:5020` verified the selected Fleet agent role controls stay inside the machine card when collapsed and expanded. `pnpm typecheck` is currently blocked by unrelated Tailnet vault sync errors in `src/app/page.tsx` and `src/lib/services/obsidian/tailnet-vault-sync.ts`.
@@ -237,7 +813,7 @@ be added here first, then marked `Committed` or `Pushed` after the git action.
 
 ## 2026-05-19 22:55 WITA - Add Chat Image And Audio Messages
 
-- Status: Uncommitted
+- Status: Pushed
 - Areas changed: Chat composer, chat message rendering, agent runtime chat API, telemetry collector Hermes chat bridge, changelog, assimilation manifest
 - Summary: Add image and audio attachments to the Chat composer, including file upload, microphone recording, compact attachment pills, inline image/audio rendering in sent messages, multimodal content-part forwarding through the dashboard runtime API, and collector preservation of `image_url` and `input_audio` parts for Hermes' streaming API path.
 - Verification: `node --check scripts/agent-telemetry-collector.mjs`; `pnpm eslint src/app/page.tsx src/app/api/chat/agent-runtime/route.ts scripts/agent-telemetry-collector.mjs`; `pnpm lint` (warnings only, existing unused-variable warnings); `git diff --check -- src/app/page.tsx src/app/chat.module.css src/app/api/chat/agent-runtime/route.ts scripts/agent-telemetry-collector.mjs CHANGELOG.md ASSIMILATION.json`; `verify_assimilation_manifest.py`; restarted the local collector; text streaming collector smoke still returned token-sized SSE chunks; multimodal image collector smoke preserved the media path and now returns an explicit model-support error instead of a blank assistant response when the active Hermes model returns no multimodal text; `pnpm typecheck` is currently blocked by unrelated `src/lib/services/wallet/local-wallet-vault.ts` Buffer/CipherKey typing errors.
@@ -245,7 +821,7 @@ be added here first, then marked `Committed` or `Pushed` after the git action.
 
 ## 2026-05-19 22:51 WITA - Clarify Ready For Queen Cards
 
-- Status: Uncommitted
+- Status: Pushed
 - Areas changed: Kanban card assignment copy, changelog
 - Summary: Stop Ready for Queen cards from displaying stale worker assignees; show a neutral Ready badge and Queen Bee waiting state until the task is actually claimed into Working.
 - Verification: `pnpm typecheck`; `pnpm eslint src/app/page.tsx` (warnings only from unrelated existing unused chat attachment symbols); `git diff --check -- src/app/page.tsx CHANGELOG.md`.
@@ -253,7 +829,7 @@ be added here first, then marked `Committed` or `Pushed` after the git action.
 
 ## 2026-05-19 22:49 WITA - Show Bee Assignees On Kanban Cards
 
-- Status: Uncommitted
+- Status: Pushed
 - Areas changed: Kanban card assignment UI, worker class labels, changelog
 - Summary: Show Queen Bee or worker bee icons directly on Kanban cards with the assigned agent name and role label, including clearer labels such as Engineer worker bee and Planner worker bee.
 - Verification: `pnpm typecheck`; `pnpm eslint src/app/page.tsx src/lib/types/agent-runtime.ts src/lib/services/orchestration/bee-roles.ts` passed; `pnpm eslint src/app/kanban-board.module.css` returned the expected ignored-file warning because ESLint is not configured for CSS; `git diff --check -- src/app/page.tsx src/app/kanban-board.module.css src/lib/types/agent-runtime.ts src/lib/services/orchestration/bee-roles.ts CHANGELOG.md`.
@@ -261,7 +837,7 @@ be added here first, then marked `Committed` or `Pushed` after the git action.
 
 ## 2026-05-19 22:48 WITA - Add Tailnet Vault Sync
 
-- Status: Uncommitted
+- Status: Pushed
 - Areas changed: Obsidian vault sync API, Tailnet rsync service, shared vault settings UI, README, agent runtime context, roadmap, assimilation manifest
 - Summary: Replace Obsidian Sync-as-requirement language with provider-neutral folder sync copy, explicitly state that no Obsidian subscription is required for local vault use, and add built-in Tailscale SSH + rsync vault sync with dry-run, bidirectional baseline merge, conflict copies, live polling, safe exclusions, one-step setup prep for rsync/Tailscale SSH, and local fallback.
 - Verification: `pnpm typecheck`; `pnpm lint` (warnings only: existing unused variables); `pnpm build` (passed with existing Turbopack NFT tracing warning and non-blocking bigint fallback notices); `bash -n setup.sh`; `bash -n scripts/install-telemetry-collector.sh`; `git diff --check`; `verify_assimilation_manifest.py`; production route manifest includes `/api/obsidian/sync`; current-tree sensitive path/token scans returned no matches.
@@ -269,7 +845,7 @@ be added here first, then marked `Committed` or `Pushed` after the git action.
 
 ## 2026-05-19 22:40 WITA - Add Queen Bee Kanban Automation
 
-- Status: Uncommitted
+- Status: Pushed
 - Areas changed: Kanban workflow model, agent colony roles, Queen Bee assignment logic, orchestrator API/event surface, agent runtime context, Work board UI, changelog
 - Summary: Replace the generic Triage/Todo/Ready/Running/Blocked board with a simpler Ideas, Ready for Queen, Working, Needs Human, Done workflow. Add Queen Bee and worker-class metadata to agents, expose role controls in Fleet, auto-claim cards moved into Ready for Queen by choosing a Queen/worker and moving them to Working, preserve Needs Human as an optional exception lane, expose an MCP-ready orchestrator API surface for listing tools, ready tasks, agents, roles, and assignment recommendations, and add an SSE event stream for Queen Bee watchers.
 - Verification: `pnpm typecheck`; `pnpm eslint src/app/page.tsx src/components/cells/AgentCell.tsx src/lib/types/kanban.ts src/lib/types/agent-runtime.ts src/lib/services/kanban/local-kanban-store.ts src/lib/services/orchestration/bee-roles.ts src/app/api/orchestrator/route.ts src/app/api/orchestrator/events/route.ts src/app/api/chat/agent-runtime/route.ts`; `git diff --check -- src/app/page.tsx src/components/cells/AgentCell.tsx src/lib/types/kanban.ts src/lib/types/agent-runtime.ts src/lib/services/kanban/local-kanban-store.ts src/lib/services/orchestration/bee-roles.ts src/app/api/orchestrator/route.ts src/app/api/orchestrator/events/route.ts src/app/api/chat/agent-runtime/route.ts src/app/kanban-board.module.css CHANGELOG.md ASSIMILATION.json`; `verify_assimilation_manifest.py`.
@@ -277,7 +853,7 @@ be added here first, then marked `Committed` or `Pushed` after the git action.
 
 ## 2026-05-19 22:46 WITA - Add Obsidian Agent Notifications
 
-- Status: Uncommitted
+- Status: Pushed
 - Areas changed: Dashboard navigation and notifications tab, Obsidian notification storage/API, shared vault runtime context, vault settings, notification styles, assimilation manifest
 - Summary: Add a badge-backed Alerts tab that reads agent-authored markdown notifications from a dedicated `agent-notifications` vault folder, persists read receipts and notification settings beside the notes, supports mark-read and mark-all-read flows, pages the feed with endless scrolling, and exposes a disabled-by-default high-priority messaging escalation preference for Hermes/OpenClaw or another messaging agent to honor.
 - Verification: `pnpm typecheck`; `pnpm eslint src/app/page.tsx src/app/api/openclaw/notifications/route.ts src/lib/services/obsidian/agent-notifications.ts src/lib/types/agent-notifications.ts src/lib/types/agent-runtime.ts src/app/api/chat/agent-runtime/route.ts` (warnings only: existing unused page symbols); `pnpm build` (passed with existing Turbopack NFT tracing warning via `src/app/api/openclaw/skill-prefs/route.ts`); notifications API smoke against the shared vault returned `ok: true`, `folder: agent-notifications`, zero notifications, and disabled high-priority messaging; Playwright production smoke on `next start -p 5023` verified the Alerts tab, empty state, escalation toggle copy, and no horizontal overflow at 1440x1000 and 390x844; `git diff --check -- src/app/page.tsx src/app/globals.css src/app/api/openclaw/notifications/route.ts src/lib/services/obsidian/agent-notifications.ts src/lib/types/agent-notifications.ts src/lib/types/agent-runtime.ts src/app/api/chat/agent-runtime/route.ts src/app/notifications.module.css CHANGELOG.md ASSIMILATION.json`; `verify_assimilation_manifest.py`.
@@ -285,7 +861,7 @@ be added here first, then marked `Committed` or `Pushed` after the git action.
 
 ## 2026-05-19 22:12 WITA - Clean Chat History Sources
 
-- Status: Uncommitted
+- Status: Pushed
 - Areas changed: Chat sidebar history filtering, Fleet snapshot Hermes message parsing, telemetry collector Hermes message parsing
 - Summary: Keep file/log/session artifact rows out of the Chat history tree so runtime JSON schemas and logs are not shown as conversations; extract user-facing response text from Hermes JSON assistant payloads and ignore reasoning/internal fields before building chat previews and transcripts.
 - Verification: `node --check scripts/agent-telemetry-collector.mjs`; `pnpm typecheck`; `pnpm lint` (warnings only, pre-existing unused-variable warnings); `git diff --check -- src/app/page.tsx src/app/api/fleet/snapshot/route.ts scripts/agent-telemetry-collector.mjs CHANGELOG.md`; local collector snapshot smoke verified Hermes state rows are readable while file/log artifact rows remain available to Fleet but are now filtered out of Chat.
@@ -293,7 +869,7 @@ be added here first, then marked `Committed` or `Pushed` after the git action.
 
 ## 2026-05-19 22:24 WITA - Use Hermes API Streaming For Collector Chat
 
-- Status: Uncommitted
+- Status: Pushed
 - Areas changed: Telemetry collector Hermes chat streaming
 - Summary: Route collector `/chat` streaming requests through Hermes' OpenAI-compatible API server so Chat receives real `stream_delta_callback` SSE chunks; lazily start the local Hermes API server on `127.0.0.1:8642` when needed and keep the old `hermes -z` path only as a fallback.
 - Verification: `node --check scripts/agent-telemetry-collector.mjs`; `pnpm typecheck`; `pnpm lint` (warnings only, existing unused-variable warnings); `git diff --check -- scripts/agent-telemetry-collector.mjs src/app/page.tsx src/app/api/fleet/snapshot/route.ts CHANGELOG.md`; restarted the local LaunchAgent collector; `curl -N` collector `/chat` probe returned `x-hermes-stream-source: api-server`, `Transfer-Encoding: chunked`, and many token-sized SSE `delta.content` chunks before `[DONE]`; Hermes API health returned `{"status": "ok", "platform": "hermes-agent"}`.

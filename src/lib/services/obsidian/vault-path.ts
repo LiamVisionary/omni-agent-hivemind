@@ -3,8 +3,7 @@ import { accessSync, readdirSync, statSync } from "fs";
 import { homedir } from "os";
 import { basename, join, resolve } from "path";
 
-export const GENERIC_OBSIDIAN_VAULT_PATH = "~/Documents/Obsidian/Omni-Agent Hivemind Vault";
-export const LEGACY_OBSIDIAN_VAULT_PATH = "~/Documents/Obsidian/Omni Agent Vault";
+export const GENERIC_OBSIDIAN_VAULT_PATH = "~/Documents/Obsidian/omni-agent-hivemind-vault";
 
 const OBSIDIAN_ROOT_CANDIDATES = [
   "~/Documents/Obsidian",
@@ -40,8 +39,9 @@ function isAutoDetectHint(path?: string): boolean {
   const value = path?.trim();
   return !value
     || value === GENERIC_OBSIDIAN_VAULT_PATH
-    || value === LEGACY_OBSIDIAN_VAULT_PATH
+    || value.endsWith("/omni-agent-hivemind-vault")
     || value.endsWith("/Omni-Agent Hivemind Vault")
+    || value.endsWith("/Agent Team Vault")
     || value.endsWith("/Omni Agent Vault");
 }
 

@@ -1,16 +1,18 @@
 "use client";
 
-import { FormEvent, useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent, type PointerEvent, type ReactNode } from "react";
+import { FormEvent, useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent, type PointerEvent, type ReactNode, type RefObject } from "react";
 import Image from "next/image";
 import { motion } from "motion/react";
 import {
   Activity,
+  AlignLeft,
   ArrowUp,
   Bell,
   Bot,
   BrainCircuit,
   Check,
   CheckCheck,
+  ChevronDown,
   ChevronRight,
   Clock3,
   CircleAlert,
@@ -23,6 +25,8 @@ import {
   FileText,
   FlaskConical,
   Folder,
+  FolderOpen,
+  FolderPlus,
   FileUp,
   GitBranch,
   Heart,
@@ -30,7 +34,9 @@ import {
   KanbanSquare,
   Layers3,
   LineChart,
+  List,
   LoaderCircle,
+  Link,
   MessageSquare,
   MoreHorizontal,
   Monitor,
@@ -39,23 +45,26 @@ import {
   PlugZap,
   RefreshCcw,
   Repeat2,
+  Puzzle,
   Send,
   Settings2,
   ShieldCheck,
   Sparkles,
+  Search,
   Moon,
   Paperclip,
   Pencil,
   Sun,
   Mic,
   Trash2,
+  Upload,
   Users,
   WalletCards,
   X,
 } from "lucide-react";
-import type { AgentProfile, AgentRuntime, BeeAgentRole, BeeWorkerClass, SharedVaultConfig } from "@/lib/types/agent-runtime";
+import type { AgentProfile, AgentRuntime, BeeAgentRole, BeeWorkerClass, RuntimeCapabilities, SharedVaultConfig } from "@/lib/types/agent-runtime";
 import type { AgentNotification, AgentNotificationSettings, AgentNotificationSummary } from "@/lib/types/agent-notifications";
-import { createAgentProfile, DEFAULT_SHARED_VAULT, RUNTIME_DEFAULTS, RUNTIME_LABELS } from "@/lib/types/agent-runtime";
+import { createAgentProfile, DEFAULT_SHARED_VAULT, RUNTIME_CAPABILITIES, RUNTIME_DEFAULTS, RUNTIME_KINDS, RUNTIME_LABELS } from "@/lib/types/agent-runtime";
 import type { AgentPaymentProvider, AgentWalletConfig } from "@/lib/types/agent-wallet";
 import type { KanbanBoard, KanbanStatus, KanbanTask } from "@/lib/types/kanban";
 import { KANBAN_COLUMNS } from "@/lib/types/kanban";
@@ -65,6 +74,7 @@ import { groupKanbanTasks } from "@/lib/utils/kanban-board";
 import {
   BEE_AGENT_ROLES,
   BEE_WORKER_CLASSES,
+  beeRoleLabel,
   beeWorkerClassLabel,
   chooseBeeAssignment,
 } from "@/lib/services/orchestration/bee-roles";
@@ -121,6 +131,10 @@ type VaultSyncStatus = {
 type ChatMessage = {
   role: "user" | "assistant" | "system";
   content: string;
+  createdAt?: number;
+  kanbanTaskId?: string;
+  sourceSessionId?: string;
+  sourceIndex?: number;
   attachments?: ChatAttachment[];
 };
 
@@ -131,6 +145,11 @@ type ChatAttachment = {
   mimeType: string;
   size: number;
   dataUrl: string;
+};
+
+type LinkedDirectory = {
+  id: string;
+  name: string;
 };
 
 type ChatContentPart =
@@ -212,6 +231,82 @@ type AgentTask = {
   completedAt?: number;
   source?: string;
   messages?: ChatMessage[];
+  workingDirectory?: string;
+};
+
+type SchedulerStep = {
+  id: string;
+  text: string;
+  skills: string[];
+  paths: string[];
+  model: string;
+};
+
+type AgentSchedule = {
+  id: string;
+  name: string;
+  agentId: string;
+  enabled: boolean;
+  every: string;
+  mode: "prompt" | "steps";
+  prompt: string;
+  skills: string[];
+  paths: string[];
+  steps: SchedulerStep[];
+  createdAt: number;
+  updatedAt: number;
+  lastRunAt?: number;
+  externalSource?: AgentRuntime | "dashboard";
+  externalJobId?: string;
+  lastStatus?: string;
+  lastSummary?: string;
+};
+
+type ScheduleDraft = {
+  name: string;
+  agentId: string;
+  every: string;
+  mode: "prompt" | "steps";
+  prompt: string;
+  skills: string[];
+  paths: string[];
+};
+
+type SkillBrowserSkill = {
+  id: string;
+  slug: string;
+  name: string;
+  description: string;
+  source: string;
+  category?: string;
+  skillMdUrl?: string;
+  githubUrl?: string;
+  providerId?: BrainSkillProviderId | "shared";
+  imported?: boolean;
+};
+
+type ImportedRuntimeSchedule = {
+  id: string;
+  runtime: AgentRuntime;
+  name?: string;
+  schedule?: string;
+  every?: string;
+  everyMs?: number;
+  message?: string;
+  enabled?: boolean;
+  agentId?: string;
+  lastRunMs?: number;
+  lastStatus?: string;
+  lastSummary?: string;
+};
+
+type ChatCustomFolder = {
+  id: string;
+  machineKey: string;
+  label: string;
+  path: string;
+  agentId?: string;
+  createdAt: number;
 };
 
 type WalletActionState = {
@@ -276,6 +371,8 @@ type ChatTreeItem = {
 type ChatTreeFolder = {
   key: string;
   label: string;
+  path?: string;
+  active?: boolean;
   chats: ChatTreeItem[];
   onStartChat?: () => void;
 };
@@ -286,6 +383,7 @@ type ChatTreeMachine = {
   detail: string;
   folders: ChatTreeFolder[];
   onStartChat?: () => void;
+  onCreateFolder?: () => void;
 };
 
 type DiscoveredMachine = {
@@ -339,6 +437,22 @@ type KanbanResponse = {
   error?: string;
 };
 
+type AgentSessionResponse = {
+  ok: boolean;
+  error?: string;
+  session?: {
+    sessionId: string;
+    updatedAt?: number;
+    messageCount?: number;
+    messages?: Array<{
+      index: number;
+      role: "user" | "assistant" | "tool";
+      content: string;
+      createdAt?: number;
+    }>;
+  };
+};
+
 type NoteTaskCandidate = {
   idempotencyKey: string;
   title: string;
@@ -366,6 +480,75 @@ type NotificationsResponse = Partial<AgentNotificationSummary> & {
   limit?: number;
   error?: string;
 };
+
+const MIROSHARK_TEMPLATE_INPUTS: Record<string, MiroSharkTemplateInputField[]> = {
+  campus_controversy: [
+    { key: "institution", label: "Institution", placeholder: "e.g. UC Berkeley", required: true },
+    { key: "policy", label: "Policy change", placeholder: "e.g. mandatory AI disclosure for coursework", required: true },
+    { key: "flashpoint", label: "Flashpoint", placeholder: "What event makes the controversy break open?" },
+    { key: "stakeholders", label: "Key groups", placeholder: "Students, faculty senate, alumni donors, local journalists, activist orgs" },
+    { key: "decision", label: "Decision to rehearse", placeholder: "What leadership decision or announcement should the swarm pressure-test?" },
+  ],
+  corporate_crisis: [
+    { key: "company", label: "Company / brand", placeholder: "e.g. Acme Foods", required: true },
+    { key: "trigger", label: "Crisis trigger", placeholder: "e.g. viral safety complaint, leaked memo, outage, lawsuit", required: true },
+    { key: "product", label: "Product or business line", placeholder: "What exactly is under scrutiny?" },
+    { key: "response", label: "Response options", placeholder: "Apology, recall, refund, executive statement, policy change" },
+    { key: "market", label: "Market question", placeholder: "What would traders or predictors bet on?" },
+  ],
+  crypto_launch: [
+    { key: "tokenName", label: "Token name", placeholder: "e.g. NomCoin" },
+    { key: "tokenSymbol", label: "Symbol", placeholder: "e.g. NOM" },
+    { key: "tokenAddress", label: "Coin / contract address", placeholder: "0x... or chain-native mint address", required: true },
+    { key: "chain", label: "Chain / network", placeholder: "Base, Ethereum, Solana, BSC, Polygon...", required: true, help: "Needed because EVM-style addresses can exist on multiple chains." },
+    { key: "launchStage", label: "Launch stage", placeholder: "Pre-launch, fair launch, stealth launch, CEX listing, post-launch dip" },
+    { key: "liquidity", label: "Liquidity / market context", placeholder: "Pool size, FDV, holders, volume, lock status, vesting concerns" },
+    { key: "catalyst", label: "Catalyst to rehearse", placeholder: "Influencer push, exploit rumor, liquidity pull fear, exchange listing, whale buy" },
+  ],
+  historical_whatif: [
+    { key: "event", label: "Historical event", placeholder: "e.g. Apollo 11 landing, 2008 bailout vote, Brexit referendum", required: true },
+    { key: "divergence", label: "Point of divergence", placeholder: "What changes compared with the real timeline?", required: true },
+    { key: "setting", label: "Time and place", placeholder: "When and where does public discourse happen?" },
+    { key: "actors", label: "Key actors", placeholder: "Scholars, officials, journalists, affected communities, enthusiasts" },
+    { key: "stakes", label: "Outcome to test", placeholder: "Trust, policy, markets, alliances, cultural reaction" },
+  ],
+  political_debate: [
+    { key: "jurisdiction", label: "Jurisdiction", placeholder: "e.g. New York City, California, UK Parliament", required: true },
+    { key: "issue", label: "Issue / proposal", placeholder: "e.g. congestion pricing expansion, housing zoning reform", required: true },
+    { key: "sides", label: "Coalitions", placeholder: "Who supports it, who opposes it, and why?" },
+    { key: "voters", label: "Audience segments", placeholder: "Young renters, commuters, small business owners, unions, parents" },
+    { key: "trigger", label: "Debate trigger", placeholder: "Poll, debate clip, scandal, court ruling, endorsement, budget vote" },
+  ],
+  product_announcement: [
+    { key: "company", label: "Company", placeholder: "e.g. Cursor, Apple, OpenAI", required: true },
+    { key: "product", label: "Product", placeholder: "e.g. Composer 2.5, headset, agent platform", required: true },
+    { key: "claim", label: "Launch claim", placeholder: "What headline promise should users react to?" },
+    { key: "price", label: "Pricing / availability", placeholder: "Price, rollout timing, region, usage limits" },
+    { key: "audience", label: "Audience and competitors", placeholder: "Developers, creators, enterprises, power users; key alternatives" },
+  ],
+};
+
+function defaultMirosharkTemplateInputs(templateId?: string): MiroSharkTemplateInputState {
+  return Object.fromEntries((MIROSHARK_TEMPLATE_INPUTS[templateId ?? ""] ?? []).map((field) => [field.key, ""]));
+}
+
+function composeMirosharkTemplateScenario(template: MiroSharkTemplate, inputs: MiroSharkTemplateInputState) {
+  const fields = MIROSHARK_TEMPLATE_INPUTS[template.id ?? ""] ?? [];
+  const filledInputs = fields
+    .map((field) => ({ field, value: inputs[field.key]?.trim() ?? "" }))
+    .filter((item) => item.value);
+  const facts = filledInputs.map(({ field, value }) => `${field.label}: ${value}.`);
+  const requiredMissing = fields.filter((field) => field.required && !inputs[field.key]?.trim());
+  const templateName = template.name ?? template.id ?? "MiroShark rehearsal";
+  const baseLines = [
+    `${templateName}: ${template.description ?? "Run this MiroShark template."}`,
+    facts.length ? `Concrete rehearsal inputs:\n${facts.join("\n")}` : "",
+    requiredMissing.length ? `Missing required inputs before this becomes a strong rehearsal: ${requiredMissing.map((field) => field.label).join(", ")}.` : "",
+    template.tags?.length ? `Focus tags: ${template.tags.join(", ")}.` : "",
+    template.has_counterfactuals ? "Include counterfactual branch opportunities and decision points." : "",
+  ];
+  return baseLines.filter(Boolean).join("\n\n");
+}
 
 type BrainAccessEvent = {
   id: string;
@@ -414,7 +597,7 @@ type BrainGraphResponse = {
   error?: string;
 };
 
-type BrainSkillProviderId = "claude" | "codex" | "hermes" | "gemini" | "openclaw";
+type BrainSkillProviderId = "claude" | "codex" | "hermes" | "gemini" | "openclaw" | "aeon";
 
 type BrainSkillSummary = {
   id: string;
@@ -456,12 +639,35 @@ type BrainSkillInventory = {
   error?: string;
 };
 
+type BrainSkillAeonSyncResponse = {
+  ok?: boolean;
+  result?: {
+    synced?: BrainSkillSummary[];
+    skipped?: Array<BrainSkillSummary & { reason?: string }>;
+    aeonRoot?: string;
+    manifestPath?: string;
+  };
+  error?: string;
+};
+
+type RuntimeEnvSyncResponse = {
+  ok?: boolean;
+  result?: {
+    repo?: string;
+    synced?: Array<{ key: string }>;
+    skipped?: Array<{ key: string; reason: string }>;
+    sources?: string[];
+  };
+  error?: string;
+};
+
 const BRAIN_SKILL_PROVIDER_FALLBACK: BrainSkillProviderInventory[] = [
   { id: "claude", label: "Claude", home: "~/.claude", skills: [], installed: false },
   { id: "codex", label: "Codex", home: "~/.codex", skills: [], installed: false },
   { id: "hermes", label: "Hermes", home: "~/.hermes", skills: [], installed: false },
   { id: "gemini", label: "Gemini", home: "~/.gemini", skills: [], installed: false },
   { id: "openclaw", label: "OpenClaw", home: "~/.openclaw", skills: [], installed: false },
+  { id: "aeon", label: "Aeon", home: "~/.aeon", skills: [], installed: false },
 ];
 
 type MiroSharkStatus = {
@@ -588,6 +794,19 @@ type MiroSharkTemplate = {
   has_counterfactuals?: boolean;
   counterfactual_count?: number;
 };
+
+type MiroSharkTemplateInputKind = "text" | "textarea";
+
+type MiroSharkTemplateInputField = {
+  key: string;
+  label: string;
+  placeholder: string;
+  kind?: MiroSharkTemplateInputKind;
+  required?: boolean;
+  help?: string;
+};
+
+type MiroSharkTemplateInputState = Record<string, string>;
 
 type MiroSharkMetadata = {
   ok?: boolean;
@@ -718,15 +937,19 @@ function mirosharkStat(seed: number | undefined, base: number, spread: number) {
   return base + ((seed ?? 0) * 17) % spread;
 }
 
-type DashboardView = "agents" | "kanban" | "swarm" | "wallet" | "vault" | "notifications" | "chat";
+type DashboardView = "agents" | "kanban" | "scheduler" | "swarm" | "wallet" | "vault" | "notifications" | "chat";
 type DashboardTheme = "dark" | "hive-light";
 
-const STORAGE_KEY = "openclaw-next.agentProfiles.v1";
-const VAULT_STORAGE_KEY = "openclaw-next.sharedVault.v1";
-const TASK_STORAGE_KEY = "openclaw-next.agentTasks.v1";
-const WALLET_STORAGE_KEY = "openclaw-next.agentWallets.v1";
-const THEME_STORAGE_KEY = "openclaw-next.theme.v1";
-const LEGACY_OBSIDIAN_VAULT_PATH = "~/Documents/Obsidian/Omni Agent Vault";
+const STORAGE_KEY = "omni-agent-hivemind.agentProfiles.v1";
+const VAULT_STORAGE_KEY = "omni-agent-hivemind.sharedVault.v1";
+const TASK_STORAGE_KEY = "omni-agent-hivemind.agentTasks.v1";
+const SCHEDULE_STORAGE_KEY = "omni-agent-hivemind.agentSchedules.v1";
+const WALLET_STORAGE_KEY = "omni-agent-hivemind.agentWallets.v1";
+const THEME_STORAGE_KEY = "omni-agent-hivemind.theme.v1";
+const CHAT_FOLDER_STORAGE_KEY = "omni-agent-hivemind.chatFolders.v1";
+const KANBAN_STALE_WORK_MS = 30 * 60 * 1000;
+const KANBAN_TOOL_OUTPUT_STALL_MS = 5 * 60 * 1000;
+const KANBAN_STALE_AGENT_COOLDOWN_MS = 20 * 60 * 1000;
 const REPO_CLONE_URL = "https://github.com/LiamVisionary/omni-agent-hivemind.git";
 const QUIET_SNAPSHOT_HOLD_MS = 15 * 60 * 1000;
 const STARTER_AGENT_IDS = new Set([
@@ -740,10 +963,21 @@ const STARTER_AGENT_IDS = new Set([
   "aeon-1",
 ]);
 
+type RemotionShowcaseFixtures = {
+  agents?: AgentProfile[];
+  sharedVault?: SharedVaultConfig;
+  tasks?: AgentTask[];
+  schedules?: AgentSchedule[];
+  wallets?: Record<string, AgentWalletConfig>;
+};
+
+function remotionShowcaseFixtures(): RemotionShowcaseFixtures | null {
+  if (typeof window === "undefined") return null;
+  return (window as unknown as { __OMNI_REMOTION_FIXTURES?: RemotionShowcaseFixtures }).__OMNI_REMOTION_FIXTURES ?? null;
+}
+
 function seedAgents(): AgentProfile[] {
-  return [
-    { ...createAgentProfile("openclaw", 1), id: "openclaw-main", name: "OpenClaw Main" },
-  ];
+  return [];
 }
 
 function normalizeAgentProfile(agent: AgentProfile): AgentProfile {
@@ -753,13 +987,29 @@ function normalizeAgentProfile(agent: AgentProfile): AgentProfile {
     localDataDir: agent.runtime === "hermes" && agent.id === "hermes-orchestrator" && !agent.localDataDir
       ? "~/.hermes"
       : agent.localDataDir,
+    runtimeKind: agent.runtimeKind ?? RUNTIME_KINDS[agent.runtime],
+    runtimeCapabilities: { ...RUNTIME_CAPABILITIES[agent.runtime], ...(agent.runtimeCapabilities ?? {}) },
+    a2aUrl: agent.runtime === "aeon" ? agent.a2aUrl ?? agent.gatewayUrl : agent.a2aUrl,
+    aeonBranch: agent.runtime === "aeon" ? agent.aeonBranch ?? "main" : agent.aeonBranch,
+    aeonMode: agent.runtime === "aeon" ? agent.aeonMode ?? "github" : agent.aeonMode,
     beeRole: agent.beeRole ?? (inferredQueen ? "queen" : "worker"),
     workerClass: agent.workerClass ?? "general",
   };
 }
 
+function runtimeCapabilities(agent?: AgentProfile | null): RuntimeCapabilities {
+  if (!agent) return {};
+  return { ...RUNTIME_CAPABILITIES[agent.runtime], ...(agent.runtimeCapabilities ?? {}) };
+}
+
+function runtimeCan(agent: AgentProfile | null | undefined, capability: keyof RuntimeCapabilities) {
+  return Boolean(runtimeCapabilities(agent)[capability]);
+}
+
 function parseStoredAgents(): AgentProfile[] {
   if (typeof window === "undefined") return seedAgents();
+  const fixtureAgents = remotionShowcaseFixtures()?.agents;
+  if (fixtureAgents?.length) return fixtureAgents.map(normalizeAgentProfile);
   const raw = window.localStorage.getItem(STORAGE_KEY);
   if (!raw) return seedAgents();
   try {
@@ -773,16 +1023,23 @@ function parseStoredAgents(): AgentProfile[] {
 
 function parseStoredVault(): SharedVaultConfig {
   if (typeof window === "undefined") return DEFAULT_SHARED_VAULT;
+  const fixtureVault = remotionShowcaseFixtures()?.sharedVault;
+  if (fixtureVault) return { ...DEFAULT_SHARED_VAULT, ...fixtureVault };
   const raw = window.localStorage.getItem(VAULT_STORAGE_KEY);
   if (!raw) return DEFAULT_SHARED_VAULT;
   try {
     const parsed = JSON.parse(raw) as Partial<SharedVaultConfig>;
+    const storedVaultPath = parsed.vaultPath?.trim();
+    const migratedVaultPath = storedVaultPath
+      && /\/(Agent Team Vault|Omni-Agent Hivemind Vault|Omni Agent Vault)$/.test(storedVaultPath)
+      ? DEFAULT_SHARED_VAULT.vaultPath
+      : storedVaultPath;
+    const storedKanbanFolder = parsed.kanbanFolder?.trim();
     return {
       ...DEFAULT_SHARED_VAULT,
       ...parsed,
-      vaultPath: parsed.vaultPath === LEGACY_OBSIDIAN_VAULT_PATH
-        ? DEFAULT_SHARED_VAULT.vaultPath
-        : parsed.vaultPath ?? DEFAULT_SHARED_VAULT.vaultPath,
+      vaultPath: migratedVaultPath || DEFAULT_SHARED_VAULT.vaultPath,
+      kanbanFolder: storedKanbanFolder || DEFAULT_SHARED_VAULT.kanbanFolder,
     };
   } catch {
     return DEFAULT_SHARED_VAULT;
@@ -791,6 +1048,8 @@ function parseStoredVault(): SharedVaultConfig {
 
 function parseStoredTasks(): AgentTask[] {
   if (typeof window === "undefined") return [];
+  const fixtureTasks = remotionShowcaseFixtures()?.tasks;
+  if (fixtureTasks) return fixtureTasks;
   const raw = window.localStorage.getItem(TASK_STORAGE_KEY);
   if (!raw) return [];
   try {
@@ -801,8 +1060,57 @@ function parseStoredTasks(): AgentTask[] {
   }
 }
 
+function parseStoredSchedules(): AgentSchedule[] {
+  if (typeof window === "undefined") return [];
+  const fixtureSchedules = remotionShowcaseFixtures()?.schedules;
+  if (fixtureSchedules) return fixtureSchedules;
+  const raw = window.localStorage.getItem(SCHEDULE_STORAGE_KEY);
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw) as AgentSchedule[];
+    return Array.isArray(parsed) ? parsed.filter((schedule) => (
+      typeof schedule?.id === "string"
+      && typeof schedule?.agentId === "string"
+      && typeof schedule?.name === "string"
+    )).map((schedule) => ({
+      ...schedule,
+      skills: Array.isArray(schedule.skills) ? schedule.skills : [],
+      paths: Array.isArray(schedule.paths) ? schedule.paths : [],
+      steps: Array.isArray(schedule.steps)
+        ? schedule.steps.map((step) => ({
+          ...step,
+          skills: Array.isArray(step.skills) ? step.skills : [],
+          paths: Array.isArray(step.paths) ? step.paths : [],
+          model: typeof step.model === "string" ? step.model : "",
+        }))
+        : [],
+    })) : [];
+  } catch {
+    return [];
+  }
+}
+
+function parseStoredChatFolders(): ChatCustomFolder[] {
+  if (typeof window === "undefined") return [];
+  const raw = window.localStorage.getItem(CHAT_FOLDER_STORAGE_KEY);
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw) as ChatCustomFolder[];
+    if (!Array.isArray(parsed)) return [];
+    return parsed.filter((folder) => (
+      typeof folder?.machineKey === "string"
+      && typeof folder?.path === "string"
+      && typeof folder?.label === "string"
+    ));
+  } catch {
+    return [];
+  }
+}
+
 function parseStoredWallets(): Record<string, AgentWalletConfig> {
   if (typeof window === "undefined") return {};
+  const fixtureWallets = remotionShowcaseFixtures()?.wallets;
+  if (fixtureWallets) return fixtureWallets;
   const raw = window.localStorage.getItem(WALLET_STORAGE_KEY);
   if (!raw) return {};
   try {
@@ -826,6 +1134,42 @@ function formatRelativeTime(timestamp: number) {
   if (hours < 24) return `${hours}h ago`;
   const days = Math.floor(hours / 24);
   return `${days}d ago`;
+}
+
+function kanbanAgentSessionTimestamp(task: KanbanTask) {
+  return task.agentSession?.updatedAt ?? task.updatedAt;
+}
+
+function kanbanStaleAge(task: KanbanTask, now = Date.now()) {
+  return Math.max(0, now - kanbanAgentSessionTimestamp(task));
+}
+
+function isKanbanStaleWorkingTask(task: KanbanTask, now = Date.now()) {
+  return task.status === "working"
+    && Boolean(task.agentSession?.sessionId)
+    && kanbanStaleAge(task, now) >= KANBAN_STALE_WORK_MS;
+}
+
+function kanbanToolOutputStalledMessage(agentName: string) {
+  return `${agentName} produced terminal/tool output but has not sent a final agent response. The dashboard stopped treating tool output as completion; steer the agent or move the card back to Ready for Queen to retry.`;
+}
+
+function formatDurationShort(ms: number) {
+  const minutes = Math.max(1, Math.floor(ms / 60_000));
+  if (minutes < 60) return `${minutes}m`;
+  const hours = Math.floor(minutes / 60);
+  const remainder = minutes % 60;
+  return remainder > 0 ? `${hours}h ${remainder}m` : `${hours}h`;
+}
+
+function formatMessageTimestamp(timestamp?: number) {
+  if (!timestamp) return "time unknown";
+  return new Date(timestamp).toLocaleString([], {
+    month: "short",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
 }
 
 function notificationDayLabel(value: string) {
@@ -859,6 +1203,130 @@ function notificationIcon(kind: AgentNotification["kind"], priority: AgentNotifi
   return <MessageSquare aria-hidden="true" />;
 }
 
+function humanizeNotificationActor(value: string) {
+  const trimmed = value.trim();
+  if (!trimmed) return "Agent";
+  if (/^queen[-_\s]*bee$/i.test(trimmed)) return "Queen Bee";
+  if (/^worker[-_\s]*bee$/i.test(trimmed)) return "Worker Bee";
+  if (/[-_]/.test(trimmed) && trimmed === trimmed.toLowerCase()) {
+    return trimmed
+      .split(/[-_\s]+/)
+      .filter(Boolean)
+      .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+      .join(" ");
+  }
+  return trimmed;
+}
+
+function isHermesAuthNotification(notification: AgentNotification) {
+  const title = notification.title.toLowerCase();
+  const body = notification.body.toLowerCase();
+  return notification.tags.includes("auth")
+    && notification.tags.includes("hermes")
+    || title.includes("hermes auth")
+    || body.includes("hermes/codex re-authentication");
+}
+
+function notificationTaskTitle(notification: AgentNotification) {
+  return /^Task "([^"]+)"/.exec(notification.body)?.[1]?.trim() ?? "";
+}
+
+function notificationMachineName(notification: AgentNotification) {
+  return /(?:failed|sign-in) on (.+)$/i.exec(notification.title)?.[1]?.trim()
+    || / on ([^.\n]+?) needs Hermes\/Codex re-authentication/i.exec(notification.body)?.[1]?.trim()
+    || "";
+}
+
+function notificationFailedWorkerName(notification: AgentNotification) {
+  return /could not run because (.+?) on .+? needs Hermes\/Codex re-authentication/i.exec(notification.body)?.[1]?.trim()
+    || /blocked because (.+?) needs Hermes\/Codex sign-in/i.exec(notification.body)?.[1]?.trim()
+    || "";
+}
+
+function summarizeHermesAuthError(message: string) {
+  const reason = /Reason:\s*([^\n]+)/i.exec(message)?.[1]?.trim();
+  if (reason) return reason;
+  if (/refresh token was already consumed/i.test(message)) {
+    return "The Codex refresh token was already used by another client, so Hermes needs a fresh sign-in.";
+  }
+  return message.trim().split("\n").find(Boolean)?.replace(/\s+/g, " ").slice(0, 220)
+    || "Hermes asked for re-authentication before it could continue.";
+}
+
+function notificationActorMeta(notification: AgentNotification) {
+  const failedHermesWorker = notificationFailedWorkerName(notification);
+  const rawActor = failedHermesWorker || notification.agentName || notification.agentId || "Agent";
+  const normalized = rawActor.toLowerCase().replace(/[_\s]+/g, "-");
+  const queen = normalized === "queen-bee" || normalized.includes("queen-bee");
+  const worker = Boolean(failedHermesWorker) || normalized.includes("worker") || normalized.includes("hermes") || normalized.includes("agent");
+  return {
+    icon: queen ? "/icons/queen-bee.png" : worker ? "/icons/worker-bee.png" : "",
+    label: humanizeNotificationActor(rawActor),
+    role: queen ? "Orchestrator" : worker ? "Worker bee" : "Agent",
+  };
+}
+
+function notificationSourceLabel(notificationOrSource: AgentNotification | string | undefined) {
+  const source = typeof notificationOrSource === "string" ? notificationOrSource : notificationOrSource?.source;
+  const notification = typeof notificationOrSource === "string" ? undefined : notificationOrSource;
+  const trimmed = source?.trim();
+  if (!trimmed) return "";
+  if (trimmed.startsWith("kanban:")) {
+    const taskTitle = notification ? notificationTaskTitle(notification) : "";
+    return taskTitle ? `Task: ${taskTitle}` : "Work board";
+  }
+  return trimmed;
+}
+
+function notificationDisplayTitle(notification: AgentNotification) {
+  if (!isHermesAuthNotification(notification)) return notification.title;
+  const actor = notificationActorMeta(notification).label;
+  return `${actor} is signed out`;
+}
+
+function notificationDisplayBody(notification: AgentNotification) {
+  if (!isHermesAuthNotification(notification)) return notification.body;
+  const actor = notificationActorMeta(notification).label;
+  const machine = notificationMachineName(notification);
+  const where = machine || "that machine";
+  const task = notificationTaskTitle(notification);
+  return [
+    `${actor} couldn’t start${task ? ` “${task}”` : " this task"} because Codex is signed out on ${where}.`,
+    `Run this on ${where}:`,
+    "```bash",
+    "codex",
+    "hermes auth",
+    "```",
+    `Reason: ${summarizeHermesAuthError(notification.body)}`,
+    "If Hermes asks for model access afterward, run `hermes model` too.",
+  ].join("\n\n");
+}
+
+function notificationPriorityLabel(priority: AgentNotification["priority"]) {
+  if (priority === "urgent") return "Urgent";
+  if (priority === "high") return "Needs attention";
+  if (priority === "low") return "FYI";
+  return "Notice";
+}
+
+function notificationKindLabel(kind: AgentNotification["kind"]) {
+  if (kind === "alert") return "Alert";
+  if (kind === "task") return "Task";
+  if (kind === "decision") return "Decision";
+  if (kind === "system") return "System";
+  return "Message";
+}
+
+function notificationTagLabel(tag: string) {
+  const labels: Record<string, string> = {
+    auth: "Sign-in",
+    hermes: "Hermes",
+    kanban: "Work board",
+    runtime: "Runtime",
+  };
+  return labels[tag] ?? humanizeNotificationActor(tag);
+}
+
 function inferCurrentTask(messages: ChatMessage[]) {
   return [...messages].reverse().find((message) => message.role === "user")?.content ?? "No task yet";
 }
@@ -887,15 +1355,16 @@ function normalizeAgentPath(path?: string) {
 }
 
 function agentWorkspaceKey(agent: AgentProfile) {
+  const roleScope = agent.beeRole === "queen" || /^queen-bee-/i.test(agent.id) ? ":queen" : "";
   const dataDir = normalizeAgentPath(agent.localDataDir);
   if (dataDir) {
     const collector = collectorKey(agent.telemetryUrl) || "unattached";
     const canonicalHermesHome = dataDir === "$home/.hermes" || dataDir.endsWith("/.hermes");
-    return `${agent.runtime}:data:${collector}:${canonicalHermesHome ? "$home/.hermes" : dataDir}`;
+    return `${agent.runtime}:data:${collector}:${canonicalHermesHome ? "$home/.hermes" : dataDir}${roleScope}`;
   }
   const telemetry = collectorKey(agent.telemetryUrl);
-  if (telemetry) return `${agent.runtime}:telemetry:${telemetry}:${agent.agentId || agent.name}`;
-  return `${agent.runtime}:id:${agent.id}`;
+  if (telemetry) return `${agent.runtime}:telemetry:${telemetry}:${agent.agentId || agent.name}${roleScope}`;
+  return `${agent.runtime}:id:${agent.id}${roleScope}`;
 }
 
 function collectorRuntimeKey(agent: AgentProfile) {
@@ -918,9 +1387,12 @@ function agentAliasTarget(agent: AgentProfile, autoDiscoveredAgents: AgentProfil
 }
 
 function agentAliasMap(configuredAgents: AgentProfile[], autoDiscoveredAgents: AgentProfile[]) {
-  const entries = configuredAgents.flatMap((agent) => {
+  const entries: Array<readonly [string, string]> = [];
+  configuredAgents.forEach((agent) => {
     const target = agentAliasTarget(agent, autoDiscoveredAgents);
-    return target ? [[target.id, agent.id] as const] : [];
+    if (target && !entries.some(([aliasId]) => aliasId === target.id)) {
+      entries.push([target.id, agent.id] as const);
+    }
   });
   return new Map(entries);
 }
@@ -931,6 +1403,15 @@ function workspaceLabelFromPath(path?: string) {
   const withoutTrailingSlash = trimmed.replace(/\/+$/, "");
   if (withoutTrailingSlash === "~" || withoutTrailingSlash === "$home") return "Home";
   return withoutTrailingSlash.split("/").filter(Boolean).at(-1) ?? withoutTrailingSlash;
+}
+
+function parentPathFromPath(path?: string) {
+  const trimmed = path?.trim().replace(/\/+$/, "");
+  if (!trimmed || trimmed === "~" || trimmed === "$home") return "~";
+  const pieces = trimmed.split("/").filter(Boolean);
+  if (trimmed.startsWith("~/")) return pieces.length > 1 ? `~/${pieces.slice(0, -1).join("/")}` : "~";
+  if (!trimmed.startsWith("/")) return pieces.length > 1 ? pieces.slice(0, -1).join("/") : ".";
+  return pieces.length > 1 ? `/${pieces.slice(0, -1).join("/")}` : "/";
 }
 
 function chatFolderLabel(agent: AgentProfile, machine: MachineGroup) {
@@ -953,8 +1434,11 @@ function preferChatTreeItem(current: ChatTreeItem | undefined, candidate: ChatTr
 }
 
 function chatSetupIssue(agent: AgentProfile) {
+  if (!runtimeCan(agent, "chat")) {
+    return `${RUNTIME_LABELS[agent.runtime]} is a background/runtime adapter here. Use Scheduler, runs, or skills instead of Chat.`;
+  }
   if (STARTER_AGENT_IDS.has(agent.id) && agent.runtime !== "openclaw" && !agent.telemetryUrl?.trim()) {
-    return "This starter shortcut is not connected to a running chat runtime. Pick a discovered machine agent or connect a real Hermes/Aeon chat URL.";
+    return "This starter shortcut is not connected to a running chat runtime. Pick a discovered machine agent or connect a real chat URL.";
   }
   if (agent.runtime === "openclaw") {
     return agent.gatewayUrl.trim() ? "" : "Add the OpenClaw gateway URL before chatting.";
@@ -965,20 +1449,42 @@ function chatSetupIssue(agent: AgentProfile) {
   if (!agent.gatewayUrl.trim()) {
     if (agent.runtime === "hermes" && agent.telemetryUrl?.trim()) return "";
     return agent.telemetryUrl
-      ? "This agent was found through the read-only collector. Add its Hermes/Aeon chat URL in setup before sending messages."
+      ? "This agent was found through the read-only collector. Add its runtime chat URL in setup before sending messages."
       : "Add the runtime chat URL before sending messages.";
   }
   return "";
 }
 
-function kanbanTaskMeta(task: KanbanTask) {
-  if (task.status === "ideas") return "Parked until you move it to Ready for Queen";
-  if (task.status === "ready") return "Waiting for Queen Bee";
-  if (task.status === "working") return task.assignee ? `${task.assignee} is working` : "Claimed by the colony";
-  if (task.status === "needs-human") return "Needs your input";
-  if (task.status === "done") return "Completed";
-  return "Archived";
+function kanbanCardMessage(task: KanbanTask) {
+  const body = task.body?.trim();
+  if (body) return body;
+
+  const result = task.result?.trim();
+  if (!result) return "No task body yet.";
+
+  const compact = result.replace(/\s+/g, " ");
+  const looksLikeToolDump = /^{["{[]|^\[Subdirectory context discovered:|#\s+Project Rules|AGENTS\.md|total_count/i.test(result);
+  if (looksLikeToolDump || result.length > 280) {
+    return compact.startsWith("Dispatch reached")
+      ? result
+      : "Agent produced a long diagnostic output. Open the task for the full notes.";
+  }
+
+  return result;
 }
+
+function isKanbanTerminalMessage(text: string) {
+  const trimmed = text.trim();
+  return /^[$>]\s+\S/.test(trimmed)
+    || /\n[$>]\s+\S/.test(trimmed)
+    || /^>\s*[\w@.-]+/.test(trimmed)
+    || /\s>\s+(?:tsc|pnpm|npm|yarn|node|git|curl|bash)\b/i.test(trimmed)
+    || /^(?:pnpm|npm|yarn|node|git|curl|bash|tsc)\b/i.test(trimmed);
+}
+
+const KANBAN_STEER_TARGETS = KANBAN_COLUMNS.filter((column) => (
+  column.id !== "needs-human" && column.id !== "archived"
+));
 
 function kanbanTaskBee(task: KanbanTask, agents: AgentProfile[]) {
   if (task.status === "ready") {
@@ -1012,11 +1518,19 @@ function kanbanTaskBee(task: KanbanTask, agents: AgentProfile[]) {
   };
 }
 
-function kanbanTaskBadge(task: KanbanTask) {
-  if (task.status === "ready") return "ready";
-  if (task.status === "working") return "working";
-  if (task.status === "needs-human") return "needs human";
-  return task.status.replace("-", " ");
+function kanbanEventLabel(kind: string) {
+  const labels: Record<string, string> = {
+    "board.migrated": "Board migrated",
+    "comment.created": "Comment added",
+    "task.created": "Task created",
+    "task.moved": "Moved",
+    "task.updated": "Updated",
+  };
+  return labels[kind] ?? kind
+    .split(/[._-]+/)
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ");
 }
 
 function kanbanTaskDispatchPrompt(task: KanbanTask, assignment: ReturnType<typeof chooseBeeAssignment>) {
@@ -1027,6 +1541,25 @@ function kanbanTaskDispatchPrompt(task: KanbanTask, assignment: ReturnType<typeo
     task.result ? `Existing notes:\n${task.result}` : "",
     `Suggested worker class: ${beeWorkerClassLabel(assignment.workerClass)}.`,
     "Complete the task as far as your runtime/tools allow. If you are blocked, say exactly what human input, access, or setup is needed. End with a concise result summary and any evidence.",
+  ].filter(Boolean).join("\n\n");
+}
+
+function kanbanTaskInterruptPrompt(task: KanbanTask, previousTitle: string, previousBody: string) {
+  return [
+    "Interrupt your current work on this Kanban task and switch to the revised task below.",
+    "Treat this as replacing the prior assignment. Do not spawn or wait for another agent.",
+    previousTitle !== task.title || previousBody !== task.body
+      ? [
+        "Previous task:",
+        `Title: ${previousTitle}`,
+        previousBody ? `Details:\n${previousBody}` : "Details: none provided.",
+      ].join("\n")
+      : "",
+    "Revised task:",
+    `Title: ${task.title}`,
+    task.body ? `Details:\n${task.body}` : "Details: none provided.",
+    task.result ? `Existing notes:\n${task.result}` : "",
+    "Continue immediately with the revised work. If you were already working on the old version, abandon that path unless it still applies to this revised version.",
   ].filter(Boolean).join("\n\n");
 }
 
@@ -1047,7 +1580,26 @@ function kanbanReadyPickupSignature(task: KanbanTask, agents: AgentProfile[]) {
 function kanbanTaskAssigneeAgent(task: KanbanTask, agents: AgentProfile[]) {
   const assignee = task.assignee?.trim();
   if (!assignee) return undefined;
-  return agents.find((agent) => agent.name === assignee || agent.id === assignee || agent.agentId === assignee);
+  const normalizedAssignee = assignee.toLowerCase();
+  return agents.find((agent) => {
+    const thisMachineAliases = agent.machineName && /mac|local|this/i.test(agent.machineName)
+      ? [
+        `${agent.name} on This Mac`,
+        agent.agentId ? `${agent.agentId} on This Mac` : "",
+        `${agent.runtime} on This Mac`,
+      ]
+      : [];
+    const candidates = [
+      agent.id,
+      agent.agentId,
+      agent.name,
+      agent.machineName ? `${agent.name} on ${agent.machineName}` : "",
+      agent.machineName && agent.agentId ? `${agent.agentId} on ${agent.machineName}` : "",
+      agent.machineName ? `${agent.runtime} on ${agent.machineName}` : "",
+      ...thisMachineAliases,
+    ].filter((value): value is string => Boolean(value)).map((value) => value.toLowerCase());
+    return candidates.includes(normalizedAssignee);
+  });
 }
 
 function kanbanTaskAssignmentForAgent(task: KanbanTask, agent: AgentProfile): ReturnType<typeof chooseBeeAssignment> {
@@ -1064,6 +1616,7 @@ function kanbanTaskAssignmentForAgent(task: KanbanTask, agent: AgentProfile): Re
 function viewIcon(view: DashboardView) {
   if (view === "agents") return <Network aria-hidden="true" />;
   if (view === "kanban") return <KanbanSquare aria-hidden="true" />;
+  if (view === "scheduler") return <Repeat2 aria-hidden="true" />;
   if (view === "swarm") return <Activity aria-hidden="true" />;
   if (view === "wallet") return <WalletCards aria-hidden="true" />;
   if (view === "vault") return <BrainCircuit aria-hidden="true" />;
@@ -1088,6 +1641,28 @@ function dedupeAgents(configuredAgents: AgentProfile[], autoDiscoveredAgents: Ag
 
 function isRuntimeSetupNoise(text: string) {
   return /not reachable|Chat URL needed|runtime chat URL|Request failed with 500|fetch failed|Check that the .* runtime is running/i.test(text);
+}
+
+function isSlowDelegationMessage(text: string) {
+  return /did not produce a response before the dashboard timeout|operation was aborted due to timeout|timeout/i.test(text)
+    && !/Chat URL needed|runtime chat URL|fetch failed|ECONNREFUSED|ENOTFOUND/i.test(text);
+}
+
+function isTransientDelegationMessage(text: string) {
+  return isSlowDelegationMessage(text) || /^Failed to fetch$/i.test(text.trim());
+}
+
+function isHermesAuthFailure(text: string) {
+  return /Codex refresh token was already consumed|Run `?codex`?.*Run `?hermes auth`?|hermes auth|Run `?hermes model`?/is.test(text);
+}
+
+function isInternalHermesSessionPrelude(text: string) {
+  return /^---\s*name:\s*kanban-worker\b/i.test(text.trim());
+}
+
+function isKanbanAwaitingAgentUpdate(task: KanbanTask) {
+  return task.status === "working"
+    && Boolean(task.agentSession?.sessionId);
 }
 
 function isStarterPlaceholder(agent: AgentProfile, knownWork: Record<string, AgentTask[]>, knownMessages: Record<string, ChatMessage[]>) {
@@ -1182,7 +1757,7 @@ function renderInlineMarkdown(text: string): ReactNode[] {
   return parts;
 }
 
-function ChatMarkdown({ text }: { text: string }) {
+function ChatMarkdown({ text, className, headingClassName }: { text: string; className?: string; headingClassName?: string }) {
   if (!text.trim()) return null;
   const lines = text.trim().split("\n");
   const blocks: ReactNode[] = [];
@@ -1207,7 +1782,7 @@ function ChatMarkdown({ text }: { text: string }) {
     }
     const heading = /^(#{1,3})\s+(.+)$/.exec(line);
     if (heading) {
-      blocks.push(<strong className={chatClass("markdownHeading")} key={`heading-${index}`}>{renderInlineMarkdown(heading[2])}</strong>);
+      blocks.push(<strong className={headingClassName ?? chatClass("markdownHeading")} key={`heading-${index}`}>{renderInlineMarkdown(heading[2])}</strong>);
       index += 1;
       continue;
     }
@@ -1244,7 +1819,7 @@ function ChatMarkdown({ text }: { text: string }) {
     blocks.push(<p key={`paragraph-${index}`}>{renderInlineMarkdown(paragraph.join("\n"))}</p>);
   }
 
-  return <div className={chatClass("messageMarkdown")}>{blocks}</div>;
+  return <div className={className ?? chatClass("messageMarkdown")}>{blocks}</div>;
 }
 
 function attachmentSummary(attachments: ChatAttachment[]) {
@@ -1324,6 +1899,185 @@ function speechRecognitionConstructor(): SpeechRecognitionConstructor | null {
     webkitSpeechRecognition?: SpeechRecognitionConstructor;
   };
   return speechWindow.SpeechRecognition ?? speechWindow.webkitSpeechRecognition ?? null;
+}
+
+function ComposerField({
+  value,
+  onChange,
+  placeholder,
+  disabled,
+  busy,
+  compact = false,
+  attachments,
+  directories = [],
+  attachmentError,
+  attachmentMenuOpen,
+  setAttachmentMenuOpen,
+  attachmentMenuRef,
+  fileInputRef,
+  imageInputRef,
+  onFileChange,
+  onImageChange,
+  onRemoveAttachment,
+  onAttachDirectory,
+  onRemoveDirectory,
+  recording,
+  voiceBands,
+  voiceTranscript,
+  onToggleRecording,
+  canRecord = true,
+  canSend,
+  onCancel,
+}: {
+  value: string;
+  onChange: (value: string) => void;
+  placeholder: string;
+  disabled?: boolean;
+  busy?: boolean;
+  compact?: boolean;
+  attachments: ChatAttachment[];
+  directories?: LinkedDirectory[];
+  attachmentError?: string;
+  attachmentMenuOpen: boolean;
+  setAttachmentMenuOpen: (open: boolean | ((current: boolean) => boolean)) => void;
+  attachmentMenuRef: RefObject<HTMLDivElement | null>;
+  fileInputRef: RefObject<HTMLInputElement | null>;
+  imageInputRef: RefObject<HTMLInputElement | null>;
+  onFileChange: (event: ChangeEvent<HTMLInputElement>) => void;
+  onImageChange: (event: ChangeEvent<HTMLInputElement>) => void;
+  onRemoveAttachment: (id: string) => void;
+  onAttachDirectory?: () => void;
+  onRemoveDirectory?: (id: string) => void;
+  recording?: boolean;
+  voiceBands: number[];
+  voiceTranscript?: string;
+  onToggleRecording?: () => void;
+  canRecord?: boolean;
+  canSend: boolean;
+  onCancel?: () => void;
+}) {
+  return (
+    <div className={chatClass("chatComposerField", compact && "compactComposer")}>
+      <input
+        ref={fileInputRef}
+        type="file"
+        multiple
+        className={chatClass("chatFileInput")}
+        onChange={onFileChange}
+        disabled={disabled}
+      />
+      <input
+        ref={imageInputRef}
+        type="file"
+        accept="image/*"
+        multiple
+        className={chatClass("chatFileInput")}
+        onChange={onImageChange}
+        disabled={disabled}
+      />
+      {attachments.length > 0 || directories.length > 0 ? (
+        <div className={chatClass("attachmentTray")}>
+          {directories.map((directory) => (
+            <div className={chatClass("attachmentPill")} key={directory.id}>
+              <span>Folder</span>
+              <strong>{directory.name}</strong>
+              <small>linked</small>
+              {onRemoveDirectory ? (
+                <button type="button" aria-label={`Remove ${directory.name}`} onClick={() => onRemoveDirectory(directory.id)} disabled={disabled}>
+                  <X aria-hidden="true" />
+                </button>
+              ) : null}
+            </div>
+          ))}
+          {attachments.map((attachment) => (
+            <div className={chatClass("attachmentPill")} key={attachment.id}>
+              <span>{attachment.kind === "image" ? "Image" : attachment.kind === "audio" ? "Audio" : "File"}</span>
+              <strong>{attachment.name}</strong>
+              <small>{attachmentSizeLabel(attachment.size)}</small>
+              <button type="button" aria-label={`Remove ${attachment.name}`} onClick={() => onRemoveAttachment(attachment.id)} disabled={disabled}>
+                <X aria-hidden="true" />
+              </button>
+            </div>
+          ))}
+        </div>
+      ) : null}
+      <textarea
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+        placeholder={placeholder}
+        disabled={disabled}
+      />
+      {recording ? (
+        <div className={chatClass("voiceRecorder")} aria-live="polite">
+          <div className={chatClass("voiceWaveform")} aria-hidden="true">
+            {voiceBands.map((level, index) => (
+              <span key={index} style={{ transform: `scaleY(${0.18 + level * 1.8})` }} />
+            ))}
+          </div>
+          <span>{voiceTranscript || "Listening..."}</span>
+        </div>
+      ) : null}
+      <div className={chatClass("composerTools")}>
+        <div className={chatClass("attachmentMenuWrap")} ref={attachmentMenuRef}>
+          <button
+            type="button"
+            className={chatClass("composerIconButton")}
+            onClick={() => setAttachmentMenuOpen((open) => !open)}
+            disabled={disabled}
+            aria-label="Add attachment"
+            aria-expanded={attachmentMenuOpen}
+          >
+            <Plus aria-hidden="true" />
+          </button>
+          {attachmentMenuOpen ? (
+            <div className={chatClass("attachmentMenu")} role="menu">
+              <button type="button" role="menuitem" onClick={() => imageInputRef.current?.click()}>
+                <Paperclip aria-hidden="true" />
+                Images
+              </button>
+              <button type="button" role="menuitem" onClick={() => fileInputRef.current?.click()}>
+                <FileUp aria-hidden="true" />
+                Files
+              </button>
+              {onAttachDirectory ? (
+                <button type="button" role="menuitem" onClick={onAttachDirectory}>
+                  <FolderOpen aria-hidden="true" />
+                  Directory
+                </button>
+              ) : null}
+            </div>
+          ) : null}
+        </div>
+        {attachmentError ? <span role="status">{attachmentError}</span> : null}
+        <div className={chatClass("composerActions")}>
+          {onCancel ? (
+            <button type="button" className={chatClass("composerIconButton")} onClick={onCancel} disabled={disabled} aria-label="Cancel">
+              <X aria-hidden="true" />
+            </button>
+          ) : null}
+          {canRecord ? (
+            <button
+              type="button"
+              className={chatClass("composerIconButton", recording && "recording")}
+              onClick={onToggleRecording}
+              disabled={disabled}
+              aria-label={recording ? "Stop recording" : "Record audio"}
+            >
+              <Mic aria-hidden="true" />
+            </button>
+          ) : null}
+          <button
+            type="submit"
+            className={chatClass("composerIconButton", "sendButton")}
+            disabled={disabled || !canSend}
+            aria-label={busy ? "Waiting" : "Send"}
+          >
+            {busy ? "·" : compact ? <Check aria-hidden="true" /> : <ArrowUp aria-hidden="true" />}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
 }
 
 function MessageAttachments({ attachments }: { attachments?: ChatAttachment[] }) {
@@ -1618,12 +2372,13 @@ export default function Home() {
   // first client render match. localStorage is read inside a useEffect below.
   const [hydrated, setHydrated] = useState(false);
   const [agents, setAgents] = useState<AgentProfile[]>(seedAgents);
-  const [selectedAgentId, setSelectedAgentId] = useState(() => seedAgents()[0]?.id ?? "openclaw-main");
+  const [selectedAgentId, setSelectedAgentId] = useState(() => seedAgents()[0]?.id ?? "");
   const [text, setText] = useState("");
   const [chatAttachments, setChatAttachments] = useState<ChatAttachment[]>([]);
   const [attachmentError, setAttachmentError] = useState("");
   const [attachmentMenuOpen, setAttachmentMenuOpen] = useState(false);
   const [recording, setRecording] = useState(false);
+  const [voiceTarget, setVoiceTarget] = useState<"chat" | "kanban-steer" | KanbanStatus>("chat");
   const [voiceTranscript, setVoiceTranscript] = useState("");
   const [voiceBands, setVoiceBands] = useState<number[]>(() => Array(18).fill(0));
   const [status, setStatus] = useState<GatewayStatus | null>(null);
@@ -1643,9 +2398,31 @@ export default function Home() {
   const [brainSkillsLoading, setBrainSkillsLoading] = useState(false);
   const [brainSkillImportProvider, setBrainSkillImportProvider] = useState<BrainSkillProviderId | "all" | "">("");
   const [brainSkillImportSuccess, setBrainSkillImportSuccess] = useState<BrainSkillProviderId | "all" | "">("");
-  const [brainSkillProviderModalOpen, setBrainSkillProviderModalOpen] = useState(false);
+  const [brainSkillAeonSyncing, setBrainSkillAeonSyncing] = useState(false);
+  const [skillBrowserOpen, setSkillBrowserOpen] = useState(false);
+  const [skillBrowserSkills, setSkillBrowserSkills] = useState<SkillBrowserSkill[]>([]);
+  const [skillBrowserSearch, setSkillBrowserSearch] = useState("");
+  const [skillBrowserStatus, setSkillBrowserStatus] = useState("");
+  const [skillBrowserLoading, setSkillBrowserLoading] = useState(false);
+  const [skillBrowserImporting, setSkillBrowserImporting] = useState("");
   const [messagesByAgent, setMessagesByAgent] = useState<Record<string, ChatMessage[]>>({});
   const [tasks, setTasks] = useState<AgentTask[]>([]);
+  const [schedules, setSchedules] = useState<AgentSchedule[]>([]);
+  const [scheduleDraft, setScheduleDraft] = useState<ScheduleDraft>({
+    name: "",
+    agentId: "",
+    every: "360m",
+    mode: "prompt",
+    prompt: "",
+    skills: [],
+    paths: [],
+  });
+  const [schedulerAttachMenu, setSchedulerAttachMenu] = useState<"menu" | "skill" | "path" | null>(null);
+  const [schedulerSkillSearch, setSchedulerSkillSearch] = useState("");
+  const [schedulerPathDraft, setSchedulerPathDraft] = useState("");
+  const [schedulerPathKind, setSchedulerPathKind] = useState<"folder" | "file" | "path">("path");
+  const [scheduleImportStatus, setScheduleImportStatus] = useState("");
+  const [scheduleImporting, setScheduleImporting] = useState(false);
   const [walletsByAgent, setWalletsByAgent] = useState<Record<string, AgentWalletConfig>>({});
   const [walletActionsByAgent, setWalletActionsByAgent] = useState<Record<string, WalletActionState>>({});
   const [fleetSnapshots, setFleetSnapshots] = useState<Record<string, AgentSnapshot>>({});
@@ -1659,6 +2436,10 @@ export default function Home() {
   const [setupMachineKey, setSetupMachineKey] = useState("");
   const [agentRoleModalId, setAgentRoleModalId] = useState("");
   const [agentCreateMachineKey, setAgentCreateMachineKey] = useState("");
+  const [agentSettingsPanel, setAgentSettingsPanel] = useState<"role" | "memory" | "runtime" | "security">("role");
+  const [aeonEnvKeys, setAeonEnvKeys] = useState("ANTHROPIC_API_KEY\nCLAUDE_CODE_OAUTH_TOKEN\nBANKR_LLM_KEY\nGH_GLOBAL");
+  const [aeonEnvSyncStatus, setAeonEnvSyncStatus] = useState("");
+  const [aeonEnvSyncing, setAeonEnvSyncing] = useState(false);
   const [agentCreateDraft, setAgentCreateDraft] = useState<{
     name: string;
     runtime: AgentRuntime;
@@ -1693,8 +2474,24 @@ export default function Home() {
   const [notificationsLoading, setNotificationsLoading] = useState(false);
   const [notificationsStatus, setNotificationsStatus] = useState("");
   const [selectedKanbanTaskId, setSelectedKanbanTaskId] = useState("");
+  const [kanbanTaskModal, setKanbanTaskModal] = useState<"assign" | "chat" | "edit" | "events" | "notes" | "">("");
+  const [kanbanEditDraft, setKanbanEditDraft] = useState({ title: "", body: "" });
+  const [kanbanEditPendingTaskId, setKanbanEditPendingTaskId] = useState("");
+  const [kanbanSteerDraft, setKanbanSteerDraft] = useState("");
+  const [kanbanSteerAttachments, setKanbanSteerAttachments] = useState<ChatAttachment[]>([]);
+  const [kanbanSteerDirectories, setKanbanSteerDirectories] = useState<LinkedDirectory[]>([]);
+  const [kanbanSteerAttachmentError, setKanbanSteerAttachmentError] = useState("");
+  const [kanbanSteerAttachmentMenuOpen, setKanbanSteerAttachmentMenuOpen] = useState(false);
+  const [kanbanSteerTargetStatus, setKanbanSteerTargetStatus] = useState<KanbanStatus>("working");
+  const [kanbanSteerTargetMenuOpen, setKanbanSteerTargetMenuOpen] = useState(false);
+  const [kanbanSteeringTaskId, setKanbanSteeringTaskId] = useState("");
+  const [expandedKanbanCards, setExpandedKanbanCards] = useState<Record<string, boolean>>({});
   const [quickAddStatus, setQuickAddStatus] = useState<KanbanStatus | "">("");
   const [quickAddDrafts, setQuickAddDrafts] = useState<Record<string, string>>({});
+  const [quickAddAttachments, setQuickAddAttachments] = useState<Record<string, ChatAttachment[]>>({});
+  const [quickAddDirectories, setQuickAddDirectories] = useState<Record<string, LinkedDirectory[]>>({});
+  const [quickAddAttachmentError, setQuickAddAttachmentError] = useState("");
+  const [quickAddAttachmentMenuOpen, setQuickAddAttachmentMenuOpen] = useState(false);
   const [newBoardDraft, setNewBoardDraft] = useState({ slug: "", name: "" });
   const [commentDraft, setCommentDraft] = useState("");
   const [mirosharkStatus, setMirosharkStatus] = useState<MiroSharkStatus | null>(null);
@@ -1711,6 +2508,7 @@ export default function Home() {
   const [mirosharkWorkbenchTab, setMirosharkWorkbenchTab] = useState<MiroSharkWorkbenchTab>("surface");
   const [mirosharkSurfaceView, setMirosharkSurfaceView] = useState<MiroSharkSurfaceView>("x");
   const [mirosharkSelectedTemplateId, setMirosharkSelectedTemplateId] = useState("");
+  const [mirosharkTemplateInputs, setMirosharkTemplateInputs] = useState<MiroSharkTemplateInputState>({});
   const [mirosharkExperimentEvent, setMirosharkExperimentEvent] = useState("A city health official issues a public warning and demands proof of food handling compliance.");
   const [mirosharkExperimentStatus, setMirosharkExperimentStatus] = useState("");
   const [mirosharkExperimentPending, setMirosharkExperimentPending] = useState("");
@@ -1724,9 +2522,25 @@ export default function Home() {
   const [selectedChatPreview, setSelectedChatPreview] = useState<{ agentId: string; leafKey: string; messages: ChatMessage[] } | null>(null);
   const [expandedChatFolders, setExpandedChatFolders] = useState<Set<string>>(() => new Set());
   const [chatContextMenu, setChatContextMenu] = useState<"machine" | "directory" | "">("");
+  const [chatCustomFolders, setChatCustomFolders] = useState<ChatCustomFolder[]>([]);
+  const [selectedChatDirectoryPath, setSelectedChatDirectoryPath] = useState("");
+  const [chatFolderDraft, setChatFolderDraft] = useState({
+    machineKey: "",
+    parentPath: "",
+    name: "",
+    busy: false,
+    error: "",
+  });
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
   const chatFileInputRef = useRef<HTMLInputElement | null>(null);
   const chatImageInputRef = useRef<HTMLInputElement | null>(null);
+  const quickAddFileInputRef = useRef<HTMLInputElement | null>(null);
+  const quickAddImageInputRef = useRef<HTMLInputElement | null>(null);
+  const kanbanSteerFileInputRef = useRef<HTMLInputElement | null>(null);
+  const kanbanSteerImageInputRef = useRef<HTMLInputElement | null>(null);
+  const quickAddAttachmentMenuRef = useRef<HTMLDivElement | null>(null);
+  const kanbanSteerAttachmentMenuRef = useRef<HTMLDivElement | null>(null);
+  const kanbanSteerTargetMenuRef = useRef<HTMLDivElement | null>(null);
   const attachmentMenuRef = useRef<HTMLDivElement | null>(null);
   const chatContextMenuRef = useRef<HTMLDivElement | null>(null);
   const voiceRecognitionRef = useRef<SpeechRecognitionLike | null>(null);
@@ -1740,6 +2554,10 @@ export default function Home() {
   const noteIntakeAutoInFlightRef = useRef(false);
   const kanbanReadyPickupAttemptRef = useRef<Map<string, string>>(new Map());
   const kanbanReadyPickupInFlightRef = useRef<Set<string>>(new Set());
+  const kanbanDispatchCooldownRef = useRef<Map<string, number>>(new Map());
+  const kanbanStaleRequeueAttemptRef = useRef<Set<string>>(new Set());
+  const kanbanSessionPollRef = useRef<Map<string, number>>(new Map());
+  const kanbanRuntimeAbortRef = useRef<Map<string, AbortController>>(new Map());
   const syncthingAutoPairRef = useRef<Set<string>>(new Set());
   const brainDragRef = useRef<{
     pointerId: number;
@@ -1765,7 +2583,9 @@ export default function Home() {
     ));
     setSharedVault(parseStoredVault());
     setTasks(parseStoredTasks());
+    setSchedules(parseStoredSchedules());
     setWalletsByAgent(parseStoredWallets());
+    setChatCustomFolders(parseStoredChatFolders());
     const storedTheme = window.localStorage.getItem(THEME_STORAGE_KEY);
     setDashboardTheme(storedTheme === "hive-light" ? "hive-light" : "dark");
     setHydrated(true);
@@ -1795,8 +2615,18 @@ export default function Home() {
 
   useEffect(() => {
     if (!hydrated) return;
+    window.localStorage.setItem(SCHEDULE_STORAGE_KEY, JSON.stringify(schedules.slice(0, 120)));
+  }, [hydrated, schedules]);
+
+  useEffect(() => {
+    if (!hydrated) return;
     window.localStorage.setItem(WALLET_STORAGE_KEY, JSON.stringify(walletsByAgent));
   }, [hydrated, walletsByAgent]);
+
+  useEffect(() => {
+    if (!hydrated) return;
+    window.localStorage.setItem(CHAT_FOLDER_STORAGE_KEY, JSON.stringify(chatCustomFolders));
+  }, [chatCustomFolders, hydrated]);
 
   useEffect(() => {
     notificationCursorRef.current = notificationCursor;
@@ -1804,14 +2634,22 @@ export default function Home() {
   }, [notificationCursor, notifications.length]);
 
   useEffect(() => {
-    if (!attachmentMenuOpen) return;
+    if (!attachmentMenuOpen && !quickAddAttachmentMenuOpen && !kanbanSteerAttachmentMenuOpen) return;
     function closeAttachmentMenu(event: MouseEvent | TouchEvent) {
       const target = event.target;
       if (target instanceof Node && attachmentMenuRef.current?.contains(target)) return;
+      if (target instanceof Node && quickAddAttachmentMenuRef.current?.contains(target)) return;
+      if (target instanceof Node && kanbanSteerAttachmentMenuRef.current?.contains(target)) return;
       setAttachmentMenuOpen(false);
+      setQuickAddAttachmentMenuOpen(false);
+      setKanbanSteerAttachmentMenuOpen(false);
     }
     function closeAttachmentMenuOnEscape(event: KeyboardEvent) {
-      if (event.key === "Escape") setAttachmentMenuOpen(false);
+      if (event.key === "Escape") {
+        setAttachmentMenuOpen(false);
+        setQuickAddAttachmentMenuOpen(false);
+        setKanbanSteerAttachmentMenuOpen(false);
+      }
     }
     document.addEventListener("mousedown", closeAttachmentMenu);
     document.addEventListener("touchstart", closeAttachmentMenu);
@@ -1821,7 +2659,27 @@ export default function Home() {
       document.removeEventListener("touchstart", closeAttachmentMenu);
       document.removeEventListener("keydown", closeAttachmentMenuOnEscape);
     };
-  }, [attachmentMenuOpen]);
+  }, [attachmentMenuOpen, quickAddAttachmentMenuOpen, kanbanSteerAttachmentMenuOpen]);
+
+  useEffect(() => {
+    if (!kanbanSteerTargetMenuOpen) return;
+    function closeKanbanSteerTargetMenu(event: MouseEvent | TouchEvent) {
+      const target = event.target;
+      if (target instanceof Node && kanbanSteerTargetMenuRef.current?.contains(target)) return;
+      setKanbanSteerTargetMenuOpen(false);
+    }
+    function closeKanbanSteerTargetMenuOnEscape(event: KeyboardEvent) {
+      if (event.key === "Escape") setKanbanSteerTargetMenuOpen(false);
+    }
+    document.addEventListener("mousedown", closeKanbanSteerTargetMenu);
+    document.addEventListener("touchstart", closeKanbanSteerTargetMenu);
+    document.addEventListener("keydown", closeKanbanSteerTargetMenuOnEscape);
+    return () => {
+      document.removeEventListener("mousedown", closeKanbanSteerTargetMenu);
+      document.removeEventListener("touchstart", closeKanbanSteerTargetMenu);
+      document.removeEventListener("keydown", closeKanbanSteerTargetMenuOnEscape);
+    };
+  }, [kanbanSteerTargetMenuOpen]);
 
   useEffect(() => {
     if (!chatContextMenu) return;
@@ -1878,7 +2736,7 @@ export default function Home() {
         error?: string;
       } | null;
       setTailscaleDevices(data?.devices ?? []);
-      setTailscaleStatus(data?.ok ? `Tailscale ${data.backendState}` : data?.error ?? "Tailscale unavailable");
+      setTailscaleStatus(data?.ok ? `Tailscale ${data.backendState}` : "Local mode; Tailscale optional");
     }
     refreshTailscaleDevices();
   }, []);
@@ -1980,6 +2838,8 @@ export default function Home() {
     if (!template.id) return;
     setMirosharkWorkspaceMode("new");
     setMirosharkSelectedTemplateId(template.id);
+    const nextInputs = defaultMirosharkTemplateInputs(template.id);
+    setMirosharkTemplateInputs(nextInputs);
     const platform = template.platforms?.includes("polymarket")
       ? "polymarket"
       : template.platforms?.includes("reddit") && template.platforms?.includes("twitter")
@@ -1989,11 +2849,15 @@ export default function Home() {
           : "twitter";
     setMirosharkPlatform(platform);
     if (template.estimated_rounds) setMirosharkRounds(Math.min(24, Math.max(1, template.estimated_rounds)));
-    setMirosharkScenario([
-      `${template.name ?? template.id}: ${template.description ?? "Run this MiroShark template."}`,
-      template.tags?.length ? `Focus tags: ${template.tags.join(", ")}.` : "",
-      template.has_counterfactuals ? "Include counterfactual branch opportunities and decision points." : "",
-    ].filter(Boolean).join("\n\n"));
+    setMirosharkScenario(composeMirosharkTemplateScenario(template, nextInputs));
+  }
+
+  function updateMirosharkTemplateInput(template: MiroSharkTemplate, key: string, value: string) {
+    setMirosharkTemplateInputs((current) => {
+      const nextInputs = { ...current, [key]: value };
+      setMirosharkScenario(composeMirosharkTemplateScenario(template, nextInputs));
+      return nextInputs;
+    });
   }
 
   async function runMirosharkSwarm(event: FormEvent<HTMLFormElement>) {
@@ -2098,9 +2962,10 @@ export default function Home() {
       return;
     }
     setBrainSkills(data);
-    setBrainSkillsStatus(data.totals.shared
-      ? `Loaded ${data.totals.shared} shared skill${data.totals.shared === 1 ? "" : "s"}.`
-      : "The shared brain Skills folder is empty.");
+    const providerTotal = data.providers.reduce((sum, provider) => sum + provider.skills.length, 0);
+    setBrainSkillsStatus(data.totals.shared || providerTotal
+      ? `Loaded ${data.totals.shared} shared and ${providerTotal} installed skill${providerTotal === 1 ? "" : "s"}.`
+      : "No shared or installed skills found yet.");
   }, [sharedVault.enabled, sharedVault.vaultPath]);
 
   const importBrainSkills = useCallback(async (provider: BrainSkillProviderId | "all") => {
@@ -2130,6 +2995,140 @@ export default function Home() {
     void refreshBrainGraph();
     window.setTimeout(() => setBrainSkillImportSuccess(""), 1800);
   }, [refreshBrainGraph, sharedVault.enabled, sharedVault.vaultPath]);
+
+	  const syncBrainSkillsToAeon = useCallback(async () => {
+	    if (!sharedVault.enabled) {
+	      setBrainSkillsStatus("Turn on the shared brain before syncing skills to Aeon.");
+	      return;
+	    }
+	    const aeonAgent = agents.find((agent) => agent.id === selectedAgentId && agent.runtime === "aeon")
+	      ?? agents.find((agent) => agent.runtime === "aeon");
+    if (!aeonAgent) {
+      setBrainSkillsStatus("Add an Aeon agent before syncing shared skills to Aeon.");
+      return;
+    }
+
+    setBrainSkillAeonSyncing(true);
+    const response = await fetch("/api/runtimes/aeon/skills/sync", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        agent: aeonAgent,
+        vaultPath: sharedVault.vaultPath.trim() || undefined,
+      }),
+    }).catch(() => null);
+    const data = await response?.json().catch(() => null) as BrainSkillAeonSyncResponse | null;
+    setBrainSkillAeonSyncing(false);
+    if (!response?.ok || !data?.ok) {
+      setBrainSkillsStatus(data?.error ?? "Could not sync shared skills to Aeon.");
+      return;
+    }
+	    const synced = data.result?.synced?.length ?? 0;
+	    const skipped = data.result?.skipped?.length ?? 0;
+	    setBrainSkillsStatus(`Synced ${synced} shared skill${synced === 1 ? "" : "s"} to Aeon${skipped ? `, skipped ${skipped} conflict${skipped === 1 ? "" : "s"}` : ""}.`);
+	    void refreshBrainSkills();
+	  }, [agents, refreshBrainSkills, selectedAgentId, sharedVault.enabled, sharedVault.vaultPath]);
+
+  const openSkillBrowser = useCallback(async () => {
+    setSkillBrowserOpen(true);
+    setSkillBrowserStatus("");
+    setSkillBrowserLoading(true);
+    const [featuredResponse, communityResponse] = await Promise.all([
+      fetch("/api/openclaw/amiclaw-skills", { cache: "no-store" }).catch(() => null),
+      fetch("/api/openclaw/skills?limit=24", { cache: "no-store" }).catch(() => null),
+    ]);
+    const featured = await featuredResponse?.json().catch(() => null) as { skills?: Array<Record<string, unknown>> } | null;
+    const community = await communityResponse?.json().catch(() => null) as { skills?: Array<Record<string, unknown>> } | null;
+    const featuredSkills = (featured?.skills ?? []).map((skill) => ({
+      id: String(skill.slug ?? skill.id ?? skill.name ?? Math.random()),
+      slug: String(skill.slug ?? skill.id ?? skill.name ?? "skill"),
+      name: String(skill.name ?? skill.slug ?? "Skill"),
+      description: String(skill.description ?? ""),
+      source: "Featured",
+      category: typeof skill.category === "string" ? skill.category : undefined,
+      skillMdUrl: typeof skill.skillMdUrl === "string" ? skill.skillMdUrl : undefined,
+      githubUrl: typeof skill.githubUrl === "string" ? skill.githubUrl : typeof skill.githubRepoUrl === "string" ? skill.githubRepoUrl : undefined,
+    }));
+    const communitySkills = (community?.skills ?? []).map((skill) => ({
+      id: String(skill.slug ?? skill.id ?? skill.name ?? Math.random()),
+      slug: String(skill.slug ?? skill.id ?? skill.name ?? "skill"),
+      name: String(skill.name ?? skill.slug ?? "Skill"),
+      description: String(skill.description ?? ""),
+      source: "Community",
+      category: typeof skill.category === "string" ? skill.category : undefined,
+      skillMdUrl: typeof skill.skillMdUrl === "string" ? skill.skillMdUrl : undefined,
+      githubUrl: typeof skill.githubUrl === "string" ? skill.githubUrl : typeof skill.githubRepoUrl === "string" ? skill.githubRepoUrl : undefined,
+    }));
+    const installedSkills: SkillBrowserSkill[] = (brainSkills?.providers ?? []).flatMap((provider) => provider.skills.map((skill) => ({
+      id: `${provider.id}-${skill.slug}`,
+      slug: skill.slug,
+      name: skill.name,
+      description: skill.description,
+      source: provider.label,
+      category: "Installed",
+      providerId: provider.id,
+      imported: skill.imported,
+    })));
+    const sharedSkills: SkillBrowserSkill[] = (brainSkills?.shared ?? []).map((skill) => ({
+      id: `shared-${skill.slug}`,
+      slug: skill.slug,
+      name: skill.name,
+      description: skill.description,
+      source: "Shared brain",
+      category: "Ready",
+      providerId: "shared" as const,
+      imported: true,
+    }));
+    const deduped = new Map<string, SkillBrowserSkill>();
+    for (const skill of [...sharedSkills, ...installedSkills, ...featuredSkills, ...communitySkills]) {
+      const key = skill.skillMdUrl || skill.githubUrl || skill.slug;
+      if (!deduped.has(key)) deduped.set(key, skill);
+    }
+    setSkillBrowserSkills([...deduped.values()]);
+    setSkillBrowserLoading(false);
+    if (!featuredResponse?.ok && !communityResponse?.ok) {
+      setSkillBrowserStatus("Could not reach the skill catalogs. Provider-installed skills can still be imported below.");
+    } else if (!communityResponse?.ok) {
+      setSkillBrowserStatus("Featured skills loaded. Community catalog is unavailable on this machine.");
+    }
+  }, [brainSkills]);
+
+  const importRemoteSkillToBrain = useCallback(async (skill: SkillBrowserSkill) => {
+    if (skill.providerId === "shared") {
+      setSkillBrowserStatus(`${skill.name} is already in the shared brain.`);
+      return;
+    }
+    if (skill.providerId) {
+      await importBrainSkills(skill.providerId);
+      setSkillBrowserStatus(`Synced ${skill.name} from ${skill.source} into the shared brain.`);
+      return;
+    }
+    if (!sharedVault.enabled) {
+      setSkillBrowserStatus("Turn on the shared brain before adding skills.");
+      return;
+    }
+    setSkillBrowserImporting(skill.id);
+    setSkillBrowserStatus("");
+    const response = await fetch("/api/obsidian/skills", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        action: "import-remote",
+        vaultPath: sharedVault.vaultPath.trim() || undefined,
+        skill,
+      }),
+    }).catch(() => null);
+    const data = await response?.json().catch(() => null) as BrainSkillInventory | { ok?: boolean; error?: string } | null;
+    setSkillBrowserImporting("");
+    if (!response?.ok || !data?.ok) {
+      setSkillBrowserStatus(data?.error ?? "Could not add that skill to the shared brain.");
+      return;
+    }
+    setBrainSkills(data as BrainSkillInventory);
+    setSkillBrowserStatus(`Added ${skill.name} to the shared brain.`);
+    void refreshBrainGraph();
+    void refreshBrainSkills();
+  }, [importBrainSkills, refreshBrainGraph, refreshBrainSkills, sharedVault.enabled, sharedVault.vaultPath]);
 
   const refreshNotifications = useCallback(async (options: { append?: boolean } = {}) => {
     if (!sharedVault.enabled) {
@@ -2169,7 +3168,7 @@ export default function Home() {
       folder: data.folder ?? sharedVault.notificationsFolder ?? "agent-notifications",
       settings: data.settings ?? {
         highPriorityMessagingEnabled: false,
-        messagingHandledBy: "Hermes/OpenClaw messaging agent",
+        messagingHandledBy: "Configured messaging agent",
         updatedAt: new Date().toISOString(),
       },
     });
@@ -2278,6 +3277,11 @@ export default function Home() {
     return mirosharkRunPending ? "Starting run" : "Working";
   })();
   const mirosharkTemplates = getMiroSharkTemplates(mirosharkMetadata);
+  const mirosharkSelectedTemplate = mirosharkTemplates.find((template) => template.id === mirosharkSelectedTemplateId);
+  const mirosharkSelectedTemplateFields = MIROSHARK_TEMPLATE_INPUTS[mirosharkSelectedTemplate?.id ?? ""] ?? [];
+  const mirosharkMissingTemplateFields = mirosharkSelectedTemplateFields.filter((field) => (
+    field.required && !mirosharkTemplateInputs[field.key]?.trim()
+  ));
   const mirosharkTelemetryCount = payloadCount(mirosharkRun?.observabilityEvents ?? mirosharkMetadata?.observabilityEvents);
   const mirosharkActionCount = payloadCount(mirosharkRun?.actions);
   const mirosharkMarketCount = payloadCount(mirosharkRun?.markets);
@@ -2304,6 +3308,14 @@ export default function Home() {
     }, 0);
     return () => window.clearTimeout(timer);
   }, [activeView, hydrated, refreshBrainGraph, refreshBrainSkills]);
+
+  useEffect(() => {
+    if (!hydrated || activeView !== "scheduler" || brainSkills || brainSkillsLoading) return;
+    const timer = window.setTimeout(() => {
+      void refreshBrainSkills();
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, [activeView, brainSkills, brainSkillsLoading, hydrated, refreshBrainSkills]);
 
   useEffect(() => {
     if (!hydrated || !sharedVault.enabled) return;
@@ -2464,7 +3476,7 @@ export default function Home() {
   ]);
 
   const discoveredAgents = useMemo(
-    () => discoveredMachines.flatMap((machine) => machine.agents ?? []),
+    () => discoveredMachines.flatMap((machine) => machine.agents ?? []).map(normalizeAgentProfile),
     [discoveredMachines],
   );
 
@@ -2479,16 +3491,33 @@ export default function Home() {
   );
 
   const candidateWorkById = useMemo(() => {
+    const discoveredIds = new Set(discoveredAgents.map((agent) => agent.id));
+    const snapshotOwnerByCollector = new Map<string, string>();
+    candidateAgents.forEach((agent) => {
+      const key = collectorRuntimeKey(agent);
+      if (key && discoveredIds.has(agent.id) && !snapshotOwnerByCollector.has(key)) {
+        snapshotOwnerByCollector.set(key, agent.id);
+      }
+    });
+    candidateAgents.forEach((agent) => {
+      const key = collectorRuntimeKey(agent);
+      if (key && !snapshotOwnerByCollector.has(key)) {
+        snapshotOwnerByCollector.set(key, agent.id);
+      }
+    });
     const idsForAgent = (agentId: string) => [agentId, ...[...agentAliases.entries()]
       .filter(([, canonicalId]) => canonicalId === agentId)
       .map(([aliasId]) => aliasId)];
     return Object.fromEntries(candidateAgents.map((agent) => {
       const relatedIds = idsForAgent(agent.id);
+      const ownsCollectorSnapshot = snapshotOwnerByCollector.get(collectorRuntimeKey(agent)) === agent.id;
       const agentTasks = tasks
         .filter((task) => relatedIds.includes(task.agentId))
         .map((task) => ({ ...task, agentId: agent.id }))
         .sort((a, b) => b.updatedAt - a.updatedAt);
-      const observedTasks = relatedIds.flatMap((agentId) => fleetSnapshots[agentId]?.tasks ?? []);
+      const observedTasks = ownsCollectorSnapshot
+        ? relatedIds.flatMap((agentId) => fleetSnapshots[agentId]?.tasks ?? [])
+        : [];
       const transcript = relatedIds.flatMap((agentId) => messagesByAgent[agentId] ?? []);
       const transcriptTask: AgentTask | null = transcript.length > 0
         ? {
@@ -2507,7 +3536,7 @@ export default function Home() {
         .sort((a, b) => workPriority(b) - workPriority(a) || b.updatedAt - a.updatedAt);
       return [agent.id, work];
     }));
-  }, [agentAliases, candidateAgents, fleetSnapshots, messagesByAgent, tasks]);
+  }, [agentAliases, candidateAgents, discoveredAgents, fleetSnapshots, messagesByAgent, tasks]);
 
   const displayAgents = useMemo(
     () => candidateAgents.filter((agent) => !isStarterPlaceholder(agent, candidateWorkById, messagesByAgent)),
@@ -2524,6 +3553,48 @@ export default function Home() {
     () => displayAgents.find((agent) => agent.id === effectiveSelectedAgentId) ?? displayAgents[0],
     [displayAgents, effectiveSelectedAgentId],
   );
+
+  const sharedSkillOptions = useMemo(() => {
+    const deduped = new Map<string, { slug: string; name: string }>();
+    for (const skill of brainSkills?.shared ?? []) {
+      deduped.set(skill.slug, { slug: skill.slug, name: skill.name });
+    }
+    for (const provider of brainSkills?.providers ?? []) {
+      for (const skill of provider.skills) {
+        if (!deduped.has(skill.slug)) deduped.set(skill.slug, { slug: skill.slug, name: skill.name });
+      }
+    }
+    return [...deduped.values()];
+  }, [brainSkills]);
+
+  const filteredSkillBrowserSkills = useMemo(() => {
+    const query = skillBrowserSearch.trim().toLowerCase();
+    if (!query) return skillBrowserSkills;
+    return skillBrowserSkills.filter((skill) => (
+      skill.name.toLowerCase().includes(query)
+      || skill.slug.toLowerCase().includes(query)
+      || skill.description.toLowerCase().includes(query)
+      || skill.source.toLowerCase().includes(query)
+    ));
+  }, [skillBrowserSearch, skillBrowserSkills]);
+
+  const filteredSchedulerSkills = useMemo(() => {
+    const query = schedulerSkillSearch.trim().toLowerCase();
+    if (!query) return sharedSkillOptions;
+    return sharedSkillOptions.filter((skill) => (
+      skill.name.toLowerCase().includes(query)
+      || skill.slug.toLowerCase().includes(query)
+    ));
+  }, [schedulerSkillSearch, sharedSkillOptions]);
+
+  useEffect(() => {
+    if (!displayAgents.length) return;
+    const nextAgentId = selectedAgent?.id ?? displayAgents[0]?.id ?? "";
+    const handle = window.setTimeout(() => {
+      setScheduleDraft((current) => current.agentId ? current : { ...current, agentId: nextAgentId });
+    }, 0);
+    return () => window.clearTimeout(handle);
+  }, [displayAgents, selectedAgent?.id]);
 
   const selectedBrainNode = useMemo(
     () => brainGraph?.nodes.find((node) => node.id === selectedBrainNodeId) ?? brainGraph?.nodes[0] ?? null,
@@ -2627,6 +3698,24 @@ export default function Home() {
       capabilities: discovered?.capabilities,
       };
     });
+    discoveredMachines.forEach((machine) => {
+      const key = collectorKey(machine.device.collectorUrl);
+      if (!key || groups.some((group) => group.key === key)) return;
+      groups.push({
+        key,
+        name: machine.device.self ? "This machine" : machine.device.name,
+        address: machine.device.ip || machine.device.dnsName || "Local collector",
+        collectorUrl: machine.device.collectorUrl,
+        dnsName: machine.device.dnsName,
+        ip: machine.device.ip,
+        online: machine.device.online,
+        self: machine.device.self,
+        collector: machine.collector,
+        agents: [],
+        version: machine.version,
+        capabilities: machine.capabilities,
+      });
+    });
     const unassigned: MachineGroup = {
       key: "unassigned",
       name: "Not connected yet",
@@ -2684,6 +3773,27 @@ export default function Home() {
     [kanbanBoard, selectedKanbanTaskId],
   );
 
+  const selectedKanbanAgent = useMemo(
+    () => selectedKanbanTask ? kanbanTaskAssigneeAgent(selectedKanbanTask, displayAgents) ?? null : null,
+    [displayAgents, selectedKanbanTask],
+  );
+  const selectedKanbanTaskIsStale = selectedKanbanTask ? isKanbanStaleWorkingTask(selectedKanbanTask) : false;
+
+  const selectedKanbanAgentMessages = useMemo(() => {
+    if (!selectedKanbanTask || !selectedKanbanAgent) return [];
+    const relatedIds = [
+      selectedKanbanAgent.id,
+      ...[...agentAliases.entries()]
+        .filter(([, canonicalId]) => canonicalId === selectedKanbanAgent.id)
+        .map(([aliasId]) => aliasId),
+    ];
+    return relatedIds
+      .flatMap((agentId) => messagesByAgent[agentId] ?? [])
+      .filter((message) => !message.kanbanTaskId || message.kanbanTaskId === selectedKanbanTask.id)
+      .filter((message) => message.role !== "system" && message.content.trim())
+      .sort((a, b) => (b.createdAt ?? 0) - (a.createdAt ?? 0));
+  }, [agentAliases, messagesByAgent, selectedKanbanAgent, selectedKanbanTask]);
+
   const notificationGroups = useMemo(() => groupNotifications(notifications), [notifications]);
 
   const selectedKanbanEvents = useMemo(
@@ -2692,6 +3802,13 @@ export default function Home() {
       .sort((a, b) => b.createdAt - a.createdAt)
       .slice(0, 20) ?? [],
     [kanbanBoard, selectedKanbanTaskId],
+  );
+
+  const selectedKanbanLinkCount = useMemo(
+    () => kanbanBoard?.links.filter((link) => (
+      link.parentId === selectedKanbanTaskId || link.childId === selectedKanbanTaskId
+    )).length ?? 0,
+    [kanbanBoard?.links, selectedKanbanTaskId],
   );
 
   const selectedWallet = useMemo(() => {
@@ -2743,6 +3860,11 @@ export default function Home() {
       detail: `${kanbanBoard?.tasks.length ?? 0} tasks`,
     },
     {
+      id: "scheduler" as const,
+      label: "Scheduler",
+      detail: `${schedules.filter((schedule) => schedule.enabled).length} active`,
+    },
+    {
       id: "swarm" as const,
       label: "Swarm",
       detail: mirosharkStatus?.ok ? "rehearsal ready" : "companion off",
@@ -2760,14 +3882,16 @@ export default function Home() {
     {
       id: "notifications" as const,
       label: "Alerts",
-      detail: notificationSummary?.unread ? `${notificationSummary.unread} new` : `${notificationSummary?.total ?? 0} total`,
+      detail: notificationSummary?.unread
+        ? `${(notificationSummary.highUnread ?? 0) + (notificationSummary.urgentUnread ?? 0)} high priority`
+        : `${notificationSummary?.total ?? 0} total`,
     },
     {
       id: "chat" as const,
       label: "Chat",
       detail: selectedAgent?.name ?? "none",
     },
-  ], [kanbanBoard?.tasks.length, mirosharkStatus?.ok, notificationSummary, selectedAgent?.name, sharedVault.enabled, visibleAgentCount, walletStats.critical, walletStats.enabled]);
+  ], [kanbanBoard?.tasks.length, mirosharkStatus?.ok, notificationSummary, schedules, selectedAgent?.name, sharedVault.enabled, visibleAgentCount, walletStats.critical, walletStats.enabled]);
 
   const setupMachine = useMemo(
     () => machineGroups.find((machine) => machine.key === setupMachineKey) ?? null,
@@ -2802,6 +3926,38 @@ export default function Home() {
     });
   }
 
+  async function syncAeonEnvToGitHub() {
+    if (!selectedAgent || selectedAgent.runtime !== "aeon") return;
+    const keys = aeonEnvKeys
+      .split(/[\n,]/)
+      .map((key) => key.trim())
+      .filter(Boolean);
+    if (!keys.length) {
+      setAeonEnvSyncStatus("Add at least one env key to sync.");
+      return;
+    }
+    if (!selectedAgent.aeonRepo?.trim()) {
+      setAeonEnvSyncStatus("Set Aeon Repo before syncing env to GitHub secrets.");
+      return;
+    }
+    setAeonEnvSyncing(true);
+    setAeonEnvSyncStatus("");
+    const response = await fetch("/api/runtimes/aeon/env/sync", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ agent: selectedAgent, keys }),
+    }).catch(() => null);
+    const data = await response?.json().catch(() => null) as RuntimeEnvSyncResponse | null;
+    setAeonEnvSyncing(false);
+    if (!response?.ok || !data?.ok) {
+      setAeonEnvSyncStatus(data?.error ?? "Could not sync Aeon env to GitHub secrets.");
+      return;
+    }
+    const synced = data.result?.synced?.length ?? 0;
+    const skipped = data.result?.skipped?.length ?? 0;
+    setAeonEnvSyncStatus(`Synced ${synced} secret${synced === 1 ? "" : "s"} to ${data.result?.repo ?? selectedAgent.aeonRepo}${skipped ? `, skipped ${skipped}` : ""}.`);
+  }
+
   function openAgentCreationModal(machine: MachineGroup, runtime: AgentRuntime = "hermes", name = "") {
     if (machine.collector !== "ready" || !machine.collectorUrl) {
       openSetupModal(machine);
@@ -2809,6 +3965,7 @@ export default function Home() {
     }
     setAgentRoleModalId("");
     setAgentRenameEditing(false);
+    setAgentSettingsPanel("role");
     setAgentCreateMachineKey(machine.key);
     setAgentCreateDraft({
       name,
@@ -2821,6 +3978,7 @@ export default function Home() {
   function closeAgentSettingsModal() {
     setAgentRoleModalId("");
     setAgentCreateMachineKey("");
+    setAgentSettingsPanel("role");
     setAgentRenameDraft("");
     setAgentRenameEditing(false);
   }
@@ -2841,6 +3999,233 @@ export default function Home() {
     setAgents((current) => [...current, next]);
     setSelectedAgentId(next.id);
     closeAgentSettingsModal();
+  }
+
+  function toggleScheduleSkill(slug: string) {
+    setScheduleDraft((current) => ({
+      ...current,
+      skills: current.skills.includes(slug)
+        ? current.skills.filter((item) => item !== slug)
+        : [...current.skills, slug],
+    }));
+  }
+
+  function addSchedulePath(path: string) {
+    const cleaned = path.trim();
+    if (!cleaned) return;
+    setScheduleDraft((current) => ({
+      ...current,
+      paths: current.paths.includes(cleaned) ? current.paths : [...current.paths, cleaned],
+    }));
+  }
+
+  function removeSchedulePath(path: string) {
+    setScheduleDraft((current) => ({
+      ...current,
+      paths: current.paths.filter((item) => item !== path),
+    }));
+  }
+
+  function removeScheduleSkill(slug: string) {
+    setScheduleDraft((current) => ({
+      ...current,
+      skills: current.skills.filter((item) => item !== slug),
+    }));
+  }
+
+  function createSchedule(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const agent = displayAgents.find((item) => item.id === scheduleDraft.agentId) ?? selectedAgent;
+    if (!agent) return;
+    const now = Date.now();
+    const stepLines = scheduleDraft.mode === "steps"
+      ? scheduleDraft.prompt.split("\n").map((line) => line.trim()).filter(Boolean)
+      : [];
+    const next: AgentSchedule = {
+      id: `schedule-${now}-${Math.random().toString(36).slice(2, 7)}`,
+      name: scheduleDraft.name.trim() || `Run ${agent.name}`,
+      agentId: agent.id,
+      enabled: true,
+      every: scheduleDraft.every.trim() || "360m",
+      mode: scheduleDraft.mode,
+      prompt: scheduleDraft.prompt.trim(),
+      skills: scheduleDraft.skills,
+      paths: scheduleDraft.paths,
+      steps: stepLines.map((text, index) => ({
+        id: `step-${now}-${index}`,
+        text,
+        skills: scheduleDraft.skills,
+        paths: scheduleDraft.paths,
+        model: "",
+      })),
+      createdAt: now,
+      updatedAt: now,
+    };
+    setSchedules((current) => [next, ...current]);
+    setScheduleDraft({
+      name: "",
+      agentId: agent.id,
+      every: "360m",
+      mode: "prompt",
+      prompt: "",
+      skills: [],
+      paths: [],
+    });
+    setSchedulerAttachMenu(null);
+    setSchedulerPathDraft("");
+    setSchedulerSkillSearch("");
+  }
+
+  function removeSchedule(id: string) {
+    setSchedules((current) => current.filter((schedule) => schedule.id !== id));
+  }
+
+  async function importExistingSchedules() {
+    setScheduleImporting(true);
+    setScheduleImportStatus("");
+    const response = await fetch("/api/scheduler/import", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ agents: displayAgents }),
+    }).catch(() => null);
+    const data = await response?.json().catch(() => null) as { ok?: boolean; schedules?: ImportedRuntimeSchedule[]; errors?: string[] } | null;
+    setScheduleImporting(false);
+    if (!response?.ok || !data?.ok) {
+      setScheduleImportStatus("No runtime schedules could be imported yet.");
+      return;
+    }
+    const jobs = data.schedules ?? [];
+    if (!jobs.length) {
+      setScheduleImportStatus(data.errors?.[0] ?? "No existing runtime schedules found across connected agents.");
+      return;
+    }
+    const now = Number(new Date());
+    setSchedules((current) => {
+      const byExternalId = new Map(current.map((schedule) => [schedule.externalJobId ? `${schedule.externalSource}:${schedule.externalJobId}` : schedule.id, schedule]));
+      for (const job of jobs) {
+        const key = `${job.runtime}:${job.id}`;
+        const existing = byExternalId.get(key);
+        const runtimeAgent = displayAgents.find((agent) => (
+          agent.runtime === job.runtime && (agent.id === job.agentId || agent.agentId === job.agentId)
+        )) ?? displayAgents.find((agent) => agent.runtime === job.runtime) ?? agents.find((agent) => agent.runtime === job.runtime);
+        const imported: AgentSchedule = {
+          id: existing?.id ?? key,
+          name: job.name || "Runtime automation",
+          agentId: runtimeAgent?.id ?? existing?.agentId ?? "",
+          enabled: job.enabled !== false,
+          every: normalizeImportedScheduleEvery(job),
+          mode: "prompt",
+          prompt: job.message || job.lastSummary || "Imported runtime schedule.",
+          skills: existing?.skills ?? [],
+          paths: existing?.paths ?? [],
+          steps: existing?.steps ?? [],
+          createdAt: existing?.createdAt ?? now,
+          updatedAt: now,
+          lastRunAt: job.lastRunMs ?? existing?.lastRunAt,
+          externalSource: job.runtime,
+          externalJobId: job.id,
+          lastStatus: job.lastStatus,
+          lastSummary: job.lastSummary,
+        };
+        byExternalId.set(key, imported);
+      }
+      return [...byExternalId.values()].sort((a, b) => b.updatedAt - a.updatedAt);
+    });
+    setScheduleImportStatus(`Imported ${jobs.length} runtime schedule${jobs.length === 1 ? "" : "s"}.`);
+  }
+
+  function normalizeImportedScheduleEvery(job: ImportedRuntimeSchedule) {
+    if (job.every) return job.every;
+    if (job.everyMs) {
+      if (job.everyMs % 3_600_000 === 0) return `${job.everyMs / 3_600_000}h`;
+      if (job.everyMs % 60_000 === 0) return `${job.everyMs / 60_000}m`;
+      return `${Math.max(1, Math.round(job.everyMs / 1000))}s`;
+    }
+    return job.schedule?.replace(/^every\s+/i, "") || "custom";
+  }
+
+  async function toggleSchedule(id: string) {
+    const schedule = schedules.find((item) => item.id === id);
+    if (!schedule) return;
+    const nextEnabled = !schedule.enabled;
+    if (schedule.externalSource && schedule.externalJobId) {
+      const response = await fetch("/api/scheduler/runtime-action", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          runtime: schedule.externalSource,
+          action: nextEnabled ? "enable" : "disable",
+          jobId: schedule.externalJobId,
+          agent: displayAgents.find((item) => item.id === schedule.agentId),
+        }),
+      }).catch(() => null);
+      const data = await response?.json().catch(() => null) as { ok?: boolean; error?: string } | null;
+      if (!response?.ok || !data?.ok) {
+        setScheduleImportStatus(data?.error ?? "Could not update that runtime schedule.");
+        return;
+      }
+    }
+    setSchedules((current) => current.map((item) => (
+      item.id === id ? { ...item, enabled: nextEnabled, updatedAt: Number(new Date()) } : item
+    )));
+  }
+
+  async function runScheduleNow(schedule: AgentSchedule) {
+    const now = Number(new Date());
+    if (schedule.externalSource && schedule.externalJobId) {
+      const response = await fetch("/api/scheduler/runtime-action", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          runtime: schedule.externalSource,
+          action: "run-now",
+          jobId: schedule.externalJobId,
+          agent: displayAgents.find((item) => item.id === schedule.agentId),
+        }),
+      }).catch(() => null);
+      const data = await response?.json().catch(() => null) as { ok?: boolean; error?: string } | null;
+      if (!response?.ok || !data?.ok) {
+        setScheduleImportStatus(data?.error ?? "Could not run that runtime schedule.");
+        return;
+      }
+      setSchedules((current) => current.map((item) => (
+        item.id === schedule.id ? { ...item, lastRunAt: now, updatedAt: now } : item
+      )));
+      setScheduleImportStatus(`Started ${schedule.name}.`);
+      return;
+    }
+    const agent = displayAgents.find((item) => item.id === schedule.agentId);
+    if (!agent) return;
+    const attachments = [
+      schedule.skills.length ? `Attached skills: ${schedule.skills.join(", ")}` : "",
+      schedule.paths.length ? `Linked paths: ${schedule.paths.join(", ")}` : "",
+    ].filter(Boolean).join("\n");
+    const prompt = schedule.mode === "steps" && schedule.steps.length
+      ? [
+        attachments,
+        schedule.prompt,
+        "",
+        "Run this step by step:",
+        ...schedule.steps.map((step, index) => `${index + 1}. ${step.text}`),
+      ].filter(Boolean).join("\n")
+      : [attachments, schedule.prompt].filter(Boolean).join("\n\n");
+    const task: AgentTask = {
+      id: `schedule-task-${now}`,
+      agentId: agent.id,
+      title: schedule.name,
+      lastMessage: prompt || "Scheduled run started from the dashboard.",
+      status: "active",
+      startedAt: now,
+      updatedAt: now,
+      source: "scheduler",
+    };
+    setTasks((current) => [task, ...current]);
+    setSchedules((current) => current.map((item) => (
+      item.id === schedule.id ? { ...item, lastRunAt: now, updatedAt: now } : item
+    )));
+    setSelectedAgentId(agent.id);
+    setText(prompt);
+    setActiveView("chat");
   }
 
   function updateSharedVault(patch: Partial<SharedVaultConfig>) {
@@ -3044,13 +4429,18 @@ export default function Home() {
       chatPath: defaults.chatPath,
       statusPath: defaults.statusPath,
       agentId: runtime === "openclaw" ? "main" : selectedAgent?.agentId ?? "",
+      runtimeKind: RUNTIME_KINDS[runtime],
+      runtimeCapabilities: RUNTIME_CAPABILITIES[runtime],
+      a2aUrl: runtime === "aeon" ? defaults.gatewayUrl : undefined,
+      aeonBranch: runtime === "aeon" ? "main" : undefined,
+      aeonMode: runtime === "aeon" ? "github" : undefined,
     });
   }
 
   function appendMessage(agentId: string, message: ChatMessage) {
     setMessagesByAgent((current) => ({
       ...current,
-      [agentId]: [...(current[agentId] ?? []), message],
+      [agentId]: [...(current[agentId] ?? []), { ...message, createdAt: message.createdAt ?? Date.now() }],
     }));
   }
 
@@ -3063,10 +4453,14 @@ export default function Home() {
     return firstUserMessage ? firstUserMessage.slice(0, 56) : "Previous chat";
   }, [messagesByAgent]);
 
-  function startAgentChat(agentId: string, options: { fresh?: boolean; messageLimit?: number; seedMessages?: ChatMessage[]; chatLeafKey?: string } = {}) {
+  const startAgentChat = useCallback((agentId: string, options: { fresh?: boolean; messageLimit?: number; seedMessages?: ChatMessage[]; chatLeafKey?: string; workingDirectoryPath?: string } = {}) => {
     const leafKey = options.chatLeafKey ?? `agent-${agentId}`;
+    const agent = displayAgents.find((item) => item.id === agentId);
+    if (!runtimeCan(agent, "chat")) return;
+    const machine = machineGroups.find((group) => group.agents.some((item) => item.id === agentId));
     setSelectedAgentId(agentId);
     setSelectedChatLeafKey(leafKey);
+    setSelectedChatDirectoryPath(options.workingDirectoryPath ?? machine?.version?.appDir ?? agent?.localDataDir ?? "");
     setSelectedChatPreview(options.seedMessages?.length ? { agentId, leafKey, messages: options.seedMessages } : null);
     setActiveView("chat");
     setStatus(null);
@@ -3085,28 +4479,96 @@ export default function Home() {
         return hasExistingConversation ? current : { ...current, [agentId]: options.seedMessages ?? [] };
       });
     }
+  }, [displayAgents, machineGroups]);
+
+  function openChatFolderCreator(machine: MachineGroup) {
+    const chatAgents = machine.agents.filter((agent) => runtimeCan(agent, "chat"));
+    const defaultPath = machine.version?.appDir
+      || chatAgents.find((agent) => agent.localDataDir?.trim())?.localDataDir
+      || "~";
+    setChatFolderDraft({
+      machineKey: machine.key,
+      parentPath: defaultPath,
+      name: "",
+      busy: false,
+      error: "",
+    });
+  }
+
+  function closeChatFolderCreator() {
+    setChatFolderDraft({ machineKey: "", parentPath: "", name: "", busy: false, error: "" });
+  }
+
+  async function createChatFolder() {
+    const machine = machineGroups.find((item) => item.key === chatFolderDraft.machineKey);
+    const agent = machine?.agents.find((item) => runtimeCan(item, "chat"));
+    const parentPath = chatFolderDraft.parentPath.trim();
+    const name = chatFolderDraft.name.trim();
+    if (!machine || !agent) {
+      setChatFolderDraft((current) => ({ ...current, error: "Pick a machine with an available agent first." }));
+      return;
+    }
+    if (!parentPath || !name) {
+      setChatFolderDraft((current) => ({ ...current, error: "Choose a parent directory and name the folder." }));
+      return;
+    }
+    setChatFolderDraft((current) => ({ ...current, busy: true, error: "" }));
+    const response = await fetch("/api/chat/folders", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ parentPath, name }),
+    }).catch(() => null);
+    const data = await response?.json().catch(() => null) as { ok?: boolean; path?: string; label?: string; error?: string } | null;
+    if (!response?.ok || !data?.ok || !data.path) {
+      setChatFolderDraft((current) => ({ ...current, busy: false, error: data?.error ?? "Could not create that folder." }));
+      return;
+    }
+    const label = data.label || workspaceLabelFromPath(data.path);
+    const nextFolder: ChatCustomFolder = {
+      id: `${machine.key}-${Date.now()}`,
+      machineKey: machine.key,
+      label,
+      path: data.path,
+      agentId: agent.id,
+      createdAt: Date.now(),
+    };
+    setChatCustomFolders((current) => [
+      nextFolder,
+      ...current.filter((folder) => !(folder.machineKey === nextFolder.machineKey && folder.path === nextFolder.path)),
+    ]);
+    closeChatFolderCreator();
+    startAgentChat(agent.id, {
+      fresh: true,
+      workingDirectoryPath: data.path,
+      chatLeafKey: `folder-${machine.key}-${chatDedupeKey(data.path)}-${agent.id}`,
+    });
   }
 
   const chatSidebarTree = useMemo<ChatTreeMachine[]>(() => (
     machineGroups.map((machine) => {
       const folderMap = new Map<string, ChatTreeFolder>();
-      const ensureFolder = (label: string, onStartChat?: () => void) => {
-        const key = label.toLowerCase();
+      const ensureFolder = (label: string, onStartChat?: () => void, path?: string, active?: boolean) => {
+        const key = chatDedupeKey(path || label);
         const existing = folderMap.get(key);
         if (existing) {
           if (!existing.onStartChat && onStartChat) existing.onStartChat = onStartChat;
+          if (!existing.path && path) existing.path = path;
+          if (active) existing.active = true;
           return existing;
         }
-        const next: ChatTreeFolder = { key: `${machine.key}-${key}`, label, chats: [], onStartChat };
+        const next: ChatTreeFolder = { key: `${machine.key}-${key}`, label, path, active, chats: [], onStartChat };
         folderMap.set(key, next);
         return next;
       };
 
-      for (const agent of machine.agents) {
-        const folder = ensureFolder(chatFolderLabel(agent, machine), () => startAgentChat(agent.id, {
+      for (const agent of machine.agents.filter((item) => runtimeCan(item, "chat"))) {
+        const folderPath = machine.version?.appDir || agent.localDataDir || "";
+        const folderLabel = chatFolderLabel(agent, machine);
+        const folder = ensureFolder(folderLabel, () => startAgentChat(agent.id, {
           fresh: true,
-          chatLeafKey: `folder-${machine.key}-${chatDedupeKey(chatFolderLabel(agent, machine))}-${agent.id}`,
-        }));
+          workingDirectoryPath: folderPath,
+          chatLeafKey: `folder-${machine.key}-${chatDedupeKey(folderPath || folderLabel)}-${agent.id}`,
+        }), folderPath, Boolean(selectedChatDirectoryPath && folderPath && selectedChatDirectoryPath === folderPath));
         const hasDirectConversation = hasConversation(agent.id);
         const agentWork = (agentWorkById[agent.id] ?? []).filter(isChatSidebarTask);
         const latestAgentWork = agentWork.find((task) => task.updatedAt > 0);
@@ -3134,25 +4596,49 @@ export default function Home() {
               { role: "assistant" as const, content: task.lastMessage || task.title || "Recent chat metadata is available, but the full transcript was not cached locally." },
             ];
           const taskChatKey = `task-${agent.id}-${task.id}-${task.source ?? "unknown"}-${task.updatedAt || task.startedAt || taskIndex}`;
-          folder.chats.push({
+          const taskWorkingDirectory = task.workingDirectory;
+          const taskFolder = taskWorkingDirectory
+            ? ensureFolder(workspaceLabelFromPath(taskWorkingDirectory), () => startAgentChat(agent.id, {
+              fresh: true,
+              workingDirectoryPath: taskWorkingDirectory,
+              chatLeafKey: `folder-${machine.key}-${chatDedupeKey(taskWorkingDirectory)}-${agent.id}`,
+            }), taskWorkingDirectory, selectedChatDirectoryPath === taskWorkingDirectory)
+            : folder;
+          taskFolder.chats.push({
             key: taskChatKey,
             title: task.title || "Previous chat",
             subtitle: task.lastMessage || agent.name,
             updatedAt: task.updatedAt > 0 ? task.updatedAt : task.startedAt > 0 ? task.startedAt : undefined,
             rank: workPriority(task) + (task.messages?.length ? 3 : 0),
             active: selectedChatLeafKey === taskChatKey,
-            onOpen: () => startAgentChat(agent.id, { messageLimit: 5, seedMessages, chatLeafKey: taskChatKey }),
+            onOpen: () => startAgentChat(agent.id, { messageLimit: 5, seedMessages, chatLeafKey: taskChatKey, workingDirectoryPath: task.workingDirectory }),
           });
         }
       }
 
+      for (const customFolder of chatCustomFolders.filter((folder) => folder.machineKey === machine.key)) {
+        const chatAgents = machine.agents.filter((item) => runtimeCan(item, "chat"));
+        const agent = chatAgents.find((item) => item.id === customFolder.agentId) ?? chatAgents[0];
+        ensureFolder(customFolder.label, agent ? () => startAgentChat(agent.id, {
+          fresh: true,
+          workingDirectoryPath: customFolder.path,
+          chatLeafKey: `folder-${machine.key}-${chatDedupeKey(customFolder.path)}-${agent.id}`,
+        }) : undefined, customFolder.path, Boolean(selectedChatDirectoryPath && selectedChatDirectoryPath === customFolder.path));
+      }
+
+      const chatAgents = machine.agents.filter((item) => runtimeCan(item, "chat"));
       return {
         key: machine.key,
         name: machine.name,
         detail: machine.collector === "ready" ? `${machine.agents.length} available` : "Collector not ready",
-        onStartChat: machine.agents.length > 0
-          ? () => startAgentChat(machine.agents[0].id, { fresh: true, chatLeafKey: `machine-${machine.key}-${machine.agents[0].id}` })
+        onStartChat: chatAgents.length > 0
+          ? () => startAgentChat(chatAgents[0].id, {
+            fresh: true,
+            workingDirectoryPath: machine.version?.appDir || chatAgents[0].localDataDir,
+            chatLeafKey: `machine-${machine.key}-${chatAgents[0].id}`,
+          })
           : undefined,
+        onCreateFolder: chatAgents.length > 0 ? () => openChatFolderCreator(machine) : undefined,
         folders: [...folderMap.values()]
           .map((folder) => ({
             ...folder,
@@ -3168,7 +4654,7 @@ export default function Home() {
           )),
       };
     })
-  ), [agentWorkById, chatMessageWindow, conversationTitle, hasConversation, machineGroups, selectedAgent?.id, selectedChatLeafKey]);
+  ), [agentWorkById, chatCustomFolders, chatMessageWindow, conversationTitle, hasConversation, machineGroups, selectedAgent?.id, selectedChatDirectoryPath, selectedChatLeafKey, startAgentChat]);
 
   const selectedChatMachine = useMemo(() => (
     selectedAgent
@@ -3180,11 +4666,32 @@ export default function Home() {
 
   const selectedChatDirectory = useMemo(() => {
     if (!selectedAgent) return "";
-    const activeFolder = selectedChatMachine?.folders.find((folder) => folder.chats.some((chat) => chat.active));
+    const activeFolder = selectedChatMachine?.folders.find((folder) => folder.active || folder.chats.some((chat) => chat.active));
     if (activeFolder) return activeFolder.label;
+    if (selectedChatDirectoryPath) return workspaceLabelFromPath(selectedChatDirectoryPath);
     const machine = machineGroups.find((group) => group.agents.some((agent) => agent.id === selectedAgent.id));
     return machine ? chatFolderLabel(selectedAgent, machine) : workspaceLabelFromPath(selectedAgent.localDataDir);
-  }, [machineGroups, selectedAgent, selectedChatMachine]);
+  }, [machineGroups, selectedAgent, selectedChatDirectoryPath, selectedChatMachine]);
+
+  const chatFolderCreatorMachine = useMemo(
+    () => machineGroups.find((machine) => machine.key === chatFolderDraft.machineKey) ?? null,
+    [chatFolderDraft.machineKey, machineGroups],
+  );
+
+  const chatFolderCreatorParentOptions = useMemo(
+    () => {
+      if (!chatFolderCreatorMachine) return [];
+      return [...new Set([
+        chatFolderCreatorMachine.version?.appDir,
+        ...chatFolderCreatorMachine.agents.map((agent) => agent.localDataDir),
+        ...chatCustomFolders
+          .filter((folder) => folder.machineKey === chatFolderCreatorMachine.key)
+          .map((folder) => parentPathFromPath(folder.path)),
+        "~",
+      ].map((path) => path?.trim()).filter(Boolean) as string[])];
+    },
+    [chatCustomFolders, chatFolderCreatorMachine],
+  );
 
   function openSetupModal(machine: MachineGroup) {
     setSetupMachineKey(machine.key);
@@ -3332,6 +4839,55 @@ export default function Home() {
         notificationsFolder: sharedVault.notificationsFolder?.trim() || DEFAULT_SHARED_VAULT.notificationsFolder,
       }
       : {};
+  }
+
+  async function raiseHermesAuthAlert(agent: AgentProfile, task: KanbanTask, message: string) {
+    const machine = agent.machineName || "Unknown machine";
+    const idSource = `${agent.id || agent.agentId || agent.name}-${machine}-hermes-auth`;
+    const response = await fetch("/api/openclaw/notifications", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        ...notificationStorageBody(),
+        notification: {
+          id: `hermes-auth-${idSource}`,
+          title: `${agent.name} needs sign-in on ${machine}`,
+          priority: "high",
+          kind: "alert",
+          agentName: agent.name,
+          agentId: agent.id || agent.agentId,
+          source: `kanban:${task.id}`,
+          tags: ["kanban", "hermes", "auth", "runtime"],
+          body: [
+            `${agent.name} couldn’t start "${task.title}" because Codex is signed out on ${machine}.`,
+            "",
+            `Run this on ${machine}:`,
+            "",
+            "```bash",
+            "codex",
+            "hermes auth",
+            "```",
+            "",
+            `Reason: ${summarizeHermesAuthError(message)}`,
+            "",
+            "If Hermes asks for model access afterward, run `hermes model` too.",
+          ].join("\n"),
+        },
+      }),
+    });
+    const data = await response.json().catch(() => null) as NotificationsResponse | null;
+    if (response.ok && data?.ok) {
+      setNotifications(data.notifications ?? []);
+      setNotificationCursor(data.nextCursor ?? null);
+      setNotificationSummary({
+        total: data.total ?? 0,
+        unread: data.unread ?? 0,
+        highUnread: data.highUnread ?? 0,
+        urgentUnread: data.urgentUnread ?? 0,
+        folder: data.folder ?? sharedVault.notificationsFolder ?? "agent-notifications",
+        settings: data.settings!,
+      });
+    }
   }
 
   function noteIntakeBody() {
@@ -3523,14 +5079,23 @@ export default function Home() {
   async function createKanbanTask(event: FormEvent, status: KanbanStatus) {
     event.preventDefault();
     const title = quickAddDrafts[status]?.trim();
-    if (!title) return;
+    const attachments = quickAddAttachments[status] ?? [];
+    const directories = quickAddDirectories[status] ?? [];
+    if (!title && attachments.length === 0 && directories.length === 0) return;
+    const body = [
+      directories.length ? ["Linked directories:", ...directories.map((directory) => `- ${directory.name}`)].join("\n") : "",
+      attachments.length ? [
+        "Attached context:",
+        ...attachments.map((attachment) => `- ${attachment.kind}: ${attachment.name} (${attachment.mimeType || "unknown"}, ${attachmentSizeLabel(attachment.size)})`),
+      ].join("\n") : "",
+    ].filter(Boolean).join("\n\n");
     const response = await fetch(`/api/kanban?board=${encodeURIComponent(kanbanBoardSlug)}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         ...kanbanStorageBody(),
-        title,
-        body: "",
+        title: title || "Untitled task",
+        body,
         assignee: "",
         tenant: "",
         priority: "normal",
@@ -3543,6 +5108,9 @@ export default function Home() {
       return;
     }
     setQuickAddDrafts((current) => ({ ...current, [status]: "" }));
+    setQuickAddAttachments((current) => ({ ...current, [status]: [] }));
+    setQuickAddDirectories((current) => ({ ...current, [status]: [] }));
+    setQuickAddAttachmentError("");
     setQuickAddStatus("");
     if (status === "ready" && data.task) {
       await orchestrateReadyKanbanTask(data.task);
@@ -3583,69 +5151,378 @@ export default function Home() {
   }
 
   async function moveKanbanTask(taskId: string, status: KanbanStatus) {
+    const currentTask = kanbanBoard?.tasks.find((task) => task.id === taskId);
+    const targetStatus = status === "working" && !currentTask?.assignee?.trim()
+      ? "ready"
+      : status;
     const response = await fetch(`/api/kanban?board=${encodeURIComponent(kanbanBoardSlug)}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ ...kanbanStorageBody(), taskId, status }),
+      body: JSON.stringify({ ...kanbanStorageBody(), taskId, status: targetStatus }),
     });
     const data = await response.json().catch(() => null) as KanbanResponse | null;
     if (!response.ok || !data?.ok) {
       setKanbanError(data?.error ?? "Could not move task.");
       return;
     }
-    if (status === "ready" && data.task) {
+    if (targetStatus === "ready" && data.task) {
       await orchestrateReadyKanbanTask(data.task);
       return;
     }
     await refreshKanbanOnce().catch((error) => setKanbanError(error instanceof Error ? error.message : "Kanban refresh failed."));
   }
 
+  async function deleteKanbanTask(task: KanbanTask) {
+    const confirmed = window.confirm(`Delete "${task.title}" from the Work board? This also removes its notes and task links.`);
+    if (!confirmed) return;
+    const response = await fetch(`/api/kanban?board=${encodeURIComponent(kanbanBoardSlug)}`, {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ...kanbanStorageBody(), taskId: task.id }),
+    });
+    const data = await response.json().catch(() => null) as KanbanResponse | null;
+    if (!response.ok || !data?.ok) {
+      setKanbanError(data?.error ?? "Could not delete task.");
+      return;
+    }
+    if (selectedKanbanTaskId === task.id) {
+      setSelectedKanbanTaskId("");
+      setKanbanTaskModal("");
+    }
+    kanbanRuntimeAbortRef.current.get(task.id)?.abort();
+    kanbanRuntimeAbortRef.current.delete(task.id);
+    if (data.board) {
+      setKanbanBoard(data.board);
+      setKanbanStorage(data.storage ?? null);
+    }
+    await refreshKanbanOnce().catch((error) => setKanbanError(error instanceof Error ? error.message : "Kanban refresh failed."));
+  }
+
+  /* eslint-disable react-hooks/immutability, react-hooks/purity */
+  async function editAndInterruptKanbanTask(event: FormEvent) {
+    event.preventDefault();
+    if (!selectedKanbanTask || kanbanEditPendingTaskId) return;
+    const agent = selectedKanbanAgent;
+    if (!agent) {
+      setKanbanError("Assign this task to an available agent before using Edit & interrupt.");
+      return;
+    }
+    const setupIssue = chatSetupIssue(agent);
+    if (setupIssue) {
+      setKanbanError(`Could not resend to ${agent.name}: ${setupIssue}`);
+      return;
+    }
+    const title = kanbanEditDraft.title.trim();
+    if (!title) {
+      setKanbanError("Task title is required.");
+      return;
+    }
+
+    const previousTitle = selectedKanbanTask.title;
+    const previousBody = selectedKanbanTask.body;
+    const revisedTask: KanbanTask = {
+      ...selectedKanbanTask,
+      title,
+      body: kanbanEditDraft.body.trim(),
+      status: "working",
+      assignee: selectedKanbanTask.assignee || agent.name,
+    };
+    const prompt = kanbanTaskInterruptPrompt(revisedTask, previousTitle, previousBody);
+    const localTaskId = `kanban-edit-${selectedKanbanTask.id}-${Date.now()}`;
+    let fullText = "";
+    let sawAgentSession = false;
+
+    kanbanRuntimeAbortRef.current.get(selectedKanbanTask.id)?.abort();
+    const controller = new AbortController();
+    kanbanRuntimeAbortRef.current.set(selectedKanbanTask.id, controller);
+    kanbanReadyPickupInFlightRef.current.add(selectedKanbanTask.id);
+    kanbanReadyPickupAttemptRef.current.delete(selectedKanbanTask.id);
+    kanbanReadyPickupAttemptRef.current.delete(`working:${kanbanReadyPickupSignature(selectedKanbanTask, displayAgents)}`);
+    setKanbanEditPendingTaskId(selectedKanbanTask.id);
+    setKanbanError("");
+    upsertTask({
+      id: localTaskId,
+      agentId: agent.id,
+      title: revisedTask.title,
+      lastMessage: "Interrupting with edited task...",
+      status: "active",
+      startedAt: Date.now(),
+      updatedAt: Date.now(),
+      source: "kanban",
+    });
+    appendMessage(agent.id, { role: "user", content: prompt, kanbanTaskId: selectedKanbanTask.id });
+    appendMessage(agent.id, { role: "assistant", content: "", kanbanTaskId: selectedKanbanTask.id });
+
+    try {
+      const patchResponse = await fetch(`/api/kanban?board=${encodeURIComponent(kanbanBoardSlug)}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          ...kanbanStorageBody(),
+          taskId: selectedKanbanTask.id,
+          patch: {
+            title: revisedTask.title,
+            body: revisedTask.body,
+            status: "working",
+            assignee: selectedKanbanTask.assignee || agent.name,
+            agentSession: null,
+            result: `Edited and resent to ${agent.name}; previous work was interrupted from the dashboard.`,
+          },
+        }),
+      });
+      const patchData = await patchResponse.json().catch(() => null) as KanbanResponse | null;
+      if (!patchResponse.ok || !patchData?.ok) {
+        throw new Error(patchData?.error ?? "Could not update task before resending.");
+      }
+      if (patchData.board) {
+        setKanbanBoard(patchData.board);
+        setKanbanStorage(patchData.storage ?? null);
+      }
+
+      const response = await fetch("/api/chat/agent-runtime", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          agent,
+          sharedVault,
+          workingDirectory: appVersion?.appDir,
+          wallet: walletsByAgent[agent.id] ?? createDefaultAgentWallet(agent.id),
+          messages: [{ role: "user", content: prompt }],
+        }),
+        signal: controller.signal,
+      });
+      if (!response.ok || !response.body) {
+        const data = await response.json().catch(() => ({}));
+        throw new Error(typeof data.error === "string" ? data.error : `Request failed with ${response.status}`);
+      }
+
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+      while (true) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const events = buffer.split("\n\n");
+        buffer = events.pop() ?? "";
+        for (const eventText of events) {
+          const line = eventText.split("\n").find((entry) => entry.startsWith("data: "));
+          if (!line) continue;
+          const payload = line.slice(6);
+          if (payload === "[DONE]") continue;
+          const parsed = JSON.parse(payload) as {
+            choices?: Array<{ delta?: { content?: string } }>;
+            error?: string;
+            session?: { id?: string; startedAt?: number; updatedAt?: number; messageCount?: number };
+          };
+          if (parsed.error) throw new Error(parsed.error);
+          if (parsed.session?.id) {
+            sawAgentSession = true;
+            await patchKanbanTask(selectedKanbanTask.id, {
+              agentSession: {
+                agentId: agent.id,
+                agentName: agent.name,
+                telemetryUrl: agent.telemetryUrl,
+                sessionId: parsed.session.id,
+                startedAt: parsed.session.startedAt ?? Date.now(),
+                updatedAt: parsed.session.updatedAt ?? Date.now(),
+                lastMessageCount: parsed.session.messageCount ?? 0,
+              },
+              result: `${agent.name} accepted the edited task. Waiting for agent update.`,
+            });
+            continue;
+          }
+          const chunk = parsed.choices?.[0]?.delta?.content;
+          if (!chunk) continue;
+          fullText += chunk;
+          setMessagesByAgent((current) => {
+            const existing = current[agent.id] ?? [];
+            const next = [...existing];
+            const last = next[next.length - 1] ?? { role: "assistant" as const, content: "", kanbanTaskId: selectedKanbanTask.id };
+            if (next.length === 0) next.push(last);
+            next[next.length - 1] = { ...last, content: fullText, kanbanTaskId: selectedKanbanTask.id };
+            return { ...current, [agent.id]: next };
+          });
+          updateTask(localTaskId, { lastMessage: fullText });
+        }
+      }
+
+      if (fullText.trim()) {
+        updateTask(localTaskId, { status: "completed", lastMessage: fullText.trim(), completedAt: Date.now() });
+        await patchKanbanTask(selectedKanbanTask.id, { status: "done", result: fullText.trim() });
+        await addKanbanSystemComment(selectedKanbanTask.id, `Edited task and interrupted ${agent.name}; the agent completed the revised work.`);
+      } else if (sawAgentSession) {
+        updateTask(localTaskId, { status: "active", lastMessage: `${agent.name} accepted the edited task. Waiting for agent update.` });
+        await patchKanbanTask(selectedKanbanTask.id, {
+          status: "working",
+          result: `${agent.name} accepted the edited task. Waiting for agent update.`,
+        });
+        await addKanbanSystemComment(selectedKanbanTask.id, `Edited task and interrupted ${agent.name}; waiting for the revised run to report back.`);
+      } else {
+        throw new Error(`${agent.name} returned no task output and no pollable session after the edit.`);
+      }
+      setKanbanTaskModal("");
+    } catch (error) {
+      if (controller.signal.aborted) {
+        updateTask(localTaskId, { status: "completed", lastMessage: "Interrupted by a newer task instruction.", completedAt: Date.now() });
+        return;
+      }
+      const message = error instanceof Error ? error.message : "Unknown runtime error";
+      setKanbanError(message);
+      updateTask(localTaskId, { status: "failed", lastMessage: message, completedAt: Date.now() });
+      await addKanbanSystemComment(selectedKanbanTask.id, `Edit resend failed for ${agent.name}: ${message}`);
+    } finally {
+      setKanbanEditPendingTaskId("");
+      kanbanReadyPickupInFlightRef.current.delete(selectedKanbanTask.id);
+      if (kanbanRuntimeAbortRef.current.get(selectedKanbanTask.id) === controller) {
+        kanbanRuntimeAbortRef.current.delete(selectedKanbanTask.id);
+      }
+      await refreshKanbanOnce().catch((error) => setKanbanError(error instanceof Error ? error.message : "Kanban refresh failed."));
+    }
+  }
+  /* eslint-enable react-hooks/immutability, react-hooks/purity */
+
+  function openKanbanTaskModal(task: KanbanTask, modal: "assign" | "chat" | "edit" | "events" | "notes") {
+    setSelectedKanbanTaskId(task.id);
+    if (modal === "edit") {
+      setKanbanEditDraft({ title: task.title, body: task.body });
+    }
+    setKanbanTaskModal(modal);
+  }
+
+  /* eslint-disable react-hooks/refs */
+  function kanbanTaskMenuItems(task: KanbanTask): CellMenuItem[] {
+    const taskEvents = kanbanBoard?.events.filter((event) => !event.taskId || event.taskId === task.id).length ?? 0;
+    const taskComments = kanbanBoard?.comments.filter((comment) => comment.taskId === task.id).length ?? 0;
+    const moveTargets = KANBAN_COLUMNS
+      .filter((column) => column.id !== "archived" || task.status === "archived")
+      .map((column): CellMenuItem => ({
+        key: `move-${column.id}`,
+        label: column.title,
+        onClick: () => void moveKanbanTask(task.id, column.id),
+        disabled: task.status === column.id,
+      }));
+    return [
+      {
+        key: "move",
+        label: "Move to",
+        icon: <GitBranch aria-hidden="true" />,
+        onClick: () => undefined,
+        children: moveTargets,
+      },
+      {
+        key: "assign",
+        label: "Assign",
+        icon: <Users aria-hidden="true" />,
+        onClick: () => openKanbanTaskModal(task, "assign"),
+      },
+      {
+        key: "chat",
+        label: "Agent chat",
+        icon: <MessageSquare aria-hidden="true" />,
+        onClick: () => openKanbanTaskModal(task, "chat"),
+      },
+      {
+        key: "edit",
+        label: "Edit & interrupt",
+        icon: <Pencil aria-hidden="true" />,
+        onClick: () => openKanbanTaskModal(task, "edit"),
+        disabled: !kanbanTaskAssigneeAgent(task, displayAgents),
+      },
+      {
+        key: "notes",
+        label: taskComments ? `Notes (${taskComments})` : "Add note",
+        icon: <Pencil aria-hidden="true" />,
+        onClick: () => openKanbanTaskModal(task, "notes"),
+      },
+      {
+        key: "events",
+        label: taskEvents ? `Events (${taskEvents})` : "Events",
+        icon: <Eye aria-hidden="true" />,
+        onClick: () => openKanbanTaskModal(task, "events"),
+      },
+      {
+        key: "delete",
+        label: "Delete task",
+        icon: <Trash2 aria-hidden="true" />,
+        onClick: () => void deleteKanbanTask(task),
+        destructive: true,
+      },
+    ];
+  }
+  /* eslint-enable react-hooks/refs */
+
   async function orchestrateReadyKanbanTask(task: KanbanTask) {
-    const assignment = chooseBeeAssignment(task, displayAgents);
-    if (assignment.mode === "pending") {
-      await addKanbanSystemComment(task.id, `Ready for Queen, but no Queen Bee or eligible worker is available yet. ${assignment.reason}`);
+    if (displayAgents.length === 0) {
       await refreshKanbanOnce().catch((error) => setKanbanError(error instanceof Error ? error.message : "Kanban refresh failed."));
       return;
     }
 
-    const owner = assignment.worker ?? assignment.queen;
-    if (!owner) return;
-    const setupIssue = chatSetupIssue(owner);
-    if (setupIssue) {
-      await addKanbanSystemComment(task.id, `Ready for Queen, but ${owner.name} cannot receive delegated work yet: ${setupIssue}`);
+    const excludedAgentIds = new Set<string>();
+
+    while (excludedAgentIds.size < displayAgents.length) {
+      // eslint-disable-next-line react-hooks/purity
+      const now = Date.now();
+      const eligibleAgents = displayAgents.filter((agent) => {
+        const cooldownUntil = kanbanDispatchCooldownRef.current.get(agent.id) ?? 0;
+        return !excludedAgentIds.has(agent.id)
+          && cooldownUntil <= now;
+      });
+      const assignment = chooseBeeAssignment(task, eligibleAgents);
+      if (assignment.mode === "pending") {
+        await refreshKanbanOnce().catch((error) => setKanbanError(error instanceof Error ? error.message : "Kanban refresh failed."));
+        return;
+      }
+
+      const owner = assignment.worker ?? assignment.queen;
+      if (!owner) return;
+      const setupIssue = chatSetupIssue(owner);
+      if (setupIssue) {
+        excludedAgentIds.add(owner.id);
+        await addKanbanSystemComment(task.id, `Ready for Queen, but ${owner.name} cannot receive delegated work yet: ${setupIssue}`);
+        continue;
+      }
+      const response = await fetch(`/api/kanban?board=${encodeURIComponent(kanbanBoardSlug)}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          ...kanbanStorageBody(),
+          taskId: task.id,
+          patch: {
+            assignee: owner.name,
+            tenant: assignment.mode === "queen" ? "queen-bee" : `${assignment.workerClass}-worker`,
+            status: "working",
+          },
+        }),
+      });
+      const data = await response.json().catch(() => null) as KanbanResponse | null;
+      if (!response.ok || !data?.ok) {
+        setKanbanError(data?.error ?? "Queen Bee could not claim the task.");
+        return;
+      }
+      await addKanbanSystemComment(
+        task.id,
+        [
+          assignment.mode === "queen" && assignment.queen
+            ? `Assigned to Queen Bee ${assignment.queen.name} for review and delegation.`
+            : `Assigned to ${owner.name}.`,
+          `Suggested work class: ${beeWorkerClassLabel(assignment.workerClass)}.`,
+          assignment.reason,
+        ].join(" "),
+      );
       await refreshKanbanOnce().catch((error) => setKanbanError(error instanceof Error ? error.message : "Kanban refresh failed."));
-      return;
+      const dispatchResult = await dispatchKanbanTaskToAgent(task, owner, assignment, { leaveKanbanOpen: true });
+      if (dispatchResult.ok) return;
+      excludedAgentIds.add(owner.id);
+      await addKanbanSystemComment(task.id, `Queen Bee is retrying with another eligible agent because ${owner.name} failed: ${dispatchResult.message}`);
     }
-    const response = await fetch(`/api/kanban?board=${encodeURIComponent(kanbanBoardSlug)}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        ...kanbanStorageBody(),
-        taskId: task.id,
-        patch: {
-          assignee: owner.name,
-          tenant: assignment.mode === "queen" ? "queen-bee" : `${assignment.workerClass}-worker`,
-          status: "working",
-        },
-      }),
+
+    await patchKanbanTask(task.id, {
+      status: "needs-human",
+      result: "Queen Bee could not find a reachable eligible agent for this task.",
     });
-    const data = await response.json().catch(() => null) as KanbanResponse | null;
-    if (!response.ok || !data?.ok) {
-      setKanbanError(data?.error ?? "Queen Bee could not claim the task.");
-      return;
-    }
-    await addKanbanSystemComment(
-      task.id,
-      [
-        assignment.queen
-          ? `${assignment.queen.name} reviewed this from Ready for Queen.`
-          : "No Queen Bee is assigned yet, so the dashboard pickup loop used the best available worker.",
-        `Assigned to ${owner.name} as ${beeWorkerClassLabel(assignment.workerClass)} work.`,
-        assignment.reason,
-      ].join(" "),
-    );
+    await addKanbanSystemComment(task.id, "Queen Bee could not find a reachable eligible agent for this task.");
     await refreshKanbanOnce().catch((error) => setKanbanError(error instanceof Error ? error.message : "Kanban refresh failed."));
-    await dispatchKanbanTaskToAgent(task, owner, assignment);
   }
 
   async function addKanbanSystemComment(taskId: string, body: string) {
@@ -3660,11 +5537,44 @@ export default function Home() {
     }
   }
 
+  async function requeueStaleKanbanTask(task: KanbanTask, mode: "auto" | "manual" = "manual") {
+    const staleAgent = kanbanTaskAssigneeAgent(task, displayAgents)
+      ?? displayAgents.find((agent) => agent.id === task.agentSession?.agentId || agent.name === task.agentSession?.agentName);
+    if (staleAgent) {
+      // eslint-disable-next-line react-hooks/purity
+      kanbanDispatchCooldownRef.current.set(staleAgent.id, Date.now() + KANBAN_STALE_AGENT_COOLDOWN_MS);
+    }
+    kanbanReadyPickupAttemptRef.current.delete(task.id);
+    kanbanReadyPickupAttemptRef.current.delete(`working:${kanbanReadyPickupSignature(task, displayAgents)}`);
+    kanbanSessionPollRef.current.delete(task.id);
+    const staleFor = formatDurationShort(kanbanStaleAge(task));
+    await patchKanbanTask(task.id, {
+      status: "ready",
+      assignee: "",
+      tenant: "",
+      agentSession: null,
+      result: `${mode === "auto" ? "Auto-requeued" : "Requeued"} after ${staleFor} without a worker update. Previous worker: ${task.assignee || task.agentSession?.agentName || "unknown"}.`,
+    });
+    await addKanbanSystemComment(
+      task.id,
+      `${mode === "auto" ? "Auto-requeued" : "Requeued"} stale Working task after ${staleFor} without a dashboard-visible worker update.`,
+    );
+  }
+
   /* eslint-disable react-hooks/immutability, react-hooks/purity */
-  async function dispatchKanbanTaskToAgent(task: KanbanTask, agent: AgentProfile, assignment: ReturnType<typeof chooseBeeAssignment>) {
+  async function dispatchKanbanTaskToAgent(
+    task: KanbanTask,
+    agent: AgentProfile,
+    assignment: ReturnType<typeof chooseBeeAssignment>,
+    options: { leaveKanbanOpen?: boolean } = {},
+  ): Promise<{ ok: true; message?: string } | { ok: false; message: string }> {
     const prompt = kanbanTaskDispatchPrompt(task, assignment);
     const localTaskId = `kanban-${task.id}-${Date.now()}`;
     let fullText = "";
+    let sawAgentSession = false;
+    kanbanRuntimeAbortRef.current.get(task.id)?.abort();
+    const controller = new AbortController();
+    kanbanRuntimeAbortRef.current.set(task.id, controller);
 
     upsertTask({
       id: localTaskId,
@@ -3676,8 +5586,8 @@ export default function Home() {
       updatedAt: Date.now(),
       source: "kanban",
     });
-    appendMessage(agent.id, { role: "user", content: prompt });
-    appendMessage(agent.id, { role: "assistant", content: "" });
+    appendMessage(agent.id, { role: "user", content: prompt, kanbanTaskId: task.id });
+    appendMessage(agent.id, { role: "assistant", content: "", kanbanTaskId: task.id });
 
     try {
       const response = await fetch("/api/chat/agent-runtime", {
@@ -3686,9 +5596,11 @@ export default function Home() {
         body: JSON.stringify({
           agent,
           sharedVault,
+          workingDirectory: appVersion?.appDir,
           wallet: walletsByAgent[agent.id] ?? createDefaultAgentWallet(agent.id),
           messages: [{ role: "user", content: prompt }],
         }),
+        signal: controller.signal,
       });
 
       if (!response.ok || !response.body) {
@@ -3715,40 +5627,103 @@ export default function Home() {
           const parsed = JSON.parse(payload) as {
             choices?: Array<{ delta?: { content?: string } }>;
             error?: string;
+            session?: { id?: string; startedAt?: number; updatedAt?: number; messageCount?: number };
           };
           if (parsed.error) throw new Error(parsed.error);
+          if (parsed.session?.id) {
+            sawAgentSession = true;
+            await patchKanbanTask(task.id, {
+              agentSession: {
+                agentId: agent.id,
+                agentName: agent.name,
+                telemetryUrl: agent.telemetryUrl,
+                sessionId: parsed.session.id,
+                startedAt: parsed.session.startedAt ?? Date.now(),
+                updatedAt: parsed.session.updatedAt ?? Date.now(),
+                lastMessageCount: parsed.session.messageCount ?? 0,
+              },
+              result: `${agent.name} accepted the task. Waiting for agent update.`,
+            });
+            continue;
+          }
           const chunk = parsed.choices?.[0]?.delta?.content;
           if (!chunk) continue;
           fullText += chunk;
           setMessagesByAgent((current) => {
             const existing = current[agent.id] ?? [];
             const next = [...existing];
-            const last = next[next.length - 1] ?? { role: "assistant" as const, content: "" };
+            const last = next[next.length - 1] ?? { role: "assistant" as const, content: "", kanbanTaskId: task.id };
             if (next.length === 0) next.push(last);
-            next[next.length - 1] = { ...last, content: fullText };
+            next[next.length - 1] = { ...last, content: fullText, kanbanTaskId: task.id };
             return { ...current, [agent.id]: next };
           });
           updateTask(localTaskId, { lastMessage: fullText });
         }
       }
 
+      if (!fullText.trim() && sawAgentSession) {
+        const message = `${agent.name} accepted the delegated work. Waiting for agent update.`;
+        updateTask(localTaskId, { status: "active", lastMessage: message });
+        await patchKanbanTask(task.id, {
+          status: "working",
+          assignee: agent.name,
+          tenant: assignment.mode === "queen" ? "queen-bee" : `${assignment.workerClass}-worker`,
+          result: message,
+        });
+        return { ok: true, message };
+      }
+
+      if (!fullText.trim()) {
+        throw new Error(`${agent.name} returned no task output and no pollable session. Check the agent runtime/auth before retrying.`);
+      }
+
       const result = fullText.trim() || `${agent.name} accepted the delegated work.`;
       updateTask(localTaskId, { status: "completed", lastMessage: result, completedAt: Date.now() });
       await patchKanbanTask(task.id, { status: "done", result });
       await addKanbanSystemComment(task.id, `${agent.name} completed the delegated work from the Work board.`);
+      return { ok: true, message: result };
     } catch (error) {
+      if (controller.signal.aborted) {
+        updateTask(localTaskId, { status: "completed", lastMessage: "Interrupted by a newer task instruction.", completedAt: Date.now() });
+        return { ok: true, message: "Interrupted by a newer task instruction." };
+      }
       const message = error instanceof Error ? error.message : "Unknown runtime error";
+      kanbanDispatchCooldownRef.current.set(agent.id, Date.now() + 10 * 60 * 1000);
+      const transientDelegation = isTransientDelegationMessage(message);
+      if (isHermesAuthFailure(message)) {
+        await raiseHermesAuthAlert(agent, task, message).catch(() => undefined);
+      }
       setMessagesByAgent((current) => {
         const existing = current[agent.id] ?? [];
         const next = [...existing];
-        const last = next[next.length - 1] ?? { role: "assistant" as const, content: "" };
+        const last = next[next.length - 1] ?? { role: "assistant" as const, content: "", kanbanTaskId: task.id };
         if (next.length === 0) next.push(last);
-        next[next.length - 1] = { ...last, content: `Error: ${message}` };
+        next[next.length - 1] = { ...last, content: transientDelegation ? `Waiting for update: ${message}` : `Error: ${message}`, kanbanTaskId: task.id };
         return { ...current, [agent.id]: next };
       });
-      updateTask(localTaskId, { status: "failed", lastMessage: message, completedAt: Date.now() });
-      await patchKanbanTask(task.id, { status: "needs-human", result: `Delegation failed for ${agent.name}: ${message}` });
+      updateTask(localTaskId, {
+        status: transientDelegation ? "active" : "failed",
+        lastMessage: message,
+        ...(transientDelegation ? {} : { completedAt: Date.now() }),
+      });
+      if (transientDelegation) {
+        if (!isKanbanAwaitingAgentUpdate(task)) {
+          await patchKanbanTask(task.id, {
+            status: "working",
+            result: `${agent.name} accepted the task. Waiting for agent update.`,
+          });
+        }
+        return { ok: true, message };
+      }
+      if (!options.leaveKanbanOpen) {
+        await patchKanbanTask(task.id, { status: "needs-human", result: `Delegation failed for ${agent.name}: ${message}` });
+      }
       await addKanbanSystemComment(task.id, `Delegation failed for ${agent.name}: ${message}`);
+      return { ok: false, message };
+    } finally {
+      if (kanbanRuntimeAbortRef.current.get(task.id) === controller) {
+        kanbanRuntimeAbortRef.current.delete(task.id);
+      }
     }
   }
   /* eslint-enable react-hooks/immutability, react-hooks/purity */
@@ -3767,7 +5742,11 @@ export default function Home() {
       });
     }
 
-    const retryableWorkingTasks = kanbanBoard.tasks.filter((task) => task.status === "working" && task.assignee?.trim());
+    const retryableWorkingTasks = kanbanBoard.tasks.filter((task) => (
+      task.status === "working"
+      && task.assignee?.trim()
+      && !isKanbanAwaitingAgentUpdate(task)
+    ));
     for (const task of retryableWorkingTasks) {
       if (kanbanReadyPickupInFlightRef.current.has(task.id)) continue;
       const assignee = kanbanTaskAssigneeAgent(task, displayAgents);
@@ -3800,6 +5779,277 @@ export default function Home() {
     }
     setCommentDraft("");
     await refreshKanbanOnce().catch((error) => setKanbanError(error instanceof Error ? error.message : "Kanban refresh failed."));
+  }
+
+  async function refreshKanbanAgentSession(task: KanbanTask) {
+    const session = task.agentSession;
+    if (!session?.sessionId) return;
+    const agent = displayAgents.find((item) => item.id === session.agentId || item.name === session.agentName || item.telemetryUrl === session.telemetryUrl);
+    if (!agent?.telemetryUrl) return;
+    const response = await fetch("/api/chat/agent-session", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ agent, sessionId: session.sessionId }),
+    }).catch(() => null);
+    const data = await response?.json().catch(() => null) as AgentSessionResponse | null;
+    if (!response?.ok || !data?.ok || !data.session?.messages) return;
+
+    const rawMessages = data.session.messages.filter((message) => (
+      message.content.trim()
+      && !isInternalHermesSessionPrelude(message.content)
+    ));
+    const messages = rawMessages
+      .filter((message) => message.role === "user" || message.role === "assistant")
+      .map((message): ChatMessage => ({
+        role: message.role === "user" ? "user" : "assistant",
+        content: message.content,
+        createdAt: message.createdAt ?? data.session?.updatedAt ?? Date.now(),
+        kanbanTaskId: task.id,
+        sourceSessionId: session.sessionId,
+        sourceIndex: message.index,
+      }));
+
+    if (messages.length > 0) {
+      setMessagesByAgent((current) => {
+        const existing = current[agent.id] ?? [];
+        const seen = new Set(existing.map((message) => (
+          message.sourceSessionId && message.sourceIndex !== undefined
+            ? `${message.sourceSessionId}:${message.sourceIndex}`
+            : ""
+        )).filter(Boolean));
+        const additions = messages.filter((message) => !seen.has(`${message.sourceSessionId}:${message.sourceIndex}`));
+        if (additions.length === 0) return current;
+        return { ...current, [agent.id]: [...existing, ...additions] };
+      });
+    }
+
+    const latestAssistant = [...rawMessages].reverse().find((message) => (
+      message.role === "assistant"
+      && message.content.trim()
+      && !isInternalHermesSessionPrelude(message.content)
+    ));
+    const latestRaw = [...rawMessages].reverse().find((message) => message.content.trim());
+    // eslint-disable-next-line react-hooks/purity
+    const now = Date.now();
+    const sessionUpdatedAt = data.session.updatedAt ?? latestRaw?.createdAt ?? now;
+    const toolOutputStalled = task.status === "working"
+      && latestRaw?.role === "tool"
+      && now - sessionUpdatedAt >= KANBAN_TOOL_OUTPUT_STALL_MS;
+    const latestCount = data.session.messageCount ?? rawMessages.length;
+    if (toolOutputStalled) {
+      const message = kanbanToolOutputStalledMessage(agent.name);
+      await patchKanbanTask(task.id, {
+        status: "needs-human",
+        agentSession: null,
+        result: message,
+      });
+      await addKanbanSystemComment(task.id, message);
+      return;
+    }
+    if (latestCount !== task.agentSession?.lastMessageCount) {
+      await patchKanbanTask(task.id, {
+        agentSession: {
+          ...session,
+          updatedAt: sessionUpdatedAt,
+          lastMessageCount: latestCount,
+        },
+        ...(latestAssistant ? { result: latestAssistant.content.slice(0, 4000) } : {}),
+      });
+    }
+  }
+
+  useEffect(() => {
+    if (!hydrated || !selectedKanbanTask?.agentSession?.sessionId) return;
+    const lastPoll = kanbanSessionPollRef.current.get(selectedKanbanTask.id) ?? 0;
+    // eslint-disable-next-line react-hooks/purity
+    const now = Date.now();
+    if (now - lastPoll < 4_000) return;
+    kanbanSessionPollRef.current.set(selectedKanbanTask.id, now);
+    void refreshKanbanAgentSession(selectedKanbanTask);
+    // `refreshKanbanAgentSession` intentionally stays out of this dependency list.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [displayAgents, hydrated, selectedKanbanTask]);
+
+  useEffect(() => {
+    if (!hydrated || !kanbanBoard) return;
+    const pollable = kanbanBoard.tasks.filter((task) => (
+      task.status === "working"
+      && task.agentSession?.sessionId
+    ));
+    if (pollable.length === 0) return;
+    const poll = () => {
+      pollable.forEach((task) => {
+        const lastPoll = kanbanSessionPollRef.current.get(task.id) ?? 0;
+        if (Date.now() - lastPoll < 4_000) return;
+        kanbanSessionPollRef.current.set(task.id, Date.now());
+        void refreshKanbanAgentSession(task);
+      });
+    };
+    poll();
+    const timer = window.setInterval(poll, 6_000);
+    return () => window.clearInterval(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [displayAgents, hydrated, kanbanBoard]);
+
+  useEffect(() => {
+    if (!hydrated || !kanbanBoard) return;
+    // eslint-disable-next-line react-hooks/purity
+    const now = Date.now();
+    const staleTasks = kanbanBoard.tasks.filter((task) => isKanbanStaleWorkingTask(task, now));
+    for (const task of staleTasks) {
+      const signature = `${task.id}:${task.agentSession?.sessionId ?? ""}:${task.agentSession?.lastMessageCount ?? ""}:${task.updatedAt}`;
+      if (kanbanStaleRequeueAttemptRef.current.has(signature)) continue;
+      kanbanStaleRequeueAttemptRef.current.add(signature);
+      void requeueStaleKanbanTask(task, "auto");
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [displayAgents, hydrated, kanbanBoard]);
+
+  async function steerSelectedKanbanTask(event: FormEvent) {
+    event.preventDefault();
+    const prompt = kanbanSteerDraft.trim();
+    const outgoingAttachments = kanbanSteerAttachments;
+    const outgoingDirectories = kanbanSteerDirectories;
+    const outgoingLabel = prompt
+      || attachmentSummary(outgoingAttachments)
+      || (outgoingDirectories.length ? `Linked ${outgoingDirectories.length} director${outgoingDirectories.length === 1 ? "y" : "ies"}` : "");
+    if (!selectedKanbanTask || !selectedKanbanAgent || !outgoingLabel || kanbanSteeringTaskId) return;
+    const setupIssue = chatSetupIssue(selectedKanbanAgent);
+    if (setupIssue) {
+      await addKanbanSystemComment(selectedKanbanTask.id, `Could not steer ${selectedKanbanAgent.name}: ${setupIssue}`);
+      return;
+    }
+
+    const localTaskId = `kanban-steer-${selectedKanbanTask.id}-${Date.now()}`;
+    const targetColumn = KANBAN_COLUMNS.find((column) => column.id === kanbanSteerTargetStatus);
+    const directorySummary = outgoingDirectories.length
+      ? `Linked directories:\n${outgoingDirectories.map((directory) => `- ${directory.name}`).join("\n")}`
+      : "";
+    const attachmentTextSummary = outgoingAttachments.length
+      ? `Attachments:\n${outgoingAttachments.map((attachment) => `- ${attachment.kind}: ${attachment.name} (${attachment.mimeType || "unknown"}, ${attachmentSizeLabel(attachment.size)})`).join("\n")}`
+      : "";
+    const steerPrompt = [
+      `Steering note for Kanban task "${selectedKanbanTask.title}":`,
+      prompt || outgoingLabel,
+      attachmentTextSummary,
+      directorySummary,
+      targetColumn ? `After considering this message, keep or move the card to: ${targetColumn.title}.` : "",
+      selectedKanbanTask.result ? `Current task notes:\n${selectedKanbanTask.result}` : "",
+      kanbanSteerTargetStatus === "ideas"
+        ? "Planning mode: reply with guidance or a concise response, but do not continue execution unless asked later."
+        : "Use this guidance for the active work. Reply with a concise update, blocker, or result.",
+    ].filter(Boolean).join("\n\n");
+
+    setKanbanSteerDraft("");
+    setKanbanSteerAttachments([]);
+    setKanbanSteerDirectories([]);
+    setKanbanSteerAttachmentError("");
+    setKanbanSteerAttachmentMenuOpen(false);
+    setKanbanSteeringTaskId(selectedKanbanTask.id);
+    upsertTask({
+      id: localTaskId,
+      agentId: selectedKanbanAgent.id,
+      title: `Steer: ${selectedKanbanTask.title}`,
+      lastMessage: outgoingLabel,
+      status: "active",
+      startedAt: Date.now(),
+      updatedAt: Date.now(),
+      source: "kanban",
+    });
+    appendMessage(selectedKanbanAgent.id, { role: "user", content: outgoingLabel, attachments: outgoingAttachments, kanbanTaskId: selectedKanbanTask.id });
+    appendMessage(selectedKanbanAgent.id, { role: "assistant", content: "", kanbanTaskId: selectedKanbanTask.id });
+
+    try {
+      if (selectedKanbanTask.status !== kanbanSteerTargetStatus) {
+        await patchKanbanTask(selectedKanbanTask.id, { status: kanbanSteerTargetStatus });
+      }
+      const contextMessages = (messagesByAgent[selectedKanbanAgent.id] ?? [])
+        .filter((message) => message.role !== "system" && (message.content.trim() || message.attachments?.length))
+        .slice(-6)
+        .map((message) => ({ role: message.role, content: messageContentParts(message.content, message.attachments ?? []) }));
+      const response = await fetch("/api/chat/agent-runtime", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          agent: selectedKanbanAgent,
+          sharedVault,
+          workingDirectory: appVersion?.appDir,
+          wallet: walletsByAgent[selectedKanbanAgent.id] ?? createDefaultAgentWallet(selectedKanbanAgent.id),
+          messages: [...contextMessages, { role: "user", content: messageContentParts(steerPrompt, outgoingAttachments) }],
+        }),
+      });
+      if (!response.ok || !response.body) {
+        const data = await response.json().catch(() => ({}));
+        throw new Error(typeof data.error === "string" ? data.error : `Request failed with ${response.status}`);
+      }
+
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+      let fullText = "";
+      while (true) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const events = buffer.split("\n\n");
+        buffer = events.pop() ?? "";
+        for (const eventText of events) {
+          const line = eventText.split("\n").find((entry) => entry.startsWith("data: "));
+          if (!line) continue;
+          const payload = line.slice(6);
+          if (payload === "[DONE]") continue;
+          const parsed = JSON.parse(payload) as {
+            choices?: Array<{ delta?: { content?: string } }>;
+            error?: string;
+            session?: { id?: string; startedAt?: number; updatedAt?: number; messageCount?: number };
+          };
+          if (parsed.error) throw new Error(parsed.error);
+          if (parsed.session?.id) {
+            await patchKanbanTask(selectedKanbanTask.id, {
+              agentSession: {
+                agentId: selectedKanbanAgent.id,
+                agentName: selectedKanbanAgent.name,
+                telemetryUrl: selectedKanbanAgent.telemetryUrl,
+                sessionId: parsed.session.id,
+                startedAt: parsed.session.startedAt ?? Date.now(),
+                updatedAt: parsed.session.updatedAt ?? Date.now(),
+                lastMessageCount: parsed.session.messageCount ?? 0,
+              },
+            });
+            continue;
+          }
+          const chunk = parsed.choices?.[0]?.delta?.content;
+          if (!chunk) continue;
+          fullText += chunk;
+          setMessagesByAgent((current) => {
+            const existing = current[selectedKanbanAgent.id] ?? [];
+            const next = [...existing];
+            const last = next[next.length - 1] ?? { role: "assistant" as const, content: "", createdAt: Date.now(), kanbanTaskId: selectedKanbanTask.id };
+            if (next.length === 0) next.push(last);
+            next[next.length - 1] = { ...last, content: fullText, createdAt: last.createdAt ?? Date.now(), kanbanTaskId: selectedKanbanTask.id };
+            return { ...current, [selectedKanbanAgent.id]: next };
+          });
+          updateTask(localTaskId, { lastMessage: fullText });
+        }
+      }
+      const result = fullText.trim() || `${selectedKanbanAgent.name} received the steering note.`;
+      updateTask(localTaskId, { status: "completed", lastMessage: result, completedAt: Date.now() });
+      await addKanbanSystemComment(selectedKanbanTask.id, `Steered ${selectedKanbanAgent.name}: ${outgoingLabel}`);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Unknown runtime error";
+      setMessagesByAgent((current) => {
+        const existing = current[selectedKanbanAgent.id] ?? [];
+        const next = [...existing];
+        const last = next[next.length - 1] ?? { role: "assistant" as const, content: "", createdAt: Date.now(), kanbanTaskId: selectedKanbanTask.id };
+        if (next.length === 0) next.push(last);
+        next[next.length - 1] = { ...last, content: `Error: ${message}`, createdAt: last.createdAt ?? Date.now(), kanbanTaskId: selectedKanbanTask.id };
+        return { ...current, [selectedKanbanAgent.id]: next };
+      });
+      updateTask(localTaskId, { status: "failed", lastMessage: message, completedAt: Date.now() });
+      await addKanbanSystemComment(selectedKanbanTask.id, `Steer failed for ${selectedKanbanAgent.name}: ${message}`);
+    } finally {
+      setKanbanSteeringTaskId("");
+    }
   }
 
   async function checkStatus() {
@@ -3884,7 +6134,7 @@ export default function Home() {
         remoteTailscaleIp: target.remoteTailscaleIp,
         remoteAddressHost: target.remoteAddressHost,
         folderId: "omni-agent-hivemind-vault",
-        label: "Omni-Agent Hivemind Vault",
+        label: "omni-agent-hivemind-vault",
       }),
     }).catch(() => null);
     return response?.json().catch(() => null) as Promise<VaultSyncStatus | null>;
@@ -4114,6 +6364,136 @@ export default function Home() {
     setChatAttachments((current) => current.filter((attachment) => attachment.id !== id));
   }
 
+  async function addQuickAddFiles(status: KanbanStatus, files: FileList | File[], kind: "image" | "file") {
+    const incoming = Array.from(files);
+    if (incoming.length === 0) {
+      setQuickAddAttachmentError("Choose at least one file.");
+      return;
+    }
+    const maxAttachmentBytes = 8_000_000;
+    const oversized = incoming.find((file) => file.size > maxAttachmentBytes);
+    if (oversized) {
+      setQuickAddAttachmentError(`${oversized.name} is too large. Keep attachments under 8 MB.`);
+      return;
+    }
+    try {
+      const next = await Promise.all(incoming.map((file) => readAttachmentFile(file, kind)));
+      setQuickAddAttachments((current) => ({
+        ...current,
+        [status]: [...(current[status] ?? []), ...next].slice(0, 6),
+      }));
+      setQuickAddAttachmentError("");
+      setQuickAddAttachmentMenuOpen(false);
+    } catch (error) {
+      setQuickAddAttachmentError(error instanceof Error ? error.message : "Could not attach that file.");
+    }
+  }
+
+  function handleQuickAddFileChange(status: KanbanStatus, event: ChangeEvent<HTMLInputElement>) {
+    if (event.target.files?.length) void addQuickAddFiles(status, event.target.files, "file");
+    event.target.value = "";
+  }
+
+  function handleQuickAddImageChange(status: KanbanStatus, event: ChangeEvent<HTMLInputElement>) {
+    if (event.target.files?.length) void addQuickAddFiles(status, event.target.files, "image");
+    event.target.value = "";
+  }
+
+  function removeQuickAddAttachment(status: KanbanStatus, id: string) {
+    setQuickAddAttachments((current) => ({ ...current, [status]: (current[status] ?? []).filter((attachment) => attachment.id !== id) }));
+  }
+
+  async function attachQuickAddDirectory(status: KanbanStatus) {
+    type DirectoryPickerWindow = Window & typeof globalThis & {
+      showDirectoryPicker?: () => Promise<{ name?: string }>;
+    };
+    const picker = (window as DirectoryPickerWindow).showDirectoryPicker;
+    if (!picker) {
+      setQuickAddAttachmentError("Directory picker is not available in this browser.");
+      return;
+    }
+    try {
+      const handle = await picker();
+      const name = handle.name?.trim();
+      if (!name) return;
+      setQuickAddDirectories((current) => ({
+        ...current,
+        [status]: [...(current[status] ?? []), { id: `${name}-${crypto.randomUUID()}`, name }].slice(0, 4),
+      }));
+      setQuickAddAttachmentError("");
+      setQuickAddAttachmentMenuOpen(false);
+    } catch (error) {
+      if (error instanceof DOMException && error.name === "AbortError") return;
+      setQuickAddAttachmentError(error instanceof Error ? error.message : "Could not link that directory.");
+    }
+  }
+
+  function removeQuickAddDirectory(status: KanbanStatus, id: string) {
+    setQuickAddDirectories((current) => ({ ...current, [status]: (current[status] ?? []).filter((directory) => directory.id !== id) }));
+  }
+
+  async function addKanbanSteerFiles(files: FileList | File[], kind: "image" | "file") {
+    const incoming = Array.from(files);
+    if (incoming.length === 0) {
+      setKanbanSteerAttachmentError("Choose at least one file.");
+      return;
+    }
+    const maxAttachmentBytes = 8_000_000;
+    const oversized = incoming.find((file) => file.size > maxAttachmentBytes);
+    if (oversized) {
+      setKanbanSteerAttachmentError(`${oversized.name} is too large. Keep attachments under 8 MB.`);
+      return;
+    }
+    try {
+      const next = await Promise.all(incoming.map((file) => readAttachmentFile(file, kind)));
+      setKanbanSteerAttachments((current) => [...current, ...next].slice(0, 6));
+      setKanbanSteerAttachmentError("");
+      setKanbanSteerAttachmentMenuOpen(false);
+    } catch (error) {
+      setKanbanSteerAttachmentError(error instanceof Error ? error.message : "Could not attach that file.");
+    }
+  }
+
+  function handleKanbanSteerFileChange(event: ChangeEvent<HTMLInputElement>) {
+    if (event.target.files?.length) void addKanbanSteerFiles(event.target.files, "file");
+    event.target.value = "";
+  }
+
+  function handleKanbanSteerImageChange(event: ChangeEvent<HTMLInputElement>) {
+    if (event.target.files?.length) void addKanbanSteerFiles(event.target.files, "image");
+    event.target.value = "";
+  }
+
+  function removeKanbanSteerAttachment(id: string) {
+    setKanbanSteerAttachments((current) => current.filter((attachment) => attachment.id !== id));
+  }
+
+  async function attachKanbanSteerDirectory() {
+    type DirectoryPickerWindow = Window & typeof globalThis & {
+      showDirectoryPicker?: () => Promise<{ name?: string }>;
+    };
+    const picker = (window as DirectoryPickerWindow).showDirectoryPicker;
+    if (!picker) {
+      setKanbanSteerAttachmentError("Directory picker is not available in this browser.");
+      return;
+    }
+    try {
+      const handle = await picker();
+      const name = handle.name?.trim();
+      if (!name) return;
+      setKanbanSteerDirectories((current) => [...current, { id: `${name}-${crypto.randomUUID()}`, name }].slice(0, 4));
+      setKanbanSteerAttachmentError("");
+      setKanbanSteerAttachmentMenuOpen(false);
+    } catch (error) {
+      if (error instanceof DOMException && error.name === "AbortError") return;
+      setKanbanSteerAttachmentError(error instanceof Error ? error.message : "Could not link that directory.");
+    }
+  }
+
+  function removeKanbanSteerDirectory(id: string) {
+    setKanbanSteerDirectories((current) => current.filter((directory) => directory.id !== id));
+  }
+
   function updateVoiceTranscript(value: string) {
     voiceTranscriptRef.current = value;
     setVoiceTranscript(value);
@@ -4122,7 +6502,16 @@ export default function Home() {
   function appendVoiceTranscriptToInput() {
     const transcript = voiceTranscriptRef.current.trim();
     if (!transcript) return;
-    setText((current) => [current.trim(), transcript].filter(Boolean).join(current.trim() ? " " : ""));
+    if (voiceTarget === "chat") {
+      setText((current) => [current.trim(), transcript].filter(Boolean).join(current.trim() ? " " : ""));
+    } else if (voiceTarget === "kanban-steer") {
+      setKanbanSteerDraft((current) => [current.trim(), transcript].filter(Boolean).join(current.trim() ? " " : ""));
+    } else {
+      setQuickAddDrafts((current) => {
+        const existing = current[voiceTarget]?.trim() ?? "";
+        return { ...current, [voiceTarget]: [existing, transcript].filter(Boolean).join(existing ? " " : "") };
+      });
+    }
     updateVoiceTranscript("");
   }
 
@@ -4168,15 +6557,20 @@ export default function Home() {
     tick();
   }
 
-  async function startAudioRecording() {
+  async function startAudioRecording(target: "chat" | "kanban-steer" | KanbanStatus = "chat") {
     if (recording || busy) return;
+    const setTargetAttachmentError = (message: string) => {
+      if (target === "chat") setAttachmentError(message);
+      else if (target === "kanban-steer") setKanbanSteerAttachmentError(message);
+      else setQuickAddAttachmentError(message);
+    };
     const Recognition = speechRecognitionConstructor();
     if (!Recognition) {
-      setAttachmentError("Speech transcription is not available in this browser.");
+      setTargetAttachmentError("Speech transcription is not available in this browser.");
       return;
     }
     if (!navigator.mediaDevices?.getUserMedia) {
-      setAttachmentError("Microphone access is not available in this browser.");
+      setTargetAttachmentError("Microphone access is not available in this browser.");
       return;
     }
     try {
@@ -4197,19 +6591,20 @@ export default function Home() {
         updateVoiceTranscript(`${committedTranscript} ${interimTranscript}`.trim());
       };
       recognition.onerror = (event) => {
-        setAttachmentError(event.error ? `Speech transcription failed: ${event.error}` : "Speech transcription failed.");
+        setTargetAttachmentError(event.error ? `Speech transcription failed: ${event.error}` : "Speech transcription failed.");
       };
       recognition.onend = () => cleanupVoiceCapture(true);
       voiceStreamRef.current = stream;
       voiceRecognitionRef.current = recognition;
+      setVoiceTarget(target);
       updateVoiceTranscript("");
       startVoiceWaveform(stream);
       recognition.start();
       setRecording(true);
-      setAttachmentError("");
+      setTargetAttachmentError("");
     } catch (error) {
       cleanupVoiceCapture(false);
-      setAttachmentError(error instanceof Error ? error.message : "Could not start audio recording.");
+      setTargetAttachmentError(error instanceof Error ? error.message : "Could not start audio recording.");
     }
   }
 
@@ -4222,6 +6617,7 @@ export default function Home() {
     recognition.stop();
   }
 
+  /* eslint-disable react-hooks/purity */
   async function sendMessage(event: FormEvent) {
     event.preventDefault();
     if (recording) {
@@ -4248,6 +6644,7 @@ export default function Home() {
     setAttachmentError("");
     setAttachmentMenuOpen(false);
     const taskId = `${selectedAgent.id}-${Date.now()}`;
+    const workingDirectory = selectedChatDirectoryPath || selectedAgent.localDataDir || "";
     const contextMessages = (messagesByAgent[selectedAgent.id] ?? [])
       .filter((message) => message.role !== "system" && (message.content.trim() || message.attachments?.length))
       .slice(-5);
@@ -4260,6 +6657,7 @@ export default function Home() {
       status: "active",
       startedAt: Date.now(),
       updatedAt: Date.now(),
+      workingDirectory,
     });
     appendMessage(selectedAgent.id, { role: "user", content: outgoingLabel, attachments: outgoingAttachments });
     appendMessage(selectedAgent.id, { role: "assistant", content: "" });
@@ -4271,6 +6669,7 @@ export default function Home() {
         body: JSON.stringify({
           agent: selectedAgent,
           sharedVault,
+          workingDirectory,
           wallet: walletsByAgent[selectedAgent.id] ?? createDefaultAgentWallet(selectedAgent.id),
           messages: [
             ...contextMessages.map((message) => ({
@@ -4340,12 +6739,13 @@ export default function Home() {
       setHasStreamingChunk(false);
     }
   }
+  /* eslint-enable react-hooks/purity */
 
   const agentSettingsMachineName = agentCreateMachine?.name ?? roleModalAgent?.machineName ?? "this machine";
   const agentSettingsTitle = agentCreateMachine ? "Add agent" : "Agent settings";
   const agentSettingsDescription = agentCreateMachine
-    ? `Create a profile attached to ${agentSettingsMachineName}.`
-    : "Set how the Queen Bee should treat this agent when work is delegated.";
+    ? `Create a runtime profile attached to ${agentSettingsMachineName}.`
+    : "Manage role, memory, workspace, runtime access, and security for this agent.";
   const agentSettingsRole = agentCreateMachine ? agentCreateDraft.beeRole : roleModalAgent?.beeRole ?? "worker";
   const agentSettingsWorkerClass = agentCreateMachine ? agentCreateDraft.workerClass : roleModalAgent?.workerClass ?? "general";
 
@@ -4384,14 +6784,16 @@ export default function Home() {
                 onClick={() => setActiveView(item.id)}
               >
                 {viewIcon(item.id)}
-                <span>{item.label}</span>
-                <small>
-                  {item.detail}
+                <span>
+                  {item.label}
                   {item.id === "notifications" && notificationSummary?.unread ? (
                     <i className={notificationClass("navBadge")} aria-label={`${notificationSummary.unread} unread notifications`}>
                       {notificationSummary.unread > 99 ? "99+" : notificationSummary.unread}
                     </i>
                   ) : null}
+                </span>
+                <small>
+                  {item.detail}
                 </small>
                 {activeView === item.id ? <ChevronRight aria-hidden="true" /> : null}
               </button>
@@ -4594,6 +6996,7 @@ export default function Home() {
                             setSelectedAgentId(agent.id);
                             setAgentRenameDraft(agent.name);
                             setAgentRenameEditing(false);
+                            setAgentSettingsPanel("role");
                             setAgentRoleModalId(agent.id);
                           },
                         },
@@ -4632,10 +7035,12 @@ export default function Home() {
                         <AgentCell
                           key={agent.id}
                           name={agent.name}
+                          roleLabel={beeRoleLabel(agent.beeRole)}
                           runtime={agent.runtime}
                           hasTelemetryUrl={hasMachineWiring}
                           activeCount={activeCount}
                           snapshotOk={snapshot?.ok}
+                          processRunning={snapshot?.processRunning}
                           snapshotError={snapshot?.error}
                           primaryWork={primaryWork}
                           primaryWorkTime={primaryWorkRaw && primaryWorkRaw.updatedAt > 0
@@ -4726,7 +7131,7 @@ export default function Home() {
                     onChange={(event) => setNewBoardDraft((current) => ({ ...current, name: event.target.value }))}
                     placeholder="Display name"
                   />
-                  <button type="submit">New board</button>
+                  <button type="submit">Create</button>
                 </form>
                 <div className={kanbanClass("kanbanNoteIntake")}>
                   <label className={kanbanClass("toggleRow")}>
@@ -4746,7 +7151,7 @@ export default function Home() {
                       placeholder="Projects&#10;Inbox"
                     />
                   </label>
-                  <div className={kanbanClass("kanbanBoardCreate")}>
+                  <div className={kanbanClass("kanbanNoteActions")}>
                     <button type="button" disabled={Boolean(noteIntakePending)} onClick={() => scanNoteIntake()}>
                       {noteIntakePending === "scan" ? "Scanning..." : "Scan notes"}
                     </button>
@@ -4831,59 +7236,137 @@ export default function Home() {
                   <span className={kanbanClass("kanbanDot", column.id)} />
                   <div>
                     <h3>{column.title}</h3>
-                    <p>{column.description}</p>
                   </div>
-                  <strong>{column.tasks.length}</strong>
-                  <button
-                    type="button"
-                    className={kanbanClass("kanbanAddColumnTask")}
-                    onClick={() => setQuickAddStatus((current) => current === column.id ? "" : column.id)}
-                    aria-label={`Add task to ${column.title}`}
-                    title={`Add task to ${column.title}`}
-                  >
-                    <Plus aria-hidden="true" />
-                  </button>
+                  <div className={kanbanClass("kanbanColumnActions")}>
+                    <strong>{column.tasks.length}</strong>
+                    <button
+                      type="button"
+                      className={kanbanClass("kanbanAddColumnTask")}
+                      onClick={() => setQuickAddStatus((current) => current === column.id ? "" : column.id)}
+                      aria-label={`Add task to ${column.title}`}
+                      title={`Add task to ${column.title}`}
+                    >
+                      <Plus aria-hidden="true" />
+                    </button>
+                  </div>
+                  <p>{column.description}</p>
                 </div>
                 <div className={kanbanClass("kanbanCards")}>
                   {quickAddStatus === column.id ? (
                     <form className={kanbanClass("kanbanInlineAdd")} onSubmit={(event) => createKanbanTask(event, column.id)}>
-                      <input
-                        autoFocus
+                      <ComposerField
+                        compact
                         value={quickAddDrafts[column.id] ?? ""}
-                        onChange={(event) => setQuickAddDrafts((current) => ({ ...current, [column.id]: event.target.value }))}
+                        onChange={(value) => setQuickAddDrafts((current) => ({ ...current, [column.id]: value }))}
                         placeholder={`Add to ${column.title}`}
+                        attachments={quickAddAttachments[column.id] ?? []}
+                        directories={quickAddDirectories[column.id] ?? []}
+                        attachmentError={quickAddAttachmentError}
+                        attachmentMenuOpen={quickAddAttachmentMenuOpen}
+                        setAttachmentMenuOpen={setQuickAddAttachmentMenuOpen}
+                        attachmentMenuRef={quickAddAttachmentMenuRef}
+                        fileInputRef={quickAddFileInputRef}
+                        imageInputRef={quickAddImageInputRef}
+                        onFileChange={(event) => handleQuickAddFileChange(column.id, event)}
+                        onImageChange={(event) => handleQuickAddImageChange(column.id, event)}
+                        onRemoveAttachment={(id) => removeQuickAddAttachment(column.id, id)}
+                        onAttachDirectory={() => void attachQuickAddDirectory(column.id)}
+                        onRemoveDirectory={(id) => removeQuickAddDirectory(column.id, id)}
+                        recording={recording && voiceTarget === column.id}
+                        voiceBands={voiceBands}
+                        voiceTranscript={voiceTranscript}
+                        onToggleRecording={recording ? stopAudioRecording : () => void startAudioRecording(column.id)}
+                        canSend={Boolean((quickAddDrafts[column.id] ?? "").trim() || (quickAddAttachments[column.id] ?? []).length || (quickAddDirectories[column.id] ?? []).length)}
+                        onCancel={() => {
+                          setQuickAddStatus("");
+                          setQuickAddAttachmentError("");
+                          setQuickAddAttachmentMenuOpen(false);
+                        }}
                       />
-                      <div>
-                        <button type="button" onClick={() => setQuickAddStatus("")}>Cancel</button>
-                        <button type="submit">Add</button>
-                      </div>
                     </form>
                   ) : null}
                   {column.tasks.map((task) => {
                     const bee = kanbanTaskBee(task, displayAgents);
+                    const workingWithAgent = task.status === "working" && Boolean(task.assignee?.trim());
+                    const staleWorking = isKanbanStaleWorkingTask(task);
+                    const message = kanbanCardMessage(task);
+                    const canExpandMessage = message.length > 120;
+                    const messageExpanded = Boolean(expandedKanbanCards[task.id]);
+                    const terminalMessage = isKanbanTerminalMessage(message);
                     return (
-                      <button
-                        type="button"
-                        draggable
-                        className={kanbanClass("kanbanCard", task.id === selectedKanbanTaskId && "active")}
-                        key={task.id}
-                        onClick={() => setSelectedKanbanTaskId(task.id)}
-                        onDragStart={(event) => event.dataTransfer.setData("text/plain", task.id)}
-                      >
-                        <span className={kanbanClass("priorityPill", task.status)}>{kanbanTaskBadge(task)}</span>
-                        <strong>{task.title}</strong>
-                        <p>{task.body || task.result || "No task body yet."}</p>
-                        <span className={kanbanClass("kanbanBeeAssignment")}>
-                          {bee.icon ? <Image src={bee.icon} alt="" width={20} height={20} aria-hidden="true" /> : null}
-                          <span>
-                            <b>{bee.roleLabel}</b>
-                            <small>{bee.assignee}</small>
-                          </span>
-                        </span>
-                        <small>
-                          {kanbanTaskMeta(task)} · {formatRelativeTime(task.updatedAt)}
-                        </small>
-                      </button>
+                      <article className={kanbanClass("kanbanCardShell")} key={task.id}>
+                        <div
+                          draggable
+                          role="button"
+                          tabIndex={0}
+                          className={kanbanClass("kanbanCard", task.id === selectedKanbanTaskId && "active", workingWithAgent && "working", staleWorking && "stale", messageExpanded && "expanded")}
+                          onClick={() => setSelectedKanbanTaskId(task.id)}
+                          onKeyDown={(event) => {
+                            if (event.target !== event.currentTarget) return;
+                            if (event.key !== "Enter" && event.key !== " ") return;
+                            event.preventDefault();
+                            setSelectedKanbanTaskId(task.id);
+                          }}
+                          onDragStart={(event) => event.dataTransfer.setData("text/plain", task.id)}
+                        >
+                          <div className={kanbanClass("kanbanCardHeader")}>
+                            <strong className={kanbanClass("kanbanCardTitle")}>{task.title}</strong>
+                            <span className={kanbanClass("kanbanCardActions")}>
+                              <button
+                                type="button"
+                                className={kanbanClass("kanbanIconAction")}
+                                onClick={(event) => {
+                                  event.stopPropagation();
+                                  openKanbanTaskModal(task, "chat");
+                                }}
+                                aria-label={`Open agent chat for ${task.title}`}
+                                title="Agent chat"
+                              >
+                                <MessageSquare aria-hidden="true" />
+                              </button>
+                              <CellMenu items={kanbanTaskMenuItems(task)} ariaLabel={`Actions for ${task.title}`} />
+                            </span>
+                          </div>
+                          <div className={kanbanClass("kanbanMessageRow")}>
+                            {terminalMessage ? (
+                              <pre className={kanbanClass("kanbanCardTerminal")}><code>{message}</code></pre>
+                            ) : (
+                              <ChatMarkdown
+                                text={message}
+                                className={kanbanClass("kanbanCardMarkdown")}
+                                headingClassName={kanbanClass("kanbanCardMarkdownHeading")}
+                              />
+                            )}
+                            {canExpandMessage ? (
+                              <button
+                                type="button"
+                                className={kanbanClass("kanbanExpandMessage", messageExpanded && "expanded")}
+                                title={messageExpanded ? "Collapse message" : "Expand message"}
+                                aria-expanded={messageExpanded}
+                                aria-label={messageExpanded ? "Collapse full message" : "Expand full message"}
+                                onClick={(event) => {
+                                  event.stopPropagation();
+                                  setExpandedKanbanCards((current) => ({ ...current, [task.id]: !current[task.id] }));
+                                }}
+                              >
+                                <ChevronRight aria-hidden="true" />
+                              </button>
+                            ) : null}
+                          </div>
+                          <div className={kanbanClass("kanbanCardFooter")}>
+                            <time dateTime={new Date(task.updatedAt).toISOString()}>{formatRelativeTime(task.updatedAt)}</time>
+                            <span className={kanbanClass("kanbanCardState")}>
+                              {staleWorking ? <span className={kanbanClass("priorityPill", "stale")}>quiet</span> : null}
+                              {workingWithAgent ? (
+                                <span className={kanbanClass("kanbanWorkingBee", "compact")} title={`${task.assignee} is working`}>
+                                  <Image src={bee.icon || "/icons/worker-bee.png"} alt="" width={18} height={18} aria-hidden="true" />
+                                </span>
+                              ) : null}
+                              {staleWorking ? <small>No update for {formatDurationShort(kanbanStaleAge(task))}</small> : null}
+                            </span>
+                          </div>
+                        </div>
+                      </article>
                     );
                   })}
                   {column.tasks.length === 0 && quickAddStatus !== column.id ? (
@@ -4905,12 +7388,91 @@ export default function Home() {
           <aside className={kanbanClass("kanbanDrawer")}>
               <>
                 <div className={kanbanClass("kanbanDrawerHeader")}>
-                  <span className={kanbanClass("priorityPill", selectedKanbanTask.priority)}>{selectedKanbanTask.priority}</span>
+                  <div className={kanbanClass("kanbanDrawerTitleRow")}>
+                    <span className={kanbanClass("priorityPill", selectedKanbanTask.priority)}>{selectedKanbanTask.priority}</span>
+                    <CellMenu items={kanbanTaskMenuItems(selectedKanbanTask)} ariaLabel={`Actions for ${selectedKanbanTask.title}`} />
+                    <button
+                      type="button"
+                      className={kanbanClass("kanbanDrawerClose")}
+                      onClick={() => setSelectedKanbanTaskId("")}
+                      aria-label="Close task details"
+                      title="Close task details"
+                    >
+                      <X aria-hidden="true" />
+                    </button>
+                  </div>
                   <h3>{selectedKanbanTask.title}</h3>
                   <small>{selectedKanbanTask.id}</small>
                 </div>
+                <div className={kanbanClass("kanbanTaskSummary")}>
+                  <ChatMarkdown text={selectedKanbanTask.body || "No task body yet."} className={kanbanClass("kanbanTaskBody")} />
+                </div>
+                <div className={kanbanClass("kanbanMetaGrid")}>
+                  <span>Status: {KANBAN_COLUMNS.find((column) => column.id === selectedKanbanTask.status)?.title ?? selectedKanbanTask.status}</span>
+                  <span>Assignee: {selectedKanbanTask.assignee || "Unassigned"}</span>
+                  <span>Workspace: {selectedKanbanTask.workspace}</span>
+                  <span>Created: {formatRelativeTime(selectedKanbanTask.createdAt)}</span>
+                  <span>Comments: {selectedKanbanComments.length}</span>
+                  <span>Links: {selectedKanbanLinkCount}</span>
+                </div>
+                {selectedKanbanTaskIsStale ? (
+                  <section className={kanbanClass("kanbanStaleNotice")}>
+                    <div>
+                      <strong>Worker went quiet</strong>
+                      <small>No dashboard-visible update for {formatDurationShort(kanbanStaleAge(selectedKanbanTask))}. Requeue clears this stale session and lets Queen Bee assign it again.</small>
+                    </div>
+                    <button type="button" onClick={() => requeueStaleKanbanTask(selectedKanbanTask, "manual")}>
+                      Retry
+                    </button>
+                  </section>
+                ) : null}
+                <div className={kanbanClass("kanbanDrawerQuickActions")}>
+                  <button type="button" onClick={() => setKanbanTaskModal("chat")}><MessageSquare aria-hidden="true" /> Chat</button>
+                  <button type="button" onClick={() => setKanbanTaskModal("notes")}><Pencil aria-hidden="true" /> Notes</button>
+                  <button type="button" onClick={() => setKanbanTaskModal("events")}><Eye aria-hidden="true" /> Events</button>
+                </div>
+              </>
+          </aside>
+          ) : null}
+        </div>
+      </section>
+      ) : null}
+
+      {selectedKanbanTask && kanbanTaskModal ? (
+        <div
+          className={kanbanClass("kanbanModalBackdrop")}
+          role="presentation"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget) setKanbanTaskModal("");
+          }}
+        >
+          <section className={kanbanClass("kanbanTaskModal", kanbanTaskModal === "chat" && "chatModal")} role="dialog" aria-modal="true" aria-labelledby="kanban-task-modal-title">
+            <div className={kanbanClass("kanbanModalHeader")}>
+              <div>
+                <p className="eyebrow">{selectedKanbanTask.title}</p>
+                <h3 id="kanban-task-modal-title">
+                  {kanbanTaskModal === "assign" ? "Assign task" : kanbanTaskModal === "chat" ? "Agent chat" : kanbanTaskModal === "edit" ? "Edit & interrupt" : kanbanTaskModal === "events" ? "Task events" : "Task notes"}
+                </h3>
+              </div>
+              <button type="button" onClick={() => setKanbanTaskModal("")} aria-label="Close task modal">
+                <X aria-hidden="true" />
+              </button>
+            </div>
+
+            {kanbanTaskModal === "assign" ? (
+              <div className={kanbanClass("kanbanModalBody")}>
                 <label>
-                  Status
+                  Assignee
+                  <select
+                    value={selectedKanbanTask.assignee ?? ""}
+                    onChange={(event) => patchKanbanTask(selectedKanbanTask.id, { assignee: event.target.value })}
+                  >
+                    <option value="">Unassigned</option>
+                    {kanbanAssigneeOptions.map((assignee) => <option value={assignee} key={assignee}>{assignee}</option>)}
+                  </select>
+                </label>
+                <label>
+                  Move to
                   <select
                     value={selectedKanbanTask.status}
                     onChange={(event) => moveKanbanTask(selectedKanbanTask.id, event.target.value as KanbanStatus)}
@@ -4918,40 +7480,132 @@ export default function Home() {
                     {KANBAN_COLUMNS.map((column) => <option value={column.id} key={column.id}>{column.title}</option>)}
                   </select>
                 </label>
+              </div>
+            ) : null}
+
+            {kanbanTaskModal === "edit" ? (
+              <form className={kanbanClass("kanbanModalBody", "kanbanEditForm")} onSubmit={editAndInterruptKanbanTask}>
                 <label>
-                  {selectedKanbanTask.status === "done" ? "Completed by" : "Assignee"}
-                  <select
-                    value={selectedKanbanTask.assignee ?? ""}
-                    onChange={(event) => patchKanbanTask(selectedKanbanTask.id, { assignee: event.target.value })}
-                  >
-                    <option value="">{selectedKanbanTask.status === "done" ? "user" : "Unassigned"}</option>
-                    {kanbanAssigneeOptions.map((assignee) => <option value={assignee} key={assignee}>{assignee}</option>)}
-                  </select>
-                </label>
-                <label>
-                  Result
-                  <textarea
-                    key={selectedKanbanTask.id}
-                    defaultValue={selectedKanbanTask.result ?? ""}
-                    onBlur={(event) => patchKanbanTask(selectedKanbanTask.id, { result: event.target.value })}
-                    placeholder="Completion summary, review notes, or blocker evidence"
+                  Title
+                  <input
+                    value={kanbanEditDraft.title}
+                    onChange={(event) => setKanbanEditDraft((current) => ({ ...current, title: event.target.value }))}
+                    disabled={kanbanEditPendingTaskId === selectedKanbanTask.id}
                   />
                 </label>
-                <div className={kanbanClass("kanbanMetaGrid")}>
-                  <span>Workspace: {selectedKanbanTask.workspace}</span>
-                  <span>Created: {formatRelativeTime(selectedKanbanTask.createdAt)}</span>
-                  <span>Comments: {selectedKanbanComments.length}</span>
-                  <span>Links: {kanbanBoard?.links.filter((link) => link.parentId === selectedKanbanTask.id || link.childId === selectedKanbanTask.id).length ?? 0}</span>
+                <label>
+                  Task details
+                  <textarea
+                    value={kanbanEditDraft.body}
+                    onChange={(event) => setKanbanEditDraft((current) => ({ ...current, body: event.target.value }))}
+                    disabled={kanbanEditPendingTaskId === selectedKanbanTask.id}
+                    placeholder="Add context, constraints, or the revised instruction."
+                  />
+                </label>
+                <p className={kanbanClass("kanbanEditHint")}>
+                  This resends the revised task to {selectedKanbanAgent?.name ?? "the assigned agent"} and interrupts the current run instead of assigning a new worker.
+                </p>
+                <div className={kanbanClass("kanbanEditActions")}>
+                  <button type="button" onClick={() => setKanbanTaskModal("")} disabled={kanbanEditPendingTaskId === selectedKanbanTask.id}>Cancel</button>
+                  <button type="submit" disabled={!selectedKanbanAgent || !kanbanEditDraft.title.trim() || kanbanEditPendingTaskId === selectedKanbanTask.id}>
+                    {kanbanEditPendingTaskId === selectedKanbanTask.id ? "Sending..." : "Save & interrupt"}
+                  </button>
                 </div>
-                <form className={kanbanClass("kanbanCommentForm")} onSubmit={addKanbanComment}>
+              </form>
+            ) : null}
+
+            {kanbanTaskModal === "chat" ? (
+              <div className={kanbanClass("kanbanModalBody", "kanbanChatBody")}>
+                <form className={kanbanClass("kanbanSteerComposer")} onSubmit={steerSelectedKanbanTask}>
+                  <div className={kanbanClass("kanbanSteerComposerTop")}>
+                    <div className={kanbanClass("kanbanSteerTargetWrap")} ref={kanbanSteerTargetMenuRef}>
+                      <button
+                        type="button"
+                        className={kanbanClass("kanbanSteerTargetButton")}
+                        onClick={() => setKanbanSteerTargetMenuOpen((current) => !current)}
+                        aria-label="Choose where to send this task after the message"
+                        aria-expanded={kanbanSteerTargetMenuOpen}
+                      >
+                        Send to {KANBAN_COLUMNS.find((column) => column.id === kanbanSteerTargetStatus)?.title ?? "Working"}
+                        <ChevronDown aria-hidden="true" />
+                      </button>
+                      {kanbanSteerTargetMenuOpen ? (
+                        <div className={kanbanClass("kanbanSteerTargetTooltip")} role="tooltip">
+                          <div className={kanbanClass("kanbanSteerTargetMenu")} role="menu" aria-label="Send task to">
+                            {KANBAN_STEER_TARGETS.map((column) => (
+                              <button
+                                type="button"
+                                role="menuitemradio"
+                                aria-checked={kanbanSteerTargetStatus === column.id}
+                                key={column.id}
+                                onClick={() => {
+                                  setKanbanSteerTargetStatus(column.id);
+                                  setKanbanSteerTargetMenuOpen(false);
+                                }}
+                              >
+                                <span>{column.title}</span>
+                                {kanbanSteerTargetStatus === column.id ? <Check aria-hidden="true" /> : null}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      ) : null}
+                    </div>
+                  </div>
+                  <ComposerField
+                    value={kanbanSteerDraft}
+                    onChange={setKanbanSteerDraft}
+                    placeholder={selectedKanbanAgent ? "Message the assigned agent..." : "Assign an agent before chatting"}
+                    disabled={!selectedKanbanAgent || kanbanSteeringTaskId === selectedKanbanTask.id}
+                    busy={kanbanSteeringTaskId === selectedKanbanTask.id}
+                    compact
+                    attachments={kanbanSteerAttachments}
+                    directories={kanbanSteerDirectories}
+                    attachmentError={kanbanSteerAttachmentError}
+                    attachmentMenuOpen={kanbanSteerAttachmentMenuOpen}
+                    setAttachmentMenuOpen={setKanbanSteerAttachmentMenuOpen}
+                    attachmentMenuRef={kanbanSteerAttachmentMenuRef}
+                    fileInputRef={kanbanSteerFileInputRef}
+                    imageInputRef={kanbanSteerImageInputRef}
+                    onFileChange={handleKanbanSteerFileChange}
+                    onImageChange={handleKanbanSteerImageChange}
+                    onRemoveAttachment={removeKanbanSteerAttachment}
+                    onAttachDirectory={() => void attachKanbanSteerDirectory()}
+                    onRemoveDirectory={removeKanbanSteerDirectory}
+                    recording={recording && voiceTarget === "kanban-steer"}
+                    voiceBands={voiceBands}
+                    voiceTranscript={voiceTranscript}
+                    onToggleRecording={recording ? stopAudioRecording : () => void startAudioRecording("kanban-steer")}
+                    canSend={Boolean(kanbanSteerDraft.trim() || kanbanSteerAttachments.length || kanbanSteerDirectories.length)}
+                  />
+                </form>
+                <div className={kanbanClass("kanbanAgentMessages", "modalMessages")}>
+                  {selectedKanbanAgentMessages.map((message, index) => (
+                    <article className={kanbanClass("kanbanAgentMessage", message.role)} key={`${message.createdAt ?? index}-${index}`}>
+                      <div>
+                        <strong>{message.role === "user" ? "You" : selectedKanbanAgent?.name ?? "Agent"}</strong>
+                        <time>{formatMessageTimestamp(message.createdAt)}</time>
+                      </div>
+                      <ChatMarkdown text={message.content} className={kanbanClass("kanbanAgentMessageMarkdown")} />
+                      <MessageAttachments attachments={message.attachments} />
+                    </article>
+                  ))}
+                  {selectedKanbanAgentMessages.length === 0 ? <p className={kanbanClass("kanbanEmpty")}>No agent messages for this task yet.</p> : null}
+                </div>
+              </div>
+            ) : null}
+
+            {kanbanTaskModal === "notes" ? (
+              <div className={kanbanClass("kanbanModalBody")}>
+                <form className={kanbanClass("kanbanCommentForm", "compact")} onSubmit={addKanbanComment}>
                   <input
                     value={commentDraft}
                     onChange={(event) => setCommentDraft(event.target.value)}
-                    placeholder="Add a durable handoff comment"
+                    placeholder="Add a task note"
                   />
-                  <button type="submit">Comment</button>
+                  <button type="submit">Add</button>
                 </form>
-                <div className={kanbanClass("kanbanThread")}>
+                <div className={kanbanClass("kanbanThread", "modalThread")}>
                   {selectedKanbanComments.map((comment) => (
                     <article key={comment.id}>
                       <strong>{comment.author}</strong>
@@ -4959,17 +7613,319 @@ export default function Home() {
                       <small>{formatRelativeTime(comment.createdAt)}</small>
                     </article>
                   ))}
-                  {selectedKanbanComments.length === 0 ? <p className={kanbanClass("kanbanEmpty")}>No comments yet.</p> : null}
+                  {selectedKanbanComments.length === 0 ? <p className={kanbanClass("kanbanEmpty")}>No notes yet.</p> : null}
                 </div>
-                <div className={kanbanClass("kanbanEvents")}>
-                  <h4>Recent events</h4>
+              </div>
+            ) : null}
+
+            {kanbanTaskModal === "events" ? (
+              <div className={kanbanClass("kanbanModalBody")}>
+                <div className={kanbanClass("kanbanEvents", "modalEvents")}>
                   {selectedKanbanEvents.map((event) => (
-                    <p key={event.id}><span>{event.kind}</span>{event.message}</p>
+                    <article key={event.id}>
+                      <div>
+                        <span>{kanbanEventLabel(event.kind)}</span>
+                        <time>{formatRelativeTime(event.createdAt)}</time>
+                      </div>
+                      <p>{event.message}</p>
+                    </article>
+                  ))}
+                  {selectedKanbanEvents.length === 0 ? <p className={kanbanClass("kanbanEmpty")}>No events yet.</p> : null}
+                </div>
+              </div>
+            ) : null}
+          </section>
+        </div>
+      ) : null}
+
+      {activeView === "scheduler" ? (
+      <section className={fleetClass("schedulerPanel", "tabPanel")}>
+        <div className={fleetClass("schedulerStudioHeader")}>
+          <div>
+            <p className="eyebrow">Automation studio</p>
+            <h2>Scheduler</h2>
+            <p>Build small repeatable loops for any agent. Pick the agent, cadence, skills, and whether the run is freeform or step-by-step.</p>
+          </div>
+          <div className={fleetClass("schedulerMiniStats")}>
+            <span><Repeat2 aria-hidden="true" /> {schedules.filter((schedule) => schedule.enabled).length} active</span>
+            <span><Puzzle aria-hidden="true" /> {sharedSkillOptions.length} skills</span>
+            <Button type="button" size="sm" variant="secondary" onClick={() => void importExistingSchedules()} disabled={scheduleImporting}>
+              {scheduleImporting ? <LoaderCircle aria-hidden="true" className={vaultClass("spinIcon")} /> : <FileUp aria-hidden="true" />}
+              Import existing
+            </Button>
+          </div>
+        </div>
+        {scheduleImportStatus ? <p className={fleetClass("schedulerImportStatus")}>{scheduleImportStatus}</p> : null}
+
+        <div className={fleetClass("schedulerLayout")}>
+          <form className={fleetClass("schedulerComposer")} onSubmit={createSchedule}>
+            <div className={fleetClass("schedulerComposerTop")}>
+              <div>
+                <strong>New automation</strong>
+                <span>{scheduleDraft.mode === "steps" ? "Step-by-step runbook" : "Freeform prompt"}</span>
+              </div>
+              <div className={fleetClass("schedulerSegment")}>
+                <button type="button" className={scheduleDraft.mode === "prompt" ? fleetClass("activeSegment") : ""} onClick={() => setScheduleDraft((current) => ({ ...current, mode: "prompt" }))}>
+                  <AlignLeft aria-hidden="true" />
+                  Prompt
+                </button>
+                <button type="button" className={scheduleDraft.mode === "steps" ? fleetClass("activeSegment") : ""} onClick={() => setScheduleDraft((current) => ({ ...current, mode: "steps" }))}>
+                  <List aria-hidden="true" />
+                  Steps
+                </button>
+              </div>
+            </div>
+
+            <div className={fleetClass("schedulerSection")}>
+              <label className={fleetClass("schedulerField")}>
+                <span>Name</span>
+                <input value={scheduleDraft.name} onChange={(event) => setScheduleDraft((current) => ({ ...current, name: event.target.value }))} placeholder="Weekly SEO report" />
+              </label>
+              <label className={fleetClass("schedulerField")}>
+                <span>Agent</span>
+                <select value={scheduleDraft.agentId} onChange={(event) => setScheduleDraft((current) => ({ ...current, agentId: event.target.value }))}>
+                  {displayAgents.map((agent) => <option value={agent.id} key={agent.id}>{agent.name} · {RUNTIME_LABELS[agent.runtime]}</option>)}
+                </select>
+              </label>
+            </div>
+
+            <div className={fleetClass("schedulerSection")}>
+              <span className={fleetClass("schedulerTinyLabel")}>Cadence</span>
+              <div className={fleetClass("schedulerPresetRow")}>
+                {[
+                  ["30m", "30m"],
+                  ["60m", "1h"],
+                  ["360m", "6h"],
+                  ["1440m", "24h"],
+                  ["10080m", "7d"],
+                ].map(([value, label]) => (
+                  <button
+                    type="button"
+                    key={value}
+                    className={scheduleDraft.every === value ? fleetClass("selectedSkillChip") : ""}
+                    onClick={() => setScheduleDraft((current) => ({ ...current, every: value }))}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className={fleetClass("schedulerSection")}>
+              <div className={fleetClass("schedulerInstructionHeader")}>
+                <span className={fleetClass("schedulerTinyLabel")}>{scheduleDraft.mode === "steps" ? "Runbook" : "Instructions"}</span>
+                <small>{scheduleDraft.mode === "steps" ? "one step per line" : "single recurring prompt"}</small>
+              </div>
+              {scheduleDraft.mode === "steps" ? (
+                <div className={fleetClass("schedulerStepEditor")}>
+                  {scheduleDraft.prompt.split("\n").map((line) => line.trim()).filter(Boolean).slice(0, 6).map((line, index) => (
+                    <div className={fleetClass("schedulerStepPreview")} key={`${line}-${index}`}>
+                      <span>{index + 1}</span>
+                      <p>{line}</p>
+                    </div>
+                  ))}
+                  {!scheduleDraft.prompt.trim() ? (
+                    <div className={fleetClass("schedulerStepPreview", "emptyStepPreview")}>
+                      <span>1</span>
+                      <p>Write each step below. Press enter for the next one.</p>
+                    </div>
+                  ) : null}
+                </div>
+              ) : null}
+              <textarea
+                value={scheduleDraft.prompt}
+                onChange={(event) => setScheduleDraft((current) => ({ ...current, prompt: event.target.value }))}
+                placeholder={scheduleDraft.mode === "steps" ? "Collect inputs\nRun research\nDraft the result\nPost the summary" : "Tell the agent exactly what to do when this schedule fires."}
+                required
+              />
+              {scheduleDraft.skills.length || scheduleDraft.paths.length ? (
+                <div className={fleetClass("schedulerAttachmentBadges")} aria-label="Scheduler attachments">
+                  {scheduleDraft.skills.map((slug) => {
+                    const skill = sharedSkillOptions.find((item) => item.slug === slug);
+                    return (
+                      <span className={fleetClass("schedulerAttachmentBadge", "skill")} key={slug}>
+                        <Puzzle aria-hidden="true" />
+                        {skill?.name ?? slug}
+                        <button type="button" onClick={() => removeScheduleSkill(slug)} aria-label={`Remove ${skill?.name ?? slug}`}>
+                          <X aria-hidden="true" />
+                        </button>
+                      </span>
+                    );
+                  })}
+                  {scheduleDraft.paths.map((path) => (
+                    <span className={fleetClass("schedulerAttachmentBadge", "path")} key={path}>
+                      {path.includes(".") ? <FileText aria-hidden="true" /> : <FolderOpen aria-hidden="true" />}
+                      {path.split("/").filter(Boolean).pop() || path}
+                      <button type="button" onClick={() => removeSchedulePath(path)} aria-label={`Remove ${path}`}>
+                        <X aria-hidden="true" />
+                      </button>
+                    </span>
                   ))}
                 </div>
-              </>
-          </aside>
-          ) : null}
+              ) : null}
+              <div className={fleetClass("schedulerActionBar")}>
+                <div className={fleetClass("schedulerAttachCluster")}>
+                  <button
+                    type="button"
+                    className={fleetClass("schedulerAttachButton", schedulerAttachMenu && "active")}
+                    onClick={() => setSchedulerAttachMenu((current) => current === "menu" ? null : "menu")}
+                    aria-label="Attach skill, file, folder, or path"
+                    title="Attach"
+                  >
+                    <Plus aria-hidden="true" />
+                  </button>
+                  {schedulerAttachMenu === "menu" ? (
+                    <div className={fleetClass("schedulerAttachPopover")} role="menu">
+                      <button type="button" onClick={() => { setSchedulerAttachMenu("skill"); setSchedulerSkillSearch(""); }}>
+                        <Puzzle aria-hidden="true" />
+                        Attach skill
+                      </button>
+                      <button type="button" onClick={() => { setSchedulerPathKind("folder"); setSchedulerAttachMenu("path"); setSchedulerPathDraft(""); }}>
+                        <FolderOpen aria-hidden="true" />
+                        Link folder
+                      </button>
+                      <button type="button" onClick={() => { setSchedulerPathKind("file"); setSchedulerAttachMenu("path"); setSchedulerPathDraft(""); }}>
+                        <FileText aria-hidden="true" />
+                        Link file
+                      </button>
+                      <button type="button" onClick={() => { setSchedulerPathKind("path"); setSchedulerAttachMenu("path"); setSchedulerPathDraft(""); }}>
+                        <Link aria-hidden="true" />
+                        Link path
+                      </button>
+                      <button type="button" onClick={() => { setSchedulerAttachMenu(null); void openSkillBrowser(); }}>
+                        <Sparkles aria-hidden="true" />
+                        Browse library
+                      </button>
+                    </div>
+                  ) : null}
+                  {schedulerAttachMenu === "skill" ? (
+                    <div className={fleetClass("schedulerAttachPopover", "wide")} role="dialog" aria-label="Attach skill">
+                      <div className={fleetClass("schedulerAttachSearch")}>
+                        <Search aria-hidden="true" />
+                        <input
+                          value={schedulerSkillSearch}
+                          onChange={(event) => setSchedulerSkillSearch(event.target.value)}
+                          placeholder="Search skills"
+                          autoFocus
+                        />
+                        <button type="button" onClick={() => setSchedulerAttachMenu(null)} aria-label="Close skill picker">
+                          <X aria-hidden="true" />
+                        </button>
+                      </div>
+                      <div className={fleetClass("schedulerAttachChoices")}>
+                        {filteredSchedulerSkills.length ? filteredSchedulerSkills.map((skill) => {
+                          const selected = scheduleDraft.skills.includes(skill.slug);
+                          return (
+                            <button
+                              type="button"
+                              key={skill.slug}
+                              className={selected ? fleetClass("selectedSkillChip") : ""}
+                              onClick={() => {
+                                toggleScheduleSkill(skill.slug);
+                                if (!selected) setSchedulerAttachMenu(null);
+                              }}
+                            >
+                              <Puzzle aria-hidden="true" />
+                              {skill.name}
+                            </button>
+                          );
+                        }) : (
+                          <button type="button" onClick={() => { setSchedulerAttachMenu(null); void openSkillBrowser(); }}>
+                            <Sparkles aria-hidden="true" />
+                            Open skill browser
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  ) : null}
+                  {schedulerAttachMenu === "path" ? (
+                    <div className={fleetClass("schedulerAttachPopover", "wide")} role="dialog" aria-label={`Link ${schedulerPathKind}`}>
+                      <div className={fleetClass("schedulerAttachSearch")}>
+                        <Link aria-hidden="true" />
+                        <input
+                          value={schedulerPathDraft}
+                          onChange={(event) => setSchedulerPathDraft(event.target.value)}
+                          onKeyDown={(event) => {
+                            if (event.key === "Enter") {
+                              event.preventDefault();
+                              addSchedulePath(schedulerPathDraft);
+                              setSchedulerPathDraft("");
+                              setSchedulerAttachMenu(null);
+                            }
+                            if (event.key === "Escape") setSchedulerAttachMenu(null);
+                          }}
+                          placeholder={schedulerPathKind === "folder" ? "/path/to/folder" : schedulerPathKind === "file" ? "/path/to/file.md" : "/path/to/file-or-folder"}
+                          autoFocus
+                        />
+                        <button type="button" onClick={() => setSchedulerAttachMenu(null)} aria-label="Close path linker">
+                          <X aria-hidden="true" />
+                        </button>
+                      </div>
+                      <div className={fleetClass("schedulerAttachFooter")}>
+                        <span>{schedulerPathKind === "path" ? "File or folder" : schedulerPathKind}</span>
+                        <button
+                          type="button"
+                          disabled={!schedulerPathDraft.trim()}
+                          onClick={() => {
+                            addSchedulePath(schedulerPathDraft);
+                            setSchedulerPathDraft("");
+                            setSchedulerAttachMenu(null);
+                          }}
+                        >
+                          Add
+                        </button>
+                      </div>
+                    </div>
+                  ) : null}
+                </div>
+                <Button type="submit" size="sm" disabled={!scheduleDraft.prompt.trim() || !scheduleDraft.agentId}>
+                  <Repeat2 aria-hidden="true" />
+                  Create
+                </Button>
+              </div>
+            </div>
+          </form>
+
+          <div className={fleetClass("scheduleList")}>
+            {schedules.length ? schedules.map((schedule) => {
+              const agent = displayAgents.find((item) => item.id === schedule.agentId);
+              const agentLabel = agent
+                ? `${agent.name} · ${RUNTIME_LABELS[agent.runtime]}`
+                : schedule.externalSource
+                  ? `${RUNTIME_LABELS[schedule.externalSource as AgentRuntime] ?? schedule.externalSource} runtime`
+                  : "Missing agent";
+              return (
+                <article key={schedule.id} className={fleetClass("scheduleCard", schedule.enabled ? "enabled" : "paused")}>
+                  <div className={fleetClass("scheduleCardTop")}>
+                    <span>{schedule.enabled ? "Active" : "Paused"}{schedule.externalSource ? ` · ${RUNTIME_LABELS[schedule.externalSource as AgentRuntime] ?? schedule.externalSource}` : ""}</span>
+                    <small><Clock3 aria-hidden="true" /> {schedule.every}</small>
+                  </div>
+                  <div>
+                    <h3>{schedule.name}</h3>
+                    <p>{agentLabel}</p>
+                  </div>
+                  <p>{schedule.lastSummary || (schedule.mode === "steps" ? `${schedule.steps.length} step runbook` : schedule.prompt)}</p>
+                  {schedule.skills.length || schedule.paths.length ? (
+                    <div className={fleetClass("scheduleSkillRow")}>
+                      {schedule.skills.slice(0, 4).map((skill) => <span key={skill}><Puzzle aria-hidden="true" /> {skill}</span>)}
+                      {schedule.paths.slice(0, 3).map((path) => <span key={path}><Paperclip aria-hidden="true" /> {path.split("/").filter(Boolean).pop() || path}</span>)}
+                    </div>
+                  ) : null}
+                  <div className={fleetClass("scheduleActions")}>
+                    <Button type="button" size="sm" variant="secondary" onClick={() => runScheduleNow(schedule)}><Send aria-hidden="true" /> Run now</Button>
+                    <Button type="button" size="sm" variant="secondary" onClick={() => toggleSchedule(schedule.id)}>{schedule.enabled ? "Pause" : "Resume"}</Button>
+                    <Button type="button" size="sm" variant="ghost" onClick={() => removeSchedule(schedule.id)}><Trash2 aria-hidden="true" /> Remove</Button>
+                  </div>
+                </article>
+              );
+            }) : (
+              <div className={fleetClass("scheduleEmpty")}>
+                <Clock3 aria-hidden="true" />
+                <strong>No schedules yet</strong>
+                <p>Create one reusable workflow and it will appear here with its agent, skills, and run mode.</p>
+              </div>
+            )}
+          </div>
         </div>
       </section>
       ) : null}
@@ -5156,6 +8112,49 @@ export default function Home() {
                     />
                   </label>
 
+                  {mirosharkSelectedTemplate && mirosharkSelectedTemplateFields.length ? (
+                    <div className={mirosharkClass("mirosharkTemplateInputs")}>
+                      <div className={mirosharkClass("mirosharkTemplateInputsHeader")}>
+                        <div>
+                          <span>Template details</span>
+                          <strong>{mirosharkSelectedTemplate.name ?? mirosharkSelectedTemplate.id}</strong>
+                        </div>
+                        {mirosharkMissingTemplateFields.length ? (
+                          <small>{mirosharkMissingTemplateFields.length} required</small>
+                        ) : (
+                          <small>ready</small>
+                        )}
+                      </div>
+                      <div className={mirosharkClass("mirosharkTemplateInputGrid")}>
+                        {mirosharkSelectedTemplateFields.map((field) => (
+                          <label
+                            className={mirosharkClass(field.kind === "textarea" && "wide")}
+                            key={field.key}
+                          >
+                            <span>
+                              {field.label}
+                              {field.required ? <em>required</em> : null}
+                            </span>
+                            {field.kind === "textarea" ? (
+                              <textarea
+                                value={mirosharkTemplateInputs[field.key] ?? ""}
+                                onChange={(event) => updateMirosharkTemplateInput(mirosharkSelectedTemplate, field.key, event.target.value)}
+                                placeholder={field.placeholder}
+                              />
+                            ) : (
+                              <input
+                                value={mirosharkTemplateInputs[field.key] ?? ""}
+                                onChange={(event) => updateMirosharkTemplateInput(mirosharkSelectedTemplate, field.key, event.target.value)}
+                                placeholder={field.placeholder}
+                              />
+                            )}
+                            {field.help ? <small>{field.help}</small> : null}
+                          </label>
+                        ))}
+                      </div>
+                    </div>
+                  ) : null}
+
                   <div className={mirosharkClass("mirosharkRunControls")}>
                     <label>
                       <span>Surface</span>
@@ -5176,7 +8175,11 @@ export default function Home() {
                         onChange={(event) => setMirosharkRounds(Number(event.target.value))}
                       />
                     </label>
-                    <Button type="submit" disabled={!mirosharkStatus?.ok || mirosharkRunPending || !mirosharkScenario.trim()} isLoading={mirosharkRunPending}>
+                    <Button
+                      type="submit"
+                      disabled={!mirosharkStatus?.ok || mirosharkRunPending || !mirosharkScenario.trim() || mirosharkMissingTemplateFields.length > 0}
+                      isLoading={mirosharkRunPending}
+                    >
                       {mirosharkRunPending ? null : <Activity aria-hidden="true" />}
                       {mirosharkRunPending ? "Starting..." : "Run swarm"}
                     </Button>
@@ -6209,66 +9212,107 @@ export default function Home() {
               <p>The shared brain is the main skills shelf. Provider installs are scanned below and can be mirrored into Obsidian.</p>
             </div>
             <div className={vaultClass("brainSkillsActions")}>
+              <Button
+                type="button"
+                size="sm"
+                variant="secondary"
+                onClick={() => void syncBrainSkillsToAeon()}
+                disabled={brainSkillAeonSyncing || !sharedVault.enabled || !(brainSkills?.shared.length ?? 0)}
+              >
+                {brainSkillAeonSyncing ? <LoaderCircle aria-hidden="true" className={vaultClass("spinIcon")} /> : <Repeat2 aria-hidden="true" />}
+                {brainSkillAeonSyncing ? "Syncing Aeon" : "Sync to Aeon"}
+              </Button>
               <Button type="button" size="sm" variant="secondary" onClick={refreshBrainSkills} disabled={brainSkillsLoading || Boolean(brainSkillImportProvider)}>
                 {brainSkillsLoading ? <LoaderCircle aria-hidden="true" className={vaultClass("spinIcon")} /> : <RefreshCcw aria-hidden="true" />}
                 {brainSkillsLoading ? "Scanning" : "Refresh skills"}
-              </Button>
-              <Button type="button" size="sm" variant="secondary" onClick={() => void importBrainSkills("all")} disabled={Boolean(brainSkillImportProvider)}>
-                {brainSkillImportProvider === "all" ? <LoaderCircle aria-hidden="true" className={vaultClass("spinIcon")} /> : brainSkillImportSuccess === "all" ? <Check aria-hidden="true" /> : <Download aria-hidden="true" />}
-                {brainSkillImportProvider === "all" ? "Importing" : "Import all"}
-              </Button>
-              <Button type="button" size="sm" variant="secondary" onClick={() => {
-                setBrainSkillProviderModalOpen(true);
-                if (!brainSkills && !brainSkillsLoading) void refreshBrainSkills();
-              }} disabled={Boolean(brainSkillImportProvider)}>
-                <Layers3 aria-hidden="true" />
-                Import provider
               </Button>
             </div>
           </div>
 
           {brainSkills?.shared.length ? (
             <div className={vaultClass("sharedSkillGrid")}>
-              {brainSkills.shared.slice(0, 12).map((skill) => (
+              <button type="button" className={vaultClass("sharedSkillAddCard")} onClick={openSkillBrowser}>
+                <Image src="/icons/worker-bee.png" alt="" width={34} height={34} />
+                <strong>Add skill</strong>
+                <p>Browse featured and community skills, then mirror the ones you trust into the shared brain.</p>
+              </button>
+              {brainSkills.shared.map((skill) => (
                 <article key={skill.id} className={vaultClass("sharedSkillCard")}>
-                  <span>{skill.providerLabel}</span>
+                  <div className={vaultClass("sharedSkillSourceLine")}>
+                    <span>Shared brain</span>
+                    {skill.providerLabel !== "Shared brain" ? <small>from {skill.providerLabel}</small> : null}
+                  </div>
                   <strong>{skill.name}</strong>
                   <p>{skill.description || "No description in SKILL.md frontmatter yet."}</p>
-                  <small>{skill.relativePath}</small>
+                  <small className={vaultClass("sharedSkillPath")}>{skill.relativePath}</small>
                 </article>
               ))}
             </div>
           ) : (
             <div className={vaultClass("brainSkillsEmpty")}>
-              <Sparkles aria-hidden="true" />
+              <button type="button" className={vaultClass("sharedSkillAddCard", "emptyAddCard")} onClick={openSkillBrowser}>
+                <Image src="/icons/queen-bee.png" alt="" width={36} height={36} />
+                <strong>Browse skills</strong>
+                <p>Add the first shared skill to the brain.</p>
+              </button>
               <div>
                 <strong>No shared skills yet</strong>
                 <p>The vault Skills folder is empty. Import every discovered provider skill, or choose one harness at a time.</p>
               </div>
-              <div className={vaultClass("brainSkillsActions")}>
-                <Button type="button" size="sm" onClick={() => void importBrainSkills("all")} disabled={Boolean(brainSkillImportProvider)}>
-                  {brainSkillImportProvider === "all" ? <LoaderCircle aria-hidden="true" className={vaultClass("spinIcon")} /> : <Download aria-hidden="true" />}
-                  Import all providers
-                </Button>
-                <Button type="button" size="sm" variant="secondary" onClick={() => {
-                  setBrainSkillProviderModalOpen(true);
-                  if (!brainSkills && !brainSkillsLoading) void refreshBrainSkills();
-                }} disabled={Boolean(brainSkillImportProvider)}>
-                  <Layers3 aria-hidden="true" />
-                  Import specific provider
-                </Button>
-              </div>
             </div>
           )}
+
+          <div className={vaultClass("providerSkillsToolbar")}>
+            <div>
+              <strong>Provider installs</strong>
+              <span>{brainSkills?.totals.importable ?? 0} skill{(brainSkills?.totals.importable ?? 0) === 1 ? "" : "s"} ready to mirror into Obsidian</span>
+            </div>
+            <Button
+              type="button"
+              size="sm"
+              variant="secondary"
+              className={vaultClass("providerImportAllButton")}
+              onClick={() => void importBrainSkills("all")}
+              disabled={Boolean(brainSkillImportProvider) || !(brainSkills?.totals.importable ?? 0)}
+            >
+              {brainSkillImportProvider === "all" ? <LoaderCircle aria-hidden="true" className={vaultClass("spinIcon")} /> : brainSkillImportSuccess === "all" ? <Check aria-hidden="true" /> : <Download aria-hidden="true" />}
+              {brainSkillImportProvider === "all" ? "Importing all" : brainSkillImportSuccess === "all" ? "All synced" : "Import all providers"}
+            </Button>
+          </div>
 
           <div className={vaultClass("providerSkillStrip")}>
             {(brainSkills?.providers ?? BRAIN_SKILL_PROVIDER_FALLBACK).map((provider) => {
               const importable = provider.skills.filter((skill) => !skill.imported).length;
+              const imported = provider.skills.length - importable;
+              const providerStatus = !provider.installed
+                ? `No ${provider.home} install found`
+                : importable > 0 && imported > 0
+                  ? `${importable} ready · ${imported} shared`
+                  : importable > 0
+                    ? `${importable} ready to import`
+                    : imported > 0
+                      ? `${imported} in shared brain`
+                      : "No skills found";
+              const pending = brainSkillImportProvider === provider.id;
+              const success = brainSkillImportSuccess === provider.id;
               return (
                 <article key={provider.id}>
-                  <span>{provider.label}</span>
-                  <strong>{provider.skills.length}</strong>
-                  <small>{provider.installed ? `${importable} ready to import` : `No ${provider.home} install found`}</small>
+                  <div>
+                    <span>{provider.label}</span>
+                    <strong>{provider.skills.length}</strong>
+                    <small>{providerStatus}</small>
+                  </div>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="secondary"
+                    className={vaultClass("providerSkillButton")}
+                    disabled={!importable || Boolean(brainSkillImportProvider)}
+                    onClick={() => void importBrainSkills(provider.id)}
+                  >
+                    {pending ? <LoaderCircle aria-hidden="true" className={vaultClass("spinIcon")} /> : success ? <Check aria-hidden="true" /> : <Download aria-hidden="true" />}
+                    {pending ? "Importing" : success ? "Synced" : importable ? "Import" : "Current"}
+                  </Button>
                 </article>
               );
             })}
@@ -6553,40 +9597,68 @@ export default function Home() {
             {notificationGroups.map((group) => (
               <section key={group.label} className={notificationClass("notificationDayGroup")}>
                 <h3>{group.label}</h3>
-                {group.items.map((notification) => (
-                  <article
-                    key={notification.id}
-                    className={notificationClass("notificationCard", notification.priority, !notification.read && "unread")}
-                  >
-                    <div className={notificationClass("notificationGlyph")}>
-                      {notificationIcon(notification.kind, notification.priority)}
-                    </div>
-                    <div className={notificationClass("notificationBody")}>
-                      <div className={notificationClass("notificationMetaRow")}>
-                        <div>
-                          <h3>{notification.title}</h3>
-                          <p>{notification.agentName}{notification.source ? ` · ${notification.source}` : ""}</p>
-                        </div>
-                        <time>{formatBrainDate(notification.createdAt)}</time>
+                {group.items.map((notification) => {
+                  const actor = notificationActorMeta(notification);
+                  const sourceLabel = notificationSourceLabel(notification);
+                  return (
+                    <article
+                      key={notification.id}
+                      className={notificationClass("notificationCard", notification.priority, !notification.read && "unread")}
+                    >
+                      <div className={notificationClass("notificationGlyph")}>
+                        {notificationIcon(notification.kind, notification.priority)}
                       </div>
-                      {notification.body ? <p>{notification.body}</p> : null}
-                      <div className={notificationClass("notificationFooter")}>
-                        <div className={notificationClass("notificationTags")}>
-                          <span className={notificationClass("priorityPill", notification.priority)}>{notification.priority}</span>
-                          <span className={notificationClass("kindPill")}>{notification.kind}</span>
-                          {notification.read ? <span className={notificationClass("readPill")}>read</span> : null}
-                          {notification.tags.slice(0, 4).map((tag) => <span className={notificationClass("kindPill")} key={`${notification.id}-${tag}`}>#{tag}</span>)}
+                      <div className={notificationClass("notificationBody")}>
+                        <div className={notificationClass("notificationMetaRow")}>
+                          <div>
+                            <h3>{notificationDisplayTitle(notification)}</h3>
+                            <div className={notificationClass("notificationActorRow")}>
+                              <span className={notificationClass("notificationActorBadge", actor.icon && "withIcon")}>
+                                {actor.icon ? <Image src={actor.icon} alt="" width={20} height={20} aria-hidden="true" /> : null}
+                                <span>
+                                  <b>{actor.label}</b>
+                                  <small>{actor.role}</small>
+                                </span>
+                              </span>
+                              {sourceLabel ? (
+                                <span className={notificationClass("notificationSourcePill")}>
+                                  {sourceLabel.startsWith("Task: ") ? (
+                                    <>
+                                      <small>Task</small>
+                                      <b>{sourceLabel.slice("Task: ".length)}</b>
+                                    </>
+                                  ) : sourceLabel}
+                                </span>
+                              ) : null}
+                            </div>
+                          </div>
+                          <time>{formatBrainDate(notification.createdAt)}</time>
                         </div>
-                        {!notification.read ? (
-                          <Button type="button" size="sm" variant="secondary" onClick={() => markNotificationRead(notification.id)}>
-                            <Check aria-hidden="true" />
-                            Read
-                          </Button>
+                        {notification.body ? (
+                          <ChatMarkdown
+                            text={notificationDisplayBody(notification)}
+                            className={notificationClass("notificationMarkdown")}
+                            headingClassName={notificationClass("notificationMarkdownHeading")}
+                          />
                         ) : null}
+                        <div className={notificationClass("notificationFooter")}>
+                          <div className={notificationClass("notificationTags")}>
+                            <span className={notificationClass("priorityPill", notification.priority)}>{notificationPriorityLabel(notification.priority)}</span>
+                            <span className={notificationClass("kindPill")}>{notificationKindLabel(notification.kind)}</span>
+                            {notification.read ? <span className={notificationClass("readPill")}>read</span> : null}
+                            {notification.tags.slice(0, 4).map((tag) => <span className={notificationClass("kindPill")} key={`${notification.id}-${tag}`}>{notificationTagLabel(tag)}</span>)}
+                          </div>
+                          {!notification.read ? (
+                            <Button type="button" size="sm" variant="secondary" onClick={() => markNotificationRead(notification.id)}>
+                              <Check aria-hidden="true" />
+                              Read
+                            </Button>
+                          ) : null}
+                        </div>
                       </div>
-                    </div>
-                  </article>
-                ))}
+                    </article>
+                  );
+                })}
               </section>
             ))}
             {notificationCursor !== null ? (
@@ -6627,7 +9699,25 @@ export default function Home() {
                       <span className={chatClass("treeDisclosure")} aria-hidden="true" />
                       <Monitor className={chatClass("treeIcon")} aria-hidden="true" />
                       <span className={chatClass("treeLabel")}>{machine.name}</span>
-                      <span className={chatClass("treeMeta")}>{machine.detail}</span>
+                      {machine.onCreateFolder ? (
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <button
+                              type="button"
+                              className={chatClass("treeChatButton")}
+                              aria-label={`Create folder on ${machine.name}`}
+                              onClick={(event) => {
+                                event.preventDefault();
+                                event.stopPropagation();
+                                machine.onCreateFolder?.();
+                              }}
+                            >
+                              <FolderPlus aria-hidden="true" />
+                            </button>
+                          </TooltipTrigger>
+                          <TooltipContent side="top">{`New folder in ${machine.name}`}</TooltipContent>
+                        </Tooltip>
+                      ) : null}
                       {machine.onStartChat ? (
                         <Tooltip>
                           <TooltipTrigger asChild>
@@ -6746,8 +9836,13 @@ export default function Home() {
                 </label>
 
                 <label>
-                  Gateway URL
-                  <input value={selectedAgent.gatewayUrl} onChange={(event) => updateAgent({ gatewayUrl: event.target.value })} />
+                  {selectedAgent.runtime === "aeon" ? "A2A Gateway URL" : selectedAgent.runtime === "openclaw" ? "Gateway URL" : "Runtime URL"}
+                  <input
+                    value={selectedAgent.runtime === "aeon" ? selectedAgent.a2aUrl ?? selectedAgent.gatewayUrl : selectedAgent.gatewayUrl}
+                    onChange={(event) => updateAgent(selectedAgent.runtime === "aeon"
+                      ? { gatewayUrl: event.target.value, a2aUrl: event.target.value }
+                      : { gatewayUrl: event.target.value })}
+                  />
                 </label>
 
                 <label>
@@ -6760,7 +9855,38 @@ export default function Home() {
                   <input value={selectedAgent.token ?? ""} onChange={(event) => updateAgent({ token: event.target.value })} placeholder="Optional if runtime config has one" />
                 </label>
 
-                {selectedAgent.runtime !== "openclaw" ? (
+                {selectedAgent.runtime === "aeon" ? (
+                  <>
+                    <label>
+                      Aeon Repo
+                      <input value={selectedAgent.aeonRepo ?? ""} onChange={(event) => updateAgent({ aeonRepo: event.target.value })} placeholder="owner/repo" />
+                    </label>
+                    <label>
+                      Aeon Local Path
+                      <input value={selectedAgent.aeonLocalPath ?? selectedAgent.localDataDir ?? ""} onChange={(event) => updateAgent({ aeonLocalPath: event.target.value, localDataDir: event.target.value })} placeholder="~/aeon" />
+                    </label>
+	                    <label>
+	                      Aeon Branch
+	                      <input value={selectedAgent.aeonBranch ?? "main"} onChange={(event) => updateAgent({ aeonBranch: event.target.value })} />
+	                    </label>
+	                    <label>
+	                      GitHub secret keys
+	                      <textarea
+	                        value={aeonEnvKeys}
+	                        onChange={(event) => setAeonEnvKeys(event.target.value)}
+	                        rows={4}
+	                        placeholder="ANTHROPIC_API_KEY&#10;BANKR_LLM_KEY&#10;GH_GLOBAL"
+	                      />
+	                    </label>
+	                    <div className={fleetClass("setupActions")}>
+	                      <Button type="button" size="sm" variant="secondary" onClick={() => void syncAeonEnvToGitHub()} disabled={aeonEnvSyncing || !selectedAgent.aeonRepo?.trim()}>
+	                        {aeonEnvSyncing ? <LoaderCircle aria-hidden="true" className={vaultClass("spinIcon")} /> : <Upload aria-hidden="true" />}
+	                        {aeonEnvSyncing ? "Syncing secrets" : "Sync env to GitHub"}
+	                      </Button>
+	                      {aeonEnvSyncStatus ? <small>{aeonEnvSyncStatus}</small> : <small>Push selected local Hivemind/Aeon env keys to this Aeon repo as GitHub Actions secrets.</small>}
+	                    </div>
+	                  </>
+                ) : selectedAgent.runtime !== "openclaw" ? (
                   <>
                     <label>
                       Chat Path
@@ -6946,101 +10072,28 @@ export default function Home() {
               </div>
             ) : null}
             <form onSubmit={sendMessage}>
-              <div className={chatClass("chatComposerField")}>
-                <input
-                  ref={chatFileInputRef}
-                  type="file"
-                  multiple
-                  className={chatClass("chatFileInput")}
-                  onChange={handleChatImageChange}
-                  disabled={busy}
-                />
-                <input
-                  ref={chatImageInputRef}
-                  type="file"
-                  accept="image/*"
-                  multiple
-                  className={chatClass("chatFileInput")}
-                  onChange={handleChatFileChange}
-                  disabled={busy}
-                />
-                {chatAttachments.length > 0 ? (
-                  <div className={chatClass("attachmentTray")}>
-                    {chatAttachments.map((attachment) => (
-                      <div className={chatClass("attachmentPill")} key={attachment.id}>
-                        <span>{attachment.kind === "image" ? "Image" : attachment.kind === "audio" ? "Audio" : "File"}</span>
-                        <strong>{attachment.name}</strong>
-                        <small>{attachmentSizeLabel(attachment.size)}</small>
-                        <button type="button" aria-label={`Remove ${attachment.name}`} onClick={() => removeChatAttachment(attachment.id)} disabled={busy}>
-                          <X aria-hidden="true" />
-                        </button>
-                      </div>
-                    ))}
-                  </div>
-                ) : null}
-                <textarea
-                  value={text}
-                  onChange={(event) => setText(event.target.value)}
-                  placeholder={`Ask ${selectedAgent.name} to do something...`}
-                  disabled={busy}
-                />
-                {recording ? (
-                  <div className={chatClass("voiceRecorder")} aria-live="polite">
-                    <div className={chatClass("voiceWaveform")} aria-hidden="true">
-                      {voiceBands.map((level, index) => (
-                        <span key={index} style={{ transform: `scaleY(${0.18 + level * 1.8})` }} />
-                      ))}
-                    </div>
-                    <span>{voiceTranscript || "Listening..."}</span>
-                  </div>
-                ) : null}
-                <div className={chatClass("composerTools")}>
-                  <div className={chatClass("attachmentMenuWrap")} ref={attachmentMenuRef}>
-                    <button
-                      type="button"
-                      className={chatClass("composerIconButton")}
-                      onClick={() => setAttachmentMenuOpen((open) => !open)}
-                      disabled={busy}
-                      aria-label="Add attachment"
-                      aria-expanded={attachmentMenuOpen}
-                    >
-                      <Plus aria-hidden="true" />
-                    </button>
-                    {attachmentMenuOpen ? (
-                      <div className={chatClass("attachmentMenu")} role="menu">
-                        <button type="button" role="menuitem" onClick={() => chatImageInputRef.current?.click()}>
-                          <Paperclip aria-hidden="true" />
-                          Images
-                        </button>
-                        <button type="button" role="menuitem" onClick={() => chatFileInputRef.current?.click()}>
-                          <FileUp aria-hidden="true" />
-                          Files
-                        </button>
-                      </div>
-                    ) : null}
-                  </div>
-                  {attachmentError ? <span role="status">{attachmentError}</span> : null}
-                  <div className={chatClass("composerActions")}>
-                  <button
-                    type="button"
-                    className={chatClass("composerIconButton", recording && "recording")}
-                    onClick={recording ? stopAudioRecording : startAudioRecording}
-                    disabled={busy}
-                    aria-label={recording ? "Stop recording" : "Record audio"}
-                  >
-                    <Mic aria-hidden="true" />
-                  </button>
-                  <button
-                    type="submit"
-                    className={chatClass("composerIconButton", "sendButton")}
-                    disabled={busy || (!text.trim() && chatAttachments.length === 0)}
-                    aria-label={busy ? hasStreamingChunk ? "Streaming" : "Waiting" : "Send message"}
-                  >
-                    {busy ? hasStreamingChunk ? "…" : "·" : <ArrowUp aria-hidden="true" />}
-                  </button>
-                  </div>
-                </div>
-              </div>
+              <ComposerField
+                value={text}
+                onChange={setText}
+                placeholder={`Ask ${selectedAgent.name} to do something...`}
+                disabled={busy}
+                busy={busy && !hasStreamingChunk}
+                attachments={chatAttachments}
+                attachmentError={attachmentError}
+                attachmentMenuOpen={attachmentMenuOpen}
+                setAttachmentMenuOpen={setAttachmentMenuOpen}
+                attachmentMenuRef={attachmentMenuRef}
+                fileInputRef={chatFileInputRef}
+                imageInputRef={chatImageInputRef}
+                onFileChange={handleChatFileChange}
+                onImageChange={handleChatImageChange}
+                onRemoveAttachment={removeChatAttachment}
+                recording={recording && voiceTarget === "chat"}
+                voiceBands={voiceBands}
+                voiceTranscript={voiceTranscript}
+                onToggleRecording={recording ? stopAudioRecording : () => void startAudioRecording("chat")}
+                canSend={Boolean(text.trim() || chatAttachments.length)}
+              />
             </form>
             <p className="hint">
               Last assistant response: {lastAssistant ? `${lastAssistant.slice(0, 120)}...` : "none yet"}
@@ -7056,48 +10109,132 @@ export default function Home() {
       ) : null}
         </div>
 
-      {brainSkillProviderModalOpen ? (
+      {chatFolderCreatorMachine ? (
         <div
-          className={vaultClass("skillsModalBackdrop")}
+          className={fleetClass("setupModalBackdrop")}
           role="presentation"
           onMouseDown={(event) => {
-            if (event.target === event.currentTarget && !brainSkillImportProvider) setBrainSkillProviderModalOpen(false);
+            if (event.target === event.currentTarget) closeChatFolderCreator();
           }}
         >
-          <section className={vaultClass("skillsModal")} role="dialog" aria-modal="true" aria-labelledby="skills-modal-title">
-            <div className={vaultClass("skillsModalHeader")}>
+          <section className={fleetClass("setupModal", "agentSettingsModal")} role="dialog" aria-modal="true" aria-labelledby="chat-folder-title">
+            <div className={fleetClass("setupModalHeader")}>
               <div>
-                <h2 id="skills-modal-title">Import skills by provider</h2>
-                <p>Each import mirrors discovered `SKILL.md` folders into the shared Obsidian brain and refreshes this view.</p>
+                <p className="eyebrow">New folder</p>
+                <h2 id="chat-folder-title">{chatFolderCreatorMachine.name}</h2>
+                <p>Create a workspace folder, select it, and start a fresh chat there.</p>
               </div>
-              <button type="button" onClick={() => setBrainSkillProviderModalOpen(false)} disabled={Boolean(brainSkillImportProvider)} aria-label="Close skills import modal">
+              <button type="button" aria-label="Close" onClick={closeChatFolderCreator}>
                 <X aria-hidden="true" />
               </button>
             </div>
-            <div className={vaultClass("providerImportList")}>
-              {(brainSkills?.providers ?? BRAIN_SKILL_PROVIDER_FALLBACK).map((provider) => {
-                const importable = provider.skills.filter((skill) => !skill.imported).length;
-                const pending = brainSkillImportProvider === provider.id;
-                const success = brainSkillImportSuccess === provider.id;
-                return (
-                  <article key={provider.id} className={vaultClass("providerImportRow")}>
-                    <div>
-                      <strong>{provider.label}</strong>
-                      <span>{provider.skills.length} found · {importable} importable · {provider.home}</span>
-                    </div>
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant="secondary"
-                      disabled={!importable || Boolean(brainSkillImportProvider)}
-                      onClick={() => void importBrainSkills(provider.id)}
-                    >
-                      {pending ? <LoaderCircle aria-hidden="true" className={vaultClass("spinIcon")} /> : success ? <Check aria-hidden="true" /> : <Download aria-hidden="true" />}
-                      {pending ? "Importing" : success ? "Synced" : importable ? "Import" : "Current"}
+            <form
+              className={chatClass("folderCreatorForm")}
+              onSubmit={(event) => {
+                event.preventDefault();
+                void createChatFolder();
+              }}
+            >
+              <label>
+                <span>Location</span>
+                <input
+                  list="chat-folder-parent-options"
+                  value={chatFolderDraft.parentPath}
+                  onChange={(event) => setChatFolderDraft((current) => ({ ...current, parentPath: event.target.value, error: "" }))}
+                  placeholder="~/Projects"
+                />
+                <datalist id="chat-folder-parent-options">
+                  {chatFolderCreatorParentOptions.map((path) => (
+                    <option value={path} key={path} />
+                  ))}
+                </datalist>
+              </label>
+              <label>
+                <span>Folder name</span>
+                <input
+                  value={chatFolderDraft.name}
+                  onChange={(event) => setChatFolderDraft((current) => ({ ...current, name: event.target.value, error: "" }))}
+                  placeholder="new-workspace"
+                  autoFocus
+                />
+              </label>
+              {chatFolderDraft.error ? <p className={chatClass("folderCreatorError")}>{chatFolderDraft.error}</p> : null}
+              <div className={fleetClass("setupModalActions")}>
+                <Button type="button" variant="secondary" onClick={closeChatFolderCreator}>
+                  Cancel
+                </Button>
+                <Button type="submit" disabled={chatFolderDraft.busy}>
+                  {chatFolderDraft.busy ? "Creating..." : "Create and open chat"}
+                </Button>
+              </div>
+            </form>
+          </section>
+        </div>
+      ) : null}
+
+      {skillBrowserOpen ? (
+        <div
+          className={fleetClass("setupModalBackdrop")}
+          role="presentation"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget) setSkillBrowserOpen(false);
+          }}
+        >
+          <section className={fleetClass("setupModal", "skillBrowserModal")} role="dialog" aria-modal="true" aria-labelledby="skill-browser-title">
+            <div className={fleetClass("setupModalHeader")}>
+              <div className={fleetClass("skillBrowserTitle")}>
+                <Image src="/icons/queen-bee.png" alt="" width={46} height={46} />
+                <div>
+                  <p className="eyebrow">Shared brain</p>
+                  <h2 id="skill-browser-title">Skill Browser</h2>
+                  <p>Add reusable operational skills to the shared Obsidian brain.</p>
+                </div>
+              </div>
+              <Button type="button" variant="ghost" onClick={() => setSkillBrowserOpen(false)}>
+                <X aria-hidden="true" />
+                Close
+              </Button>
+            </div>
+            <div className={fleetClass("skillBrowserSearch")}>
+              <input
+                value={skillBrowserSearch}
+                onChange={(event) => setSkillBrowserSearch(event.target.value)}
+                placeholder="Search skills, tools, runtimes, workflows..."
+                autoFocus
+              />
+              <Button type="button" variant="secondary" onClick={openSkillBrowser} disabled={skillBrowserLoading}>
+                {skillBrowserLoading ? <LoaderCircle aria-hidden="true" className={vaultClass("spinIcon")} /> : <RefreshCcw aria-hidden="true" />}
+                Refresh
+              </Button>
+            </div>
+            {skillBrowserStatus ? <p className={fleetClass("skillBrowserStatus")}>{skillBrowserStatus}</p> : null}
+            <div className={fleetClass("skillBrowserGrid")}>
+              {skillBrowserLoading ? (
+                <div className={fleetClass("scheduleEmpty")}><LoaderCircle aria-hidden="true" className={vaultClass("spinIcon")} /><strong>Loading skills</strong><p>Checking installed skills and community catalogs.</p></div>
+              ) : filteredSkillBrowserSkills.length ? filteredSkillBrowserSkills.map((skill) => (
+                <article key={`${skill.source}-${skill.id}`} className={fleetClass("skillBrowserCard")}>
+                  <div>
+                    <Image src="/icons/worker-bee.png" alt="" width={24} height={24} />
+                    <span>{skill.source}{skill.category ? ` · ${skill.category}` : ""}</span>
+                  </div>
+                  <strong>{skill.name}</strong>
+                  <p>{skill.description || "No description provided yet."}</p>
+                  <div className={fleetClass("scheduleActions")}>
+                    <Button type="button" size="sm" onClick={() => void importRemoteSkillToBrain(skill)} disabled={skill.imported || skillBrowserImporting === skill.id}>
+                      {skillBrowserImporting === skill.id ? <LoaderCircle aria-hidden="true" className={vaultClass("spinIcon")} /> : <Download aria-hidden="true" />}
+                      {skill.imported ? "In brain" : "Add to brain"}
                     </Button>
-                  </article>
-                );
-              })}
+                    {skill.githubUrl || skill.skillMdUrl ? (
+                      <Button type="button" size="sm" variant="secondary" onClick={() => navigator.clipboard?.writeText(skill.githubUrl || skill.skillMdUrl || "")}>
+                        <Copy aria-hidden="true" />
+                        Copy source
+                      </Button>
+                    ) : null}
+                  </div>
+                </article>
+              )) : (
+                <div className={fleetClass("scheduleEmpty")}><Sparkles aria-hidden="true" /><strong>No skills found</strong><p>Try a different search, or import from provider installs below the shared skills shelf.</p></div>
+              )}
             </div>
           </section>
         </div>
@@ -7161,6 +10298,7 @@ export default function Home() {
                 ) : roleModalAgent ? (
                   <div className={fleetClass("agentNameDisplay")}>
                     <h2 id="agent-settings-title">{roleModalAgent.name}</h2>
+                    <span className={fleetClass("agentRoleBadge")}>{beeRoleLabel(roleModalAgent.beeRole)}</span>
                     <button
                       type="button"
                       aria-label="Rename agent"
@@ -7181,61 +10319,144 @@ export default function Home() {
               </Button>
             </div>
 
-            <div className={fleetClass("agentSettingsGrid")}>
-              {agentCreateMachine ? (
+            <div className={fleetClass("agentSettingsTabs")} role="tablist" aria-label="Agent settings sections">
+              {(["role", "memory", "runtime", "security"] as const).map((panel) => (
+                <button
+                  type="button"
+                  key={panel}
+                  className={agentSettingsPanel === panel ? fleetClass("activeSegment") : ""}
+                  onClick={() => setAgentSettingsPanel(panel)}
+                >
+                  {panel === "role" ? "Role" : panel === "memory" ? "Memory" : panel === "runtime" ? "Runtime" : "Security"}
+                </button>
+              ))}
+            </div>
+
+            {agentSettingsPanel === "role" ? (
+              <div className={fleetClass("agentSettingsGrid")}>
+                {agentCreateMachine ? (
+                  <label className={fleetClass("agentSettingsField")}>
+                    <span>Runtime</span>
+                    <select
+                      value={agentCreateDraft.runtime}
+                      onChange={(event) => {
+                        const runtime = event.target.value as AgentRuntime;
+                        setAgentCreateDraft((current) => ({
+                          ...current,
+                          runtime,
+                          beeRole: runtime === "openclaw" ? "queen" : current.beeRole === "queen" ? "worker" : current.beeRole,
+                        }));
+                      }}
+                    >
+                      {Object.entries(RUNTIME_LABELS).map(([runtime, label]) => (
+                        <option value={runtime} key={runtime}>{label}</option>
+                      ))}
+                    </select>
+                  </label>
+                ) : null}
                 <label className={fleetClass("agentSettingsField")}>
-                  <span>Runtime</span>
+                  <span>Colony role</span>
                   <select
-                    value={agentCreateDraft.runtime}
+                    value={agentSettingsRole}
                     onChange={(event) => {
-                      const runtime = event.target.value as AgentRuntime;
-                      setAgentCreateDraft((current) => ({
-                        ...current,
-                        runtime,
-                        beeRole: runtime === "openclaw" ? "queen" : current.beeRole === "queen" ? "worker" : current.beeRole,
-                      }));
+                      const beeRole = event.target.value as BeeAgentRole;
+                      if (agentCreateMachine) setAgentCreateDraft((current) => ({ ...current, beeRole }));
+                      else if (roleModalAgent) updateAgentProfile(roleModalAgent.id, { beeRole });
                     }}
                   >
-                    {Object.entries(RUNTIME_LABELS).map(([runtime, label]) => (
-                      <option value={runtime} key={runtime}>{label}</option>
-                    ))}
+                    {BEE_AGENT_ROLES.map((role) => <option value={role.id} key={role.id}>{role.label}</option>)}
                   </select>
                 </label>
-              ) : null}
-              <label className={fleetClass("agentSettingsField")}>
-                <span>Colony role</span>
-                <select
-                  value={agentSettingsRole}
-                  onChange={(event) => {
-                    const beeRole = event.target.value as BeeAgentRole;
-                    if (agentCreateMachine) {
-                      setAgentCreateDraft((current) => ({ ...current, beeRole }));
-                    } else if (roleModalAgent) {
-                      updateAgentProfile(roleModalAgent.id, { beeRole });
-                    }
-                  }}
-                >
-                  {BEE_AGENT_ROLES.map((role) => <option value={role.id} key={role.id}>{role.label}</option>)}
-                </select>
-              </label>
-              <label className={fleetClass("agentSettingsField")}>
-                <span>Worker class</span>
-                <select
-                  value={agentSettingsWorkerClass}
-                  onChange={(event) => {
-                    const workerClass = event.target.value as BeeWorkerClass;
-                    if (agentCreateMachine) {
-                      setAgentCreateDraft((current) => ({ ...current, workerClass }));
-                    } else if (roleModalAgent) {
-                      updateAgentProfile(roleModalAgent.id, { workerClass });
-                    }
-                  }}
-                  disabled={agentSettingsRole === "observer" || agentSettingsRole === "human"}
-                >
-                  {BEE_WORKER_CLASSES.map((workerClass) => <option value={workerClass.id} key={workerClass.id}>{workerClass.label}</option>)}
-                </select>
-              </label>
-            </div>
+                <label className={fleetClass("agentSettingsField")}>
+                  <span>Worker class</span>
+                  <select
+                    value={agentSettingsWorkerClass}
+                    onChange={(event) => {
+                      const workerClass = event.target.value as BeeWorkerClass;
+                      if (agentCreateMachine) setAgentCreateDraft((current) => ({ ...current, workerClass }));
+                      else if (roleModalAgent) updateAgentProfile(roleModalAgent.id, { workerClass });
+                    }}
+                    disabled={agentSettingsRole === "observer" || agentSettingsRole === "human"}
+                  >
+                    {BEE_WORKER_CLASSES.map((workerClass) => <option value={workerClass.id} key={workerClass.id}>{workerClass.label}</option>)}
+                  </select>
+                </label>
+              </div>
+            ) : null}
+
+            {agentSettingsPanel === "memory" ? (
+              <div className={fleetClass("agentSettingsGrid")}>
+                <label className={fleetClass("agentSettingsField", "toggleRow")}>
+                  <input
+                    type="checkbox"
+                    checked={agentCreateMachine ? true : roleModalAgent?.useSharedVault !== false}
+                    onChange={(event) => roleModalAgent && updateAgentProfile(roleModalAgent.id, { useSharedVault: event.target.checked })}
+                    disabled={Boolean(agentCreateMachine)}
+                  />
+                  <span>Use shared Obsidian brain</span>
+                </label>
+                <label className={fleetClass("agentSettingsField")}>
+                  <span>Runtime data folder</span>
+                  <input
+                    value={roleModalAgent?.localDataDir ?? ""}
+                    onChange={(event) => roleModalAgent && updateAgentProfile(roleModalAgent.id, { localDataDir: event.target.value })}
+                    placeholder="~/.hermes, /srv/agent/data, ~/.openclaw/workspace-main"
+                    disabled={Boolean(agentCreateMachine)}
+                  />
+                </label>
+                <div className={fleetClass("agentSettingsInfo")}>
+                  <BrainCircuit aria-hidden="true" />
+                  <p>Shared brain: {sharedVault.enabled ? sharedVault.vaultPath || "auto-detected vault" : "off"}. Agents opted in receive vault, Kanban, notification, and control-room context in runtime prompts.</p>
+                </div>
+              </div>
+            ) : null}
+
+            {agentSettingsPanel === "runtime" ? (
+              <div className={fleetClass("agentSettingsGrid")}>
+                {!agentCreateMachine && roleModalAgent ? (
+                  <label className={fleetClass("agentSettingsField")}>
+                    <span>Runtime</span>
+                    <select value={roleModalAgent.runtime} onChange={(event) => updateAgentProfile(roleModalAgent.id, { runtime: event.target.value as AgentRuntime })}>
+                      {Object.entries(RUNTIME_LABELS).map(([runtime, label]) => <option value={runtime} key={runtime}>{label}</option>)}
+                    </select>
+                  </label>
+                ) : null}
+                <label className={fleetClass("agentSettingsField")}>
+                  <span>Chat URL / gateway</span>
+                  <input
+                    value={roleModalAgent?.gatewayUrl ?? (agentCreateMachine ? RUNTIME_DEFAULTS[agentCreateDraft.runtime].gatewayUrl : "")}
+                    onChange={(event) => roleModalAgent && updateAgentProfile(roleModalAgent.id, { gatewayUrl: event.target.value })}
+                    placeholder="http://machine:8787/chat or ws://127.0.0.1:18789"
+                    disabled={Boolean(agentCreateMachine)}
+                  />
+                </label>
+                <label className={fleetClass("agentSettingsField")}>
+                  <span>Agent ID / session</span>
+                  <input
+                    value={roleModalAgent?.agentId ?? ""}
+                    onChange={(event) => roleModalAgent && updateAgentProfile(roleModalAgent.id, { agentId: event.target.value })}
+                    placeholder="local-hermes, main, seo-agent"
+                    disabled={Boolean(agentCreateMachine)}
+                  />
+                </label>
+                <label className={fleetClass("agentSettingsField")}>
+                  <span>Collector</span>
+                  <input
+                    value={roleModalAgent?.telemetryUrl ?? agentCreateMachine?.collectorUrl ?? ""}
+                    onChange={(event) => roleModalAgent && updateAgentProfile(roleModalAgent.id, { telemetryUrl: event.target.value })}
+                    disabled={Boolean(agentCreateMachine)}
+                  />
+                </label>
+              </div>
+            ) : null}
+
+            {agentSettingsPanel === "security" ? (
+              <div className={fleetClass("agentSecurityGrid")}>
+                <article><ShieldCheck aria-hidden="true" /><strong>Prompt guard</strong><p>Blocks obvious prompt-injection and dangerous local-action requests before they reach connected runtimes. Checks run locally in the dashboard.</p></article>
+                <article><Eye aria-hidden="true" /><strong>Output redaction</strong><p>Secrets and obvious credential leaks are redacted from streamed responses before the dashboard renders them.</p></article>
+                <article><Settings2 aria-hidden="true" /><strong>Skill action guard</strong><p>Local skill actions use allowlisted skill folders and safe argument checks where the runtime exposes dashboard actions.</p></article>
+              </div>
+            ) : null}
 
             <div className={fleetClass("setupModalActions")}>
               <Button type="button" onClick={agentCreateMachine ? createAgentFromModal : closeAgentSettingsModal}>
@@ -7269,18 +10490,23 @@ export default function Home() {
             </div>
 
             <div className={fleetClass("setupGuide")}>
-              {/* Progressive five-step setup, "activating cells in a hive" — rule from the
+              {/* Progressive setup, "activating cells in a hive" — rule from the
                   design philosophy's Setup Rules section. */}
               <SetupCell
                 title="Add this machine"
-                subtitle="Run setup, let the collector report in, then tune optional rails."
+                subtitle="Run setup locally; add Tailscale only for multi-machine sync."
                 steps={((): SetupStep[] => {
+                  const tailscaleReady = Boolean((setupMachine?.ip && setupMachine.ip !== "127.0.0.1") || setupMachine?.dnsName);
                   const steps: SetupStep[] = [
-                    { label: "Connect", hint: "Open Terminal on the machine and run the setup command.", state: "current" },
                     {
-                      label: "Verify",
-                      hint: "We auto-detect the collector once it starts.",
-                      state: "pending",
+                      label: "Optional: Install Tailscale",
+                      hint: "Install Tailscale if you want multi-machine collaboration and shared memory; it creates a private network for your machines.",
+                      state: tailscaleReady ? "done" : "pending",
+                    },
+                    {
+                      label: "Connect",
+                      hint: "Open Terminal on the machine and run the setup command.",
+                      state: "current",
                       action: (
                         <Button
                           type="button"
@@ -7294,17 +10520,26 @@ export default function Home() {
                         </Button>
                       ),
                     },
+                    {
+                      label: "Verify machine",
+                      hint: "We auto-detect the collector once it starts.",
+                      state: "pending",
+                    },
                     { label: "Configure features", hint: "Wallet caps, provider keys, x402, and debug only when you need them.", state: "pending" },
                   ];
                   if (setupMachine?.collector === "ready") {
-                    steps[0].state = "done";
+                    steps[0].state = tailscaleReady ? "done" : "pending";
                     steps[1].state = "done";
-                    steps[2].state = "current";
+                    steps[2].state = "done";
+                    steps[3].state = "current";
                   }
                   return steps;
                 })()}
                 details={(
                   <div className="flex flex-col gap-2 text-xs">
+                    <p className="text-[var(--muted)]">
+                      Tailscale is optional. Install and sign in only if you want multi-machine collaboration and shared memory; without it, setup continues in local-only mode.
+                    </p>
                     <p>
                       Open Terminal on <strong className="text-[var(--foreground)]">{setupMachine?.self ? "this Mac" : setupMachine?.name}</strong>, paste this command, then press Return:
                     </p>

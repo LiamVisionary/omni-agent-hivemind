@@ -38,7 +38,7 @@ export function SecurityCell({ labels, primaryAction }: SecurityCellProps) {
       title={anyRisk ? "Review your trust state" : "Private by default"}
       subtitle={anyRisk
         ? `${failing.length} risk${failing.length === 1 ? "" : "s"} need a look.`
-        : "Local-first. Tailnet-only. Collectors are read-only until you change it."}
+        : "Local-first. Tailnet sync is optional. Collectors are read-only until you change it."}
       status={anyRisk ? "risk" : "private"}
       tone={anyRisk ? "danger" : "info"}
       primaryAction={primaryAction}

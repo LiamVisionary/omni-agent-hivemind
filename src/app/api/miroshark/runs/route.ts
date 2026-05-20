@@ -4,7 +4,6 @@ import { join, resolve } from "path";
 import {
   configuredObsidianVaultPath,
   expandHomePath,
-  LEGACY_OBSIDIAN_VAULT_PATH,
   resolveObsidianVaultPath,
 } from "@/lib/services/obsidian/vault-path";
 
@@ -85,9 +84,6 @@ async function validateVault(vaultPath?: string) {
   const trimmed = vaultPath?.trim() || configuredObsidianVaultPath();
   const candidatePaths = [
     resolveObsidianVaultPath(trimmed, { requireWritable: true }),
-    ...(trimmed === LEGACY_OBSIDIAN_VAULT_PATH || trimmed.endsWith("/Omni Agent Vault")
-      ? [resolveObsidianVaultPath(configuredObsidianVaultPath(), { requireWritable: true })]
-      : []),
   ];
   let lastError: unknown;
   for (const candidate of candidatePaths) {
@@ -265,7 +261,8 @@ export async function GET(request: Request) {
     await mkdir(archive, { recursive: true });
     const simulationId = searchParams.get("simulation_id");
     if (simulationId) {
-      const summaries = await readIndex(archive);
+      const indexed = await readIndex(archive);
+      const summaries = indexed.length ? indexed : await fallbackSummaries(archive);
       const summary = summaries.find((item) => item.simulationId === simulationId);
       if (!summary) return Response.json({ ok: false, error: "Simulation archive not found" }, { status: 404 });
       const folder = resolve(archive, summary.folder);

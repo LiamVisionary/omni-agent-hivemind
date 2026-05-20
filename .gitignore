@@ -1,7 +1,12 @@
 node_modules/
 .next/
+.setup-cache/
 out/
 dist/
+.remotion-capture/
+public/remotion/*
+!public/remotion/.gitkeep
+out/remotion/
 
 .env
 .env.*

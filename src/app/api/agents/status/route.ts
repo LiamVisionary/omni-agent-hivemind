@@ -3,6 +3,7 @@ import type { AgentProfile } from "@/lib/types/agent-runtime";
 import { getRuntimeUrl } from "@/lib/types/agent-runtime";
 import { testGatewayConnection } from "@/lib/services/openclaw/gateway-client";
 import { getGatewayAuthToken } from "@/lib/services/openclaw/gateway-health";
+import { getRuntimeAdapter } from "@/lib/services/runtime-adapters/registry";
 
 export const runtime = "nodejs";
 
@@ -28,6 +29,12 @@ export async function POST(request: NextRequest) {
       agentId: profile.agentId,
       error: result.error,
     });
+  }
+
+  const adapter = getRuntimeAdapter(profile.runtime);
+  if (adapter.getStatus) {
+    const status = await adapter.getStatus(profile, { requestUrl: request.url, agents: [profile] });
+    return Response.json({ ok: true, runtime: profile.runtime, status });
   }
 
   const statusUrl = getRuntimeUrl(profile, profile.statusPath || "/health");

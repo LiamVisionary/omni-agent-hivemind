@@ -13,7 +13,7 @@
  */
 
 import { devLog } from '@/lib/utils/logger';
-import { proxyInput, proxyOutput } from './security-proxy';
+import { proxyInput, proxyOutput } from '@/lib/services/agent-security-proxy';
 
 // ── Protocol types ──────────────────────────────────────────────────────────
 

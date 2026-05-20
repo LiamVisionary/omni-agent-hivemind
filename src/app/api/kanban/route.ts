@@ -6,6 +6,7 @@ import {
   archiveBoard,
   createBoard,
   createTask,
+  deleteTask,
   listBoards,
   moveTask,
   patchTask,
@@ -84,6 +85,19 @@ export async function PATCH(request: NextRequest) {
     const result = body.status
       ? await moveTask(boardSlug, body.taskId, body.status as KanbanStatus, storageOptions)
       : await patchTask(boardSlug, body.taskId, body.patch ?? body, storageOptions);
+    return NextResponse.json({ ok: true, ...result, storage: resolveKanbanStorage(result.board.meta.slug, storageOptions) });
+  } catch (error) {
+    return errorResponse(error);
+  }
+}
+
+export async function DELETE(request: NextRequest) {
+  try {
+    const body = await request.json().catch(() => ({}));
+    const boardSlug = request.nextUrl.searchParams.get("board") || body.board;
+    const storageOptions = storageOptionsFromRequest(request, body);
+    if (!body.taskId) throw new Error("taskId is required.");
+    const result = await deleteTask(boardSlug, body.taskId, storageOptions);
     return NextResponse.json({ ok: true, ...result, storage: resolveKanbanStorage(result.board.meta.slug, storageOptions) });
   } catch (error) {
     return errorResponse(error);

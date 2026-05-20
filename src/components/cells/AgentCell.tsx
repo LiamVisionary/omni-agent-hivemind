@@ -35,10 +35,12 @@ function isOrchestrator(name: string, runtime: AgentRuntime) {
  */
 type AgentCellProps = {
   name: string;
+  roleLabel?: string;
   runtime: AgentRuntime;
   hasTelemetryUrl: boolean;
   activeCount: number;
   snapshotOk?: boolean;
+  processRunning?: boolean;
   snapshotError?: string;
   primaryWork?: { title: string } | null;
   /** Pre-formatted relative time string, e.g. "12h ago". */
@@ -72,10 +74,12 @@ const DOT_TONE: Record<StatusKind, string> = {
 
 export function AgentCell({
   name,
+  roleLabel,
   runtime,
   hasTelemetryUrl,
   activeCount,
   snapshotOk,
+  processRunning,
   snapshotError,
   primaryWork,
   primaryWorkTime,
@@ -85,13 +89,14 @@ export function AgentCell({
   menu,
   expandedContent,
 }: AgentCellProps) {
-  const state = agentStatus({ hasTelemetryUrl, activeCount, snapshotOk, snapshotError });
+  const state = agentStatus({ hasTelemetryUrl, activeCount, snapshotOk, processRunning, snapshotError });
   const showExpanded = Boolean(selected && expandedContent);
   const workSummary = primaryWork?.title || emptyTitle || state.body;
   const queen = isOrchestrator(name, runtime);
   const beeIcon = queen ? "/icons/queen-bee.png" : "/icons/worker-bee.png";
   const beeLabel = queen ? "Queen bee (orchestrator)" : "Worker bee";
-  const isBusy = state.kind === "running" && activeCount > 0;
+  const visibleRoleLabel = roleLabel ?? (queen ? "Queen Bee" : "Worker Bee");
+  const isBusy = state.kind === "running";
 
   // Compose line 2 — "Hermes · 12h ago · Working on …". Each piece is
   // optional; only the runtime label is guaranteed.
@@ -149,8 +154,13 @@ export function AgentCell({
           className="flex min-w-0 flex-1 flex-col gap-0.5 text-left"
           aria-label={`Select ${name}`}
         >
-          <span className="truncate text-[0.82rem] font-semibold leading-tight text-[var(--foreground)]">
-            {name}
+          <span className="flex min-w-0 flex-wrap items-center gap-1.5">
+            <span className="min-w-0 break-words text-[0.82rem] font-semibold leading-tight text-[var(--foreground)]">
+              {name}
+            </span>
+            <span className="inline-flex shrink-0 items-center rounded border border-[rgba(94,234,212,0.24)] bg-[rgba(45,212,191,0.08)] px-1.5 py-0.5 text-[0.56rem] font-semibold uppercase leading-none tracking-[0.08em] text-[var(--accent-strong)]">
+              {visibleRoleLabel}
+            </span>
           </span>
           <span className="truncate text-[0.7rem] leading-snug text-[var(--muted)]">
             {metaParts.join(" · ")}

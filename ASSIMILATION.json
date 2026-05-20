@@ -148,6 +148,111 @@
       "target_path": "scripts/agent-telemetry-collector.mjs",
       "reuse_type": "adapted_code",
       "note": "device configuration shape for deviceID, name, addresses, introducer, paused, and auto-accept flags"
+    },
+    {
+      "source_repo": "LiamVisionary/skills",
+      "source_path": "Skills/README.md",
+      "target_path": "src/lib/services/obsidian/brain-skills.ts",
+      "reuse_type": "config_adapted",
+      "note": "shared Obsidian Skills folder contract adapted into the brain skill inventory and README regeneration flow"
+    },
+    {
+      "source_repo": "LiamVisionary/skills",
+      "source_path": "Skills/*/SKILL.md",
+      "target_path": "src/lib/services/obsidian/brain-skills.ts",
+      "reuse_type": "adapted_code",
+      "note": "frontmatter name/description and one-folder-per-skill structure adapted for shared and provider skill scanning"
+    },
+    {
+      "source_repo": "LiamVisionary/skills",
+      "source_path": "Skills/*",
+      "target_path": "src/app/page.tsx",
+      "reuse_type": "adapted_code",
+      "note": "provider-organized skill shelf model adapted into the Brain tab shared skills panel and import modal"
+    },
+    {
+      "source_repo": "Saleh7/clawkernel",
+      "source_path": "src/lib/cron.ts",
+      "target_path": "src/app/page.tsx",
+      "reuse_type": "adapted_code",
+      "note": "cron/schedule interval and dashboard-managed schedule concepts adapted into the generalized Scheduler tab"
+    },
+    {
+      "source_repo": "0xmythril/clawdtm",
+      "source_path": "src/components/skill-card.tsx",
+      "target_path": "src/app/page.tsx",
+      "reuse_type": "style_adapted",
+      "note": "skill marketplace card/search/import flow adapted into the shared Brain skill browser with bee iconography"
+    },
+    {
+      "source_repo": "multica-ai/andrej-karpathy-skills",
+      "source_path": "skills/karpathy-guidelines/SKILL.md",
+      "target_path": "skills/karpathy-guidelines/SKILL.md",
+      "reuse_type": "copied_code",
+      "note": "bundled Karpathy guidelines skill seeded into the shared Obsidian Skills folder"
+    },
+    {
+      "source_repo": "venthur/dotenv-cli",
+      "source_path": "dotenv_cli/core.py",
+      "target_path": "scripts/hive-env-add",
+      "reuse_type": "adapted_code",
+      "note": "dotenv parsing behavior for comments, export prefixes, and quoted values adapted into the agent-agnostic hive env helper"
+    },
+    {
+      "source_repo": "rcdexta/react-trello",
+      "source_path": "src/styles/Base.js",
+      "target_path": "src/app/kanban-board.module.css",
+      "reuse_type": "style_adapted",
+      "note": "Kanban lane/card spacing, stable horizontal board flow, and compact hover affordances adapted into the Work board styling"
+    },
+    {
+      "source_repo": "rcdexta/react-trello",
+      "source_path": "src/components/Card.js",
+      "target_path": "src/app/page.tsx",
+      "reuse_type": "adapted_code",
+      "note": "Compact card header/detail structure adapted into the Work board task card hierarchy without importing the component"
+    },
+    {
+      "source_repo": "aaronjmars/aeon",
+      "source_path": "dashboard/lib/config.ts",
+      "target_path": "src/lib/services/runtime-adapters/aeon.ts",
+      "reuse_type": "adapted_code",
+      "note": "Aeon skill config shape and aeon.yml schedule/enable/model parsing adapted into the runtime adapter"
+    },
+    {
+      "source_repo": "aaronjmars/aeon",
+      "source_path": "dashboard/app/api/skills/[name]/run/route.ts",
+      "target_path": "src/lib/services/runtime-adapters/aeon.ts",
+      "reuse_type": "adapted_code",
+      "note": "GitHub Actions workflow_dispatch invocation for Aeon skills adapted into runtime schedule run-now actions"
+    },
+    {
+      "source_repo": "aaronjmars/aeon",
+      "source_path": "a2a-server/src/index.ts",
+      "target_path": "src/lib/services/runtime-adapters/aeon.ts",
+      "reuse_type": "adapted_code",
+      "note": "A2A agent card skill discovery model adapted for optional local Aeon direct skill surfaces"
+    },
+    {
+      "source_repo": "duhman/volterra-web",
+      "source_path": "remotion/Root.tsx",
+      "target_path": "remotion/Root.tsx",
+      "reuse_type": "adapted_code",
+      "note": "Remotion root and composition registration shape adapted for the Hivemind showcase composition"
+    },
+    {
+      "source_repo": "duhman/volterra-web",
+      "source_path": "remotion/Composition.tsx",
+      "target_path": "remotion/Showcase.tsx",
+      "reuse_type": "adapted_code",
+      "note": "Simple full-frame composition pattern adapted to render the captured dashboard walkthrough as the video source"
+    },
+    {
+      "source_repo": "duhman/volterra-web",
+      "source_path": "scripts/capture-remotion-assets.ts",
+      "target_path": "scripts/capture-remotion-showcase.mjs",
+      "reuse_type": "adapted_code",
+      "note": "Playwright capture workflow adapted from static screenshots to a scripted browser recording of the real dashboard UI"
     }
   ]
 }

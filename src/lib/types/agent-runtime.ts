@@ -1,4 +1,18 @@
 export type AgentRuntime = "openclaw" | "hermes" | "aeon";
+export type AgentRuntimeKind = "interactive" | "background" | "gateway" | "collector";
+
+export interface RuntimeCapabilities {
+  status?: boolean;
+  chat?: boolean;
+  skills?: boolean;
+  schedules?: boolean;
+  runs?: boolean;
+  outputs?: boolean;
+  memory?: boolean;
+  notifications?: boolean;
+  setup?: boolean;
+  walletTools?: boolean;
+}
 
 export type BeeAgentRole = "queen" | "worker" | "observer" | "human";
 export type BeeWorkerClass = "general" | "planner" | "code" | "vision" | "writer" | "research" | "artist" | "ops" | "qa";
@@ -23,6 +37,13 @@ export interface AgentProfile {
     syncthing?: boolean;
     defaultSyncPath?: string;
   };
+  runtimeKind?: AgentRuntimeKind;
+  runtimeCapabilities?: RuntimeCapabilities;
+  aeonRepo?: string;
+  aeonBranch?: string;
+  aeonLocalPath?: string;
+  a2aUrl?: string;
+  aeonMode?: "github" | "a2a" | "local";
   beeRole?: BeeAgentRole;
   workerClass?: BeeWorkerClass;
 }
@@ -45,13 +66,15 @@ export interface SharedVaultConfig {
   instructions: string;
 }
 
+const DEFAULT_TAILNET_SYNC_ENABLED = process.env.NEXT_PUBLIC_TAILNET_SYNC_ENABLED === "true";
+
 export const DEFAULT_SHARED_VAULT: SharedVaultConfig = {
   enabled: true,
-  vaultPath: process.env.NEXT_PUBLIC_OBSIDIAN_VAULT_PATH ?? "~/Documents/Obsidian/Omni-Agent Hivemind Vault",
+  vaultPath: process.env.NEXT_PUBLIC_OBSIDIAN_VAULT_PATH ?? "~/Documents/Obsidian/omni-agent-hivemind-vault",
   tailnetSyncHost: "",
   tailnetSyncPath: "",
   tailnetSyncDirection: "bidirectional",
-  tailnetSyncEnabled: true,
+  tailnetSyncEnabled: DEFAULT_TAILNET_SYNC_ENABLED,
   tailnetSyncIntervalSeconds: 20,
   inboxFolder: "Agent Inbox",
   sharedNotePath: "Agent Team/Shared Context.md",
@@ -84,10 +107,47 @@ export const RUNTIME_DEFAULTS: Record<
     statusPath: "/health",
   },
   aeon: {
-    gatewayUrl: process.env.NEXT_PUBLIC_AEON_BASE_URL ?? "http://127.0.0.1:8799",
-    chatPath: "/chat",
+    gatewayUrl: process.env.NEXT_PUBLIC_AEON_A2A_URL ?? process.env.NEXT_PUBLIC_AEON_BASE_URL ?? "http://127.0.0.1:41241",
+    chatPath: "",
     statusPath: "/health",
   },
+};
+
+export const RUNTIME_CAPABILITIES: Record<AgentRuntime, RuntimeCapabilities> = {
+  openclaw: {
+    status: true,
+    chat: true,
+    skills: true,
+    schedules: true,
+    memory: true,
+    notifications: true,
+    setup: true,
+    walletTools: true,
+  },
+  hermes: {
+    status: true,
+    chat: true,
+    runs: true,
+    memory: true,
+    setup: true,
+    walletTools: true,
+  },
+  aeon: {
+    status: true,
+    skills: true,
+    schedules: true,
+    runs: true,
+    outputs: true,
+    memory: true,
+    notifications: true,
+    setup: true,
+  },
+};
+
+export const RUNTIME_KINDS: Record<AgentRuntime, AgentRuntimeKind> = {
+  openclaw: "gateway",
+  hermes: "interactive",
+  aeon: "background",
 };
 
 export function createAgentProfile(runtime: AgentRuntime, index = 1): AgentProfile {
@@ -104,6 +164,13 @@ export function createAgentProfile(runtime: AgentRuntime, index = 1): AgentProfi
     machineName: "local",
     telemetryUrl: "",
     useSharedVault: true,
+    runtimeKind: RUNTIME_KINDS[runtime],
+    runtimeCapabilities: RUNTIME_CAPABILITIES[runtime],
+    aeonRepo: runtime === "aeon" ? process.env.NEXT_PUBLIC_AEON_REPO ?? "" : undefined,
+    aeonBranch: runtime === "aeon" ? "main" : undefined,
+    aeonLocalPath: runtime === "aeon" ? process.env.NEXT_PUBLIC_AEON_LOCAL_PATH ?? "" : undefined,
+    a2aUrl: runtime === "aeon" ? defaults.gatewayUrl : undefined,
+    aeonMode: runtime === "aeon" ? "github" : undefined,
     beeRole: runtime === "openclaw" && index === 1 ? "queen" : "worker",
     workerClass: runtime === "openclaw" && index === 1 ? "general" : "general",
   };

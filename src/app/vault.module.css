@@ -265,8 +265,7 @@
 .brainSkillsEmpty p,
 .sharedSkillCard p,
 .providerSkillStrip small,
-.providerImportRow span,
-.skillsModalHeader p {
+.providerSkillsToolbar span {
   color: var(--muted);
   line-height: 1.45;
 }
@@ -304,11 +303,67 @@
   padding: 13px;
 }
 
-.sharedSkillCard span,
+.sharedSkillAddCard {
+  display: grid;
+  gap: 8px;
+  min-height: 148px;
+  border: 1px dashed rgba(45, 212, 191, 0.48);
+  background:
+    linear-gradient(135deg, rgba(45, 212, 191, 0.12), rgba(251, 191, 36, 0.08)),
+    rgba(8, 12, 19, 0.76);
+  color: var(--foreground);
+  cursor: pointer;
+  text-align: left;
+  padding: 13px;
+}
+
+.sharedSkillAddCard:hover {
+  border-style: solid;
+  background:
+    linear-gradient(135deg, rgba(45, 212, 191, 0.18), rgba(251, 191, 36, 0.12)),
+    rgba(8, 12, 19, 0.9);
+}
+
+.sharedSkillAddCard strong {
+  color: var(--accent-strong);
+  font-size: 15px;
+}
+
+.sharedSkillAddCard p {
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.45;
+}
+
+.emptyAddCard {
+  min-height: 132px;
+}
+
+.sharedSkillSourceLine span,
 .providerSkillStrip span {
   color: var(--accent-strong);
   font-size: 10px;
   font-weight: 900;
+  text-transform: uppercase;
+}
+
+.sharedSkillSourceLine {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  justify-content: space-between;
+  min-width: 0;
+}
+
+.sharedSkillSourceLine small {
+  border: 1px solid rgba(148, 163, 184, 0.14);
+  border-radius: 999px;
+  background: rgba(148, 163, 184, 0.07);
+  color: rgba(203, 213, 225, 0.74);
+  font-size: 10px;
+  font-weight: 800;
+  line-height: 1;
+  padding: 4px 7px;
   text-transform: uppercase;
 }
 
@@ -326,7 +381,7 @@
   -webkit-line-clamp: 3;
 }
 
-.sharedSkillCard small {
+.sharedSkillPath {
   align-self: end;
   overflow: hidden;
   color: rgba(199, 210, 254, 0.72);
@@ -337,7 +392,7 @@
 
 .brainSkillsEmpty {
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto;
+  grid-template-columns: minmax(220px, 0.34fr) minmax(0, 1fr) auto;
   gap: 14px;
   align-items: center;
   padding: 18px;
@@ -353,94 +408,89 @@
   color: #f8fafc;
 }
 
+.providerSkillsToolbar {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  justify-content: space-between;
+  border-top: 1px solid rgba(148, 163, 184, 0.13);
+  padding: 12px 14px;
+}
+
+.providerSkillsToolbar strong {
+  display: block;
+  color: #f8fafc;
+  font-size: 13px;
+  font-weight: 900;
+}
+
+.providerSkillsToolbar span {
+  display: block;
+  margin-top: 3px;
+  font-size: 12px;
+}
+
+.providerImportAllButton {
+  border-color: rgba(94, 234, 212, 0.22);
+  background: rgba(20, 184, 166, 0.08);
+  color: rgba(226, 232, 240, 0.9);
+  font-size: 12px;
+}
+
+.providerImportAllButton:hover:not(:disabled) {
+  border-color: rgba(94, 234, 212, 0.42);
+  background: rgba(20, 184, 166, 0.14);
+  color: #f8fafc;
+}
+
 .providerSkillStrip {
   display: grid;
   grid-template-columns: repeat(5, minmax(0, 1fr));
   gap: 1px;
-  border-top: 1px solid rgba(148, 163, 184, 0.13);
   background: rgba(148, 163, 184, 0.1);
 }
 
 .providerSkillStrip article {
+  position: relative;
   display: grid;
   gap: 5px;
+  align-content: start;
+  min-height: 132px;
   background: rgba(3, 7, 18, 0.58);
-  padding: 11px 12px;
+  padding: 14px 76px 14px 12px;
 }
 
 .providerSkillStrip strong {
+  display: block;
+  margin-top: 22px;
   color: #f8fafc;
   font-size: 20px;
 }
 
-.skillsModalBackdrop {
-  position: fixed;
-  inset: 0;
-  z-index: 80;
-  display: grid;
-  place-items: center;
-  background: rgba(2, 6, 23, 0.72);
-  padding: 18px;
+.providerSkillButton {
+  position: absolute;
+  top: 13px;
+  right: 12px;
+  height: 24px;
+  min-width: 58px;
+  gap: 5px;
+  border-color: rgba(148, 163, 184, 0.14);
+  background: rgba(15, 23, 42, 0.34);
+  color: rgba(226, 232, 240, 0.78);
+  font-size: 11px;
+  font-weight: 800;
+  padding: 0 8px;
 }
 
-.skillsModal {
-  width: min(760px, 100%);
-  max-height: min(760px, calc(100vh - 36px));
-  overflow: auto;
-  border: 1px solid rgba(148, 163, 184, 0.22);
-  border-radius: 8px;
-  background: #080d15;
-  box-shadow: 0 30px 90px rgba(0, 0, 0, 0.45);
+.providerSkillButton svg {
+  width: 13px;
+  height: 13px;
 }
 
-.skillsModalHeader {
-  display: flex;
-  gap: 12px;
-  align-items: flex-start;
-  justify-content: space-between;
-  border-bottom: 1px solid rgba(148, 163, 184, 0.14);
-  padding: 16px;
-}
-
-.skillsModalHeader h2 {
-  margin: 0;
+.providerSkillButton:hover:not(:disabled) {
+  border-color: rgba(94, 234, 212, 0.34);
+  background: rgba(20, 184, 166, 0.1);
   color: #f8fafc;
-  font-size: 18px;
-}
-
-.skillsModalHeader button {
-  display: inline-grid;
-  place-items: center;
-  width: 34px;
-  height: 34px;
-  border: 1px solid rgba(148, 163, 184, 0.18);
-  border-radius: 7px;
-  background: rgba(15, 23, 42, 0.72);
-  color: #f8fafc;
-}
-
-.providerImportList {
-  display: grid;
-}
-
-.providerImportRow {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  gap: 12px;
-  align-items: center;
-  border-bottom: 1px solid rgba(148, 163, 184, 0.1);
-  padding: 14px 16px;
-}
-
-.providerImportRow strong {
-  display: block;
-  color: #f8fafc;
-}
-
-.providerImportRow span {
-  display: block;
-  margin-top: 3px;
-  font-size: 12px;
 }
 
 .brainInspector {
@@ -687,7 +737,8 @@
   }
 
   .brainSkillsHeader,
-  .brainSkillsEmpty {
+  .brainSkillsEmpty,
+  .providerSkillsToolbar {
     align-items: stretch;
     grid-template-columns: 1fr;
     flex-direction: column;
@@ -700,6 +751,10 @@
   .sharedSkillGrid,
   .providerSkillStrip {
     grid-template-columns: 1fr;
+  }
+
+  .providerSkillStrip article {
+    min-height: 118px;
   }
 
   .vaultGrid {
@@ -721,7 +776,6 @@
 :global(:root[data-theme="hive-light"]) .brainGraphPanel,
 :global(:root[data-theme="hive-light"]) .brainInspector,
 :global(:root[data-theme="hive-light"]) .brainSkillsPanel,
-:global(:root[data-theme="hive-light"]) .skillsModal,
 :global(:root[data-theme="hive-light"]) .brainInspector dl div,
 :global(:root[data-theme="hive-light"]) .brainAccessList article,
 :global(:root[data-theme="hive-light"]) .sharedSkillCard,
@@ -768,9 +822,8 @@
 :global(:root[data-theme="hive-light"]) .brainSkillsHeader h3,
 :global(:root[data-theme="hive-light"]) .sharedSkillCard strong,
 :global(:root[data-theme="hive-light"]) .brainSkillsEmpty strong,
+:global(:root[data-theme="hive-light"]) .providerSkillsToolbar strong,
 :global(:root[data-theme="hive-light"]) .providerSkillStrip strong,
-:global(:root[data-theme="hive-light"]) .skillsModalHeader h2,
-:global(:root[data-theme="hive-light"]) .providerImportRow strong,
 :global(:root[data-theme="hive-light"]) .brainInspector dd,
 :global(:root[data-theme="hive-light"]) .brainAccessList strong,
 :global(:root[data-theme="hive-light"]) .brainAccessList span,

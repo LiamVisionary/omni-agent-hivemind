@@ -41,7 +41,7 @@ export function moveTaskBetweenColumns(tasks: KanbanTask[], taskId: string, toSt
         ...task,
         status: toStatus,
         updatedAt: now,
-        completedAt: toStatus === "done" ? now : task.completedAt,
+        completedAt: toStatus === "done" ? now : undefined,
       }
       : task
   ));

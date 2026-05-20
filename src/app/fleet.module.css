@@ -935,11 +935,29 @@
   min-width: 0;
 }
 
+.agentNameDisplay {
+  flex-wrap: wrap;
+}
+
 .agentNameDisplay h2 {
   min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  overflow-wrap: anywhere;
+}
+
+.agentRoleBadge {
+  display: inline-flex;
+  align-items: center;
+  min-height: 22px;
+  border: 1px solid rgba(94, 234, 212, 0.24);
+  border-radius: 999px;
+  background: rgba(45, 212, 191, 0.08);
+  color: var(--accent-strong);
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  line-height: 1;
+  padding: 4px 8px;
+  text-transform: uppercase;
 }
 
 .agentNameDisplay button,
@@ -1018,6 +1036,38 @@
   margin-top: 18px;
 }
 
+.agentSettingsTabs,
+.schedulerSegment {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  width: fit-content;
+  max-width: 100%;
+  border: 1px solid rgba(148, 163, 184, 0.16);
+  border-radius: 8px;
+  background: rgba(3, 7, 18, 0.72);
+  padding: 4px;
+  margin-top: 14px;
+}
+
+.agentSettingsTabs button,
+.schedulerSegment button {
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 900;
+  padding: 8px 11px;
+}
+
+.agentSettingsTabs button.activeSegment,
+.schedulerSegment button.activeSegment {
+  background: rgba(45, 212, 191, 0.18);
+  color: var(--accent-strong);
+}
+
 .agentSettingsField {
   display: grid;
   gap: 7px;
@@ -1031,7 +1081,9 @@
   text-transform: uppercase;
 }
 
-.agentSettingsField select {
+.agentSettingsField input,
+.agentSettingsField select,
+.agentSettingsField textarea {
   min-height: 42px;
   border: 1px solid rgba(148, 163, 184, 0.18);
   border-radius: 7px;
@@ -1041,6 +1093,676 @@
   letter-spacing: 0;
   outline: none;
   padding: 0 12px;
+}
+
+.agentSettingsField textarea {
+  min-height: 140px;
+  resize: vertical;
+  padding: 12px;
+}
+
+.agentSettingsInfo,
+.agentSecurityGrid article {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 12px;
+  align-items: start;
+  border: 1px solid rgba(45, 212, 191, 0.2);
+  border-radius: 8px;
+  background: rgba(45, 212, 191, 0.08);
+  color: var(--muted);
+  padding: 13px;
+}
+
+.agentSettingsInfo svg,
+.agentSecurityGrid svg {
+  width: 18px;
+  height: 18px;
+  color: var(--accent-strong);
+}
+
+.agentSettingsInfo p,
+.agentSecurityGrid p {
+  margin: 0;
+  line-height: 1.5;
+}
+
+.agentSecurityGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(145px, 1fr));
+  gap: 12px;
+  margin-top: 18px;
+}
+
+.agentSecurityGrid article {
+  display: flex;
+  min-width: 0;
+  min-height: 168px;
+  flex-direction: column;
+  gap: 14px;
+  justify-content: space-between;
+}
+
+.agentSecurityGrid strong {
+  display: block;
+  color: var(--foreground);
+  font-size: 18px;
+  line-height: 1.18;
+  overflow-wrap: anywhere;
+}
+
+.agentSecurityGrid p {
+  color: var(--muted);
+  font-size: 14px;
+  line-height: 1.42;
+  overflow-wrap: anywhere;
+}
+
+.agentSecurityGrid svg {
+  flex: 0 0 auto;
+}
+
+.schedulerPanel {
+  border: 1px solid rgba(94, 234, 212, 0.12);
+  border-radius: 10px;
+  background:
+    linear-gradient(180deg, rgba(45, 212, 191, 0.07), transparent 180px),
+    rgba(5, 8, 14, 0.86);
+  padding: 14px;
+}
+
+.schedulerStudioHeader {
+  display: flex;
+  gap: 14px;
+  justify-content: space-between;
+  align-items: start;
+  margin-bottom: 12px;
+}
+
+.schedulerStudioHeader h2 {
+  margin: 0;
+  color: var(--foreground);
+  font-size: clamp(24px, 3vw, 38px);
+  line-height: 1.05;
+}
+
+.schedulerStudioHeader p {
+  margin: 5px 0 0;
+  color: var(--muted);
+  max-width: 720px;
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.schedulerMiniStats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  justify-content: flex-end;
+}
+
+.schedulerMiniStats span {
+  display: inline-flex;
+  gap: 6px;
+  align-items: center;
+  border: 1px solid rgba(148, 163, 184, 0.12);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.035);
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 800;
+  padding: 7px 10px;
+}
+
+.schedulerMiniStats svg {
+  width: 13px;
+  height: 13px;
+  color: var(--accent-strong);
+}
+
+.schedulerImportStatus {
+  display: inline-flex;
+  max-width: 100%;
+  border: 1px solid rgba(45, 212, 191, 0.18);
+  border-radius: 999px;
+  background: rgba(45, 212, 191, 0.08);
+  color: var(--muted);
+  font-size: 12px;
+  margin: 0 0 10px;
+  padding: 7px 10px;
+}
+
+.schedulerLayout {
+  display: grid;
+  grid-template-columns: minmax(360px, 0.42fr) minmax(0, 1fr);
+  gap: 12px;
+  align-items: start;
+}
+
+.schedulerComposer,
+.scheduleCard,
+.scheduleEmpty,
+.skillBrowserCard {
+  border: 1px solid rgba(255, 255, 255, 0.055);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.025);
+  padding: 10px;
+}
+
+.schedulerComposer {
+  display: grid;
+  gap: 8px;
+}
+
+.schedulerComposerTop,
+.schedulerInstructionHeader,
+.scheduleCardTop {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.schedulerComposerTop strong {
+  display: block;
+  color: var(--foreground);
+  font-size: 15px;
+}
+
+.schedulerComposerTop span,
+.schedulerInstructionHeader small {
+  color: rgba(203, 213, 225, 0.46);
+  font-size: 11px;
+}
+
+.schedulerSegment {
+  margin: 0;
+  border-color: rgba(255, 255, 255, 0.07);
+  background: rgba(0, 0, 0, 0.18);
+}
+
+.schedulerSegment button {
+  display: inline-flex;
+  gap: 5px;
+  align-items: center;
+  padding: 6px 8px;
+}
+
+.schedulerSegment svg {
+  width: 12px;
+  height: 12px;
+}
+
+.schedulerSection {
+  display: grid;
+  gap: 7px;
+  border: 1px solid rgba(255, 255, 255, 0.045);
+  border-radius: 9px;
+  background: rgba(255, 255, 255, 0.018);
+  padding: 9px;
+}
+
+.schedulerField {
+  display: grid;
+  gap: 5px;
+}
+
+.schedulerField span,
+.schedulerTinyLabel {
+  color: rgba(203, 213, 225, 0.36);
+  font-size: 10px;
+  font-weight: 900;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.schedulerField input,
+.schedulerField select,
+.schedulerSection textarea {
+  width: 100%;
+  min-height: 36px;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 7px;
+  background: rgba(255, 255, 255, 0.035);
+  color: var(--foreground);
+  font-size: 13px;
+  outline: none;
+  padding: 0 10px;
+}
+
+.schedulerSection textarea {
+  min-height: 108px;
+  resize: vertical;
+  line-height: 1.45;
+  padding: 9px 10px;
+}
+
+.schedulerPresetRow,
+.schedulerSkillPicker,
+.scheduleSkillRow,
+.scheduleActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.schedulerPresetRow button,
+.schedulerSkillPicker button,
+.scheduleSkillRow span {
+  display: inline-flex;
+  gap: 5px;
+  align-items: center;
+  border: 1px solid rgba(255, 255, 255, 0.055);
+  border-radius: 7px;
+  background: rgba(255, 255, 255, 0.04);
+  color: rgba(203, 213, 225, 0.56);
+  cursor: pointer;
+  font-size: 11px;
+  font-weight: 800;
+  padding: 6px 8px;
+}
+
+.schedulerPresetRow button.selectedSkillChip,
+.schedulerSkillPicker button.selectedSkillChip {
+  border-color: rgba(45, 212, 191, 0.42);
+  background: rgba(45, 212, 191, 0.16);
+  color: var(--accent-strong);
+}
+
+.schedulerSkillPicker svg {
+  width: 12px;
+  height: 12px;
+}
+
+.scheduleSkillRow svg {
+  width: 11px;
+  height: 11px;
+}
+
+.schedulerActionBar {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  justify-content: space-between;
+  padding-top: 2px;
+}
+
+.schedulerAttachCluster {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.schedulerAttachButton {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border: 0;
+  border-radius: 7px;
+  background: rgba(255, 255, 255, 0.045);
+  color: rgba(226, 232, 240, 0.42);
+  cursor: pointer;
+  transition: background 160ms ease, color 160ms ease, box-shadow 160ms ease;
+}
+
+.schedulerAttachButton:hover,
+.schedulerAttachButton.active {
+  background: rgba(45, 212, 191, 0.12);
+  color: var(--accent-strong);
+  box-shadow: inset 0 0 0 1px rgba(45, 212, 191, 0.18);
+}
+
+.schedulerAttachButton svg {
+  width: 15px;
+  height: 15px;
+}
+
+.schedulerAttachPopover {
+  position: absolute;
+  left: 0;
+  bottom: calc(100% + 8px);
+  z-index: 30;
+  display: grid;
+  gap: 2px;
+  min-width: 178px;
+  border: 1px solid rgba(45, 212, 191, 0.22);
+  border-radius: 12px;
+  background: #071c19;
+  box-shadow: 0 18px 48px rgba(0, 0, 0, 0.56), inset 0 1px 0 rgba(255, 255, 255, 0.04);
+  padding: 6px;
+}
+
+.schedulerAttachPopover.wide {
+  min-width: 248px;
+  gap: 8px;
+  padding: 9px;
+}
+
+.schedulerAttachPopover button {
+  display: flex;
+  gap: 9px;
+  align-items: center;
+  width: 100%;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: rgba(226, 232, 240, 0.66);
+  cursor: pointer;
+  font-size: 11px;
+  font-weight: 750;
+  padding: 8px 9px;
+  text-align: left;
+}
+
+.schedulerAttachPopover button:hover {
+  background: rgba(45, 212, 191, 0.08);
+  color: rgba(248, 250, 252, 0.92);
+}
+
+.schedulerAttachPopover button:disabled {
+  cursor: not-allowed;
+  opacity: 0.38;
+}
+
+.schedulerAttachPopover svg {
+  width: 14px;
+  height: 14px;
+  color: rgba(94, 234, 212, 0.62);
+  flex: 0 0 auto;
+}
+
+.schedulerAttachSearch {
+  display: flex;
+  gap: 7px;
+  align-items: center;
+  border-bottom: 1px solid rgba(45, 212, 191, 0.1);
+  padding: 2px 1px 8px;
+}
+
+.schedulerAttachSearch input {
+  min-width: 0;
+  flex: 1;
+  border: 0;
+  background: transparent;
+  color: rgba(248, 250, 252, 0.88);
+  font-size: 12px;
+  outline: none;
+}
+
+.schedulerAttachSearch input::placeholder {
+  color: rgba(148, 163, 184, 0.38);
+}
+
+.schedulerAttachSearch button {
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+}
+
+.schedulerAttachChoices {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  max-height: 132px;
+  overflow-y: auto;
+}
+
+.schedulerAttachChoices button {
+  width: auto;
+  border: 1px solid rgba(255, 255, 255, 0.055);
+  background: rgba(255, 255, 255, 0.045);
+  color: rgba(203, 213, 225, 0.58);
+  padding: 6px 8px;
+}
+
+.schedulerAttachChoices button.selectedSkillChip {
+  border-color: rgba(168, 85, 247, 0.38);
+  background: rgba(168, 85, 247, 0.14);
+  color: rgba(216, 180, 254, 0.9);
+}
+
+.schedulerAttachFooter {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  color: rgba(148, 163, 184, 0.5);
+  font-size: 10px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.schedulerAttachFooter button {
+  width: auto;
+  background: rgba(45, 212, 191, 0.14);
+  color: var(--accent-strong);
+  padding: 5px 9px;
+}
+
+.schedulerAttachmentBadges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: -2px;
+}
+
+.schedulerAttachmentBadge {
+  display: inline-flex;
+  gap: 5px;
+  align-items: center;
+  max-width: 100%;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.035);
+  color: rgba(203, 213, 225, 0.66);
+  font-size: 10px;
+  font-weight: 800;
+  padding: 5px 6px;
+}
+
+.schedulerAttachmentBadge.skill {
+  border-color: rgba(168, 85, 247, 0.18);
+  background: rgba(168, 85, 247, 0.08);
+  color: rgba(216, 180, 254, 0.76);
+}
+
+.schedulerAttachmentBadge.path {
+  border-color: rgba(251, 191, 36, 0.18);
+  background: rgba(251, 191, 36, 0.07);
+  color: rgba(253, 224, 71, 0.72);
+}
+
+.schedulerAttachmentBadge svg {
+  width: 12px;
+  height: 12px;
+  flex: 0 0 auto;
+}
+
+.schedulerAttachmentBadge button {
+  display: grid;
+  place-items: center;
+  width: 14px;
+  height: 14px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: currentColor;
+  cursor: pointer;
+  opacity: 0.55;
+  padding: 0;
+}
+
+.schedulerAttachmentBadge button:hover {
+  background: rgba(255, 255, 255, 0.08);
+  opacity: 1;
+}
+
+.schedulerStepEditor {
+  display: grid;
+  gap: 5px;
+}
+
+.schedulerStepPreview {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 8px;
+  align-items: start;
+  border: 1px solid rgba(45, 212, 191, 0.16);
+  border-radius: 8px;
+  background: linear-gradient(180deg, rgba(45, 212, 191, 0.045), rgba(255, 255, 255, 0.012));
+  padding: 7px 8px;
+}
+
+.schedulerStepPreview span {
+  display: grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 6px;
+  background: rgba(45, 212, 191, 0.12);
+  color: var(--accent-strong);
+  font-size: 10px;
+  font-weight: 900;
+}
+
+.schedulerStepPreview p {
+  margin: 0;
+  color: rgba(226, 232, 240, 0.78);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.emptyStepPreview p {
+  color: rgba(203, 213, 225, 0.38);
+}
+
+.scheduleList {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
+  gap: 10px;
+}
+
+.scheduleCard {
+  display: grid;
+  gap: 10px;
+  min-height: 188px;
+}
+
+.scheduleCard.enabled {
+  border-color: rgba(45, 212, 191, 0.34);
+}
+
+.scheduleCard.paused {
+  opacity: 0.72;
+}
+
+.scheduleCardTop span,
+.skillBrowserCard span {
+  color: #facc15;
+  font-size: 11px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.scheduleCardTop small {
+  display: inline-flex;
+  gap: 4px;
+  align-items: center;
+  color: rgba(203, 213, 225, 0.42);
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.scheduleCardTop svg {
+  width: 12px;
+  height: 12px;
+}
+
+.scheduleCard h3,
+.skillBrowserCard strong {
+  margin: 0;
+  color: var(--foreground);
+  font-size: 17px;
+  line-height: 1.12;
+}
+
+.scheduleCard p,
+.scheduleEmpty p,
+.skillBrowserCard p,
+.skillBrowserStatus {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.scheduleActions {
+  align-self: end;
+}
+
+.scheduleEmpty {
+  display: grid;
+  gap: 10px;
+  min-height: 220px;
+  place-items: center;
+  text-align: center;
+}
+
+.scheduleEmpty svg {
+  width: 28px;
+  height: 28px;
+  color: var(--accent-strong);
+}
+
+.skillBrowserModal {
+  width: min(1040px, calc(100vw - 28px));
+  max-width: none;
+}
+
+.skillBrowserTitle {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+}
+
+.skillBrowserSearch {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
+  margin-top: 16px;
+}
+
+.skillBrowserSearch input {
+  min-height: 42px;
+  border: 1px solid rgba(148, 163, 184, 0.18);
+  border-radius: 7px;
+  background: var(--field);
+  color: var(--foreground);
+  padding: 0 12px;
+}
+
+.skillBrowserGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 10px;
+  max-height: min(62vh, 620px);
+  overflow: auto;
+  padding-top: 12px;
+}
+
+.skillBrowserCard {
+  display: grid;
+  gap: 10px;
+  min-height: 220px;
+}
+
+.skillBrowserCard > div:first-child {
+  display: flex;
+  gap: 8px;
+  align-items: center;
 }
 
 .setupCommandBox {

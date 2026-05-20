@@ -19,3 +19,15 @@
 - Do not commit local secrets, private Tailnet IPs, personal vault contents, or machine-specific data.
 - Keep collectors private to Tailscale unless the user explicitly asks for another exposure model.
 - Prefer read-only fleet inspection by default. Remote mutation/update endpoints need explicit design and safety review.
+
+## UI Text
+
+- Do not silently truncate user-facing text with ellipses, line clamps, `text-overflow`, or forced no-wrap styling.
+- Text may be collapsed only when the compact surface genuinely needs it, such as a long chat/history/body preview, and the UI must provide an obvious expand/collapse affordance.
+- Prefer wrapping, taller rows/cards, or responsive layout adjustments over hiding content.
+
+## Shared Skills
+
+- The shared skill shelf lives at `Skills/` inside the configured shared notes vault/folder.
+- Read `Skills/README.md` for the index, then read the relevant `Skills/<slug>/SKILL.md` before using a shared skill.
+- Setup seeds `karpathy-guidelines` from `multica-ai/andrej-karpathy-skills` into the shared shelf and can mirror/import skills through common local runtime skill folders for Codex, Claude, Hermes, Gemini, OpenClaw, and Aeon.
