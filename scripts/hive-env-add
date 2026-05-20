@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Add or update local Omni-Agent Hivemind environment variables.
+"""Add or update local HivemindOS environment variables.
 
 The command keeps plaintext secrets local, then optionally refreshes an
 encrypted folder-backed note backup when GPG configuration is available.
@@ -23,7 +23,7 @@ from typing import Iterable
 SCRIPT_PATH = pathlib.Path(__file__).resolve()
 ROOT = SCRIPT_PATH.parents[1]
 DEFAULT_ENV_FILE = ROOT / ".env.local"
-DEFAULT_AGENT_ENV_FILE = pathlib.Path.home() / ".omni-agent-hivemind" / ".env"
+DEFAULT_AGENT_ENV_FILE = pathlib.Path.home() / ".hivemindos" / ".env"
 OPENCLAW_DIR = pathlib.Path.home() / ".openclaw"
 OPENCLAW_JSON = OPENCLAW_DIR / "openclaw.json"
 OPENCLAW_SECRETS = OPENCLAW_DIR / "secrets.json"
@@ -427,7 +427,7 @@ def sync_tailnet_updates(args: argparse.Namespace, updates: dict[str, str]) -> N
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Add or update an Omni-Agent Hivemind env var in local app/runtime stores.",
+        description="Add or update a HivemindOS env var in local app/runtime stores.",
     )
     parser.add_argument("assignment", nargs="?", help="KEY=value, or KEY to prompt for the value")
     parser.add_argument("--env-file", default="")

@@ -17,7 +17,7 @@ type VaultFile = {
   records: Record<string, VaultRecord>;
 };
 
-const vaultDir = path.join(os.homedir(), ".omni-agent-hivemind");
+const vaultDir = path.join(os.homedir(), ".hivemindos");
 const vaultPath = path.join(vaultDir, "wallet-vault.json");
 const keyPath = path.join(vaultDir, "wallet-vault.key");
 
@@ -32,7 +32,7 @@ function publicInfo(record: VaultRecord): AgentWalletVaultInfo {
 }
 
 async function ensureVaultKey(): Promise<Buffer> {
-  const envKey = process.env.OMNI_WALLET_VAULT_KEY?.trim();
+  const envKey = process.env.HIVEMINDOS_WALLET_VAULT_KEY?.trim();
   if (envKey) return createHash("sha256").update(envKey).digest();
   await fs.mkdir(vaultDir, { recursive: true, mode: 0o700 });
   try {

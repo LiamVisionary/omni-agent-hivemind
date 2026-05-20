@@ -1,24 +1,24 @@
 <div align="center">
-  <img width="220" height="220" alt="Omni-Agent Hivemind" src="public/omni-agent-hivemind-logo.png" />
+  <img width="220" height="220" alt="HivemindOS" src="public/hivemindos-logo.png" />
 
-  <h1>Omni-Agent Hivemind</h1>
+  <h1>HivemindOS</h1>
 
   <p>
-    <a href="https://github.com/LiamVisionary/omni-agent-hivemind/stargazers"><img alt="GitHub stars" src="https://img.shields.io/github/stars/LiamVisionary/omni-agent-hivemind?style=for-the-badge&amp;logo=github&amp;label=stars&amp;color=0b8bdc&amp;labelColor=555555" /></a>
-    <a href="https://github.com/LiamVisionary/omni-agent-hivemind/network/members"><img alt="GitHub forks" src="https://img.shields.io/github/forks/LiamVisionary/omni-agent-hivemind?style=for-the-badge&amp;logo=github&amp;label=forks&amp;color=0b8bdc&amp;labelColor=555555" /></a>
+    <a href="https://github.com/LiamVisionary/hivemindos/stargazers"><img alt="GitHub stars" src="https://img.shields.io/github/stars/LiamVisionary/hivemindos?style=for-the-badge&amp;logo=github&amp;label=stars&amp;color=0b8bdc&amp;labelColor=555555" /></a>
+    <a href="https://github.com/LiamVisionary/hivemindos/network/members"><img alt="GitHub forks" src="https://img.shields.io/github/forks/LiamVisionary/hivemindos?style=for-the-badge&amp;logo=github&amp;label=forks&amp;color=0b8bdc&amp;labelColor=555555" /></a>
     <a href="https://bankr.bot"><img alt="Launch on Bankr" src="https://img.shields.io/badge/Launch%20on-Bankr-ff6a2a?style=for-the-badge&amp;labelColor=1f2137" /></a>
   </p>
 </div>
 
 > **A virtual private network for your agents.**
 >
-> Omni-Agent Hivemind lets agents collaborate across all of your machines through one private control room. Connect agents over Tailscale, give them a shared Obsidian brain, sync environment variables safely, assign work, monitor progress, and manage the whole fleet from one simple dashboard.
+> HivemindOS lets agents collaborate across all of your machines through one private control room. Connect agents over Tailscale, give them a shared Obsidian brain, sync environment variables safely, assign work, monitor progress, and manage the whole fleet from one simple dashboard.
 >
 > It supports modern agent runtimes like Hermes, OpenClaw, and Aeon, includes full MiroShark simulation integration, and can provision agent wallets on Base and Solana so agents can hold funds, pay for tools, and operate with their own controlled budgets.
 
 Clone it, run one setup command, and get a local-first dashboard for the agents already living on your laptop, desktop, VPS, or spare machines. No public ports required.
 
-![Omni-Agent Hivemind cyber-bee agent network hero](public/readme/omni-agent-hivemind-hero.png)
+![HivemindOS cyber-bee agent network hero](public/readme/hivemindos-hero.png)
 
 ## What It Does
 
@@ -34,8 +34,8 @@ Clone it, run one setup command, and get a local-first dashboard for the agents 
 ## Quick Start
 
 ```bash
-git clone https://github.com/LiamVisionary/omni-agent-hivemind.git
-cd omni-agent-hivemind
+git clone https://github.com/LiamVisionary/hivemindos.git
+cd hivemindos
 ./setup.sh
 ```
 
@@ -45,7 +45,7 @@ Then open the dashboard printed by setup, usually:
 http://localhost:5020
 ```
 
-Setup checks Node.js and pnpm/Corepack, installs dependencies, installs the lightweight machine monitor, builds the dashboard, starts it when possible, and prints local plus Tailscale URLs when available. If Tailscale is installed and logged in, Hivemind enables cross-machine collaboration. If not, it runs cleanly as a local-only dashboard.
+Setup checks Node.js and pnpm/Corepack, installs dependencies, installs the lightweight machine monitor, builds the dashboard, starts it when possible, and prints local plus Tailscale URLs when available. If Tailscale is installed and logged in, HivemindOS enables cross-machine collaboration. If not, it runs cleanly as a local-only dashboard.
 
 ## The First 10 Minutes
 
@@ -75,7 +75,7 @@ hive-env-add ANTHROPIC_API_KEY=...
 | **Work board** | Gives agents a shared Kanban queue for tasks, delegation, retries, stale work, and human handoff |
 | **Scheduler studio** | Creates, imports, pauses, resumes, and runs background schedules where runtimes support them |
 | **Agent chat bridge** | Sends chat to supported runtimes through a local safety and redaction proxy |
-| **MiroShark integration** | Runs and tracks MiroShark simulations from the Hivemind dashboard |
+| **MiroShark integration** | Runs and tracks MiroShark simulations from the HivemindOS dashboard |
 | **Agent wallets** | Provisions controlled Base and Solana wallets for agents that need budgets or payment rails |
 | **Alerts** | Surfaces auth failures, stuck work, runtime issues, and handoff problems in one inbox |
 | **Skill shelf** | Shares skills across Codex, Claude, Hermes, Gemini, OpenClaw, and Aeon |
@@ -91,13 +91,13 @@ hive-env-add ANTHROPIC_API_KEY=...
 | **MiroShark** | Companion integration for simulation workflows and dashboard visibility |
 | **Generic machines** | Read-only machine snapshots through the local monitor |
 
-No single runtime is required. Hivemind works with one local agent, a mixed fleet, or future adapters.
+No single runtime is required. HivemindOS works with one local agent, a mixed fleet, or future adapters.
 
 ## How Sharing Works
 
-![Omni-Agent Hivemind sharing model with a central shared brain, Tailscale VPN, Syncthing, and Tailscale SSH](public/readme/hivemind-sharing-model.png)
+![HivemindOS sharing model with a central shared brain, Tailscale VPN, Syncthing, and Tailscale SSH](public/readme/hivemind-sharing-model.png)
 
-Hivemind uses Tailscale in a few specific ways:
+HivemindOS uses Tailscale in a few specific ways:
 
 - **Agent connection:** the dashboard finds and connects to agent machines through your Tailscale VPN.
 - **Env sync:** `hive-env-add` sends env updates to trusted peer machines over Tailscale SSH. Secret values travel through stdin, not command arguments, logs, or shared notes.
@@ -116,7 +116,7 @@ hive-env-add KEY
 hive-env-add --import-env
 ```
 
-By default it updates the app `.env.local` and the generic local agent env store at `~/.omni-agent-hivemind/.env`. Runtime-specific compatibility writes are explicit:
+By default it updates the app `.env.local` and the generic local agent env store at `~/.hivemindos/.env`. Runtime-specific compatibility writes are explicit:
 
 ```bash
 hive-env-add --runtime hermes ANTHROPIC_API_KEY
@@ -124,7 +124,7 @@ hive-env-add --runtime aeon OPENAI_API_KEY
 hive-env-add --runtime openclaw TAVILY_API_KEY
 ```
 
-When Tailscale SSH is available and env sync is enabled, Hivemind updates trusted peer machines that report they are ready for env sync. Advanced users can set `HIVE_ENV_TAILNET_TARGETS` to choose exact target machines.
+When Tailscale SSH is available and env sync is enabled, HivemindOS updates trusted peer machines that report they are ready for env sync. Advanced users can set `HIVE_ENV_TAILNET_TARGETS` to choose exact target machines.
 
 ## Shared Obsidian Brain
 
@@ -138,7 +138,7 @@ The Brain workspace can hold:
 - reusable skills
 - runtime instructions
 
-Hivemind can auto-detect common local Obsidian vault locations, validate an explicit vault path, and fall back to local Kanban storage at `~/.omni-agent-hivemind/kanban` if the vault is unavailable.
+HivemindOS can auto-detect common local Obsidian vault locations, validate an explicit vault path, and fall back to local Kanban storage at `~/.hivemindos/kanban` if the vault is unavailable.
 
 For multi-machine sharing, the built-in path pairs Syncthing over Tailscale so trusted machines each keep a local copy of the same vault. No Obsidian Sync subscription is required.
 
@@ -147,8 +147,8 @@ For multi-machine sharing, the built-in path pairs Syncthing over Tailscale so t
 On each additional machine that runs agents:
 
 ```bash
-git clone https://github.com/LiamVisionary/omni-agent-hivemind.git
-cd omni-agent-hivemind
+git clone https://github.com/LiamVisionary/hivemindos.git
+cd hivemindos
 ./scripts/install-telemetry-collector.sh
 ```
 
@@ -209,4 +209,4 @@ See [ROADMAP.md](ROADMAP.md).
 
 ## Provenance
 
-Omni-Agent Hivemind packages agent-control patterns, OpenClaw integration code, Hermes control-room workflows, MiroShark companion integration, and local-first fleet telemetry into a standalone open-source dashboard. Portions of the OpenClaw integration were adapted from an internal source app. The AI SDK route and chat UI patterns were adapted from public Next.js agent examples. The Hermes control-room workflow is inspired by `shannhk/hermes-agent-control-room`.
+HivemindOS packages agent-control patterns, OpenClaw integration code, Hermes control-room workflows, MiroShark companion integration, and local-first fleet telemetry into a standalone open-source dashboard. Portions of the OpenClaw integration were adapted from an internal source app. The AI SDK route and chat UI patterns were adapted from public Next.js agent examples. The Hermes control-room workflow is inspired by `shannhk/hermes-agent-control-room`.

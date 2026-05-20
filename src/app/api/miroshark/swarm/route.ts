@@ -124,7 +124,7 @@ async function pollPrepare(baseUrl: string, simulationId: string, taskId?: strin
 
 function scenarioDoc(scenario: string) {
   const text = [
-    "Hivemind swarm scenario",
+    "HivemindOS swarm scenario",
     "",
     scenario,
     "",
@@ -143,7 +143,7 @@ function scenarioDoc(scenario: string) {
   ].join("\n");
 
   return JSON.stringify([{
-    title: "Hivemind swarm scenario",
+    title: "HivemindOS swarm scenario",
     url: "hivemind://swarm-scenario",
     text,
   }]);
@@ -246,7 +246,7 @@ export async function POST(request: Request) {
         return Response.json({ ok: true, action: body.action, simulationId, payload });
       }
       if (body.action === "fork" || body.action === "branch") {
-        const event = body.event?.trim() || "Hivemind counterfactual branch";
+        const event = body.event?.trim() || "HivemindOS counterfactual branch";
         const payload = await requestJson(`${baseUrl}/api/simulation/${body.action === "fork" ? "fork" : "branch-counterfactual"}`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -277,7 +277,7 @@ export async function POST(request: Request) {
   }
 
   const jobId = `swarm_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
-  const projectName = body?.projectName?.trim() || `Hivemind swarm ${new Date().toISOString().slice(0, 16)}`;
+  const projectName = body?.projectName?.trim() || `HivemindOS swarm ${new Date().toISOString().slice(0, 16)}`;
   const rounds = Math.max(1, Math.min(200, Number(body?.rounds ?? 5)));
   const platform = body?.platform ?? "twitter";
   jobs.set(jobId, {
@@ -303,7 +303,7 @@ export async function POST(request: Request) {
       const form = new FormData();
       form.set("simulation_requirement", scenario);
       form.set("project_name", projectName);
-      form.set("additional_context", "Created and launched from Omni-Agent Hivemind Swarm controls.");
+      form.set("additional_context", "Created and launched from HivemindOS Swarm controls.");
       form.set("url_docs", scenarioDoc(scenario));
 
       const ontology = await requestJson<{ project_id?: string; ontology?: unknown }>(`${baseUrl}/api/graph/ontology/generate`, {

@@ -22,7 +22,7 @@ const agents = [
 const board = {
   meta: {
     slug: "default",
-    name: "Omni-Agent Hivemind",
+    name: "HivemindOS",
     description: "Video capture demo board",
     createdAt: now - 7_200_000,
     updatedAt: now,
@@ -68,7 +68,7 @@ const schedules = [
     mode: "steps",
     prompt: "Scan Fleet health\nSummarize stuck Work cards\nPost a Brain handoff note",
     skills: ["karpathy-guidelines"],
-    paths: ["Projects/Omni-Agent Hivemind"],
+    paths: ["Projects/HivemindOS"],
     steps: [],
     createdAt: now - 4_800_000,
     updatedAt: now - 600_000,
@@ -142,7 +142,7 @@ function agent(id, name, runtime, machineName, agentId, beeRole, workerClass) {
       setup: true,
       walletTools: true,
     },
-    collectorCapabilities: { chat: !isAeon, runtimes: [runtime], syncthing: true, defaultSyncPath: "~/omni-agent-hivemind-vault" },
+    collectorCapabilities: { chat: !isAeon, runtimes: [runtime], syncthing: true, defaultSyncPath: "~/hivemindos-vault" },
     beeRole,
     workerClass,
   };
@@ -155,7 +155,7 @@ function task(id, title, body, status, priority, assignee, result = "") {
     body,
     result,
     assignee,
-    tenant: "omni-agent-hivemind",
+    tenant: "hivemindos",
     status,
     priority,
     workspace: status === "working" ? "worktree" : "scratch",
@@ -185,7 +185,7 @@ function swarmRun() {
     status: "started",
     simulationId: "sim_hivemind_video",
     platform: "twitter",
-    scenario: "A simulated product launch stress-tests the Hivemind control room.",
+    scenario: "A simulated product launch stress-tests the HivemindOS control room.",
     rounds: 5,
     step: "simulation",
     runStatus: { data: { runner_status: "running", current_round: 4, twitter_current_round: 4, total_rounds: 5, progress_percent: 80 } },
@@ -241,15 +241,15 @@ async function main() {
     await context.addInitScript(({ agents, schedules, chatMessages }) => {
     const sharedVault = {
       enabled: true,
-      vaultPath: "~/Documents/Obsidian/omni-agent-hivemind-vault",
+      vaultPath: "~/Documents/Obsidian/hivemindos-vault",
       tailnetSyncHost: "lab-linux-1",
-      tailnetSyncPath: "~/Documents/Obsidian/omni-agent-hivemind-vault",
+      tailnetSyncPath: "~/Documents/Obsidian/hivemindos-vault",
       tailnetSyncDirection: "bidirectional",
       tailnetSyncEnabled: true,
       tailnetSyncIntervalSeconds: 20,
       inboxFolder: "Agent Inbox",
-      sharedNotePath: "Agent Team/Shared Context.md",
-      kanbanFolder: "Projects/Omni-Agent Hivemind/Kanban",
+      sharedNotePath: "HivemindOS/Shared Context.md",
+      kanbanFolder: "Projects/HivemindOS/Kanban",
       notificationsFolder: "agent-notifications",
       noteTaskImportFolders: "Projects\nInbox",
       noteTaskImportEnabled: false,
@@ -263,13 +263,13 @@ async function main() {
       { id: "task-demo-1", agentId: "hermes-dev", title: "Morning coordination loop", lastMessage: "Fleet green, scheduler smoke queued, wallet approval held.", status: "completed", startedAt: Date.now() - 380000, updatedAt: Date.now() - 260000, completedAt: Date.now() - 250000, source: "dashboard-chat", messages: chatMessages["hermes-dev"] },
       { id: "task-demo-2", agentId: "aeon-scheduler", title: "Scheduler smoke", lastMessage: "Runbook accepted. Next heartbeat in 6h.", status: "active", startedAt: Date.now() - 180000, updatedAt: Date.now() - 90000, source: "aeon" },
     ];
-    window.__OMNI_REMOTION_FIXTURES = { agents, schedules, sharedVault, tasks, wallets };
-    window.localStorage.setItem("omni-agent-hivemind.agentProfiles.v1", JSON.stringify(agents));
-    window.localStorage.setItem("omni-agent-hivemind.agentSchedules.v1", JSON.stringify(schedules));
-    window.localStorage.setItem("omni-agent-hivemind.theme.v1", "dark");
-    window.localStorage.setItem("omni-agent-hivemind.sharedVault.v1", JSON.stringify(sharedVault));
-    window.localStorage.setItem("omni-agent-hivemind.agentWallets.v1", JSON.stringify(wallets));
-    window.localStorage.setItem("omni-agent-hivemind.agentTasks.v1", JSON.stringify(tasks));
+    window.__HIVEMINDOS_REMOTION_FIXTURES = { agents, schedules, sharedVault, tasks, wallets };
+    window.localStorage.setItem("hivemindos.agentProfiles.v1", JSON.stringify(agents));
+    window.localStorage.setItem("hivemindos.agentSchedules.v1", JSON.stringify(schedules));
+    window.localStorage.setItem("hivemindos.theme.v1", "dark");
+    window.localStorage.setItem("hivemindos.sharedVault.v1", JSON.stringify(sharedVault));
+    window.localStorage.setItem("hivemindos.agentWallets.v1", JSON.stringify(wallets));
+    window.localStorage.setItem("hivemindos.agentTasks.v1", JSON.stringify(tasks));
   }, { agents, schedules, chatMessages });
 
     await context.route("**/api/fleet/discover", (route) => route.fulfill({
@@ -310,7 +310,7 @@ async function main() {
       ],
     },
   }));
-  await context.route("**/api/kanban**", (route) => route.fulfill({ json: { ok: true, board, boards: [{ slug: "default", name: "Omni-Agent Hivemind" }], storage: { source: "obsidian", file: "~/Documents/Obsidian/omni-agent-hivemind-vault/Projects/Omni-Agent Hivemind/Kanban/kanban.json" } } }));
+  await context.route("**/api/kanban**", (route) => route.fulfill({ json: { ok: true, board, boards: [{ slug: "default", name: "HivemindOS" }], storage: { source: "obsidian", file: "~/Documents/Obsidian/hivemindos-vault/Projects/HivemindOS/Kanban/kanban.json" } } }));
   await context.route("**/api/scheduler/import", (route) => route.fulfill({ json: { ok: true, imported: schedules, message: "Imported 2 simulated runtime schedules." } }));
   await context.route("**/api/miroshark/status", (route) => route.fulfill({ json: { ok: true, baseUrl: "http://127.0.0.1:5101", apiDocsUrl: "http://127.0.0.1:5101/api/docs", install: { running: false }, adminAuth: { configured: true }, endpoints: { templates: "GET /api/templates/list", createSimulation: "POST /api/simulation/create" } } }));
   await context.route("**/api/miroshark/swarm**", (route) => route.fulfill({ json: swarmRun() }));
@@ -367,7 +367,7 @@ async function main() {
     console.log("Showcase capture: Swarm X thread");
     await clickTab(page, "Swarm");
     await settle(page, 1200);
-    await fillOptional(page.getByPlaceholder(/Describe the market/i), "Simulate the launch conversation for the Hivemind control room. Agents should discuss Fleet health, the scheduler smoke, Brain routing, wallet policy, and the chat handoff.", 900);
+    await fillOptional(page.getByPlaceholder(/Describe the market/i), "Simulate the launch conversation for the HivemindOS control room. Agents should discuss Fleet health, the scheduler smoke, Brain routing, wallet policy, and the chat handoff.", 900);
     await settle(page, 900);
     await clickOptional(page.getByRole("button", { name: /Run swarm/i }), 900);
     await page.getByText(/Simulated on X/i).waitFor({ timeout: 4_000 }).catch(() => undefined);
@@ -421,7 +421,7 @@ function machine(name, ip, self, machineAgents) {
     device: { self, name, dnsName: self ? "" : `${name}.tailnet`, os: self ? "darwin" : "linux", online: true, ip, collectorUrl: `http://${ip}:8787` },
     collector: "ready",
     version: { branch: "main", shortCommit: "video", dirty: true },
-    capabilities: { chat: true, runtimes: [...new Set(machineAgents.map((item) => item.runtime))], syncthing: true, defaultSyncPath: "~/omni-agent-hivemind-vault" },
+    capabilities: { chat: true, runtimes: [...new Set(machineAgents.map((item) => item.runtime))], syncthing: true, defaultSyncPath: "~/hivemindos-vault" },
     agents: machineAgents,
     snapshots: [],
   };
@@ -440,15 +440,15 @@ async function seedVideoStorage(page) {
   await page.evaluate(({ agents, schedules, chatMessages }) => {
     const sharedVault = {
       enabled: true,
-      vaultPath: "~/Documents/Obsidian/omni-agent-hivemind-vault",
+      vaultPath: "~/Documents/Obsidian/hivemindos-vault",
       tailnetSyncHost: "lab-linux-1",
-      tailnetSyncPath: "~/Documents/Obsidian/omni-agent-hivemind-vault",
+      tailnetSyncPath: "~/Documents/Obsidian/hivemindos-vault",
       tailnetSyncDirection: "bidirectional",
       tailnetSyncEnabled: true,
       tailnetSyncIntervalSeconds: 20,
       inboxFolder: "Agent Inbox",
-      sharedNotePath: "Agent Team/Shared Context.md",
-      kanbanFolder: "Projects/Omni-Agent Hivemind/Kanban",
+      sharedNotePath: "HivemindOS/Shared Context.md",
+      kanbanFolder: "Projects/HivemindOS/Kanban",
       notificationsFolder: "agent-notifications",
       noteTaskImportFolders: "Projects\nInbox",
       noteTaskImportEnabled: false,
@@ -462,13 +462,13 @@ async function seedVideoStorage(page) {
       { id: "task-demo-1", agentId: "hermes-dev", title: "Morning coordination loop", lastMessage: "Fleet green, scheduler smoke queued, wallet approval held.", status: "completed", startedAt: Date.now() - 380000, updatedAt: Date.now() - 260000, completedAt: Date.now() - 250000, source: "dashboard-chat", messages: chatMessages["hermes-dev"] },
       { id: "task-demo-2", agentId: "aeon-scheduler", title: "Scheduler smoke", lastMessage: "Runbook accepted. Next heartbeat in 6h.", status: "active", startedAt: Date.now() - 180000, updatedAt: Date.now() - 90000, source: "aeon" },
     ];
-    window.__OMNI_REMOTION_FIXTURES = { agents, schedules, sharedVault, tasks, wallets };
-    window.localStorage.setItem("omni-agent-hivemind.agentProfiles.v1", JSON.stringify(agents));
-    window.localStorage.setItem("omni-agent-hivemind.agentSchedules.v1", JSON.stringify(schedules));
-    window.localStorage.setItem("omni-agent-hivemind.theme.v1", "dark");
-    window.localStorage.setItem("omni-agent-hivemind.sharedVault.v1", JSON.stringify(sharedVault));
-    window.localStorage.setItem("omni-agent-hivemind.agentWallets.v1", JSON.stringify(wallets));
-    window.localStorage.setItem("omni-agent-hivemind.agentTasks.v1", JSON.stringify(tasks));
+    window.__HIVEMINDOS_REMOTION_FIXTURES = { agents, schedules, sharedVault, tasks, wallets };
+    window.localStorage.setItem("hivemindos.agentProfiles.v1", JSON.stringify(agents));
+    window.localStorage.setItem("hivemindos.agentSchedules.v1", JSON.stringify(schedules));
+    window.localStorage.setItem("hivemindos.theme.v1", "dark");
+    window.localStorage.setItem("hivemindos.sharedVault.v1", JSON.stringify(sharedVault));
+    window.localStorage.setItem("hivemindos.agentWallets.v1", JSON.stringify(wallets));
+    window.localStorage.setItem("hivemindos.agentTasks.v1", JSON.stringify(tasks));
   }, { agents, schedules, chatMessages });
 }
 
@@ -533,7 +533,7 @@ async function ensureServer() {
   const child = spawn("pnpm", ["dev"], {
     cwd: ROOT,
     stdio: "inherit",
-    env: { ...process.env, NEXT_PUBLIC_OBSIDIAN_VAULT_PATH: "~/Documents/Obsidian/omni-agent-hivemind-vault" },
+    env: { ...process.env, NEXT_PUBLIC_OBSIDIAN_VAULT_PATH: "~/Documents/Obsidian/hivemindos-vault" },
   });
   const deadline = Date.now() + 60_000;
   while (Date.now() < deadline) {
@@ -549,7 +549,7 @@ async function fetchActualBrainGraph() {
     const response = await fetch(`${BASE_URL}/api/obsidian/graph`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ vaultPath: "~/Documents/Obsidian/omni-agent-hivemind-vault" }),
+      body: JSON.stringify({ vaultPath: "~/Documents/Obsidian/hivemindos-vault" }),
       signal: AbortSignal.timeout(10_000),
     });
     if (!response.ok) return null;

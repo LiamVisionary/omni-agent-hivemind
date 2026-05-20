@@ -55,7 +55,7 @@ type X402SpendRecord = {
   createdAt: string;
 };
 
-const spendLogPath = path.join(os.homedir(), ".omni-agent-hivemind", "x402-spend-log.json");
+const spendLogPath = path.join(os.homedir(), ".hivemindos", "x402-spend-log.json");
 const supportedEvmNetworks = new Set(["eip155:8453", "eip155:84532"]);
 const supportedSvmNetworks = new Set(["solana:mainnet", "solana:devnet"]);
 

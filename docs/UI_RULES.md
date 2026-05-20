@@ -1,4 +1,4 @@
-# Omni UI Rules
+# HivemindOS UI Rules
 
 These are the short rules. For the full rationale and screen-by-screen guidance, see [UI/UX Philosophy](design-philosophy.md).
 

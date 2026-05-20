@@ -70,15 +70,15 @@ const DEFAULT_TAILNET_SYNC_ENABLED = process.env.NEXT_PUBLIC_TAILNET_SYNC_ENABLE
 
 export const DEFAULT_SHARED_VAULT: SharedVaultConfig = {
   enabled: true,
-  vaultPath: process.env.NEXT_PUBLIC_OBSIDIAN_VAULT_PATH ?? "~/Documents/Obsidian/omni-agent-hivemind-vault",
+  vaultPath: process.env.NEXT_PUBLIC_OBSIDIAN_VAULT_PATH ?? "~/Documents/Obsidian/hivemindos-vault",
   tailnetSyncHost: "",
   tailnetSyncPath: "",
   tailnetSyncDirection: "bidirectional",
   tailnetSyncEnabled: DEFAULT_TAILNET_SYNC_ENABLED,
   tailnetSyncIntervalSeconds: 20,
   inboxFolder: "Agent Inbox",
-  sharedNotePath: "Agent Team/Shared Context.md",
-  kanbanFolder: process.env.NEXT_PUBLIC_OBSIDIAN_KANBAN_FOLDER ?? "Projects/Omni-Agent Hivemind/Kanban",
+  sharedNotePath: "HivemindOS/Shared Context.md",
+  kanbanFolder: process.env.NEXT_PUBLIC_OBSIDIAN_KANBAN_FOLDER ?? "Projects/HivemindOS/Kanban",
   notificationsFolder: process.env.NEXT_PUBLIC_OBSIDIAN_NOTIFICATIONS_FOLDER ?? "agent-notifications",
   noteTaskImportFolders: "Projects\nInbox",
   noteTaskImportEnabled: false,

@@ -16,7 +16,7 @@ import type {
 import { KANBAN_STATUSES } from "@/lib/types/kanban";
 import { moveTaskBetweenColumns } from "@/lib/utils/kanban-board";
 
-const ROOT_DIR = join(homedir(), ".omni-agent-hivemind", "kanban");
+const ROOT_DIR = join(homedir(), ".hivemindos", "kanban");
 const BOARDS_DIR = join(ROOT_DIR, "boards");
 const DEFAULT_BOARD = "default";
 const DEFAULT_VAULT_KANBAN_FOLDER = DEFAULT_SHARED_VAULT.kanbanFolder;

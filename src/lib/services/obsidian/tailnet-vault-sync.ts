@@ -183,7 +183,7 @@ async function makeRemoteSnapshot(remote: string, dryRun: boolean) {
 }
 
 async function makeTempDir() {
-  const path = join(tmpdir(), `omni-agent-hivemind-vault-sync-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`);
+  const path = join(tmpdir(), `hivemindos-vault-sync-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`);
   await mkdir(path, { recursive: true, mode: 0o700 });
   return path;
 }
@@ -320,7 +320,7 @@ async function saveSyncState(key: string, files: Record<string, string>) {
 }
 
 function syncStatePath(key: string) {
-  return join(homedir(), ".omni-agent-hivemind", "vault-sync", `${key}.json`);
+  return join(homedir(), ".hivemindos", "vault-sync", `${key}.json`);
 }
 
 function spawnRsync(args: string[]) {

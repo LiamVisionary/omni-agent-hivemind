@@ -44,7 +44,7 @@ function buildVaultContext(sharedVault: SharedVaultConfig | null): string {
     "- Shared skills folder: Skills/. Read Skills/README.md for the index, then read the relevant Skills/<slug>/SKILL.md before using a shared skill.",
     `- Agent inbox folder: ${sharedVault.inboxFolder || "(not set)"}`,
     `- Shared note: ${sharedVault.sharedNotePath || "(not set)"}`,
-    `- Shared Kanban folder: ${sharedVault.kanbanFolder || "Projects/Omni-Agent Hivemind/Kanban"}`,
+    `- Shared Kanban folder: ${sharedVault.kanbanFolder || "Projects/HivemindOS/Kanban"}`,
     `- Agent notifications folder: ${sharedVault.notificationsFolder || "agent-notifications"}`,
     "- Kanban workflow: Ideas are inert; Ready for Queen is the pickup lane; Working is claimed work; Needs Human is only for decisions/access/approval; Done is completed work.",
     "- Queen Bee behavior: if you are the Queen Bee, watch Ready for Queen, choose yourself or a worker class, move claimed cards to Working, comment with the routing reason, and move straight to Done when no human intervention is needed.",

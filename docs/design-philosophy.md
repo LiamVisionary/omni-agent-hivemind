@@ -1,14 +1,14 @@
-# Omni Agent Hivemind UI/UX Philosophy
+# HivemindOS UI/UX Philosophy
 
 For the short implementation checklist, see [UI Rules](UI_RULES.md).
 
 ## Core Idea
 
-Omni Agent Hivemind should feel like a digital beehive: private, coordinated, efficient, modular, and alive.
+HivemindOS should feel like a digital beehive: private, coordinated, efficient, modular, and alive.
 
 But before it feels powerful, it must feel calm, obvious, and usable.
 
-A beehive is beautiful because every part works. Omni should follow the same rule:
+A beehive is beautiful because every part works. HivemindOS should follow the same rule:
 
 > Beauty comes from clarity, coordination, trust, and function.
 
@@ -52,7 +52,7 @@ The interface should answer:
 
 If something does not clarify the fleet, agents, memory, security, wallet state, setup state, or next action, remove it from the primary surface.
 
-Omni should not look intelligent because it says "AI." It should feel intelligent because the whole system is organized.
+HivemindOS should not look intelligent because it says "AI." It should feel intelligent because the whole system is organized.
 
 ### 2. Machine-First, Agent-Second
 
@@ -139,7 +139,7 @@ Where this agent receives and spends funds.
 
 ### 5. Private by Default
 
-Omni's trust model should be visible everywhere.
+HivemindOS's trust model should be visible everywhere.
 
 Use clear labels:
 
@@ -584,7 +584,7 @@ If the answer is no, simplify the primary surface before adding more capability.
 The ideal user experience:
 
 ```txt
-I open Omni Agent Hivemind.
+I open HivemindOS.
 
 I instantly see my private fleet.
 I know which machines are alive.
@@ -608,6 +608,6 @@ That is the hive principle:
 - Depth on demand
 - Distributed intelligence
 
-Omni should not overwhelm users with power.
+HivemindOS should not overwhelm users with power.
 
 It should make power feel obvious, safe, and usable.

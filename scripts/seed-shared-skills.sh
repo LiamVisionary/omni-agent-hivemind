@@ -40,7 +40,7 @@ EOF
   esac
 done
 
-vault_path="${NEXT_PUBLIC_OBSIDIAN_VAULT_PATH:-$HOME/Documents/Obsidian/omni-agent-hivemind-vault}"
+vault_path="${NEXT_PUBLIC_OBSIDIAN_VAULT_PATH:-$HOME/Documents/Obsidian/hivemindos-vault}"
 if [[ "$vault_path" == "~/"* ]]; then
   vault_path="$HOME/${vault_path#~/}"
 fi
@@ -200,8 +200,8 @@ JSON
 
 write_managed_block() {
   local file="$1"
-  local start="<!-- BEGIN OMNI_AGENT_HIVEMIND_SHARED_SKILLS -->"
-  local end="<!-- END OMNI_AGENT_HIVEMIND_SHARED_SKILLS -->"
+  local start="<!-- BEGIN HIVEMINDOS_SHARED_SKILLS -->"
+  local end="<!-- END HIVEMINDOS_SHARED_SKILLS -->"
   local tmp_file
   tmp_file="$(mktemp)"
   mkdir -p "$(dirname "$file")"
@@ -219,7 +219,7 @@ write_managed_block() {
   {
     sed -e '${/^$/d;}' "$tmp_file"
     printf "\n%s\n" "$start"
-    printf "## Omni-Agent Hivemind Shared Skills\n\n"
+    printf "## HivemindOS Shared Skills\n\n"
     printf "A shared notes skill shelf is available at:\n\n"
     printf "%s\n" "- Vault: \`$vault_path\`"
     printf "%s\n" "- Skills index: \`$skills_folder/README.md\`"
@@ -285,7 +285,7 @@ sync_shared_skills_to_aeon() {
     cp -R "$skill_dir/." "$destination/"
     cat > "$metadata" <<JSON
 {
-  "managedBy": "omni-agent-hivemind",
+  "managedBy": "hivemindos",
   "provider": "shared-brain",
   "providerLabel": "Shared brain",
   "sourcePath": "$skill_md",
@@ -323,7 +323,7 @@ const shared = fs.readdirSync(skillsFolder, { withFileTypes: true })
   })
   .filter(Boolean);
 const manifest = {
-  managedBy: "omni-agent-hivemind",
+  managedBy: "hivemindos",
   updatedAt: new Date().toISOString(),
   skills: [...retained, ...shared].sort((a, b) => String(a.slug).localeCompare(String(b.slug))),
 };

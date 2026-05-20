@@ -6,7 +6,7 @@ import { dirname, relative, resolve, sep } from "path";
 import { promisify } from "util";
 import { resolveObsidianVaultPath } from "@/lib/services/obsidian/vault-path";
 
-const ACCESS_LOG_PATH = "Projects/Omni-Agent Hivemind/Brain Access/access-log.jsonl";
+const ACCESS_LOG_PATH = "Projects/HivemindOS/Brain Access/access-log.jsonl";
 const OBSIDIAN_CLI = process.env.OBSIDIAN_CLI_PATH ?? "obsidian";
 const MAX_NOTE_BYTES = 524_288;
 const MAX_GRAPH_NOTES = 260;
@@ -282,7 +282,7 @@ export async function openBrainNoteInObsidian(input: {
   assertInside(root, absoluteNotePath);
   await access(absoluteNotePath, constants.R_OK);
 
-  const vaultName = root.split(sep).filter(Boolean).pop() || "Omni-Agent Hivemind Vault";
+  const vaultName = root.split(sep).filter(Boolean).pop() || "HivemindOS Vault";
   const { stdout, stderr } = await execFileAsync(OBSIDIAN_CLI, [
     "open",
     `vault=${vaultName}`,

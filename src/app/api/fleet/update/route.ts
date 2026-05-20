@@ -99,10 +99,10 @@ function fallbackScript(appDir?: string) {
     ].join("\n");
   }
   const candidates = [
-    "\"$HOME/omni-agent-hivemind\"",
+    "\"$HOME/hivemindos\"",
     "\"$HOME/openclaw-next\"",
-    "/root/omni-agent-hivemind",
-    "/opt/omni-agent-hivemind",
+    "/root/hivemindos",
+    "/opt/hivemindos",
   ];
   return [
     "set -euo pipefail",
@@ -112,7 +112,7 @@ function fallbackScript(appDir?: string) {
     "    break",
     "  fi",
     "done",
-    "[ -d .git ] || { echo 'Could not find omni-agent-hivemind checkout'; exit 2; }",
+    "[ -d .git ] || { echo 'Could not find hivemindos checkout'; exit 2; }",
     updateScriptForCheckout(),
   ].join("\n");
 }

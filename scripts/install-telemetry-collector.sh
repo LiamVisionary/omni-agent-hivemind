@@ -226,14 +226,14 @@ if [[ "$(uname -s)" == "Darwin" ]]; then
       else
         SYNCTHING_COMMAND="exec '$SYNCTHING_BIN' -no-browser -gui-address=127.0.0.1:8384"
       fi
-      SYNCTHING_PLIST="$HOME/Library/LaunchAgents/com.omni-agent-hivemind.syncthing.plist"
+      SYNCTHING_PLIST="$HOME/Library/LaunchAgents/com.hivemindos.syncthing.plist"
       mkdir -p "$(dirname "$SYNCTHING_PLIST")"
       cat > "$SYNCTHING_PLIST" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-  <key>Label</key><string>com.omni-agent-hivemind.syncthing</string>
+  <key>Label</key><string>com.hivemindos.syncthing</string>
   <key>ProgramArguments</key>
   <array>
     <string>/bin/sh</string>
@@ -246,14 +246,14 @@ if [[ "$(uname -s)" == "Darwin" ]]; then
   </dict>
   <key>RunAtLoad</key><true/>
   <key>KeepAlive</key><true/>
-  <key>StandardOutPath</key><string>$HOME/Library/Logs/omni-agent-hivemind-syncthing.log</string>
-  <key>StandardErrorPath</key><string>$HOME/Library/Logs/omni-agent-hivemind-syncthing.err.log</string>
+  <key>StandardOutPath</key><string>$HOME/Library/Logs/hivemindos-syncthing.log</string>
+  <key>StandardErrorPath</key><string>$HOME/Library/Logs/hivemindos-syncthing.err.log</string>
 </dict>
 </plist>
 PLIST
       launchctl_bounded 5 unload "$SYNCTHING_PLIST" >/dev/null 2>&1 || true
       launchctl_bounded 5 load "$SYNCTHING_PLIST"
-      launchctl_bounded 5 kickstart -k "gui/$(id -u)/com.omni-agent-hivemind.syncthing" >/dev/null 2>&1 || true
+      launchctl_bounded 5 kickstart -k "gui/$(id -u)/com.hivemindos.syncthing" >/dev/null 2>&1 || true
       echo "Installed Syncthing macOS LaunchAgent on 127.0.0.1:8384"
     else
       echo "Syncthing is unavailable; Tailnet shared memory sync is disabled." >&2
@@ -295,11 +295,11 @@ else
     install_syncthing_if_missing
     if command -v syncthing >/dev/null 2>&1; then
       chmod +x "$SYNCTHING_RUNNER" 2>/dev/null || true
-      SYNCTHING_SERVICE="$HOME/.config/systemd/user/omni-agent-hivemind-syncthing.service"
+      SYNCTHING_SERVICE="$HOME/.config/systemd/user/hivemindos-syncthing.service"
       mkdir -p "$(dirname "$SYNCTHING_SERVICE")"
       cat > "$SYNCTHING_SERVICE" <<SERVICE
 [Unit]
-Description=Omni-Agent Hivemind Syncthing folder sync
+Description=HivemindOS Syncthing folder sync
 
 [Service]
 Environment=SYNCTHING_GUI_ADDRESS=127.0.0.1:8384
@@ -310,8 +310,8 @@ Restart=always
 WantedBy=default.target
 SERVICE
       systemctl --user daemon-reload
-      systemctl --user enable omni-agent-hivemind-syncthing.service
-      systemctl --user restart omni-agent-hivemind-syncthing.service
+      systemctl --user enable hivemindos-syncthing.service
+      systemctl --user restart hivemindos-syncthing.service
       echo "Installed Syncthing systemd user service on 127.0.0.1:8384"
     else
       echo "Syncthing is unavailable; Tailnet shared memory sync is disabled." >&2

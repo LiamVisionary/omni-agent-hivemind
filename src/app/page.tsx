@@ -940,18 +940,27 @@ function mirosharkStat(seed: number | undefined, base: number, spread: number) {
 type DashboardView = "agents" | "kanban" | "scheduler" | "swarm" | "wallet" | "vault" | "notifications" | "chat";
 type DashboardTheme = "dark" | "hive-light";
 
-const STORAGE_KEY = "omni-agent-hivemind.agentProfiles.v1";
-const VAULT_STORAGE_KEY = "omni-agent-hivemind.sharedVault.v1";
-const TASK_STORAGE_KEY = "omni-agent-hivemind.agentTasks.v1";
-const SCHEDULE_STORAGE_KEY = "omni-agent-hivemind.agentSchedules.v1";
-const WALLET_STORAGE_KEY = "omni-agent-hivemind.agentWallets.v1";
-const THEME_STORAGE_KEY = "omni-agent-hivemind.theme.v1";
-const CHAT_FOLDER_STORAGE_KEY = "omni-agent-hivemind.chatFolders.v1";
+const STORAGE_KEY = "hivemindos.agentProfiles.v1";
+const VAULT_STORAGE_KEY = "hivemindos.sharedVault.v1";
+const TASK_STORAGE_KEY = "hivemindos.agentTasks.v1";
+const SCHEDULE_STORAGE_KEY = "hivemindos.agentSchedules.v1";
+const WALLET_STORAGE_KEY = "hivemindos.agentWallets.v1";
+const THEME_STORAGE_KEY = "hivemindos.theme.v1";
+const CHAT_FOLDER_STORAGE_KEY = "hivemindos.chatFolders.v1";
 const KANBAN_STALE_WORK_MS = 30 * 60 * 1000;
 const KANBAN_TOOL_OUTPUT_STALL_MS = 5 * 60 * 1000;
 const KANBAN_STALE_AGENT_COOLDOWN_MS = 20 * 60 * 1000;
-const REPO_CLONE_URL = "https://github.com/LiamVisionary/omni-agent-hivemind.git";
+const REPO_CLONE_URL = "https://github.com/LiamVisionary/hivemindos.git";
 const QUIET_SNAPSHOT_HOLD_MS = 15 * 60 * 1000;
+const STORAGE_SUFFIXES = {
+  agents: ".agentProfiles.v1",
+  vault: ".sharedVault.v1",
+  tasks: ".agentTasks.v1",
+  schedules: ".agentSchedules.v1",
+  wallets: ".agentWallets.v1",
+  theme: ".theme.v1",
+  chatFolders: ".chatFolders.v1",
+};
 const STARTER_AGENT_IDS = new Set([
   "openclaw-main",
   "hermes-orchestrator",
@@ -973,7 +982,7 @@ type RemotionShowcaseFixtures = {
 
 function remotionShowcaseFixtures(): RemotionShowcaseFixtures | null {
   if (typeof window === "undefined") return null;
-  return (window as unknown as { __OMNI_REMOTION_FIXTURES?: RemotionShowcaseFixtures }).__OMNI_REMOTION_FIXTURES ?? null;
+  return (window as unknown as { __HIVEMINDOS_REMOTION_FIXTURES?: RemotionShowcaseFixtures }).__HIVEMINDOS_REMOTION_FIXTURES ?? null;
 }
 
 function seedAgents(): AgentProfile[] {
@@ -1006,11 +1015,26 @@ function runtimeCan(agent: AgentProfile | null | undefined, capability: keyof Ru
   return Boolean(runtimeCapabilities(agent)[capability]);
 }
 
+function readStoredValue(key: string, suffix: string): string | null {
+  if (typeof window === "undefined") return null;
+  const current = window.localStorage.getItem(key);
+  if (current !== null) return current;
+  for (let index = 0; index < window.localStorage.length; index += 1) {
+    const candidateKey = window.localStorage.key(index);
+    if (!candidateKey || candidateKey === key || !candidateKey.endsWith(suffix)) continue;
+    const candidate = window.localStorage.getItem(candidateKey);
+    if (candidate === null) continue;
+    window.localStorage.setItem(key, candidate);
+    return candidate;
+  }
+  return null;
+}
+
 function parseStoredAgents(): AgentProfile[] {
   if (typeof window === "undefined") return seedAgents();
   const fixtureAgents = remotionShowcaseFixtures()?.agents;
   if (fixtureAgents?.length) return fixtureAgents.map(normalizeAgentProfile);
-  const raw = window.localStorage.getItem(STORAGE_KEY);
+  const raw = readStoredValue(STORAGE_KEY, STORAGE_SUFFIXES.agents);
   if (!raw) return seedAgents();
   try {
     const parsed = JSON.parse(raw) as AgentProfile[];
@@ -1025,13 +1049,14 @@ function parseStoredVault(): SharedVaultConfig {
   if (typeof window === "undefined") return DEFAULT_SHARED_VAULT;
   const fixtureVault = remotionShowcaseFixtures()?.sharedVault;
   if (fixtureVault) return { ...DEFAULT_SHARED_VAULT, ...fixtureVault };
-  const raw = window.localStorage.getItem(VAULT_STORAGE_KEY);
+  const raw = readStoredValue(VAULT_STORAGE_KEY, STORAGE_SUFFIXES.vault);
   if (!raw) return DEFAULT_SHARED_VAULT;
   try {
     const parsed = JSON.parse(raw) as Partial<SharedVaultConfig>;
     const storedVaultPath = parsed.vaultPath?.trim();
     const migratedVaultPath = storedVaultPath
-      && /\/(Agent Team Vault|Omni-Agent Hivemind Vault|Omni Agent Vault)$/.test(storedVaultPath)
+      && /\/[^/]*(hivemind|vault)[^/]*$/i.test(storedVaultPath)
+      && !storedVaultPath.endsWith("/hivemindos-vault")
       ? DEFAULT_SHARED_VAULT.vaultPath
       : storedVaultPath;
     const storedKanbanFolder = parsed.kanbanFolder?.trim();
@@ -1050,7 +1075,7 @@ function parseStoredTasks(): AgentTask[] {
   if (typeof window === "undefined") return [];
   const fixtureTasks = remotionShowcaseFixtures()?.tasks;
   if (fixtureTasks) return fixtureTasks;
-  const raw = window.localStorage.getItem(TASK_STORAGE_KEY);
+  const raw = readStoredValue(TASK_STORAGE_KEY, STORAGE_SUFFIXES.tasks);
   if (!raw) return [];
   try {
     const parsed = JSON.parse(raw) as AgentTask[];
@@ -1064,7 +1089,7 @@ function parseStoredSchedules(): AgentSchedule[] {
   if (typeof window === "undefined") return [];
   const fixtureSchedules = remotionShowcaseFixtures()?.schedules;
   if (fixtureSchedules) return fixtureSchedules;
-  const raw = window.localStorage.getItem(SCHEDULE_STORAGE_KEY);
+  const raw = readStoredValue(SCHEDULE_STORAGE_KEY, STORAGE_SUFFIXES.schedules);
   if (!raw) return [];
   try {
     const parsed = JSON.parse(raw) as AgentSchedule[];
@@ -1092,7 +1117,7 @@ function parseStoredSchedules(): AgentSchedule[] {
 
 function parseStoredChatFolders(): ChatCustomFolder[] {
   if (typeof window === "undefined") return [];
-  const raw = window.localStorage.getItem(CHAT_FOLDER_STORAGE_KEY);
+  const raw = readStoredValue(CHAT_FOLDER_STORAGE_KEY, STORAGE_SUFFIXES.chatFolders);
   if (!raw) return [];
   try {
     const parsed = JSON.parse(raw) as ChatCustomFolder[];
@@ -1111,7 +1136,7 @@ function parseStoredWallets(): Record<string, AgentWalletConfig> {
   if (typeof window === "undefined") return {};
   const fixtureWallets = remotionShowcaseFixtures()?.wallets;
   if (fixtureWallets) return fixtureWallets;
-  const raw = window.localStorage.getItem(WALLET_STORAGE_KEY);
+  const raw = readStoredValue(WALLET_STORAGE_KEY, STORAGE_SUFFIXES.wallets);
   if (!raw) return {};
   try {
     const parsed = JSON.parse(raw) as Record<string, AgentWalletConfig>;
@@ -2213,8 +2238,8 @@ function machineVersionState(machine: MachineGroup, latestCommit?: string) {
 
 function setupCollectorCommand() {
   return [
-    `git clone ${REPO_CLONE_URL} omni-agent-hivemind 2>/dev/null || true`,
-    "cd omni-agent-hivemind",
+    `git clone ${REPO_CLONE_URL} hivemindos 2>/dev/null || true`,
+    "cd hivemindos",
     "git pull --ff-only",
     "./setup.sh",
   ].join("\n");
@@ -2586,7 +2611,7 @@ export default function Home() {
     setSchedules(parseStoredSchedules());
     setWalletsByAgent(parseStoredWallets());
     setChatCustomFolders(parseStoredChatFolders());
-    const storedTheme = window.localStorage.getItem(THEME_STORAGE_KEY);
+    const storedTheme = readStoredValue(THEME_STORAGE_KEY, STORAGE_SUFFIXES.theme);
     setDashboardTheme(storedTheme === "hive-light" ? "hive-light" : "dark");
     setHydrated(true);
   }, []);
@@ -6133,8 +6158,8 @@ export default function Home() {
         localTailscaleIp,
         remoteTailscaleIp: target.remoteTailscaleIp,
         remoteAddressHost: target.remoteAddressHost,
-        folderId: "omni-agent-hivemind-vault",
-        label: "omni-agent-hivemind-vault",
+        folderId: "hivemindos-vault",
+        label: "hivemindos-vault",
       }),
     }).catch(() => null);
     return response?.json().catch(() => null) as Promise<VaultSyncStatus | null>;
@@ -6760,8 +6785,8 @@ export default function Home() {
           <div className="sidebarBrand">
             <Image
               className="brandLogo"
-              src="/omni-agent-hivemind-logo.png"
-              alt="Omni-Agent Hivemind"
+              src="/hivemindos-logo.png"
+              alt="HivemindOS"
               width={190}
               height={194}
               style={{ display: "block", width: "auto", height: "auto", margin: "0 auto" }}
@@ -6769,7 +6794,7 @@ export default function Home() {
             />
             <div>
               <p className="eyebrow">Private swarm command</p>
-              <h1>Omni-Agent Hivemind</h1>
+              <h1>HivemindOS</h1>
             </div>
           </div>
 
@@ -9883,7 +9908,7 @@ export default function Home() {
 	                        {aeonEnvSyncing ? <LoaderCircle aria-hidden="true" className={vaultClass("spinIcon")} /> : <Upload aria-hidden="true" />}
 	                        {aeonEnvSyncing ? "Syncing secrets" : "Sync env to GitHub"}
 	                      </Button>
-	                      {aeonEnvSyncStatus ? <small>{aeonEnvSyncStatus}</small> : <small>Push selected local Hivemind/Aeon env keys to this Aeon repo as GitHub Actions secrets.</small>}
+	                      {aeonEnvSyncStatus ? <small>{aeonEnvSyncStatus}</small> : <small>Push selected local HivemindOS/Aeon env keys to this Aeon repo as GitHub Actions secrets.</small>}
 	                    </div>
 	                  </>
                 ) : selectedAgent.runtime !== "openclaw" ? (

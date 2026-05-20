@@ -5,7 +5,7 @@ import { join } from "node:path";
 
 const baseUrl = process.env.KANBAN_TEST_BASE_URL || "http://127.0.0.1:5020";
 const runId = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
-const vaultPath = join(tmpdir(), `omni-kanban-workflow-${runId}`);
+const vaultPath = join(tmpdir(), `hivemindos-kanban-workflow-${runId}`);
 const kanbanFolder = "Projects/Test/Kanban";
 const board = `workflow-${runId}`.replace(/[^a-z0-9_-]/g, "-").slice(0, 63);
 

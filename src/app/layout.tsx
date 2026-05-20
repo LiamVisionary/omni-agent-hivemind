@@ -2,9 +2,9 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Omni-Agent Hivemind",
-  applicationName: "Omni-Agent Hivemind",
-  description: "Local-first control room for Omni-Agent fleets.",
+  title: "HivemindOS",
+  applicationName: "HivemindOS",
+  description: "Local-first control room for HivemindOS fleets.",
   icons: {
     icon: [
       { url: "/favicon.ico" },

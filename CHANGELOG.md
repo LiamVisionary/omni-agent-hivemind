@@ -3,6 +3,22 @@
 This file records user-visible changes before they are committed. New work should
 be added here first, then marked `Committed` or `Pushed` after the git action.
 
+## 2026-05-21 02:14 WITA - Regenerate README HivemindOS Images
+
+- Status: Pushed
+- Areas changed: README logo image, README hero image, README sharing-model image
+- Summary: Refresh the README media so the embedded visual branding says `HivemindOS`, replacing the stale legacy title treatment in the logo and hero and aligning the sharing diagram's central brain label.
+- Verification: Visual inspection of `public/hivemindos-logo.png`, `public/readme/hivemindos-hero.png`, and `public/readme/hivemind-sharing-model.png`; OCR scan of all three README images found no remaining legacy brand text.
+- Intended commit message: `Regenerate README HivemindOS images`
+
+## 2026-05-21 02:35 WITA - Rename Project To HivemindOS
+
+- Status: Pushed
+- Areas changed: App branding, package/storage slugs, setup scripts, README/docs, generated media paths, shared Obsidian brain vault and project folders
+- Summary: Rename the project from legacy Hivemind branding to HivemindOS across active app surfaces, defaults, local storage keys, generated asset paths, helper scripts, GitHub repository name, and shared brain folder names while preserving migration compatibility for existing local browser/vault data.
+- Verification: Renamed GitHub repository to `LiamVisionary/hivemindos` and updated local `origin`; moved the shared brain to `/Users/liam/Documents/Obsidian/hivemindos-vault` and its project folder to `Projects/HivemindOS`; repo and vault scans for old project names returned no matches; `node --check scripts/capture-remotion-showcase.mjs`; `node --check scripts/agent-telemetry-collector.mjs`; `bash -n scripts/install-telemetry-collector.sh`; `bash -n scripts/seed-shared-skills.sh`; `python3 -m py_compile scripts/hive-env-add`; `pnpm typecheck --pretty false`; `pnpm eslint src/app/page.tsx src/app/layout.tsx src/lib/types/agent-runtime.ts src/lib/services/obsidian/vault-path.ts scripts/capture-remotion-showcase.mjs scripts/agent-telemetry-collector.mjs`; `pnpm test:kanban`; `pnpm test:dashboard-nav`; `git diff --check`.
+- Intended commit message: `Rename project to HivemindOS`
+
 ## 2026-05-21 02:16 WITA - Sanitize Public Commit Details
 
 - Status: Pushed
@@ -127,8 +143,8 @@ be added here first, then marked `Committed` or `Pushed` after the git action.
 
 - Status: Pushed
 - Areas changed: Aeon runtime adapter, generic runtime env sync API, Aeon settings UI, hive-env-add, changelog
-- Summary: Add an explicit selected-key bridge from local Hivemind/Aeon env stores to Aeon GitHub Actions secrets, expose it through `/api/runtimes/aeon/env/sync`, add an Aeon settings control for syncing selected keys to the configured Aeon repo, and teach `hive-env-add --runtime aeon` to optionally push the same key to GitHub secrets with `--sync-aeon-github-secret`.
-- Verification: `pnpm typecheck --pretty false`; `pnpm eslint src/app/page.tsx 'src/app/api/runtimes/[runtime]/env/sync/route.ts' src/lib/services/runtime-adapters/aeon.ts src/lib/services/runtime-adapters/types.ts scripts/hive-env-add` (script ignored by eslint config); `python3 -m py_compile scripts/hive-env-add`; `git diff --check -- CHANGELOG.md src/app/page.tsx 'src/app/api/runtimes/[runtime]/env/sync/route.ts' src/lib/services/runtime-adapters/aeon.ts src/lib/services/runtime-adapters/types.ts src/lib/services/runtime-adapters/registry.ts scripts/hive-env-add`; real fork-backed API smoke wrote fake `OMNI_AEON_E2E_SECRET` from `/tmp/omni-aeon-fork-e2e/.env` to `LiamVisionary/aeon` with `/api/runtimes/aeon/env/sync`, verified it with `gh secret list`, then deleted the temporary secret and removed the temp `.env`.
+- Summary: Add an explicit selected-key bridge from local HivemindOS/Aeon env stores to Aeon GitHub Actions secrets, expose it through `/api/runtimes/aeon/env/sync`, add an Aeon settings control for syncing selected keys to the configured Aeon repo, and teach `hive-env-add --runtime aeon` to optionally push the same key to GitHub secrets with `--sync-aeon-github-secret`.
+- Verification: `pnpm typecheck --pretty false`; `pnpm eslint src/app/page.tsx 'src/app/api/runtimes/[runtime]/env/sync/route.ts' src/lib/services/runtime-adapters/aeon.ts src/lib/services/runtime-adapters/types.ts scripts/hive-env-add` (script ignored by eslint config); `python3 -m py_compile scripts/hive-env-add`; `git diff --check -- CHANGELOG.md src/app/page.tsx 'src/app/api/runtimes/[runtime]/env/sync/route.ts' src/lib/services/runtime-adapters/aeon.ts src/lib/services/runtime-adapters/types.ts src/lib/services/runtime-adapters/registry.ts scripts/hive-env-add`; real fork-backed API smoke wrote fake `HIVEMINDOS_AEON_E2E_SECRET` from `/tmp/hivemindos-aeon-fork-e2e/.env` to `LiamVisionary/aeon` with `/api/runtimes/aeon/env/sync`, verified it with `gh secret list`, then deleted the temporary secret and removed the temp `.env`.
 - Intended commit message: `Sync Aeon env secrets`
 
 ## 2026-05-21 00:52 WITA - Reuse Composer For Quick Add
@@ -176,7 +192,7 @@ be added here first, then marked `Committed` or `Pushed` after the git action.
 - Status: Pushed
 - Areas changed: Aeon runtime adapter parser, changelog
 - Summary: Clone the real `aaronjmars/aeon` repository and run the dashboard's Aeon runtime endpoints against its actual `aeon.yml`, `skills.json`, skills, workflows, and GitHub Actions API, fixing the inline `aeon.yml` parser so schedules with trailing comments are discovered.
-- Verification: Cloned `https://github.com/aaronjmars/aeon.git` fresh to `/tmp/omni-aeon-e2e` at `b77b201`; ran `/api/runtimes/aeon/status`, `/skills`, `/schedules`, `/runs`, and `/outputs` against the real clone; verified real `aeon.yml` schedule discovery returns 121 skills after parser fixes; synced the real shared Brain shelf into the real Aeon clone through `/api/runtimes/aeon/skills/sync`, writing 146 managed shared skills and skipping one unmanaged slug collision; verified `skills.json` contains 267 total skills with 146 shared-brain entries; ran `/api/scheduler/import` against the real Aeon agent and got 121 schedules; exercised real enable/disable actions on `heartbeat` in the clone's `aeon.yml` and restored it to enabled; created fork `LiamVisionary/aeon`, pushed empty commit `d0f7c3a` to register workflows, dispatched real `heartbeat` run through `/api/scheduler/runtime-action` against the fork, verified GitHub run `26176176117` exists at `https://github.com/LiamVisionary/aeon/actions/runs/26176176117`, and verified `/api/runtimes/aeon/runs` returns that queued run; built and ran Aeon's real A2A server on port `41241`, verified its live agent card exposes 267 skills, and verified A2A-only adapter status/skill discovery; `pnpm typecheck --pretty false`; `pnpm eslint src/lib/services/runtime-adapters/aeon.ts`; `git diff --check -- src/lib/services/runtime-adapters/aeon.ts CHANGELOG.md`.
+- Verification: Cloned `https://github.com/aaronjmars/aeon.git` fresh to `/tmp/hivemindos-aeon-e2e` at `b77b201`; ran `/api/runtimes/aeon/status`, `/skills`, `/schedules`, `/runs`, and `/outputs` against the real clone; verified real `aeon.yml` schedule discovery returns 121 skills after parser fixes; synced the real shared Brain shelf into the real Aeon clone through `/api/runtimes/aeon/skills/sync`, writing 146 managed shared skills and skipping one unmanaged slug collision; verified `skills.json` contains 267 total skills with 146 shared-brain entries; ran `/api/scheduler/import` against the real Aeon agent and got 121 schedules; exercised real enable/disable actions on `heartbeat` in the clone's `aeon.yml` and restored it to enabled; created fork `LiamVisionary/aeon`, pushed empty commit `d0f7c3a` to register workflows, dispatched real `heartbeat` run through `/api/scheduler/runtime-action` against the fork, verified GitHub run `26176176117` exists at `https://github.com/LiamVisionary/aeon/actions/runs/26176176117`, and verified `/api/runtimes/aeon/runs` returns that queued run; built and ran Aeon's real A2A server on port `41241`, verified its live agent card exposes 267 skills, and verified A2A-only adapter status/skill discovery; `pnpm typecheck --pretty false`; `pnpm eslint src/lib/services/runtime-adapters/aeon.ts`; `git diff --check -- src/lib/services/runtime-adapters/aeon.ts CHANGELOG.md`.
 - Intended commit message: `Verify Aeon real e2e`
 
 ## 2026-05-21 00:10 WITA - Ban Silent UI Truncation
@@ -223,7 +239,7 @@ be added here first, then marked `Committed` or `Pushed` after the git action.
 
 - Status: Pushed
 - Areas changed: README positioning, README generated images, quick start, feature table, Tailscale/Syncthing/env-sync explanation, changelog
-- Summary: Reframe the README around Omni-Agent Hivemind as a virtual private network and private control room for agents, keep Bankr as a launch badge only, simplify cross-machine/Tailscale language, elevate shared env sync, clarify that env sync uses Tailscale SSH while shared brain sync uses Syncthing over Tailscale, and add generated README visuals for the cyber-bee agent network plus the hub-and-spoke sharing model.
+- Summary: Reframe the README around HivemindOS as a virtual private network and private control room for agents, keep Bankr as a launch badge only, simplify cross-machine/Tailscale language, elevate shared env sync, clarify that env sync uses Tailscale SSH while shared brain sync uses Syncthing over Tailscale, and add generated README visuals for the cyber-bee agent network plus the hub-and-spoke sharing model.
 - Verification: `git diff --check -- README.md CHANGELOG.md`; verified README-referenced local files exist; searched README for stale Bankr-as-product and private-fleet/collector-backed phrasing.
 - Intended commit message: `Rewrite launch README`
 
@@ -239,8 +255,8 @@ be added here first, then marked `Committed` or `Pushed` after the git action.
 
 - Status: Pushed
 - Areas changed: Shared Obsidian vault folder, default vault paths, browser vault migration, shared-skill seed paths, Syncthing label, package scripts, memory guard, setup/build diagnostics, changelog
-- Summary: Merge the current `Omni-Agent Hivemind Vault` contents into the synced old `Agent Team Vault`, rename the synced local vault folder to `omni-agent-hivemind-vault`, keep a timestamped backup of the old current Omni vault folder, update repo defaults/setup/runtime collector paths to the new lowercase folder name, migrate stale browser-stored vault paths to the new default, refresh managed shared-skill pointers for local agent runtimes, switch dashboard dev/build paths to Next's Webpack mode to avoid the Turbopack memory/NFT issue, and wrap setup/dev/build commands in a 5 GB resident-memory process-tree guard so runaway local servers/builds are killed before they can freeze the machine.
-- Verification: Read both vault `AGENTS.md` files before durable vault changes; `rsync -a --backup --suffix=.pre-omni-merge-20260520-224203.bak` merged current Omni vault contents into the synced vault; moved `Omni-Agent Hivemind Vault` to `Omni-Agent Hivemind Vault.merged-20260520-224203.bak`; renamed `Agent Team Vault` to `omni-agent-hivemind-vault`; ran `NEXT_PUBLIC_OBSIDIAN_VAULT_PATH=~/Documents/Obsidian/omni-agent-hivemind-vault ./scripts/seed-shared-skills.sh --import-sources none --share-targets all`; propagated the same repo/vault default to the reachable Ubuntu Tailscale machine at `~/omni-agent-hivemind`; merged its recreated uppercase vault folder into `~/Documents/Obsidian/omni-agent-hivemind-vault`; restarted its collector and verified `/health` reports `~/Documents/Obsidian/omni-agent-hivemind-vault`; `bash -n setup.sh`; `bash -n scripts/seed-shared-skills.sh`; `bash -n scripts/install-telemetry-collector.sh`; `bash -n scripts/run-with-memory-limit.sh`; `node --check scripts/agent-telemetry-collector.mjs`; `pnpm typecheck --pretty false`; bounded `pnpm build` now runs as `next build --webpack` and passes without the Turbopack NFT warning; `MEMORY_TIMEOUT_SECONDS=60 pnpm dev` served `/` on port 5020 under the guard and was stopped by the test timeout; an artificial memory-growth command with `--limit-mb 50` was killed with exit 137.
+- Summary: Merge the current `HivemindOS Vault` contents into the synced old `HivemindOS Vault`, rename the synced local vault folder to `hivemindos-vault`, keep a timestamped backup of the old current HivemindOS vault folder, update repo defaults/setup/runtime collector paths to the new lowercase folder name, migrate stale browser-stored vault paths to the new default, refresh managed shared-skill pointers for local agent runtimes, switch dashboard dev/build paths to Next's Webpack mode to avoid the Turbopack memory/NFT issue, and wrap setup/dev/build commands in a 5 GB resident-memory process-tree guard so runaway local servers/builds are killed before they can freeze the machine.
+- Verification: Read both vault `AGENTS.md` files before durable vault changes; `rsync -a --backup --suffix=.pre-hivemindos-merge-20260520-224203.bak` merged current HivemindOS vault contents into the synced vault; moved `HivemindOS Vault` to `HivemindOS Vault.merged-20260520-224203.bak`; renamed `HivemindOS Vault` to `hivemindos-vault`; ran `NEXT_PUBLIC_OBSIDIAN_VAULT_PATH=~/Documents/Obsidian/hivemindos-vault ./scripts/seed-shared-skills.sh --import-sources none --share-targets all`; propagated the same repo/vault default to the reachable Ubuntu Tailscale machine at `~/hivemindos`; merged its recreated uppercase vault folder into `~/Documents/Obsidian/hivemindos-vault`; restarted its collector and verified `/health` reports `~/Documents/Obsidian/hivemindos-vault`; `bash -n setup.sh`; `bash -n scripts/seed-shared-skills.sh`; `bash -n scripts/install-telemetry-collector.sh`; `bash -n scripts/run-with-memory-limit.sh`; `node --check scripts/agent-telemetry-collector.mjs`; `pnpm typecheck --pretty false`; bounded `pnpm build` now runs as `next build --webpack` and passes without the Turbopack NFT warning; `MEMORY_TIMEOUT_SECONDS=60 pnpm dev` served `/` on port 5020 under the guard and was stopped by the test timeout; an artificial memory-growth command with `--limit-mb 50` was killed with exit 137.
 - Intended commit message: `Canonicalize shared vault folder`
 
 ## 2026-05-20 22:05 WITA - Match Ami Scheduler Attachments
@@ -303,7 +319,7 @@ be added here first, then marked `Committed` or `Pushed` after the git action.
 
 - Status: Pushed
 - Areas changed: Scheduler import controls, OpenClaw cron import/management bridge, fleet styles, changelog
-- Summary: Add an Import existing action to Scheduler that pulls local OpenClaw cron jobs into the Hivemind schedule list, preserves their runtime job IDs, shows imported runtime/source status, and routes Run now, Pause, and Resume actions back through the real OpenClaw cron API.
+- Summary: Add an Import existing action to Scheduler that pulls local OpenClaw cron jobs into the HivemindOS schedule list, preserves their runtime job IDs, shows imported runtime/source status, and routes Run now, Pause, and Resume actions back through the real OpenClaw cron API.
 - Verification: `pnpm typecheck`; `pnpm eslint src/app/page.tsx`; Playwright smoke on `http://localhost:5020` verified the Import existing button renders in Scheduler without horizontal overflow.
 - Intended commit message: `Import existing runtime schedules`
 
@@ -328,7 +344,7 @@ be added here first, then marked `Committed` or `Pushed` after the git action.
 - Status: Pushed
 - Areas changed: Scheduler UI, fleet styles, changelog
 - Summary: Replace the generic Scheduler form with an Ami-inspired automation studio: compact glass sections, prompt/step segmented controls with icons, cadence preset chips, live step previews, inline skill attachment chips, and tighter schedule cards.
-- Verification: `pnpm typecheck`; `pnpm eslint src/app/page.tsx`; `git diff --check -- src/app/page.tsx src/app/fleet.module.css CHANGELOG.md`; Playwright smoke on `http://localhost:5020` verified the Scheduler tab renders without horizontal overflow and captured `/tmp/omni-scheduler-smoke.png`.
+- Verification: `pnpm typecheck`; `pnpm eslint src/app/page.tsx`; `git diff --check -- src/app/page.tsx src/app/fleet.module.css CHANGELOG.md`; Playwright smoke on `http://localhost:5020` verified the Scheduler tab renders without horizontal overflow and captured `/tmp/hivemindos-scheduler-smoke.png`.
 - Intended commit message: `Restyle scheduler like Ami`
 
 ## 2026-05-20 21:45 WITA - Render Alert Markdown
@@ -400,16 +416,16 @@ be added here first, then marked `Committed` or `Pushed` after the git action.
 - Status: Pushed
 - Areas changed: Env helper CLI, setup script, environment example, README, changelog
 - Summary: Add an agent-agnostic `hive-env-add` command that setup installs into `~/.local/bin`, updates local app and generic hive agent env stores by default, imports existing Hermes env keys with `--import-env`, discovers ready Tailnet peers through setup-installed collector health identity instead of guessing SSH users, supports explicit Hermes/Aeon/OpenClaw compatibility targets, and refreshes an encrypted shared-note backup when GPG configuration is available.
-- Verification: Temp E2E harness verified `--import-env` imports valid Hermes env keys without printing secret values, `hive-env-add` updates local app plus generic agent env, fake Tailscale status with one online peer triggers Tailscale SSH replication, the remote peer receives the secret through stdin and updates its own app plus generic agent env defaults, offline peers are skipped, and secret values do not appear in stdout/stderr; real Tailnet smoke updated `lab-linux-1` collector health to publish `envSync.user=root`, installed the helper there, added a harmless `HIVE_TAILNET_COLLECTOR_ID_TEST_*` key on the Mac with `hive-env-add`, verified the identical key/value in Ubuntu `~/.omni-agent-hivemind/.env`, then removed the test keys from both machines; isolated fresh-clone smoke created temp clone/home folders on Mac and Ubuntu, installed only the new helper in each temp `~/.local/bin`, ran an isolated Ubuntu collector health endpoint on a temporary port, added a harmless env with normal `hive-env-add KEY=value` from the Mac temp clone, verified the same value in the Ubuntu temp hive env, and removed all temp folders/processes; `env PYTHONPYCACHEPREFIX=/private/tmp/hive-pycache python3 -m py_compile scripts/hive-env-add`; `node --check scripts/agent-telemetry-collector.mjs`; `bash -n setup.sh`; `git diff --check -- scripts/hive-env-add scripts/agent-telemetry-collector.mjs setup.sh .env.example README.md CHANGELOG.md ASSIMILATION.json`; `verify_assimilation_manifest.py`.
+- Verification: Temp E2E harness verified `--import-env` imports valid Hermes env keys without printing secret values, `hive-env-add` updates local app plus generic agent env, fake Tailscale status with one online peer triggers Tailscale SSH replication, the remote peer receives the secret through stdin and updates its own app plus generic agent env defaults, offline peers are skipped, and secret values do not appear in stdout/stderr; real Tailnet smoke updated `lab-linux-1` collector health to publish `envSync.user=root`, installed the helper there, added a harmless `HIVE_TAILNET_COLLECTOR_ID_TEST_*` key on the Mac with `hive-env-add`, verified the identical key/value in Ubuntu `~/.hivemindos/.env`, then removed the test keys from both machines; isolated fresh-clone smoke created temp clone/home folders on Mac and Ubuntu, installed only the new helper in each temp `~/.local/bin`, ran an isolated Ubuntu collector health endpoint on a temporary port, added a harmless env with normal `hive-env-add KEY=value` from the Mac temp clone, verified the same value in the Ubuntu temp hive env, and removed all temp folders/processes; `env PYTHONPYCACHEPREFIX=/private/tmp/hive-pycache python3 -m py_compile scripts/hive-env-add`; `node --check scripts/agent-telemetry-collector.mjs`; `bash -n setup.sh`; `git diff --check -- scripts/hive-env-add scripts/agent-telemetry-collector.mjs setup.sh .env.example README.md CHANGELOG.md ASSIMILATION.json`; `verify_assimilation_manifest.py`.
 - Intended commit message: `Add hive env helper`
 
-## 2026-05-20 18:29 WITA - Make Omni Vault Canonical
+## 2026-05-20 18:29 WITA - Make HivemindOS Vault Canonical
 
 - Status: Pushed
 - Areas changed: Shared Obsidian vault contents, Work board storage, browser vault migration, changelog
-- Summary: Merge the Agent Team Vault contents into `Omni-Agent Hivemind Vault`, merge both Kanban board histories into the Omni board, preserve overwritten vault files with migration backups, and migrate browsers with the old Agent Team path or old OpenClaw Kanban folder back to the default Omni vault on reload.
-- Verification: `pnpm typecheck --pretty false`; `pnpm eslint src/app/page.tsx`; `git diff --check -- src/app/page.tsx CHANGELOG.md`; merged `Agent Team Vault` into `Omni-Agent Hivemind Vault` with `.20260520-omni-migration.bak` backups for overwritten files; `GET /api/kanban?board=default&include_archived=true` now resolves to `~/Documents/Obsidian/omni-agent-hivemind-vault/Projects/Omni-Agent Hivemind/Kanban/kanban.json` and returns `Improve UI and UX`, `MiroShark Integration`, `Say ok if no input audio is sent.`, plus archived smoke cards; browser storage migration covers old `Agent Team Vault` and `Projects/OpenClaw/Kanban` settings.
-- Intended commit message: `Make Omni vault canonical`
+- Summary: Merge the HivemindOS Vault contents into `HivemindOS Vault`, merge both Kanban board histories into the HivemindOS board, preserve overwritten vault files with migration backups, and migrate browsers with the old HivemindOS path or old OpenClaw Kanban folder back to the default HivemindOS vault on reload.
+- Verification: `pnpm typecheck --pretty false`; `pnpm eslint src/app/page.tsx`; `git diff --check -- src/app/page.tsx CHANGELOG.md`; merged `HivemindOS Vault` into `HivemindOS Vault` with `.20260520-hivemindos-migration.bak` backups for overwritten files; `GET /api/kanban?board=default&include_archived=true` now resolves to `~/Documents/Obsidian/hivemindos-vault/Projects/HivemindOS/Kanban/kanban.json` and returns `Improve UI and UX`, `MiroShark Integration`, `Say ok if no input audio is sent.`, plus archived smoke cards; browser storage migration covers old `HivemindOS Vault` and `Projects/OpenClaw/Kanban` settings.
+- Intended commit message: `Make HivemindOS vault canonical`
 
 ## 2026-05-20 12:50 WITA - Bundle Karpathy Shared Skill
 
@@ -520,7 +536,7 @@ be added here first, then marked `Committed` or `Pushed` after the git action.
 - Status: Pushed
 - Areas changed: Collector Syncthing folder configuration, changelog
 - Summary: Create Syncthing's `.stfolder` marker whenever the collector configures a shared folder so existing vault directories do not enter the `folder marker missing` error state.
-- Verification: `node --check scripts/agent-telemetry-collector.mjs`; `git diff --cached --check`; restarted the local collector; updated the Ubuntu collector to `272dd7d`; re-paired without a remote folder path; local Syncthing folder status returned `idle` with no marker error; no-path E2E smoke passed Mac to Ubuntu in 5 attempts and Ubuntu to Mac in 6 attempts; cleaned up hidden `.omni-sync-test` notes.
+- Verification: `node --check scripts/agent-telemetry-collector.mjs`; `git diff --cached --check`; restarted the local collector; updated the Ubuntu collector to `272dd7d`; re-paired without a remote folder path; local Syncthing folder status returned `idle` with no marker error; no-path E2E smoke passed Mac to Ubuntu in 5 attempts and Ubuntu to Mac in 6 attempts; cleaned up hidden `.hivemindos-sync-test` notes.
 - Intended commit message: `Create Syncthing folder markers`
 
 ## 2026-05-20 01:54 WITA - Clarify Shared Skill Imports
@@ -547,20 +563,20 @@ be added here first, then marked `Committed` or `Pushed` after the git action.
 - Verification: `pnpm typecheck`; `pnpm eslint src/app/page.tsx` (warning only from unrelated existing `localTailscaleIp` symbol); `git diff --check -- src/app/page.tsx CHANGELOG.md`.
 - Intended commit message: `Retry delegation with reachable agents`
 
-## 2026-05-20 01:41 WITA - Move Vault Project Data To Hivemind
+## 2026-05-20 01:41 WITA - Move Vault Project Data To HivemindOS
 
 - Status: Pushed
 - Areas changed: MiroShark run archive API, Kanban vault storage, Obsidian project data folders, changelog
-- Summary: Move the existing saved MiroShark archive, brain access log, and Kanban data into the canonical `Projects/Omni-Agent Hivemind` folder, remove the redundant legacy OpenClaw project folder, keep the MiroShark API pointed at the single Hivemind archive path, and normalize stale Kanban folder requests to the canonical Hivemind Kanban folder.
-- Verification: `pnpm typecheck`; `pnpm eslint src/lib/services/kanban/local-kanban-store.ts src/app/api/miroshark/runs/route.ts`; `git diff --check -- src/app/api/miroshark/runs/route.ts src/lib/services/kanban/local-kanban-store.ts CHANGELOG.md`; canonical archive smoke found `sim_c7764ee3341b` with 30 posts and `sim_f64f2186bd42` with 74 posts in `~/Documents/Obsidian/agent-team-vault/Projects/Omni-Agent Hivemind/MiroShark Simulations`, verified every indexed `run.json` exists, merged 79 brain access log entries, moved the populated Kanban board with 2 tasks, 7 comments, and 24 events, confirmed the old project folder no longer exists, searched for stale legacy project-folder references, and verified a stale Kanban request resolves to the Hivemind Kanban path without recreating the old folder.
-- Intended commit message: `Move vault project data to Hivemind`
+- Summary: Move the existing saved MiroShark archive, brain access log, and Kanban data into the canonical `Projects/HivemindOS` folder, remove the redundant legacy OpenClaw project folder, keep the MiroShark API pointed at the single HivemindOS archive path, and normalize stale Kanban folder requests to the canonical HivemindOS Kanban folder.
+- Verification: `pnpm typecheck`; `pnpm eslint src/lib/services/kanban/local-kanban-store.ts src/app/api/miroshark/runs/route.ts`; `git diff --check -- src/app/api/miroshark/runs/route.ts src/lib/services/kanban/local-kanban-store.ts CHANGELOG.md`; canonical archive smoke found `sim_c7764ee3341b` with 30 posts and `sim_f64f2186bd42` with 74 posts in `~/Documents/Obsidian/agent-team-vault/Projects/HivemindOS/MiroShark Simulations`, verified every indexed `run.json` exists, merged 79 brain access log entries, moved the populated Kanban board with 2 tasks, 7 comments, and 24 events, confirmed the old project folder no longer exists, searched for stale legacy project-folder references, and verified a stale Kanban request resolves to the HivemindOS Kanban path without recreating the old folder.
+- Intended commit message: `Move vault project data to HivemindOS`
 
 ## 2026-05-20 01:38 WITA - Move Brain Skill Imports To Providers
 
 - Status: Pushed
 - Areas changed: Brain shared skills provider controls, vault styles, changelog
 - Summary: Move Brain skill import actions out of the section header and into each provider cell, with a nearby provider-toolbar import-all action so the provider inventory can be acted on directly.
-- Verification: `pnpm eslint src/app/page.tsx` (warning only: existing unused `kanbanDispatchCooldownRef`); `git diff --check -- src/app/page.tsx src/app/vault.module.css CHANGELOG.md`; Playwright smoke with the Agent Team Vault path verified provider cells show subtle per-provider import buttons and the nearby import-all action. `pnpm typecheck` is currently blocked by unrelated `dispatchKanbanTaskToAgent` return typing in `src/app/page.tsx`.
+- Verification: `pnpm eslint src/app/page.tsx` (warning only: existing unused `kanbanDispatchCooldownRef`); `git diff --check -- src/app/page.tsx src/app/vault.module.css CHANGELOG.md`; Playwright smoke with the HivemindOS Vault path verified provider cells show subtle per-provider import buttons and the nearby import-all action. `pnpm typecheck` is currently blocked by unrelated `dispatchKanbanTaskToAgent` return typing in `src/app/page.tsx`.
 - Intended commit message: `Move brain skill imports to providers`
 
 ## 2026-05-20 01:38 WITA - Remove Setup Header Redundancy
@@ -631,7 +647,7 @@ be added here first, then marked `Committed` or `Pushed` after the git action.
 
 - Status: Pushed
 - Areas changed: Collector Syncthing service management, Syncthing pairing APIs, shared vault sync UI, setup scripts, README, roadmap, agent runtime context, assimilation manifest, changelog
-- Summary: Make built-in multi-machine vault/folder sync use managed Syncthing over Tailscale by default, install/start Syncthing from setup on macOS and Linux collectors, pair local and remote folders through collector APIs, keep Tailscale SSH plus rsync as an advanced fallback, and add a scoped `.omni-sync-test` note endpoint for real bidirectional E2E verification without SSH.
+- Summary: Make built-in multi-machine vault/folder sync use managed Syncthing over Tailscale by default, install/start Syncthing from setup on macOS and Linux collectors, pair local and remote folders through collector APIs, keep Tailscale SSH plus rsync as an advanced fallback, and add a scoped `.hivemindos-sync-test` note endpoint for real bidirectional E2E verification without SSH.
 - Verification: `node --check scripts/agent-telemetry-collector.mjs`; `bash -n scripts/run-syncthing.sh`; `bash -n setup.sh`; `bash -n scripts/install-telemetry-collector.sh`; `pnpm typecheck`; `pnpm lint` (warnings only: 8 existing unused-variable warnings); `pnpm build` (passed with existing Turbopack NFT trace warning and bigint fallback notices); `git diff --check`; `python3 verify_assimilation_manifest.py`; local collector `/syncthing/status` reports Syncthing v2.1.0 running with a device ID; current-tree token/private-path scan found no matches outside changelog verification notes. Remote Mac-to-Ubuntu and Ubuntu-to-Mac sync test will run after this commit is pushed so the Ubuntu collector can update to these endpoints.
 - Intended commit message: `Add Syncthing Tailnet sync`
 
@@ -775,7 +791,7 @@ be added here first, then marked `Committed` or `Pushed` after the git action.
 
 - Status: Pushed
 - Areas changed: Tailnet vault sync state, local Kanban fallback storage, neutral Kanban/orchestrator/note-intake APIs, Obsidian vault autodetect scoring, MiroShark archive/run labels, changelog
-- Summary: Replace generic OpenClaw-branded storage, API, and archive defaults with Omni-Agent Hivemind names while preserving explicit OpenClaw integration references only where they describe the OpenClaw runtime; remove the old OpenClaw Kanban/orchestrator/note-intake compatibility routes so generic work queues and note intake are only exposed through `/api/kanban`, `/api/orchestrator`, and `/api/note-intake`; make bidirectional sync stop after a failed remote snapshot instead of showing a misleading merge plan.
+- Summary: Replace generic OpenClaw-branded storage, API, and archive defaults with HivemindOS names while preserving explicit OpenClaw integration references only where they describe the OpenClaw runtime; remove the old OpenClaw Kanban/orchestrator/note-intake compatibility routes so generic work queues and note intake are only exposed through `/api/kanban`, `/api/orchestrator`, and `/api/note-intake`; make bidirectional sync stop after a failed remote snapshot instead of showing a misleading merge plan.
 - Verification: `pnpm typecheck`; `pnpm lint` (warnings only: 8 existing unused-variable warnings); `pnpm build` (passed with the existing Turbopack NFT tracing warning and non-blocking bigint fallback notices); `bash -n setup.sh`; `bash -n scripts/install-telemetry-collector.sh`; `git diff --check`; `python3 verify_assimilation_manifest.py`; current-tree sensitive path/token scans returned no matches; generic storage/API scan returned no OpenClaw-branded defaults outside explicit OpenClaw integration docs.
 - Intended commit message: `Neutralize generic storage names`
 
@@ -943,8 +959,8 @@ be added here first, then marked `Committed` or `Pushed` after the git action.
 
 - Status: Pushed
 - Areas changed: Brain/Vault dashboard UI, Obsidian graph API, Obsidian access audit API, Obsidian note-open API, shared vault runtime instructions, Vault CSS module, assimilation manifest
-- Summary: Replace the bare shared-brain vault surface with a touching-cell hive graph built from markdown wikilinks, segmented cell-edge connection paths, selectable note inspection, drag-to-pan navigation, second-click note opening in Obsidian, graph stats, and per-note access history. Add vault-backed brain access logging under `Projects/Omni-Agent Hivemind/Brain Access/access-log.jsonl` so dashboard/agent note inspections record timestamp, agent, runtime, and machine.
-- Verification: `pnpm typecheck`; `pnpm eslint src/app/page.tsx src/app/api/obsidian/graph/route.ts src/app/api/obsidian/access/route.ts src/app/api/obsidian/open/route.ts src/lib/services/obsidian/brain-graph.ts src/app/api/chat/agent-runtime/route.ts`; `git diff --check -- src/lib/services/obsidian/brain-graph.ts src/app/api/obsidian/graph/route.ts src/app/api/obsidian/access/route.ts src/app/api/obsidian/open/route.ts src/app/api/chat/agent-runtime/route.ts src/app/page.tsx src/app/vault.module.css CHANGELOG.md ASSIMILATION.json`; local API smoke for `/api/obsidian/graph` returned the Omni-Agent Hivemind Vault graph; local API smoke for `/api/obsidian/access` wrote a Codex inspection event for `DAILY-BRIEF.md`; local API smoke for `/api/obsidian/open` opened `DAILY-BRIEF.md` in Obsidian; standalone Playwright SVG render using the real vault graph verified a continuous selected-cell border route with no diagonals through cell interiors; `verify_assimilation_manifest.py`.
+- Summary: Replace the bare shared-brain vault surface with a touching-cell hive graph built from markdown wikilinks, segmented cell-edge connection paths, selectable note inspection, drag-to-pan navigation, second-click note opening in Obsidian, graph stats, and per-note access history. Add vault-backed brain access logging under `Projects/HivemindOS/Brain Access/access-log.jsonl` so dashboard/agent note inspections record timestamp, agent, runtime, and machine.
+- Verification: `pnpm typecheck`; `pnpm eslint src/app/page.tsx src/app/api/obsidian/graph/route.ts src/app/api/obsidian/access/route.ts src/app/api/obsidian/open/route.ts src/lib/services/obsidian/brain-graph.ts src/app/api/chat/agent-runtime/route.ts`; `git diff --check -- src/lib/services/obsidian/brain-graph.ts src/app/api/obsidian/graph/route.ts src/app/api/obsidian/access/route.ts src/app/api/obsidian/open/route.ts src/app/api/chat/agent-runtime/route.ts src/app/page.tsx src/app/vault.module.css CHANGELOG.md ASSIMILATION.json`; local API smoke for `/api/obsidian/graph` returned the HivemindOS Vault graph; local API smoke for `/api/obsidian/access` wrote a Codex inspection event for `DAILY-BRIEF.md`; local API smoke for `/api/obsidian/open` opened `DAILY-BRIEF.md` in Obsidian; standalone Playwright SVG render using the real vault graph verified a continuous selected-cell border route with no diagonals through cell interiors; `verify_assimilation_manifest.py`.
 - Intended commit message: `Add shared brain graph and access history`
 
 ## 2026-05-19 14:52 WITA - Scope Dashboard Feature Styles
@@ -1023,8 +1039,8 @@ be added here first, then marked `Committed` or `Pushed` after the git action.
 
 - Status: Pushed
 - Areas changed: Kanban storage/API, shared vault config, dashboard Work/Vault UI, agent task tracking action, agent runtime context, README, roadmap, environment example, assimilation manifest
-- Summary: Make the Work board prefer the configured shared vault for `kanban.json` board storage, migrate existing local boards into the vault when first opened, expose storage metadata in the API/UI, let observed agent activity rows be promoted into Kanban tasks, pass the Kanban folder into agent runtime context, and keep `~/.omni-agent-hivemind/kanban` as an explicit local fallback.
-- Verification: `pnpm typecheck`; `pnpm eslint src/app/page.tsx src/components/cells/AgentTaskList.tsx src/lib/services/kanban/local-kanban-store.ts src/app/api/kanban/route.ts`; `git diff --check -- src/lib/types/agent-runtime.ts src/lib/services/kanban/local-kanban-store.ts src/app/api/kanban/route.ts src/app/api/chat/agent-runtime/route.ts src/app/page.tsx src/app/globals.css README.md ROADMAP.md .env.example CHANGELOG.md ASSIMILATION.json`; Kanban API smoke read against `127.0.0.1:5020` with the shared vault path returned `storage.source: "obsidian"` and created `~/Documents/Obsidian/Omni-Agent Hivemind Vault/Projects/Omni-Agent Hivemind/Kanban/kanban.json`; `verify_assimilation_manifest.py`.
+- Summary: Make the Work board prefer the configured shared vault for `kanban.json` board storage, migrate existing local boards into the vault when first opened, expose storage metadata in the API/UI, let observed agent activity rows be promoted into Kanban tasks, pass the Kanban folder into agent runtime context, and keep `~/.hivemindos/kanban` as an explicit local fallback.
+- Verification: `pnpm typecheck`; `pnpm eslint src/app/page.tsx src/components/cells/AgentTaskList.tsx src/lib/services/kanban/local-kanban-store.ts src/app/api/kanban/route.ts`; `git diff --check -- src/lib/types/agent-runtime.ts src/lib/services/kanban/local-kanban-store.ts src/app/api/kanban/route.ts src/app/api/chat/agent-runtime/route.ts src/app/page.tsx src/app/globals.css README.md ROADMAP.md .env.example CHANGELOG.md ASSIMILATION.json`; Kanban API smoke read against `127.0.0.1:5020` with the shared vault path returned `storage.source: "obsidian"` and created `~/Documents/Obsidian/HivemindOS Vault/Projects/HivemindOS/Kanban/kanban.json`; `verify_assimilation_manifest.py`.
 - Intended commit message: `Integrate Kanban with shared vault storage`
 
 ## 2026-05-19 11:54 WITA - Expand MiroShark Swarm Workbench
@@ -1095,8 +1111,8 @@ be added here first, then marked `Committed` or `Pushed` after the git action.
 
 - Status: Pushed
 - Areas changed: Shared vault defaults, MiroShark run archive, Obsidian status API, environment example
-- Summary: Replace the stale `Omni Agent Vault` default with the configured `Omni-Agent Hivemind Vault`, migrate stale browser-stored vault config on load, and make server-side MiroShark archive/status requests fall back to the real vault when old clients still send the legacy path.
-- Verification: `pnpm typecheck`; `pnpm eslint src/app/page.tsx src/app/api/miroshark/runs/route.ts src/app/api/obsidian/status/route.ts src/lib/types/agent-runtime.ts`; `git diff --check -- src/lib/types/agent-runtime.ts .env.example src/app/page.tsx src/app/api/miroshark/runs/route.ts src/app/api/obsidian/status/route.ts CHANGELOG.md`; legacy `~/Documents/Obsidian/Omni Agent Vault` status/archive requests now resolve to `~/Documents/Obsidian/Omni-Agent Hivemind Vault`.
+- Summary: Replace the stale `HivemindOS Vault` default with the configured `HivemindOS Vault`, migrate stale browser-stored vault config on load, and make server-side MiroShark archive/status requests fall back to the real vault when old clients still send the legacy path.
+- Verification: `pnpm typecheck`; `pnpm eslint src/app/page.tsx src/app/api/miroshark/runs/route.ts src/app/api/obsidian/status/route.ts src/lib/types/agent-runtime.ts`; `git diff --check -- src/lib/types/agent-runtime.ts .env.example src/app/page.tsx src/app/api/miroshark/runs/route.ts src/app/api/obsidian/status/route.ts CHANGELOG.md`; legacy `~/Documents/Obsidian/HivemindOS Vault` status/archive requests now resolve to `~/Documents/Obsidian/HivemindOS Vault`.
 - Intended commit message: `Fix default Obsidian vault path`
 
 ## 2026-05-19 02:31 WITA - Order MiroShark Timeline And Progress
@@ -1119,8 +1135,8 @@ be added here first, then marked `Committed` or `Pushed` after the git action.
 
 - Status: Pushed
 - Areas changed: MiroShark swarm proxy, MiroShark run archive API, Swarm dashboard history controls, Obsidian project archive
-- Summary: Save MiroShark simulation runs into the configured Obsidian vault under `Projects/Omni-Agent Hivemind/MiroShark Simulations`, including an index, per-run Markdown summaries, exact JSON payloads, post exports, timeline exports, automatic save-on-update behavior, and Swarm-tab controls to reload saved runs after the app is closed.
-- Verification: `pnpm typecheck`; `pnpm eslint src/app/page.tsx src/app/api/miroshark/swarm/route.ts src/app/api/miroshark/runs/route.ts`; `git diff --check -- src/app/page.tsx src/app/globals.css src/app/api/miroshark/swarm/route.ts src/app/api/miroshark/runs/route.ts CHANGELOG.md`; saved `sim_c7764ee3341b` through `/api/miroshark/runs` into `~/Documents/Obsidian/Omni-Agent Hivemind Vault/Projects/Omni-Agent Hivemind/MiroShark Simulations`, verified the archive index, and loaded the run back with 30 visible posts. Full `pnpm lint` is still blocked by unrelated existing lint errors in `src/components/ui/lottie-player.tsx`.
+- Summary: Save MiroShark simulation runs into the configured Obsidian vault under `Projects/HivemindOS/MiroShark Simulations`, including an index, per-run Markdown summaries, exact JSON payloads, post exports, timeline exports, automatic save-on-update behavior, and Swarm-tab controls to reload saved runs after the app is closed.
+- Verification: `pnpm typecheck`; `pnpm eslint src/app/page.tsx src/app/api/miroshark/swarm/route.ts src/app/api/miroshark/runs/route.ts`; `git diff --check -- src/app/page.tsx src/app/globals.css src/app/api/miroshark/swarm/route.ts src/app/api/miroshark/runs/route.ts CHANGELOG.md`; saved `sim_c7764ee3341b` through `/api/miroshark/runs` into `~/Documents/Obsidian/HivemindOS Vault/Projects/HivemindOS/MiroShark Simulations`, verified the archive index, and loaded the run back with 30 visible posts. Full `pnpm lint` is still blocked by unrelated existing lint errors in `src/components/ui/lottie-player.tsx`.
 - Intended commit message: `Archive MiroShark runs in Obsidian`
 
 ## 2026-05-19 02:05 WITA - Replace Square Background With Honeycomb
@@ -1135,7 +1151,7 @@ be added here first, then marked `Committed` or `Pushed` after the git action.
 
 - Status: Pushed
 - Areas changed: Sidebar brand layout
-- Summary: Center the Omni-Agent Hivemind logo and title stack in the command sidebar, including the narrow/mobile layout, and make the logo image block-level with auto margins so it cannot start-align inside the grid.
+- Summary: Center the HivemindOS logo and title stack in the command sidebar, including the narrow/mobile layout, and make the logo image block-level with auto margins so it cannot start-align inside the grid.
 - Verification: `pnpm typecheck`; `git diff --check -- src/app/globals.css src/app/page.tsx CHANGELOG.md` passed. Local visual QA was not run because `localhost:5023` was not serving and the project rules say not to start `pnpm dev`.
 - Intended commit message: `Center sidebar brand logo`
 
@@ -1595,13 +1611,13 @@ be added here first, then marked `Committed` or `Pushed` after the git action.
 - Verification: `pnpm typecheck`, `pnpm lint` (warnings only, pre-existing unused-variable warnings), `pnpm build` (pre-existing Turbopack NFT trace warning), `git diff --check`, and `ssh-keyscan` against the VPS Tailnet hostname passed. Restarted the local production server on port 5020.
 - Intended commit message: `Preflight Tailscale SSH host keys`
 
-## 2026-05-18 18:08 WITA - Omni-Agent Hivemind Branding
+## 2026-05-18 18:08 WITA - HivemindOS Branding
 
 - Status: Pushed
 - Areas changed: App metadata, hero branding, runtime status placement, README/docs title references, package name, public logo and favicon assets
-- Summary: Add the supplied Omni-Agent Hivemind logo throughout the app, generate browser icons and favicon assets, rename visible app title surfaces from OpenClaw Next to Omni-Agent Hivemind, and move runtime status checking out of the hero into the selected-agent workspace.
+- Summary: Add the supplied HivemindOS logo throughout the app, generate browser icons and favicon assets, rename visible app title surfaces from OpenClaw Next to HivemindOS, and move runtime status checking out of the hero into the selected-agent workspace.
 - Verification: `pnpm typecheck`, `pnpm lint` (warnings only, pre-existing unused-variable warnings), `pnpm build` (pre-existing Turbopack NFT trace warning), and `git diff --check` passed.
-- Intended commit message: `Add Omni-Agent Hivemind branding`
+- Intended commit message: `Add HivemindOS branding`
 
 ## 2026-05-18 18:01 WITA - Tailscale SSH Host Key Handling
 

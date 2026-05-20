@@ -25,9 +25,9 @@ const hermesApiKey = process.env.AGENT_TELEMETRY_HERMES_API_KEY || process.env.A
 const hermesApiStartTimeoutMs = Number(process.env.AGENT_TELEMETRY_HERMES_API_START_TIMEOUT_MS || 15_000);
 const syncthingApiBaseUrl = process.env.SYNCTHING_API_URL || "http://127.0.0.1:8384";
 const defaultSyncPath = expandHome(
-  process.env.OMNI_HIVEMIND_SYNC_PATH
+  process.env.HIVEMINDOS_SYNC_PATH
     || process.env.NEXT_PUBLIC_OBSIDIAN_VAULT_PATH
-    || "~/Documents/Obsidian/omni-agent-hivemind-vault",
+    || "~/Documents/Obsidian/hivemindos-vault",
 );
 let hermesApiProcess = null;
 let hermesApiStartPromise = null;
@@ -203,12 +203,12 @@ function shellQuote(value) {
 }
 
 function safeFolderId(value) {
-  return String(value || "omni-agent-hivemind-sync")
+  return String(value || "hivemindos-sync")
     .trim()
     .toLowerCase()
     .replace(/[^a-z0-9._-]+/g, "-")
     .replace(/^-+|-+$/g, "")
-    .slice(0, 64) || "omni-agent-hivemind-sync";
+    .slice(0, 64) || "hivemindos-sync";
 }
 
 function syncthingConfigCandidates() {
@@ -375,7 +375,7 @@ function mergeFolder(existing, defaults, input, config) {
     ...defaults,
     ...existing,
     id: safeFolderId(input.folderId || defaults?.id),
-    label: input.label || existing?.label || defaults?.label || "Omni-Agent Hivemind Sync",
+    label: input.label || existing?.label || defaults?.label || "HivemindOS Sync",
     path: expandHome(input.path),
     type: "sendreceive",
     paused: false,
@@ -407,7 +407,7 @@ async function configureSyncthingFolder(input) {
   ]);
   config.myID = status.myID;
 
-  const folderId = safeFolderId(input.folderId || `omni-${randomBytes(4).toString("hex")}`);
+  const folderId = safeFolderId(input.folderId || `hivemindos-${randomBytes(4).toString("hex")}`);
   const devices = Array.isArray(config.devices) ? config.devices : [];
   const folders = Array.isArray(config.folders) ? config.folders : [];
   const existingDeviceIndex = devices.findIndex((device) => device.deviceID === peerDeviceID);
@@ -466,7 +466,7 @@ function safeSyncTestId(value) {
 function syncTestNotePath(root, id) {
   const base = resolve(expandHome(String(root || "").trim()));
   if (!base || base === resolve("/")) throw new Error("root is required.");
-  const testDir = resolve(base, ".omni-sync-test");
+  const testDir = resolve(base, ".hivemindos-sync-test");
   const notePath = resolve(testDir, `${safeSyncTestId(id)}.md`);
   if (!notePath.startsWith(`${testDir}/`)) throw new Error("Invalid test note path.");
   return { base, testDir, notePath };

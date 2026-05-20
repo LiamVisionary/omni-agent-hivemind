@@ -544,7 +544,7 @@ export async function syncSharedBrainSkillsToAeon(input: {
     const destinationMetadata = destinationExists ? await readManagedMetadata(destinationDir) : null;
     const destinationText = destinationExists ? await readText(destinationSkill) : "";
     const destinationChecksum = destinationText ? checksum(destinationText) : "";
-    const managedByHivemind = destinationMetadata?.managedBy === "omni-agent-hivemind" || destinationMetadata?.provider === "shared-brain";
+    const managedByHivemind = destinationMetadata?.managedBy === "hivemindos" || destinationMetadata?.provider === "shared-brain";
 
     if (destinationExists && destinationChecksum !== skill.checksum && !managedByHivemind) {
       skipped.push({ ...skill, reason: `Aeon already has an unmanaged skill at ${destinationDir}` });
@@ -559,7 +559,7 @@ export async function syncSharedBrainSkillsToAeon(input: {
       filter: (path) => !path.split("/").some((part) => SKIPPED_DIRS.has(part)),
     });
     await writeFile(join(destinationDir, SOURCE_METADATA_FILE), JSON.stringify({
-      managedBy: "omni-agent-hivemind",
+      managedBy: "hivemindos",
       provider: "shared-brain",
       providerLabel: "Shared brain",
       sourcePath: skill.path,
@@ -643,7 +643,7 @@ async function writeAeonSkillsManifest(
     }));
 
   const manifest = {
-    managedBy: "omni-agent-hivemind",
+    managedBy: "hivemindos",
     updatedAt: new Date().toISOString(),
     skills: [...retained, ...sharedEntries].sort((a, b) => String(a.slug).localeCompare(String(b.slug))),
   };
@@ -663,7 +663,7 @@ async function writeSkillsReadme(inventory: BrainSkillInventory) {
     "",
     "Operational know-how distilled into self-contained recipes. Each subfolder is a single skill: a `SKILL.md` with frontmatter plus optional helper files.",
     "",
-    "This index is maintained by Omni-Agent Hivemind skill import. Edit individual `SKILL.md` files at the source when a provider owns them, then import again to mirror them here.",
+    "This index is maintained by HivemindOS skill import. Edit individual `SKILL.md` files at the source when a provider owns them, then import again to mirror them here.",
     "",
     "## Index",
     "",

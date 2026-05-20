@@ -377,7 +377,7 @@ async function aeonEnvValues(profile: AgentProfile | undefined) {
   const sources = [
     join(process.cwd(), ".env.local"),
     join(process.cwd(), ".env"),
-    join(homedir(), ".omni-agent-hivemind", ".env"),
+    join(homedir(), ".hivemindos", ".env"),
     join(homedir(), ".aeon", ".env"),
     root ? join(root, ".env") : "",
   ].filter(Boolean);
@@ -410,7 +410,7 @@ async function syncEnvToGitHubSecrets(profile: AgentProfile, keys: string[] | un
     }
     const value = values[key];
     if (!value) {
-      skipped.push({ key, reason: "No value found in Hivemind, generic agent, Aeon, repo, or process env stores." });
+      skipped.push({ key, reason: "No value found in HivemindOS, generic agent, Aeon, repo, or process env stores." });
       continue;
     }
     try {

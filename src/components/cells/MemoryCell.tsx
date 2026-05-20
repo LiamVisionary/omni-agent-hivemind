@@ -14,7 +14,7 @@ import { Cell } from "./Cell";
  */
 type MemoryCellProps = {
   enabled: boolean;
-  /** Plain-English vault location, e.g. "~/Documents/Obsidian/Omni Vault". */
+  /** Plain-English vault location, e.g. "~/Documents/Obsidian/HivemindOS Vault". */
   vaultPath?: string;
   /** Number of agents currently opted in to the shared brain. */
   optedInAgentCount: number;
