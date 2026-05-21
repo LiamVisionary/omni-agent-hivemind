@@ -5,7 +5,7 @@ be added here first, then marked `Committed` or `Pushed` after the git action.
 
 ## 2026-05-21 12:50 UTC - Load Shared Skill Hints Through Hermes SOUL
 
-- Status: Uncommitted
+- Status: Pushed
 - Areas changed: Shared skill seed script, Hermes runtime instruction pointers, changelog
 - Summary: Make the shared-skill seeding script patch `~/.hermes/SOUL.md` as well as `~/.hermes/AGENTS.md`, because Hermes always loads SOUL from `HERMES_HOME` but only loads AGENTS as current-working-directory project context. Also remove stale `OMNI_AGENT_HIVEMIND_SHARED_SKILLS` managed blocks when rewriting skill hints so obsolete vault paths do not linger.
 - Verification: `bash -n scripts/seed-shared-skills.sh`; `bash -n setup.sh`; Python prompt-builder smoke confirmed the shared-skill pointer is loaded through `~/.hermes/SOUL.md`.
