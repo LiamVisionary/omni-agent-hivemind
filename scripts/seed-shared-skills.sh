@@ -101,7 +101,10 @@ agent_instruction_files() {
       printf "%s\n" "$HOME/.claude/CLAUDE.md"
       ;;
     hermes)
-      printf "%s\n" "$HOME/.hermes/AGENTS.md"
+      # Hermes always loads SOUL.md from HERMES_HOME as identity/persona.
+      # AGENTS.md is only loaded as a cwd project-context file, so patching
+      # ~/.hermes/AGENTS.md alone does not reach normal Telegram/gateway runs.
+      printf "%s\n" "$HOME/.hermes/SOUL.md" "$HOME/.hermes/AGENTS.md"
       ;;
     gemini)
       printf "%s\n" "$HOME/.gemini/GEMINI.md"
@@ -207,9 +210,11 @@ write_managed_block() {
   mkdir -p "$(dirname "$file")"
 
   if [[ -f "$file" ]]; then
-    awk -v start="$start" -v end="$end" '
-      $0 == start { skip=1; next }
-      $0 == end { skip=0; next }
+    awk -v start="$start" -v end="$end" \
+        -v legacy_start="<!-- BEGIN OMNI_AGENT_HIVEMIND_SHARED_SKILLS -->" \
+        -v legacy_end="<!-- END OMNI_AGENT_HIVEMIND_SHARED_SKILLS -->" '
+      $0 == start || $0 == legacy_start { skip=1; next }
+      $0 == end || $0 == legacy_end { skip=0; next }
       skip != 1 { print }
     ' "$file" > "$tmp_file"
   else
