@@ -89,4 +89,3 @@ export const BEE_WORKER_PRESET_LIST = Object.values(BEE_WORKER_PRESETS);
 export function beeWorkerPreset(workerClass: BeeWorkerClass) {
   return BEE_WORKER_PRESETS[workerClass] ?? BEE_WORKER_PRESETS.general;
 }
-

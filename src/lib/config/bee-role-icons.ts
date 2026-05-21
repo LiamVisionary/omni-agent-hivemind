@@ -16,4 +16,3 @@ export function beeRoleIconPath(role?: BeeAgentRole, workerClass: BeeWorkerClass
   if (role === "queen") return "/icons/queen-bee-v2.png";
   return WORKER_CLASS_ICON[workerClass] ?? WORKER_CLASS_ICON.general;
 }
-

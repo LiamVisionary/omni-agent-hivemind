@@ -1054,35 +1054,11 @@
 }
 
 .machineInitForm .agentSettingsField:first-child,
-.machineInitNotice,
+.machineInitCost,
 .machineInitForm .setupModalActions {
   grid-column: 1 / -1;
 }
 
-.machineInitCheckbox {
-  display: flex;
-  grid-column: 1 / -1;
-  gap: 10px;
-  align-items: center;
-  min-height: 42px;
-  border: 1px solid rgba(148, 163, 184, 0.14);
-  border-radius: 7px;
-  background: rgba(9, 13, 20, 0.52);
-  color: var(--foreground);
-  font-size: 13px;
-  font-weight: 750;
-  line-height: 1.35;
-  padding: 10px 12px;
-}
-
-.machineInitCheckbox input {
-  flex: 0 0 auto;
-  width: 16px;
-  height: 16px;
-  accent-color: var(--accent);
-}
-
-.machineInitNotice,
 .machineInitError {
   border: 1px solid rgba(251, 191, 36, 0.26);
   border-radius: 7px;
@@ -1091,6 +1067,88 @@
   font-size: 12px;
   line-height: 1.5;
   padding: 10px 12px;
+}
+
+.machineInitEmpty {
+  display: grid;
+  gap: 12px;
+  margin-top: 18px;
+  border: 1px solid rgba(94, 234, 212, 0.24);
+  border-radius: 8px;
+  background:
+    linear-gradient(135deg, rgba(45, 212, 191, 0.12), transparent 48%),
+    rgba(9, 13, 20, 0.64);
+  padding: 14px;
+}
+
+.machineInitEmpty strong {
+  display: block;
+  color: var(--foreground);
+  font-size: 16px;
+  line-height: 1.25;
+}
+
+.machineInitEmpty p {
+  margin: 5px 0 0;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.machineInitTokenActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.machineInitTokenOk,
+.machineInitTokenError {
+  margin: 0;
+  border: 1px solid rgba(74, 222, 128, 0.24);
+  border-radius: 7px;
+  background: rgba(22, 163, 74, 0.1);
+  color: #bbf7d0;
+  padding: 9px 10px;
+}
+
+.machineInitTokenError {
+  border-color: rgba(251, 113, 133, 0.34);
+  background: rgba(251, 113, 133, 0.1);
+  color: #fecdd3;
+}
+
+.machineInitCost {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 5px 12px;
+  align-items: center;
+  border: 1px solid rgba(94, 234, 212, 0.2);
+  border-radius: 7px;
+  background: rgba(45, 212, 191, 0.08);
+  padding: 11px 12px;
+}
+
+.machineInitCost span {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 900;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.machineInitCost strong {
+  color: var(--accent-strong);
+  font-size: 18px;
+  line-height: 1.1;
+}
+
+.machineInitCost p {
+  grid-column: 1 / -1;
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.45;
 }
 
 .machineInitError {
@@ -1199,6 +1257,7 @@
 .agentSettingsField {
   display: grid;
   gap: 7px;
+  min-width: 0;
 }
 
 .agentSettingsField span {
@@ -1212,6 +1271,8 @@
 .agentSettingsField input,
 .agentSettingsField select,
 .agentSettingsField textarea {
+  width: 100%;
+  min-width: 0;
   min-height: 42px;
   border: 1px solid rgba(148, 163, 184, 0.18);
   border-radius: 7px;
@@ -2765,6 +2826,7 @@
   }
 
   .machineInitForm,
+  .machineInitCost,
   .machineInitCommand {
     grid-template-columns: 1fr;
   }
@@ -2797,7 +2859,8 @@
 :global(:root[data-theme="hive-light"]) .agentBubble,
 :global(:root[data-theme="hive-light"]) .setupModal,
 :global(:root[data-theme="hive-light"]) .setupStep,
-:global(:root[data-theme="hive-light"]) .machineInitCheckbox,
+:global(:root[data-theme="hive-light"]) .machineInitEmpty,
+:global(:root[data-theme="hive-light"]) .machineInitCost,
 :global(:root[data-theme="hive-light"]) .machineInitCommand,
 :global(:root[data-theme="hive-light"]) .machineInitResult > div:first-child,
 :global(:root[data-theme="hive-light"]) .connectionSummary div {
