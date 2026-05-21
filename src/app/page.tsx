@@ -295,25 +295,25 @@ const SCHEDULER_MODEL_OPTIONS = [
 ] as const;
 
 const HETZNER_SERVER_TYPE_OPTIONS = [
-  { value: "cx23", label: "CX23 - x86 shared CPU, small general node" },
-  { value: "cx33", label: "CX33 - x86 shared CPU, medium general node" },
-  { value: "cx43", label: "CX43 - x86 shared CPU, larger general node" },
-  { value: "cx53", label: "CX53 - x86 shared CPU, high-memory general node" },
-  { value: "cax11", label: "CAX11 - ARM shared CPU, low-cost node" },
-  { value: "cax21", label: "CAX21 - ARM shared CPU, medium node" },
-  { value: "cax31", label: "CAX31 - ARM shared CPU, larger node" },
-  { value: "cax41", label: "CAX41 - ARM shared CPU, high-memory node" },
-  { value: "cpx11", label: "CPX11 - AMD shared CPU, compact node" },
-  { value: "cpx21", label: "CPX21 - AMD shared CPU, small node" },
-  { value: "cpx31", label: "CPX31 - AMD shared CPU, medium node" },
-  { value: "cpx41", label: "CPX41 - AMD shared CPU, larger node" },
-  { value: "cpx51", label: "CPX51 - AMD shared CPU, high-memory node" },
-  { value: "ccx13", label: "CCX13 - AMD dedicated CPU, small worker" },
-  { value: "ccx23", label: "CCX23 - AMD dedicated CPU, medium worker" },
-  { value: "ccx33", label: "CCX33 - AMD dedicated CPU, large worker" },
-  { value: "ccx43", label: "CCX43 - AMD dedicated CPU, larger worker" },
-  { value: "ccx53", label: "CCX53 - AMD dedicated CPU, high-memory worker" },
-  { value: "ccx63", label: "CCX63 - AMD dedicated CPU, heavy worker" },
+  { value: "cx23", label: "CX23", detail: "x86 shared CPU · small general node", monthlyEur: 3.99 },
+  { value: "cx33", label: "CX33", detail: "x86 shared CPU · medium general node", monthlyEur: 6.99 },
+  { value: "cx43", label: "CX43", detail: "x86 shared CPU · larger general node", monthlyEur: 13.99 },
+  { value: "cx53", label: "CX53", detail: "x86 shared CPU · high-memory general node", monthlyEur: 27.99 },
+  { value: "cax11", label: "CAX11", detail: "ARM shared CPU · low-cost node", monthlyEur: 4.49 },
+  { value: "cax21", label: "CAX21", detail: "ARM shared CPU · medium node", monthlyEur: 8.99 },
+  { value: "cax31", label: "CAX31", detail: "ARM shared CPU · larger node", monthlyEur: 16.99 },
+  { value: "cax41", label: "CAX41", detail: "ARM shared CPU · high-memory node", monthlyEur: 31.49 },
+  { value: "cpx11", label: "CPX11", detail: "AMD shared CPU · compact node", monthlyEur: 5.99 },
+  { value: "cpx21", label: "CPX21", detail: "AMD shared CPU · small node", monthlyEur: 11.99 },
+  { value: "cpx31", label: "CPX31", detail: "AMD shared CPU · medium node", monthlyEur: 20.99 },
+  { value: "cpx41", label: "CPX41", detail: "AMD shared CPU · larger node", monthlyEur: 38.99 },
+  { value: "cpx51", label: "CPX51", detail: "AMD shared CPU · high-memory node", monthlyEur: 77.99 },
+  { value: "ccx13", label: "CCX13", detail: "AMD dedicated CPU · small worker", monthlyEur: 16.99 },
+  { value: "ccx23", label: "CCX23", detail: "AMD dedicated CPU · medium worker", monthlyEur: 33.99 },
+  { value: "ccx33", label: "CCX33", detail: "AMD dedicated CPU · large worker", monthlyEur: 64.99 },
+  { value: "ccx43", label: "CCX43", detail: "AMD dedicated CPU · larger worker", monthlyEur: 129.99 },
+  { value: "ccx53", label: "CCX53", detail: "AMD dedicated CPU · high-memory worker", monthlyEur: 259.99 },
+  { value: "ccx63", label: "CCX63", detail: "AMD dedicated CPU · heavy worker", monthlyEur: 389.99 },
 ] as const;
 
 const HETZNER_LOCATION_OPTIONS = [
@@ -495,6 +495,13 @@ type MachineInitStatus = {
   busy?: boolean;
   error?: string;
   result?: MachineInitResult;
+};
+
+type MachineInitTokenStatus = {
+  busy?: boolean;
+  ok?: boolean;
+  message?: string;
+  error?: string;
 };
 
 type MachineUpdateStatus = {
@@ -2776,6 +2783,8 @@ export default function Home() {
   });
   const [machineInitStatus, setMachineInitStatus] = useState<MachineInitStatus>({});
   const [machineInitCopiedKey, setMachineInitCopiedKey] = useState("");
+  const [machineInitToken, setMachineInitToken] = useState("");
+  const [machineInitTokenStatus, setMachineInitTokenStatus] = useState<MachineInitTokenStatus>({});
   const [agentRoleModalId, setAgentRoleModalId] = useState("");
   const [agentCreateMachineKey, setAgentCreateMachineKey] = useState("");
   const [agentSettingsPanel, setAgentSettingsPanel] = useState<"role" | "memory" | "security">("role");
@@ -5778,6 +5787,39 @@ export default function Home() {
     setMachineInitOpen(true);
     setMachineInitStatus({});
     setMachineInitCopiedKey("");
+    setMachineInitTokenStatus({});
+  }
+
+  async function saveHetznerToken() {
+    const token = machineInitToken.trim();
+    if (!token) {
+      setMachineInitTokenStatus({ error: "Paste a Hetzner Cloud API token first." });
+      return;
+    }
+    setMachineInitTokenStatus({ busy: true });
+    const response = await fetch("/api/fleet/hetzner/token", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ token }),
+    }).catch(() => null);
+    const data = await response?.json().catch(() => null) as { ok?: boolean; error?: string; message?: string } | null;
+    if (!response?.ok || !data?.ok) {
+      setMachineInitTokenStatus({ error: data?.error ?? "Could not save the Hetzner token." });
+      return;
+    }
+    setMachineInitToken("");
+    setMachineInitTokenStatus({ ok: true, message: data.message ?? "Saved HCLOUD_TOKEN locally with hive-env-add." });
+  }
+
+  async function openHetznerEnvFile() {
+    setMachineInitTokenStatus({ busy: true });
+    const response = await fetch("/api/fleet/hetzner/env/open", { method: "POST" }).catch(() => null);
+    const data = await response?.json().catch(() => null) as { ok?: boolean; error?: string; message?: string } | null;
+    if (!response?.ok || !data?.ok) {
+      setMachineInitTokenStatus({ error: data?.error ?? "Could not open the local env file." });
+      return;
+    }
+    setMachineInitTokenStatus({ ok: true, message: data.message ?? "Opened the local HivemindOS env file." });
   }
 
   async function initializeMachineProject(event: FormEvent<HTMLFormElement>) {

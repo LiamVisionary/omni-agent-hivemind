@@ -8,7 +8,7 @@ be added here first, then marked `Committed` or `Pushed` after the git action.
 - Status: Pushed
 - Areas changed: Work board summary header, Work board stats labels, changelog
 - Summary: Replace the oversized hardcoded Work board slogan with a compact task-board header and rename the misleading `in flight` count to `total` so only the Working stat implies active execution.
-- Verification: Pending.
+- Verification: `pnpm exec tsc --noEmit --pretty false`; `git diff --check -- src/app/page.tsx src/app/kanban-board.module.css CHANGELOG.md`; static scan confirmed the old `Eight bees`, `one comb`, and `in flight` strings are gone; Playwright smoke on `http://localhost:5020` confirmed the Work summary renders as a 76px compact strip with `Work board`, `Tasks by lane`, `0 working`, `2 needs you`, `6 done`, and `8 total`.
 - Intended commit message: `Compact work board summary`
 
 ## 2026-05-21 20:05 WITA - Raise Work Board Scroll Buttons
