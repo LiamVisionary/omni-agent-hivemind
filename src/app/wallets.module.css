@@ -194,6 +194,7 @@
   transition: border-color 0.15s ease, background 0.15s ease, transform 0.15s ease;
 }
 
+.hiveLedgerStat small,
 .hiveLedgerConvert small {
   display: block;
   margin-top: 5px;

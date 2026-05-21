@@ -104,6 +104,7 @@ import {
   type SetupStep,
 } from "@/components/cells";
 import { FleetView, type FleetAgent, type FleetAlert, type FleetMachine, type FleetTask } from "@/components/fleet";
+import { SchedulerView, type SchedulerJob } from "@/components/scheduler";
 import {
   SwarmView,
   type SwarmAgent,
@@ -295,25 +296,25 @@ const SCHEDULER_MODEL_OPTIONS = [
 ] as const;
 
 const HETZNER_SERVER_TYPE_OPTIONS = [
-  { value: "cx23", label: "CX23", detail: "x86 shared CPU · small general node", monthlyEur: 3.99 },
-  { value: "cx33", label: "CX33", detail: "x86 shared CPU · medium general node", monthlyEur: 6.99 },
-  { value: "cx43", label: "CX43", detail: "x86 shared CPU · larger general node", monthlyEur: 13.99 },
-  { value: "cx53", label: "CX53", detail: "x86 shared CPU · high-memory general node", monthlyEur: 27.99 },
-  { value: "cax11", label: "CAX11", detail: "ARM shared CPU · low-cost node", monthlyEur: 4.49 },
-  { value: "cax21", label: "CAX21", detail: "ARM shared CPU · medium node", monthlyEur: 8.99 },
-  { value: "cax31", label: "CAX31", detail: "ARM shared CPU · larger node", monthlyEur: 16.99 },
-  { value: "cax41", label: "CAX41", detail: "ARM shared CPU · high-memory node", monthlyEur: 31.49 },
-  { value: "cpx11", label: "CPX11", detail: "AMD shared CPU · compact node", monthlyEur: 5.99 },
-  { value: "cpx21", label: "CPX21", detail: "AMD shared CPU · small node", monthlyEur: 11.99 },
-  { value: "cpx31", label: "CPX31", detail: "AMD shared CPU · medium node", monthlyEur: 20.99 },
-  { value: "cpx41", label: "CPX41", detail: "AMD shared CPU · larger node", monthlyEur: 38.99 },
-  { value: "cpx51", label: "CPX51", detail: "AMD shared CPU · high-memory node", monthlyEur: 77.99 },
-  { value: "ccx13", label: "CCX13", detail: "AMD dedicated CPU · small worker", monthlyEur: 16.99 },
-  { value: "ccx23", label: "CCX23", detail: "AMD dedicated CPU · medium worker", monthlyEur: 33.99 },
-  { value: "ccx33", label: "CCX33", detail: "AMD dedicated CPU · large worker", monthlyEur: 64.99 },
-  { value: "ccx43", label: "CCX43", detail: "AMD dedicated CPU · larger worker", monthlyEur: 129.99 },
-  { value: "ccx53", label: "CCX53", detail: "AMD dedicated CPU · high-memory worker", monthlyEur: 259.99 },
-  { value: "ccx63", label: "CCX63", detail: "AMD dedicated CPU · heavy worker", monthlyEur: 389.99 },
+  { value: "cx23", label: "CX23", detail: "x86 shared CPU · small general node", monthlyEur: 3.99, cores: 2, memoryGb: 4, diskGb: 40, cpu: "Intel/AMD shared" },
+  { value: "cx33", label: "CX33", detail: "x86 shared CPU · medium general node", monthlyEur: 6.99, cores: 4, memoryGb: 8, diskGb: 80, cpu: "Intel/AMD shared" },
+  { value: "cx43", label: "CX43", detail: "x86 shared CPU · larger general node", monthlyEur: 13.99, cores: 8, memoryGb: 16, diskGb: 160, cpu: "Intel/AMD shared" },
+  { value: "cx53", label: "CX53", detail: "x86 shared CPU · high-memory general node", monthlyEur: 27.99, cores: 16, memoryGb: 32, diskGb: 320, cpu: "Intel/AMD shared" },
+  { value: "cax11", label: "CAX11", detail: "ARM shared CPU · low-cost node", monthlyEur: 4.49, cores: 2, memoryGb: 4, diskGb: 40, cpu: "Ampere ARM shared" },
+  { value: "cax21", label: "CAX21", detail: "ARM shared CPU · medium node", monthlyEur: 8.99, cores: 4, memoryGb: 8, diskGb: 80, cpu: "Ampere ARM shared" },
+  { value: "cax31", label: "CAX31", detail: "ARM shared CPU · larger node", monthlyEur: 16.99, cores: 8, memoryGb: 16, diskGb: 160, cpu: "Ampere ARM shared" },
+  { value: "cax41", label: "CAX41", detail: "ARM shared CPU · high-memory node", monthlyEur: 31.49, cores: 16, memoryGb: 32, diskGb: 320, cpu: "Ampere ARM shared" },
+  { value: "cpx11", label: "CPX11", detail: "AMD shared CPU · compact node", monthlyEur: 5.99, cores: 2, memoryGb: 2, diskGb: 40, cpu: "AMD shared" },
+  { value: "cpx21", label: "CPX21", detail: "AMD shared CPU · small node", monthlyEur: 11.99, cores: 3, memoryGb: 4, diskGb: 80, cpu: "AMD shared" },
+  { value: "cpx31", label: "CPX31", detail: "AMD shared CPU · medium node", monthlyEur: 20.99, cores: 4, memoryGb: 8, diskGb: 160, cpu: "AMD shared" },
+  { value: "cpx41", label: "CPX41", detail: "AMD shared CPU · larger node", monthlyEur: 38.99, cores: 8, memoryGb: 16, diskGb: 240, cpu: "AMD shared" },
+  { value: "cpx51", label: "CPX51", detail: "AMD shared CPU · high-memory node", monthlyEur: 77.99, cores: 16, memoryGb: 32, diskGb: 360, cpu: "AMD shared" },
+  { value: "ccx13", label: "CCX13", detail: "AMD dedicated CPU · small worker", monthlyEur: 16.99, cores: 2, memoryGb: 8, diskGb: 80, cpu: "AMD dedicated" },
+  { value: "ccx23", label: "CCX23", detail: "AMD dedicated CPU · medium worker", monthlyEur: 33.99, cores: 4, memoryGb: 16, diskGb: 160, cpu: "AMD dedicated" },
+  { value: "ccx33", label: "CCX33", detail: "AMD dedicated CPU · large worker", monthlyEur: 64.99, cores: 8, memoryGb: 32, diskGb: 240, cpu: "AMD dedicated" },
+  { value: "ccx43", label: "CCX43", detail: "AMD dedicated CPU · larger worker", monthlyEur: 129.99, cores: 16, memoryGb: 64, diskGb: 360, cpu: "AMD dedicated" },
+  { value: "ccx53", label: "CCX53", detail: "AMD dedicated CPU · high-memory worker", monthlyEur: 259.99, cores: 32, memoryGb: 128, diskGb: 600, cpu: "AMD dedicated" },
+  { value: "ccx63", label: "CCX63", detail: "AMD dedicated CPU · heavy worker", monthlyEur: 389.99, cores: 48, memoryGb: 192, diskGb: 960, cpu: "AMD dedicated" },
 ] as const;
 
 const HETZNER_LOCATION_OPTIONS = [
@@ -498,7 +499,7 @@ type MachineInitStatus = {
 };
 
 type MachineInitTokenStatus = {
-  busy?: boolean;
+  busyAction?: "save" | "open";
   ok?: boolean;
   message?: string;
   error?: string;
@@ -1385,6 +1386,12 @@ function parseStoredHoneyLedgerEnabled(): boolean {
   if (typeof window === "undefined") return false;
   const raw = readStoredValue(HONEY_LEDGER_ENABLED_STORAGE_KEY, STORAGE_SUFFIXES.honeyLedgerEnabled);
   return raw === "true";
+}
+
+function formatHiveAmount(value: number): string {
+  if (!Number.isFinite(value) || value <= 0) return "0";
+  if (value < 0.000001) return "<0.000001";
+  return value.toLocaleString(undefined, { maximumFractionDigits: value < 1 ? 6 : 2 });
 }
 
 function parseStoredDiscoveredMachines(): DiscoveredMachine[] {
@@ -2760,6 +2767,7 @@ export default function Home() {
   const [editingScheduleId, setEditingScheduleId] = useState("");
   const [scheduleImportStatus, setScheduleImportStatus] = useState("");
   const [scheduleImporting, setScheduleImporting] = useState(false);
+  const [schedulerDraftOpen, setSchedulerDraftOpen] = useState(false);
   const [walletsByAgent, setWalletsByAgent] = useState<Record<string, AgentWalletConfig>>({});
   const [honeyTreasury, setHoneyTreasury] = useState<HoneyTreasuryConfig>(createDefaultHoneyTreasuryConfig);
   const [honeyLedgerEnabled, setHoneyLedgerEnabled] = useState(false);
@@ -4519,14 +4527,21 @@ export default function Home() {
     const totalHoney = honeyAgentRewards.reduce((total, reward) => total + reward.honeyEarned, 0);
     const availableHoney = honeyAgentRewards.reduce((total, reward) => total + reward.honeyAvailable, 0);
     const hiveBalance = honeyAgentRewards.reduce((total, reward) => total + reward.hiveBalance, 0);
-    const hiveQuote = Math.round(availableHoney * honeyTreasury.tokenPerHoney * 100) / 100;
+    const hiveQuote = Math.round(availableHoney * honeyTreasury.tokenPerHoney * 1_000_000) / 1_000_000;
     return {
       totalHoney,
       availableHoney,
       hiveBalance,
       hiveQuote,
+      rewardPoolHive: honeyTreasury.rewardPoolHive,
+      rewardPoolRemainingHive: honeyTreasury.rewardPoolRemainingHive,
+      rewardPoolEmittedHive: honeyTreasury.rewardPoolEmittedHive,
+      rewardPoolUsd: honeyTreasury.rewardPoolUsd,
+      rewardPoolVolumeUsd: honeyTreasury.rewardPoolVolumeUsd,
+      hivePerMillionTokens: honeyTreasury.hivePerMillionTokens,
+      rewardPoolSharePercent: honeyTreasury.rewardPoolShareOfVolume * 100,
     };
-  }, [honeyAgentRewards, honeyTreasury.tokenPerHoney]);
+  }, [honeyAgentRewards, honeyTreasury]);
 
   const kanbanAssigneeOptions = useMemo(() => {
     const local = displayAgents.map((agent) => agent.agentId || agent.id);
@@ -5052,6 +5067,7 @@ export default function Home() {
     setSchedulerPathDraft("");
     setSchedulerSkillSearch("");
     setEditingScheduleId(schedule.id);
+    setSchedulerDraftOpen(true);
   }
 
   function createSchedule(event: FormEvent<HTMLFormElement>) {
@@ -5094,6 +5110,7 @@ export default function Home() {
       ? current.map((schedule) => schedule.id === editedSchedule.id ? next : schedule)
       : [next, ...current]);
     resetScheduleDraft(agent.id);
+    setSchedulerDraftOpen(false);
   }
 
   function removeSchedule(id: string) {
@@ -5255,6 +5272,83 @@ export default function Home() {
     setSelectedAgentId(agent.id);
     setText(prompt);
     setActiveView("chat");
+  }
+
+  const schedulerStatusFromSchedule = useCallback((schedule: AgentSchedule): SchedulerJob["lastRun"]["status"] => {
+    const raw = schedule.lastStatus?.toLowerCase() ?? "";
+    if (raw.includes("fail") || raw.includes("error")) return "failed";
+    if (raw.includes("warn") || raw.includes("stale")) return "warn";
+    return schedule.lastRunAt ? "ok" : "idle";
+  }, []);
+
+  const scheduleIntervalMs = useCallback((every: string) => {
+    const match = every.trim().match(/^(\d+(?:\.\d+)?)(ms|s|m|h|d)$/i);
+    if (!match) return null;
+    const value = Number(match[1]);
+    const unit = match[2].toLowerCase();
+    if (!Number.isFinite(value)) return null;
+    if (unit === "ms") return value;
+    if (unit === "s") return value * 1000;
+    if (unit === "m") return value * 60_000;
+    if (unit === "h") return value * 3_600_000;
+    return value * 86_400_000;
+  }, []);
+
+  function formatSchedulerDuration(ms: number) {
+    const minutes = Math.max(1, Math.round(ms / 60_000));
+    if (minutes < 60) return `in ${minutes}m`;
+    const hours = Math.floor(minutes / 60);
+    const rest = minutes % 60;
+    return rest ? `in ${hours}h ${rest}m` : `in ${hours}h`;
+  }
+
+  const schedulerCadenceLabel = useCallback((every: string) => {
+    const ms = scheduleIntervalMs(every);
+    if (!ms) return every || "custom";
+    const minutes = Math.round(ms / 60_000);
+    if (minutes < 60) return `Every ${minutes}m`;
+    if (minutes % 1440 === 0) return `Every ${minutes / 1440}d`;
+    if (minutes % 60 === 0) return `Every ${minutes / 60}h`;
+    return `Every ${minutes}m`;
+  }, [scheduleIntervalMs]);
+
+  const schedulerJobs = useMemo<SchedulerJob[]>(() => schedules.map((schedule) => {
+    const agent = displayAgents.find((item) => item.id === schedule.agentId);
+    const runtime = schedule.externalSource ?? agent?.runtime ?? "openclaw";
+    const intervalMs = scheduleIntervalMs(schedule.every);
+    const anchor = schedule.lastRunAt ?? schedule.updatedAt ?? schedule.createdAt;
+    const remaining = intervalMs ? intervalMs - ((Date.now() - anchor) % intervalMs) : null;
+    const lastStatus = schedulerStatusFromSchedule(schedule);
+    const lastRunAt = schedule.lastRunAt ? formatRelativeTime(schedule.lastRunAt) : "not run yet";
+    const description = schedule.lastSummary || (schedule.mode === "steps"
+      ? `${schedule.steps.length || 1} step runbook`
+      : schedule.prompt || "Dashboard-managed schedule.");
+    return {
+      id: schedule.id,
+      name: schedule.name,
+      description,
+      cron: schedule.every,
+      cronLabel: schedulerCadenceLabel(schedule.every),
+      runtime: RUNTIME_LABELS[runtime as AgentRuntime] ?? runtime,
+      machine: agent?.machineName ?? schedule.externalSource ?? "dashboard",
+      bee: agent?.name ?? "Unassigned",
+      enabled: schedule.enabled,
+      nextRun: schedule.enabled && remaining ? formatSchedulerDuration(remaining) : schedule.enabled ? "scheduled" : "paused",
+      nextRunISO: intervalMs ? new Date(Date.now() + (remaining ?? intervalMs)).toISOString() : new Date(schedule.updatedAt).toISOString(),
+      lastRun: { status: lastStatus, at: lastRunAt, dur: schedule.lastRunAt ? "recorded" : "-" },
+      history: [
+        { status: lastStatus, at: lastRunAt, dur: schedule.lastRunAt ? "recorded" : "-" },
+      ],
+      tags: [
+        schedule.mode,
+        ...(schedule.skills.slice(0, 2)),
+        ...(schedule.paths.length ? ["paths"] : []),
+      ],
+    };
+  }), [displayAgents, scheduleIntervalMs, schedules, schedulerCadenceLabel, schedulerStatusFromSchedule]);
+
+  function findScheduleForJob(job: SchedulerJob) {
+    return schedules.find((schedule) => schedule.id === job.id);
   }
 
   function updateSharedVault(patch: Partial<SharedVaultConfig>) {
@@ -5796,7 +5890,7 @@ export default function Home() {
       setMachineInitTokenStatus({ error: "Paste a Hetzner Cloud API token first." });
       return;
     }
-    setMachineInitTokenStatus({ busy: true });
+    setMachineInitTokenStatus({ busyAction: "save" });
     const response = await fetch("/api/fleet/hetzner/token", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -5812,7 +5906,7 @@ export default function Home() {
   }
 
   async function openHetznerEnvFile() {
-    setMachineInitTokenStatus({ busy: true });
+    setMachineInitTokenStatus({ busyAction: "open" });
     const response = await fetch("/api/fleet/hetzner/env/open", { method: "POST" }).catch(() => null);
     const data = await response?.json().catch(() => null) as { ok?: boolean; error?: string; message?: string } | null;
     if (!response?.ok || !data?.ok) {
@@ -8939,6 +9033,37 @@ export default function Home() {
       ) : null}
 
       {activeView === "scheduler" ? (
+      <section className="min-h-[760px] overflow-hidden rounded-[18px] border border-[rgba(148,163,184,0.16)] bg-[rgba(5,8,13,0.72)]">
+        <SchedulerView
+          jobs={schedulerJobs}
+          toolbar={
+            <Button type="button" size="sm" variant="secondary" onClick={() => void importExistingSchedules()} disabled={scheduleImporting}>
+              {scheduleImporting ? <LoaderCircle aria-hidden="true" className={vaultClass("spinIcon")} /> : <FileUp aria-hidden="true" />}
+              Import existing
+            </Button>
+          }
+          status={scheduleImportStatus ? <p className={fleetClass("schedulerImportStatus")}>{scheduleImportStatus}</p> : null}
+          onToggleJob={(job) => void toggleSchedule(job.id)}
+          onRunNow={(job) => {
+            const schedule = findScheduleForJob(job);
+            if (schedule) void runScheduleNow(schedule);
+          }}
+          onEditJob={(job) => {
+            const schedule = findScheduleForJob(job);
+            if (!schedule) return;
+            editSchedule(schedule);
+            setScheduleImportStatus(`Loaded ${schedule.name} into the scheduler draft.`);
+          }}
+          onNewJob={() => {
+            resetScheduleDraft(selectedAgent?.id ?? displayAgents[0]?.id ?? "");
+            setSchedulerDraftOpen(true);
+            setScheduleImportStatus("");
+          }}
+        />
+      </section>
+      ) : null}
+
+      {activeView === "scheduler" && schedulerDraftOpen ? (
       <section className={fleetClass("schedulerPanel", "tabPanel")}>
         <div className={fleetClass("schedulerStudioHeader")}>
           <div>
@@ -9413,7 +9538,7 @@ export default function Home() {
                   {editingScheduleId ? "Save" : "Create"}
                 </Button>
                 {editingScheduleId ? (
-                  <Button type="button" size="sm" variant="ghost" onClick={() => resetScheduleDraft(selectedAgent?.id ?? displayAgents[0]?.id ?? "")}>
+                  <Button type="button" size="sm" variant="ghost" onClick={() => { resetScheduleDraft(selectedAgent?.id ?? displayAgents[0]?.id ?? ""); setSchedulerDraftOpen(false); }}>
                     <X aria-hidden="true" />
                     Cancel
                   </Button>
@@ -9520,7 +9645,7 @@ export default function Home() {
                   <p className="eyebrow">Hive ledger</p>
                   <h3>Honey rewards</h3>
                   <p>
-                    Lifetime Honey earned, available Honey, and HIVE ready for agents.
+                    Honey is capped by the official HIVE reward pool: 10% of your 57% creator share of Bankr's 1.2% swap fee.
                   </p>
                 </div>
               </div>
@@ -9528,7 +9653,7 @@ export default function Home() {
               <div className={walletClass("hiveLedgerGrid")}>
                 <div className={walletClass("hiveLedgerStat")}>
                   Total Honey
-                  <strong>{honeyStats.totalHoney.toFixed(2)}</strong>
+                  <strong>{formatHiveAmount(honeyStats.totalHoney)}</strong>
                 </div>
                 <button
                   type="button"
@@ -9537,12 +9662,27 @@ export default function Home() {
                   onClick={exchangeAllHoneyForHive}
                 >
                   <span>Available Honey</span>
-                  <strong>{honeyStats.availableHoney.toFixed(2)}</strong>
-                  <small>Convert to {honeyStats.hiveQuote.toFixed(2)} HIVE</small>
+                  <strong>{formatHiveAmount(honeyStats.availableHoney)}</strong>
+                  <small>Convert to {formatHiveAmount(honeyStats.hiveQuote)} HIVE</small>
                 </button>
                 <div className={walletClass("hiveLedgerStat")}>
                   HIVE held
-                  <strong>{honeyStats.hiveBalance.toFixed(2)}</strong>
+                  <strong>{formatHiveAmount(honeyStats.hiveBalance)}</strong>
+                </div>
+                <div className={walletClass("hiveLedgerStat")}>
+                  Reward pool
+                  <strong>{formatHiveAmount(honeyStats.rewardPoolHive)} HIVE</strong>
+                  <small>{formatHiveAmount(honeyStats.rewardPoolRemainingHive)} HIVE unissued</small>
+                </div>
+                <div className={walletClass("hiveLedgerStat")}>
+                  Pool source
+                  <strong>{honeyStats.rewardPoolSharePercent.toFixed(4)}%</strong>
+                  <small>of HIVE trading volume value</small>
+                </div>
+                <div className={walletClass("hiveLedgerStat")}>
+                  Reward rate
+                  <strong>{formatHiveAmount(honeyStats.hivePerMillionTokens)}</strong>
+                  <small>HIVE per 1M observed tokens, clipped by pool</small>
                 </div>
               </div>
             </>
@@ -9554,7 +9694,8 @@ export default function Home() {
                 <p>
                   Honey rewards are off by default. If enabled, this app sends usage receipts with agent id,
                   workspace id, token count, model label, and timestamp to the official HivemindOS ledger.
-                  Prompts, responses, files, wallet keys, and machine details are not sent.
+                  Prompts, responses, files, wallet keys, and machine details are not sent. Reward compute uses your
+                  local Bankr LLM key, so HIVE-funded Bankr credits pay for the model call.
                 </p>
               </div>
               <Button type="button" size="sm" onClick={enableHoneyLedger}>
@@ -9617,15 +9758,15 @@ export default function Home() {
                   </span>
                   <span>
                     Available Honey
-                    <strong>{(selectedHoneyReward?.honeyAvailable ?? 0).toFixed(2)}</strong>
+                    <strong>{formatHiveAmount(selectedHoneyReward?.honeyAvailable ?? 0)}</strong>
                   </span>
                   <span>
                     HIVE balance
-                    <strong>{(selectedHoneyReward?.hiveBalance ?? 0).toFixed(2)}</strong>
+                    <strong>{formatHiveAmount(selectedHoneyReward?.hiveBalance ?? 0)}</strong>
                   </span>
                   <span>
                     Exchange quote
-                    <strong>{(selectedHoneyReward?.tokenReward ?? 0).toFixed(2)} HIVE</strong>
+                    <strong>{formatHiveAmount(selectedHoneyReward?.tokenReward ?? 0)} HIVE</strong>
                   </span>
                 </div>
                 <div className={walletClass("honeyAgentActions")}>
@@ -11599,7 +11740,7 @@ export default function Home() {
               <section className={fleetClass("machineInitEmpty")}>
                 <div>
                   <strong>Connect Hetzner Cloud</strong>
-                  <p>Enter a read/write Hetzner Cloud API token to let HivemindOS create the server. The token is saved locally with `hive-env-add` and is not sent to your fleet.</p>
+                  <p>This app generates a local machine project. When you run its provision command, the script uses HCLOUD_TOKEN with Hetzner Cloud to create the VPS, then SSHes in to run the mandatory HivemindOS bootstrap.</p>
                 </div>
                 <label className={fleetClass("agentSettingsField")}>
                   <span>HCLOUD_TOKEN</span>
@@ -11615,12 +11756,12 @@ export default function Home() {
                   />
                 </label>
                 <div className={fleetClass("machineInitTokenActions")}>
-                  <Button type="button" variant="secondary" onClick={saveHetznerToken} disabled={machineInitTokenStatus.busy || !machineInitToken.trim()}>
-                    {machineInitTokenStatus.busy ? <LoaderCircle aria-hidden="true" className="animate-spin" /> : <Check aria-hidden="true" />}
+                  <Button type="button" variant="secondary" onClick={saveHetznerToken} disabled={Boolean(machineInitTokenStatus.busyAction) || !machineInitToken.trim()}>
+                    {machineInitTokenStatus.busyAction === "save" ? <LoaderCircle aria-hidden="true" className="animate-spin" /> : <Check aria-hidden="true" />}
                     Save key locally
                   </Button>
-                  <Button type="button" variant="ghost" onClick={openHetznerEnvFile} disabled={machineInitTokenStatus.busy}>
-                    <FileText aria-hidden="true" />
+                  <Button type="button" variant="ghost" onClick={openHetznerEnvFile} disabled={Boolean(machineInitTokenStatus.busyAction)}>
+                    {machineInitTokenStatus.busyAction === "open" ? <LoaderCircle aria-hidden="true" className="animate-spin" /> : <FileText aria-hidden="true" />}
                     Open env file
                   </Button>
                 </div>
@@ -11689,6 +11830,24 @@ export default function Home() {
               <div className={fleetClass("machineInitCost")}>
                 <span>Estimated compute</span>
                 <strong>from €{selectedHetznerServerType.monthlyEur.toFixed(2)}/mo</strong>
+                <dl className={fleetClass("machineInitSpecs")} aria-label={`${selectedHetznerServerType.label} compute specs`}>
+                  <div>
+                    <dt>vCPU</dt>
+                    <dd>{selectedHetznerServerType.cores}</dd>
+                  </div>
+                  <div>
+                    <dt>RAM</dt>
+                    <dd>{selectedHetznerServerType.memoryGb} GB</dd>
+                  </div>
+                  <div>
+                    <dt>SSD</dt>
+                    <dd>{selectedHetznerServerType.diskGb} GB</dd>
+                  </div>
+                  <div>
+                    <dt>CPU</dt>
+                    <dd>{selectedHetznerServerType.cpu}</dd>
+                  </div>
+                </dl>
                 <p>{selectedHetznerServerType.detail}. Public IPv4, VAT, location premiums, and current availability can change; verify with the generated live Hetzner commands before provisioning.</p>
               </div>
               <div className={fleetClass("setupModalActions")}>

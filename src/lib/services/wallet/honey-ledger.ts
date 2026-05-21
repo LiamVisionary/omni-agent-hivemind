@@ -81,7 +81,9 @@ export async function recordHoneyUsage(input: {
     }
   }
 
-  const honeyDelta = calculateHoneyForTokens(tokensUsed, ledger.honeyPerThousandTokens);
+  const targetHoneyDelta = calculateHoneyForTokens(tokensUsed, ledger.honeyPerThousandTokens);
+  const remainingPool = Math.max(0, ledger.rewardPoolHive - ledger.rewardPoolEmittedHive);
+  const honeyDelta = Math.min(targetHoneyDelta, remainingPool);
   const event: HoneyLedgerEvent = {
     id: randomUUID(),
     agentId: input.agentId,
@@ -95,6 +97,8 @@ export async function recordHoneyUsage(input: {
   };
 
   ledger.agentTokenUsage[input.agentId] = (ledger.agentTokenUsage[input.agentId] ?? 0) + tokensUsed;
+  ledger.rewardPoolEmittedHive = Math.round((ledger.rewardPoolEmittedHive + honeyDelta) * 1_000_000) / 1_000_000;
+  ledger.rewardPoolRemainingHive = Math.max(0, Math.round((ledger.rewardPoolHive - ledger.rewardPoolEmittedHive) * 1_000_000) / 1_000_000);
   ledger.events.unshift(event);
   ledger.updatedAt = event.createdAt;
   await writeHoneyLedger(ledger);
@@ -116,11 +120,13 @@ export async function exchangeHoneyForHive(agentId?: string) {
   for (const id of agentIds) {
     const honeyEarned = calculateHoneyForTokens(ledger.agentTokenUsage[id] ?? 0, ledger.honeyPerThousandTokens);
     const honeyExchanged = Math.min(honeyEarned, Math.max(0, ledger.agentHoneyExchanged[id] ?? 0));
-    const honeyAvailable = Math.max(0, Math.round((honeyEarned - honeyExchanged) * 100) / 100);
+    const remainingPool = Math.max(0, ledger.rewardPoolHive - ledger.rewardPoolEmittedHive);
+    const honeyAvailable = Math.max(0, Math.min(remainingPool, Math.round((honeyEarned - honeyExchanged) * 1_000_000) / 1_000_000));
     if (honeyAvailable <= 0) continue;
-    const hiveDelta = Math.round(honeyAvailable * ledger.tokenPerHoney * 100) / 100;
-    ledger.agentHoneyExchanged[id] = Math.round((honeyExchanged + honeyAvailable) * 100) / 100;
-    ledger.agentHiveBalances[id] = Math.round(((ledger.agentHiveBalances[id] ?? 0) + hiveDelta) * 100) / 100;
+    const hiveDelta = Math.round(honeyAvailable * ledger.tokenPerHoney * 1_000_000) / 1_000_000;
+    ledger.agentHoneyExchanged[id] = Math.round((honeyExchanged + honeyAvailable) * 1_000_000) / 1_000_000;
+    ledger.agentHiveBalances[id] = Math.round(((ledger.agentHiveBalances[id] ?? 0) + hiveDelta) * 1_000_000) / 1_000_000;
+    ledger.rewardPoolExchangedHive = Math.round((ledger.rewardPoolExchangedHive + hiveDelta) * 1_000_000) / 1_000_000;
     events.push({
       id: randomUUID(),
       agentId: id,
@@ -302,6 +308,8 @@ function createDefaultLedger(): HoneyLedger {
 
 function normalizeLedger(parsed: Partial<HoneyLedger>): HoneyLedger {
   const fallback = createDefaultLedger();
+  const rewardPoolHive = positiveNumber(parsed.rewardPoolHive, fallback.rewardPoolHive);
+  const rewardPoolEmittedHive = positiveNumber(parsed.rewardPoolEmittedHive, fallback.rewardPoolEmittedHive);
   return {
     ...fallback,
     ...parsed,
@@ -310,6 +318,15 @@ function normalizeLedger(parsed: Partial<HoneyLedger>): HoneyLedger {
     agentTokenUsage: plainNumberRecord(parsed.agentTokenUsage),
     agentHoneyExchanged: plainNumberRecord(parsed.agentHoneyExchanged),
     agentHiveBalances: plainNumberRecord(parsed.agentHiveBalances),
+    rewardPoolHive,
+    rewardPoolRemainingHive: positiveNumber(parsed.rewardPoolRemainingHive, Math.max(0, rewardPoolHive - rewardPoolEmittedHive)),
+    rewardPoolEmittedHive,
+    rewardPoolExchangedHive: positiveNumber(parsed.rewardPoolExchangedHive, fallback.rewardPoolExchangedHive),
+    rewardPoolUsd: positiveNumber(parsed.rewardPoolUsd, fallback.rewardPoolUsd),
+    rewardPoolVolumeUsd: positiveNumber(parsed.rewardPoolVolumeUsd, fallback.rewardPoolVolumeUsd),
+    rewardPoolShareOfVolume: positiveNumber(parsed.rewardPoolShareOfVolume, fallback.rewardPoolShareOfVolume),
+    hivePerMillionTokens: positiveNumber(parsed.hivePerMillionTokens, fallback.hivePerMillionTokens),
+    hiveTokenAddress: typeof parsed.hiveTokenAddress === "string" ? parsed.hiveTokenAddress : fallback.hiveTokenAddress,
     events: Array.isArray(parsed.events) ? parsed.events.filter(isLedgerEvent).slice(0, 500) : [],
     updatedAt: typeof parsed.updatedAt === "string" ? parsed.updatedAt : fallback.updatedAt,
   };

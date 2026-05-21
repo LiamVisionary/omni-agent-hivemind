@@ -6,7 +6,7 @@ type Env = {
   DEFAULT_MODEL?: string;
   HONEY_LEDGER_URL?: string;
   HONEY_LEDGER_SECRET?: string;
-  HONEY_PER_1000_TOKENS?: string;
+  ALLOW_SHARED_BANKR_KEY?: string;
   DAILY_TOKEN_CAP?: string;
   CORS_ORIGIN?: string;
 };
@@ -22,6 +22,7 @@ type GatewayRequest = {
   agentName?: string;
   runtime?: string;
   model?: string;
+  bankrLlmKey?: string;
   messages?: ChatMessage[];
 };
 
@@ -35,6 +36,12 @@ type LedgerReceipt = {
   source: string;
   timestamp: string;
   signature: string;
+};
+
+type LedgerSubmitResult = {
+  ok: boolean;
+  honeyDelta: number;
+  error?: string;
 };
 
 const corsHeaders = (env: Env) => ({
@@ -63,11 +70,15 @@ const worker: ExportedHandler<Env> = {
 export default worker;
 
 async function handleChat(request: Request, env: Env) {
-  const bankrKey = env.BANKR_LLM_KEY || env.BANKR_MANAGEMENT_KEY;
-  if (!bankrKey) return sse(env, { error: "Trusted compute gateway is missing BANKR_LLM_KEY." }, 500);
   if (!env.HONEY_LEDGER_SECRET) return sse(env, { error: "Trusted compute gateway is missing HONEY_LEDGER_SECRET." }, 500);
 
   const body = await request.json().catch(() => null) as GatewayRequest | null;
+  const bankrKey = cleanSecret(body?.bankrLlmKey) || sharedBankrKey(env);
+  if (!bankrKey) {
+    return sse(env, {
+      error: "Honey rewards need your own Bankr LLM key. Add Bankr LLM credits funded with HIVE, set BANKR_LLM_KEY locally, then retry.",
+    }, 402);
+  }
   const workspaceId = cleanId(body?.workspaceId ?? "");
   const agentId = cleanId(body?.agentId ?? "");
   const model = cleanId(body?.model ?? env.DEFAULT_MODEL ?? "gpt-5.4-mini");
@@ -107,7 +118,6 @@ async function handleChat(request: Request, env: Env) {
   const acceptedTokens = Math.max(1, Math.min(usageTokens, Math.max(0, cap - current)));
   await addDailyUsage(env, workspaceId, acceptedTokens);
 
-  const honeyDelta = round2((acceptedTokens / 1000) * positiveNumber(env.HONEY_PER_1000_TOKENS, 1));
   const receipt = await signedReceipt(env, {
     eventId: crypto.randomUUID(),
     issuerId: "hivemindos-compute-gateway",
@@ -122,13 +132,13 @@ async function handleChat(request: Request, env: Env) {
   if (!submitted.ok) return sse(env, { error: submitted.error }, 502);
   await env.DB.prepare(
     "INSERT INTO compute_events (event_id, workspace_id, agent_id, model, tokens_used, honey_delta) VALUES (?, ?, ?, ?, ?, ?)",
-  ).bind(receipt.eventId, workspaceId, agentId, model, acceptedTokens, honeyDelta).run();
+  ).bind(receipt.eventId, workspaceId, agentId, model, acceptedTokens, submitted.honeyDelta).run();
 
   return new Response(
     [
       `data: ${JSON.stringify({ choices: [{ delta: { content: outputText } }] })}`,
       "",
-      `data: ${JSON.stringify({ honey: { id: receipt.eventId, agentId, agentName: body?.agentName, kind: "usage", source: "chat", tokensUsed: acceptedTokens, honeyDelta, hiveDelta: 0, createdAt: receipt.timestamp } })}`,
+      `data: ${JSON.stringify({ honey: { id: receipt.eventId, agentId, agentName: body?.agentName, kind: "usage", source: "chat", tokensUsed: acceptedTokens, honeyDelta: submitted.honeyDelta, hiveDelta: 0, createdAt: receipt.timestamp } })}`,
       "",
       "data: [DONE]",
       "",
@@ -159,14 +169,15 @@ async function addDailyUsage(env: Env, workspaceId: string, tokens: number) {
   ).bind(workspaceId, today(), tokens).run();
 }
 
-async function submitHoneyReceipt(env: Env, receipt: LedgerReceipt) {
+async function submitHoneyReceipt(env: Env, receipt: LedgerReceipt): Promise<LedgerSubmitResult> {
   const response = await fetch(`${(env.HONEY_LEDGER_URL ?? "").replace(/\/+$/, "")}/receipts`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(receipt),
   }).catch(() => null);
-  if (!response?.ok) return { ok: false, error: `Honey ledger rejected trusted receipt${response ? `: ${response.status}` : "."}` };
-  return { ok: true };
+  if (!response?.ok) return { ok: false, honeyDelta: 0, error: `Honey ledger rejected trusted receipt${response ? `: ${response.status}` : "."}` };
+  const data = await response.json().catch(() => null) as { honeyDelta?: number } | null;
+  return { ok: true, honeyDelta: Number(data?.honeyDelta ?? 0) || 0 };
 }
 
 async function signedReceipt(env: Env, receipt: Omit<LedgerReceipt, "signature">): Promise<LedgerReceipt> {
@@ -225,18 +236,19 @@ function cleanId(value: string) {
   return value.trim().slice(0, 160);
 }
 
-function positiveNumber(value: unknown, fallback: number) {
-  const numeric = Number(value);
-  return Number.isFinite(numeric) && numeric >= 0 ? numeric : fallback;
+function cleanSecret(value?: string) {
+  const secret = value?.trim();
+  return secret && secret.startsWith("bk_") ? secret : "";
+}
+
+function sharedBankrKey(env: Env) {
+  if (env.ALLOW_SHARED_BANKR_KEY !== "true") return "";
+  return cleanSecret(env.BANKR_LLM_KEY) || cleanSecret(env.BANKR_MANAGEMENT_KEY);
 }
 
 function positiveInteger(value: unknown, fallback: number) {
   const numeric = Number(value);
   return Number.isFinite(numeric) && numeric > 0 ? Math.floor(numeric) : fallback;
-}
-
-function round2(value: number) {
-  return Math.round(value * 100) / 100;
 }
 
 function json(env: Env, body: unknown, status = 200) {

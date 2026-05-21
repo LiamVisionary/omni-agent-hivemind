@@ -386,6 +386,48 @@
       "target_path": "workers/compute-gateway/wrangler.toml",
       "reuse_type": "config_adapted",
       "note": "Worker entrypoint, D1 binding, and typed environment-variable configuration adapted for the trusted compute gateway deployment"
+    },
+    {
+      "source_repo": "local",
+      "source_path": "/Users/liam/Downloads/nextjs-scheduler/src/components/scheduler/SchedulerView.tsx",
+      "target_path": "src/components/scheduler/SchedulerView.tsx",
+      "reuse_type": "adapted_code",
+      "note": "scheduler theater shell adapted for controlled dashboard jobs and toolbar status"
+    },
+    {
+      "source_repo": "local",
+      "source_path": "/Users/liam/Downloads/nextjs-scheduler/src/components/scheduler/jobs.tsx",
+      "target_path": "src/components/scheduler/jobs.tsx",
+      "reuse_type": "copied_code",
+      "note": "left schedule rail and dotted new-task affordance"
+    },
+    {
+      "source_repo": "local",
+      "source_path": "/Users/liam/Downloads/nextjs-scheduler/src/components/scheduler/timeline.tsx",
+      "target_path": "src/components/scheduler/timeline.tsx",
+      "reuse_type": "copied_code",
+      "note": "vertical 24-hour scheduler timeline"
+    },
+    {
+      "source_repo": "local",
+      "source_path": "/Users/liam/Downloads/nextjs-scheduler/src/components/scheduler/composer.tsx",
+      "target_path": "src/components/scheduler/composer.tsx",
+      "reuse_type": "adapted_code",
+      "note": "right-side job detail and cadence panel wired to edit/run callbacks"
+    },
+    {
+      "source_repo": "local",
+      "source_path": "/Users/liam/Downloads/nextjs-scheduler/src/components/scheduler/scheduler-data.ts",
+      "target_path": "src/components/scheduler/scheduler-data.ts",
+      "reuse_type": "copied_code",
+      "note": "scheduler job and cadence type definitions"
+    },
+    {
+      "source_repo": "local",
+      "source_path": "/Users/liam/Downloads/nextjs-scheduler/src/app/scheduler/page.tsx",
+      "target_path": "src/app/scheduler/page.tsx",
+      "reuse_type": "copied_code",
+      "note": "standalone scheduler route mount"
     }
   ]
 }

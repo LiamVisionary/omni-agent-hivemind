@@ -11,6 +11,7 @@
     "lint": "eslint",
     "test:kanban": "node scripts/test-kanban-workflow.mjs",
     "test:dashboard-nav": "node scripts/test-dashboard-nav.mjs",
+    "test:honey-economics": "node scripts/simulate-honey-economics.mjs",
     "typecheck": "tsc --noEmit",
     "remotion:studio": "remotion studio remotion/index.ts",
     "remotion:capture": "node scripts/capture-remotion-showcase.mjs",

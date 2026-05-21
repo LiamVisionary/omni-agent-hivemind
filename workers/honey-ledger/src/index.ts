@@ -1,9 +1,10 @@
 type Env = {
   DB: D1Database;
-  HONEY_PER_1000_TOKENS?: string;
-  HIVE_PER_HONEY?: string;
+  HIVE_PER_MILLION_TOKENS?: string;
   HONEY_LEDGER_SECRET?: string;
   HONEY_LEDGER_READ_TOKEN?: string;
+  HONEY_LEDGER_ADMIN_TOKEN?: string;
+  HIVE_TOKEN_ADDRESS?: string;
   CORS_ORIGIN?: string;
 };
 
@@ -26,8 +27,26 @@ type AgentBalanceRow = {
   lifetime_honey: number;
   available_honey: number;
   hive_balance: number;
+  lifetime_honey_micro: number;
+  available_honey_micro: number;
+  hive_balance_micro: number;
   updated_at: string;
 };
+
+type RewardPoolState = {
+  total_pool_micro: number;
+  emitted_micro: number;
+  exchanged_micro: number;
+  total_pool_usd_micro: number;
+  total_volume_usd_micro: number;
+  updated_at: string;
+};
+
+const MICRO = 1_000_000;
+const SWAP_FEE_BPS = 120;
+const CREATOR_SHARE_BPS = 5700;
+const HONEY_POOL_SHARE_BPS = 1000;
+const REWARD_POOL_SHARE_OF_VOLUME = (SWAP_FEE_BPS / 10_000) * (CREATOR_SHARE_BPS / 10_000) * (HONEY_POOL_SHARE_BPS / 10_000);
 
 const jsonHeaders = (env: Env) => ({
   "Content-Type": "application/json; charset=utf-8",
@@ -54,6 +73,9 @@ const worker: ExportedHandler<Env> = {
       if (request.method === "POST" && url.pathname === "/exchange") {
         return handleExchange(request, env);
       }
+      if (request.method === "POST" && url.pathname === "/pool-events") {
+        return handlePoolEvent(request, env);
+      }
       return fail(env, "Not found.", 404);
     } catch (error) {
       console.error(error);
@@ -74,11 +96,16 @@ async function handleReceipt(request: Request, env: Env) {
   const expected = await signReceipt(receipt, env.HONEY_LEDGER_SECRET);
   if (!timingSafeEqual(receipt.signature, expected)) return fail(env, "Invalid receipt signature.", 401);
 
-  const honeyDelta = round2((receipt.tokensUsed / 1000) * positiveNumber(env.HONEY_PER_1000_TOKENS, 1));
+  await ensureRewardPoolState(env);
+  const pool = await getRewardPoolState(env);
+  const targetHoneyMicro = rewardForTokensMicro(env, receipt.tokensUsed);
+  const poolRemainingMicro = Math.max(0, pool.total_pool_micro - pool.emitted_micro);
+  const honeyDeltaMicro = Math.min(targetHoneyMicro, poolRemainingMicro);
+  const honeyDelta = fromMicro(honeyDeltaMicro);
   const inserted = await env.DB.prepare(
     `INSERT OR IGNORE INTO usage_receipts
-      (event_id, issuer_id, workspace_id, agent_id, tokens_used, model, source, occurred_at, signature)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      (event_id, issuer_id, workspace_id, agent_id, tokens_used, honey_delta_micro, model, source, occurred_at, signature)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   )
     .bind(
       receipt.eventId,
@@ -86,6 +113,7 @@ async function handleReceipt(request: Request, env: Env) {
       receipt.workspaceId,
       receipt.agentId,
       receipt.tokensUsed,
+      honeyDeltaMicro,
       receipt.model,
       receipt.source,
       receipt.timestamp,
@@ -94,22 +122,30 @@ async function handleReceipt(request: Request, env: Env) {
     .run();
 
   if ((inserted.meta.changes ?? 0) > 0) {
-    await env.DB.prepare(
-      `INSERT INTO agent_balances
-        (workspace_id, agent_id, tokens_used, lifetime_honey, available_honey, updated_at)
-        VALUES (?, ?, ?, ?, ?, datetime('now'))
-        ON CONFLICT(workspace_id, agent_id) DO UPDATE SET
-          tokens_used = tokens_used + excluded.tokens_used,
-          lifetime_honey = ROUND(lifetime_honey + excluded.lifetime_honey, 2),
-          available_honey = ROUND(available_honey + excluded.available_honey, 2),
-          updated_at = datetime('now')`,
-    )
-      .bind(receipt.workspaceId, receipt.agentId, receipt.tokensUsed, honeyDelta, honeyDelta)
-      .run();
+    await env.DB.batch([
+      env.DB.prepare(
+        `INSERT INTO agent_balances
+          (workspace_id, agent_id, tokens_used, lifetime_honey, available_honey, lifetime_honey_micro, available_honey_micro, updated_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now'))
+          ON CONFLICT(workspace_id, agent_id) DO UPDATE SET
+            tokens_used = tokens_used + excluded.tokens_used,
+            lifetime_honey_micro = lifetime_honey_micro + excluded.lifetime_honey_micro,
+            available_honey_micro = available_honey_micro + excluded.available_honey_micro,
+            lifetime_honey = ROUND((lifetime_honey_micro + excluded.lifetime_honey_micro) / 1000000.0, 6),
+            available_honey = ROUND((available_honey_micro + excluded.available_honey_micro) / 1000000.0, 6),
+            updated_at = datetime('now')`,
+      ).bind(receipt.workspaceId, receipt.agentId, receipt.tokensUsed, honeyDelta, honeyDelta, honeyDeltaMicro, honeyDeltaMicro),
+      env.DB.prepare(
+        `UPDATE reward_pool_state
+          SET emitted_micro = emitted_micro + ?, updated_at = datetime('now')
+          WHERE id = 1`,
+      ).bind(honeyDeltaMicro),
+    ]);
   }
 
   const balance = await getBalance(env, receipt.workspaceId, receipt.agentId);
-  return ok(env, { ok: true, duplicate: (inserted.meta.changes ?? 0) === 0, honeyDelta, balance });
+  const updatedPool = await getRewardPoolState(env);
+  return ok(env, { ok: true, duplicate: (inserted.meta.changes ?? 0) === 0, honeyDelta, balance, economics: toEconomics(env, updatedPool) });
 }
 
 async function handleLedger(request: Request, env: Env, url: URL) {
@@ -124,11 +160,14 @@ async function handleLedger(request: Request, env: Env, url: URL) {
     ? env.DB.prepare("SELECT * FROM agent_balances WHERE workspace_id = ? AND agent_id = ? ORDER BY agent_id").bind(workspaceId, agentId)
     : env.DB.prepare("SELECT * FROM agent_balances WHERE workspace_id = ? ORDER BY agent_id").bind(workspaceId);
   const rows = await query.all<AgentBalanceRow>();
-  const ledger = toHoneyLedger(rows.results ?? []);
+  await ensureRewardPoolState(env);
+  const pool = await getRewardPoolState(env);
+  const ledger = toHoneyLedger(env, rows.results ?? [], pool);
   return ok(env, { ok: true, ledger });
 }
 
 async function handleExchange(request: Request, env: Env) {
+  await ensureRewardPoolState(env);
   const body = await request.json().catch(() => null) as { workspaceId?: string; agentId?: string } | null;
   const workspaceId = cleanId(body?.workspaceId ?? "");
   const agentId = cleanId(body?.agentId ?? "");
@@ -138,24 +177,33 @@ async function handleExchange(request: Request, env: Env) {
     ? await env.DB.prepare("SELECT * FROM agent_balances WHERE workspace_id = ? AND agent_id = ?").bind(workspaceId, agentId).all<AgentBalanceRow>()
     : await env.DB.prepare("SELECT * FROM agent_balances WHERE workspace_id = ?").bind(workspaceId).all<AgentBalanceRow>();
 
-  const hivePerHoney = positiveNumber(env.HIVE_PER_HONEY, 1);
   const events = [];
 
   for (const row of balances.results ?? []) {
-    const availableHoney = round2(row.available_honey);
-    if (availableHoney <= 0) continue;
-    const hiveDelta = round2(availableHoney * hivePerHoney);
+    const availableHoneyMicro = Math.max(0, Math.round(Number(row.available_honey_micro ?? 0)));
+    if (availableHoneyMicro <= 0) continue;
+    const availableHoney = fromMicro(availableHoneyMicro);
+    const hiveDelta = availableHoney;
     const id = crypto.randomUUID();
     await env.DB.batch([
       env.DB.prepare(
         `UPDATE agent_balances
-          SET available_honey = 0, hive_balance = ROUND(hive_balance + ?, 2), updated_at = datetime('now')
+          SET available_honey = 0,
+            available_honey_micro = 0,
+            hive_balance_micro = hive_balance_micro + ?,
+            hive_balance = ROUND((hive_balance_micro + ?) / 1000000.0, 6),
+            updated_at = datetime('now')
           WHERE workspace_id = ? AND agent_id = ?`,
-      ).bind(hiveDelta, row.workspace_id, row.agent_id),
+      ).bind(availableHoneyMicro, availableHoneyMicro, row.workspace_id, row.agent_id),
       env.DB.prepare(
-        `INSERT INTO exchange_events (id, workspace_id, agent_id, honey_delta, hive_delta)
-          VALUES (?, ?, ?, ?, ?)`,
-      ).bind(id, row.workspace_id, row.agent_id, -availableHoney, hiveDelta),
+        `INSERT INTO exchange_events (id, workspace_id, agent_id, honey_delta, hive_delta, honey_delta_micro, hive_delta_micro)
+          VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      ).bind(id, row.workspace_id, row.agent_id, -availableHoney, hiveDelta, -availableHoneyMicro, availableHoneyMicro),
+      env.DB.prepare(
+        `UPDATE reward_pool_state
+          SET exchanged_micro = exchanged_micro + ?, updated_at = datetime('now')
+          WHERE id = 1`,
+      ).bind(availableHoneyMicro),
     ]);
     events.push({ id, agentId: row.agent_id, honeyDelta: -availableHoney, hiveDelta });
   }
@@ -164,7 +212,66 @@ async function handleExchange(request: Request, env: Env) {
     ? await env.DB.prepare("SELECT * FROM agent_balances WHERE workspace_id = ? AND agent_id = ?").bind(workspaceId, agentId).all<AgentBalanceRow>()
     : await env.DB.prepare("SELECT * FROM agent_balances WHERE workspace_id = ?").bind(workspaceId).all<AgentBalanceRow>();
 
-  return ok(env, { ok: true, ledger: toHoneyLedger(refreshed.results ?? []), events });
+  const pool = await getRewardPoolState(env);
+  return ok(env, { ok: true, ledger: toHoneyLedger(env, refreshed.results ?? [], pool), events });
+}
+
+async function handlePoolEvent(request: Request, env: Env) {
+  const auth = requireBearer(request, env.HONEY_LEDGER_ADMIN_TOKEN);
+  if (auth) return fail(env, auth, 401);
+
+  await ensureRewardPoolState(env);
+  const body = await request.json().catch(() => null) as {
+    source?: string;
+    tradeVolumeUsd?: number;
+    hivePriceUsd?: number;
+    hiveAmount?: number;
+  } | null;
+
+  const source = cleanId(body?.source ?? "manual-reward-pool");
+  const tradeVolumeUsdMicro = moneyToMicro(body?.tradeVolumeUsd ?? 0);
+  const hivePriceUsdMicro = moneyToMicro(body?.hivePriceUsd ?? 0);
+  const manualHiveMicro = toMicro(body?.hiveAmount ?? 0);
+  const rewardPoolUsdMicro = tradeVolumeUsdMicro > 0
+    ? volumeToRewardPoolUsdMicro(tradeVolumeUsdMicro)
+    : 0;
+  const rewardPoolHiveMicro = rewardPoolUsdMicro > 0 && hivePriceUsdMicro > 0
+    ? Math.floor((rewardPoolUsdMicro * MICRO) / hivePriceUsdMicro)
+    : manualHiveMicro;
+
+  if (rewardPoolHiveMicro <= 0) {
+    return fail(env, "Pool event needs either tradeVolumeUsd + hivePriceUsd, or hiveAmount.", 400);
+  }
+
+  const id = crypto.randomUUID();
+  await env.DB.batch([
+    env.DB.prepare(
+      `INSERT INTO reward_pool_events
+        (id, source, trade_volume_usd_micro, hive_price_usd_micro, reward_pool_usd_micro, reward_pool_hive_micro)
+        VALUES (?, ?, ?, ?, ?, ?)`,
+    ).bind(id, source, tradeVolumeUsdMicro, hivePriceUsdMicro, rewardPoolUsdMicro, rewardPoolHiveMicro),
+    env.DB.prepare(
+      `UPDATE reward_pool_state
+        SET total_pool_micro = total_pool_micro + ?,
+          total_pool_usd_micro = total_pool_usd_micro + ?,
+          total_volume_usd_micro = total_volume_usd_micro + ?,
+          updated_at = datetime('now')
+        WHERE id = 1`,
+    ).bind(rewardPoolHiveMicro, rewardPoolUsdMicro, tradeVolumeUsdMicro),
+  ]);
+
+  const pool = await getRewardPoolState(env);
+  return ok(env, {
+    ok: true,
+    event: {
+      id,
+      source,
+      tradeVolumeUsd: fromMicro(tradeVolumeUsdMicro),
+      rewardPoolUsd: fromMicro(rewardPoolUsdMicro),
+      rewardPoolHive: fromMicro(rewardPoolHiveMicro),
+    },
+    economics: toEconomics(env, pool),
+  });
 }
 
 async function getBalance(env: Env, workspaceId: string, agentId: string) {
@@ -174,16 +281,17 @@ async function getBalance(env: Env, workspaceId: string, agentId: string) {
   return row ? toBalance(row) : null;
 }
 
-function toHoneyLedger(rows: AgentBalanceRow[]) {
+function toHoneyLedger(env: Env, rows: AgentBalanceRow[], pool: RewardPoolState) {
   return {
-    honeyPerThousandTokens: 1,
+    honeyPerThousandTokens: fromMicro(rewardForTokensMicro(env, 1000)),
     tokenPerHoney: 1,
     agentTokenUsage: Object.fromEntries(rows.map((row) => [row.agent_id, row.tokens_used])),
-    agentHoneyExchanged: Object.fromEntries(rows.map((row) => [row.agent_id, round2(row.lifetime_honey - row.available_honey)])),
-    agentHiveBalances: Object.fromEntries(rows.map((row) => [row.agent_id, row.hive_balance])),
+    agentHoneyExchanged: Object.fromEntries(rows.map((row) => [row.agent_id, fromMicro(Math.max(0, row.lifetime_honey_micro - row.available_honey_micro))])),
+    agentHiveBalances: Object.fromEntries(rows.map((row) => [row.agent_id, fromMicro(row.hive_balance_micro)])),
     events: [],
     updatedAt: rows.reduce((latest, row) => row.updated_at > latest ? row.updated_at : latest, new Date(0).toISOString()),
     balances: rows.map(toBalance),
+    ...toEconomics(env, pool),
   };
 }
 
@@ -192,9 +300,9 @@ function toBalance(row: AgentBalanceRow) {
     workspaceId: row.workspace_id,
     agentId: row.agent_id,
     tokensUsed: row.tokens_used,
-    lifetimeHoney: row.lifetime_honey,
-    availableHoney: row.available_honey,
-    hiveBalance: row.hive_balance,
+    lifetimeHoney: fromMicro(row.lifetime_honey_micro),
+    availableHoney: fromMicro(row.available_honey_micro),
+    hiveBalance: fromMicro(row.hive_balance_micro),
     updatedAt: row.updated_at,
   };
 }
@@ -257,6 +365,75 @@ function requireBearer(request: Request, token?: string) {
   return timingSafeEqual(header, `Bearer ${token}`) ? null : "Unauthorized.";
 }
 
+async function ensureRewardPoolState(env: Env) {
+  await env.DB.prepare(
+    `INSERT OR IGNORE INTO reward_pool_state
+      (id, total_pool_micro, emitted_micro, exchanged_micro, total_pool_usd_micro, total_volume_usd_micro)
+      VALUES (1, 0, 0, 0, 0, 0)`,
+  ).run();
+}
+
+async function getRewardPoolState(env: Env): Promise<RewardPoolState> {
+  await ensureRewardPoolState(env);
+  const row = await env.DB.prepare("SELECT * FROM reward_pool_state WHERE id = 1").first<RewardPoolState>();
+  return row ?? {
+    total_pool_micro: 0,
+    emitted_micro: 0,
+    exchanged_micro: 0,
+    total_pool_usd_micro: 0,
+    total_volume_usd_micro: 0,
+    updated_at: new Date(0).toISOString(),
+  };
+}
+
+function toEconomics(env: Env, pool: RewardPoolState) {
+  const emittedMicro = Math.max(0, Math.round(Number(pool.emitted_micro ?? 0)));
+  const totalPoolMicro = Math.max(0, Math.round(Number(pool.total_pool_micro ?? 0)));
+  return {
+    rewardPoolHive: fromMicro(totalPoolMicro),
+    rewardPoolRemainingHive: fromMicro(Math.max(0, totalPoolMicro - emittedMicro)),
+    rewardPoolEmittedHive: fromMicro(emittedMicro),
+    rewardPoolExchangedHive: fromMicro(Math.max(0, Math.round(Number(pool.exchanged_micro ?? 0)))),
+    rewardPoolUsd: fromMicro(Math.max(0, Math.round(Number(pool.total_pool_usd_micro ?? 0)))),
+    rewardPoolVolumeUsd: fromMicro(Math.max(0, Math.round(Number(pool.total_volume_usd_micro ?? 0)))),
+    rewardPoolShareOfVolume: REWARD_POOL_SHARE_OF_VOLUME,
+    hivePerMillionTokens: positiveNumber(env.HIVE_PER_MILLION_TOKENS, 1),
+    hiveTokenAddress: env.HIVE_TOKEN_ADDRESS?.trim() ?? "",
+  };
+}
+
+function rewardForTokensMicro(env: Env, tokensUsed: number) {
+  const hivePerMillionTokens = positiveNumber(env.HIVE_PER_MILLION_TOKENS, 1);
+  return Math.max(0, Math.floor((Math.max(0, Math.round(tokensUsed)) * hivePerMillionTokens * MICRO) / 1_000_000));
+}
+
+function volumeToRewardPoolUsdMicro(tradeVolumeUsdMicro: number) {
+  const value = (BigInt(tradeVolumeUsdMicro) * BigInt(SWAP_FEE_BPS) * BigInt(CREATOR_SHARE_BPS) * BigInt(HONEY_POOL_SHARE_BPS))
+    / 10_000n
+    / 10_000n
+    / 10_000n;
+  return clampSafeInteger(value);
+}
+
+function moneyToMicro(value: unknown) {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric) || numeric <= 0) return 0;
+  return Math.max(0, Math.round(numeric * MICRO));
+}
+
+function toMicro(value: unknown) {
+  return moneyToMicro(value);
+}
+
+function fromMicro(value: number) {
+  return Math.round(Math.max(0, value) * 1_000_000 / MICRO) / 1_000_000;
+}
+
+function clampSafeInteger(value: bigint) {
+  const max = BigInt(Number.MAX_SAFE_INTEGER);
+  return Number(value > max ? max : value);
+}
+
 function cleanId(value: string) {
   return value.trim().slice(0, 160);
 }
@@ -264,10 +441,6 @@ function cleanId(value: string) {
 function positiveNumber(value: unknown, fallback: number) {
   const numeric = Number(value);
   return Number.isFinite(numeric) && numeric >= 0 ? numeric : fallback;
-}
-
-function round2(value: number) {
-  return Math.round(value * 100) / 100;
 }
 
 function ok(env: Env, body: unknown, status = 200) {

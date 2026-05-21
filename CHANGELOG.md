@@ -11,6 +11,38 @@ be added here first, then marked `Committed` or `Pushed` after the git action.
 - Verification: `bash -n scripts/seed-shared-skills.sh`; `bash -n setup.sh`; Python prompt-builder smoke confirmed the shared-skill pointer is loaded through `~/.hermes/SOUL.md`.
 - Intended commit message: `Load shared skill hints through Hermes SOUL`
 
+## 2026-05-21 21:15 WITA - Cap Honey Rewards By HIVE Pool
+
+- Status: Pushed
+- Areas changed: Honey ledger worker economics, reward-pool D1 schema/migration, compute gateway Bankr key routing, Wallets Hive ledger display, setup/env defaults, economics simulation script, worker docs
+- Summary: Encode Bankr's current 1.2% swap fee, 57% creator share, and 10% Honey-pool allocation as a 0.0684% volume-backed reward pool, track cumulative pool/emitted/exchanged HIVE in micro-units, clip every Honey grant by remaining pool capacity, show pool/rate stats in Wallets, and make trusted compute use the user's local Bankr LLM key so HIVE-funded Bankr credits pay for model calls.
+- Verification: `pnpm test:honey-economics` including 10,000 randomized cap simulations; `pnpm typecheck`; `pnpm typecheck` in `workers/honey-ledger`; `pnpm typecheck` in `workers/compute-gateway`; `pnpm exec eslint workers/honey-ledger/src/index.ts workers/compute-gateway/src/index.ts src/lib/services/wallet/honey-ledger.ts src/lib/utils/agent-wallet.ts src/app/api/chat/agent-runtime/route.ts src/app/api/honey-ledger/route.ts`; `pnpm d1:migrate:local`; `pnpm d1:migrate:reward-pool:remote`; uploaded `HONEY_LEDGER_ADMIN_TOKEN`; deployed `hivemindos-honey-ledger` and `hivemindos-compute-gateway`; live smokes confirmed ledger/gateway health, forged receipt rejection, and compute gateway requiring a caller Bankr LLM key; `git diff --check`.
+- Intended commit message: `Cap Honey rewards by HIVE pool`
+
+## 2026-05-21 21:14 WITA - Replace Scheduler View With Timeline Dispatch
+
+- Status: Pushed
+- Areas changed: Scheduler dashboard tab, standalone `/scheduler` route, Scheduler component bundle, assimilation manifest, changelog
+- Summary: Transplant the downloaded `nextjs-scheduler` scheduler view into the app, map existing dashboard/runtime schedules into its job rail, 24-hour timeline, detail composer, and empty state, and keep Import existing, pause/resume, run-now, and edit callbacks connected to the current scheduler state.
+- Verification: `pnpm exec tsc --noEmit --pretty false`; `pnpm exec eslint src/app/page.tsx src/components/scheduler src/app/scheduler/page.tsx` (0 errors, existing dashboard warnings only); `python3 /Users/liam/.codex/skills/github-assimilator/scripts/verify_assimilation_manifest.py`; `git diff --check -- src/app/page.tsx src/components/scheduler src/app/scheduler/page.tsx CHANGELOG.md ASSIMILATION.json`; Browser smoke on `http://localhost:5020` confirmed the Scheduler tab renders the new dispatch shell with no horizontal document overflow, and `http://localhost:5020/scheduler` renders the timeline/jobs handoff.
+- Intended commit message: `Replace scheduler view with timeline dispatch`
+
+## 2026-05-21 20:39 WITA - Show Hetzner Server Specs
+
+- Status: Pushed
+- Areas changed: Hetzner machine initializer modal, fleet styling, changelog
+- Summary: Add vCPU, RAM, SSD, and CPU-family metadata to the seeded Hetzner server type options and render the selected type's specs beside the estimated compute cost.
+- Verification: `pnpm exec tsc --noEmit --pretty false`; `pnpm exec eslint src/app/page.tsx src/app/fleet.module.css` (0 errors, existing dashboard warnings plus CSS config ignore warning only); `git diff --check -- src/app/page.tsx src/app/fleet.module.css CHANGELOG.md`; Playwright smoke on `http://localhost:5020` confirmed CX23 renders 2 vCPU, 4 GB RAM, 40 GB SSD, Intel/AMD shared CPU and changing to CPX41 updates the specs to 8 vCPU, 16 GB RAM, 240 GB SSD, AMD shared CPU.
+- Intended commit message: `Show Hetzner server specs`
+
+## 2026-05-21 20:29 WITA - Clarify Hetzner Env Actions
+
+- Status: Pushed
+- Areas changed: Hetzner machine initializer modal, changelog
+- Summary: Split the Hetzner token save/open-env loading states so opening the env file no longer animates the Save key button, and clarify that the generated local provision script uses `HCLOUD_TOKEN` with Hetzner Cloud before running the HivemindOS bootstrap over SSH.
+- Verification: `pnpm exec tsc --noEmit --pretty false`; `pnpm exec eslint src/app/page.tsx` (0 errors, existing MiroShark warnings only); `git diff --check -- src/app/page.tsx CHANGELOG.md`; Playwright smoke on `http://localhost:5020` confirmed Open env file spins only its own button while the Save key button stays static and the updated provisioning explanation renders.
+- Intended commit message: `Clarify Hetzner env actions`
+
 ## 2026-05-21 20:18 WITA - Add Hetzner Token Helpers
 
 - Status: Pushed

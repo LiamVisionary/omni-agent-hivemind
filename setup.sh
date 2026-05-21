@@ -363,6 +363,8 @@ set_env_local "HIVE_ENV_TAILNET_USER" "$(id -un 2>/dev/null || printf "%s" "${US
 set_env_local "HONEY_LEDGER_REMOTE_URL" "${HONEY_LEDGER_REMOTE_URL:-https://hivemindos-honey-ledger.hivemindos.workers.dev}"
 set_env_local "HONEY_LEDGER_ISSUER_ID" "${HONEY_LEDGER_ISSUER_ID:-hivemindos}"
 set_env_local "HONEY_COMPUTE_GATEWAY_URL" "${HONEY_COMPUTE_GATEWAY_URL:-https://hivemindos-compute-gateway.hivemindos.workers.dev}"
+set_env_local "HIVE_TOKEN_ADDRESS" "${HIVE_TOKEN_ADDRESS:-}"
+set_env_local "BANKR_LLM_KEY" "${BANKR_LLM_KEY:-}"
 
 install_hive_env_add
 

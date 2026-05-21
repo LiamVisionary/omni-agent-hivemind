@@ -33,11 +33,20 @@ export const DEFAULT_AGENT_WALLET: Omit<AgentWalletConfig, "agentId"> = {
 };
 
 export const DEFAULT_HONEY_TREASURY_CONFIG: HoneyTreasuryConfig = {
-  honeyPerThousandTokens: 1,
+  honeyPerThousandTokens: 0.001,
   tokenPerHoney: 1,
   agentTokenUsage: {},
   agentHoneyExchanged: {},
   agentHiveBalances: {},
+  rewardPoolHive: 0,
+  rewardPoolRemainingHive: 0,
+  rewardPoolEmittedHive: 0,
+  rewardPoolExchangedHive: 0,
+  rewardPoolUsd: 0,
+  rewardPoolVolumeUsd: 0,
+  rewardPoolShareOfVolume: 0.000684,
+  hivePerMillionTokens: 1,
+  hiveTokenAddress: "",
 };
 
 // Adapted from Conway-Research/automaton: src/types.ts and src/conway/credits.ts.
@@ -146,7 +155,7 @@ export function createDefaultHoneyTreasuryConfig(): HoneyTreasuryConfig {
 export function calculateHoneyForTokens(tokensUsed: number, honeyPerThousandTokens: number): number {
   if (!Number.isFinite(tokensUsed) || tokensUsed <= 0) return 0;
   if (!Number.isFinite(honeyPerThousandTokens) || honeyPerThousandTokens <= 0) return 0;
-  return Math.round((tokensUsed / 1_000) * honeyPerThousandTokens * 100) / 100;
+  return Math.round((tokensUsed / 1_000) * honeyPerThousandTokens * 1_000_000) / 1_000_000;
 }
 
 export function getHoneyAgentRewards(agentIds: string[], config: HoneyTreasuryConfig): HoneyAgentReward[] {
@@ -154,15 +163,15 @@ export function getHoneyAgentRewards(agentIds: string[], config: HoneyTreasuryCo
     const tokensUsed = Math.max(0, Math.round(Number(config.agentTokenUsage[agentId] ?? 0)));
     const honeyEarned = calculateHoneyForTokens(tokensUsed, config.honeyPerThousandTokens);
     const honeyExchanged = Math.min(honeyEarned, Math.max(0, Number(config.agentHoneyExchanged[agentId] ?? 0)));
-    const honeyAvailable = Math.max(0, Math.round((honeyEarned - honeyExchanged) * 100) / 100);
+    const honeyAvailable = Math.max(0, Math.round((honeyEarned - honeyExchanged) * 1_000_000) / 1_000_000);
     return {
       agentId,
       tokensUsed,
       honeyEarned,
       honeyAvailable,
       honeyExchanged,
-      tokenReward: Math.round(honeyAvailable * config.tokenPerHoney * 100) / 100,
-      hiveBalance: Math.round(Number(config.agentHiveBalances[agentId] ?? 0) * 100) / 100,
+      tokenReward: Math.round(honeyAvailable * config.tokenPerHoney * 1_000_000) / 1_000_000,
+      hiveBalance: Math.round(Number(config.agentHiveBalances[agentId] ?? 0) * 1_000_000) / 1_000_000,
     };
   });
 }

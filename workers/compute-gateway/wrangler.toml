@@ -6,7 +6,7 @@ compatibility_date = "2025-05-23"
 BANKR_LLM_BASE_URL = "https://llm.bankr.bot/v1/chat/completions"
 DEFAULT_MODEL = "gpt-5.4-mini"
 HONEY_LEDGER_URL = "https://hivemindos-honey-ledger.hivemindos.workers.dev"
-HONEY_PER_1000_TOKENS = "1"
+ALLOW_SHARED_BANKR_KEY = "false"
 DAILY_TOKEN_CAP = "50000"
 CORS_ORIGIN = "*"
 

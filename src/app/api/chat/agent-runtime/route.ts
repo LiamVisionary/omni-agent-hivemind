@@ -208,6 +208,7 @@ async function streamTrustedComputeGateway(
         agentId: profile.id,
         agentName: profile.name,
         runtime: profile.runtime,
+        bankrLlmKey: process.env.BANKR_LLM_KEY?.trim() || process.env.BANKR_API_KEY?.trim() || "",
         messages: modelMessages,
       }),
       signal: AbortSignal.timeout(110_000),
