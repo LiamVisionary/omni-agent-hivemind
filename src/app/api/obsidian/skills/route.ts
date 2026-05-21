@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import {
   getBrainSkillInventory,
+  importGitHubBrainSkill,
   importBrainSkills,
   importRemoteBrainSkill,
   type BrainSkillProviderId,
@@ -21,9 +22,10 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json().catch(() => ({})) as {
-      action?: "import-remote";
+      action?: "import-github" | "import-remote";
       vaultPath?: string;
       provider?: BrainSkillProviderId | "all";
+      githubUrl?: string;
       skill?: {
         slug?: string;
         name?: string;
@@ -34,6 +36,14 @@ export async function POST(request: NextRequest) {
         githubUrl?: string;
       };
     };
+    if (body.action === "import-github") {
+      if (!body.githubUrl?.trim()) throw new Error("Missing GitHub URL.");
+      const result = await importGitHubBrainSkill({
+        vaultPath: body.vaultPath,
+        githubUrl: body.githubUrl,
+      });
+      return NextResponse.json({ ok: true, ...result, imported: [], skipped: [] });
+    }
     if (body.action === "import-remote") {
       if (!body.skill) throw new Error("Missing skill to import.");
       const result = await importRemoteBrainSkill({

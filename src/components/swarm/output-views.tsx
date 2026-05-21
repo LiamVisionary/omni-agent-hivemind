@@ -2,7 +2,7 @@
 "use client";
 
 import * as React from "react";
-import type { SwarmEventItem, SwarmRun } from "./swarm-data";
+import type { SwarmEventItem, SwarmMarket, SwarmRun } from "./swarm-data";
 
 /* ─── X thread (repo-faithful Twitter surface) ──────────────────────── */
 const _XIcon = {
@@ -215,6 +215,343 @@ export function RedditView({ run }: { run: SwarmRun }) {
   );
 }
 
+/* ─── Polymarket result board ───────────────────────────────────────── */
+function percent(value: number | undefined) {
+  if (value === undefined || Number.isNaN(value)) return "--";
+  return `${Math.round(value * 100)}%`;
+}
+
+function oddsTone(value: number | undefined) {
+  if (value === undefined) return "var(--muted)";
+  if (value >= 0.55) return "var(--hex-active-border)";
+  if (value <= 0.45) return "#fecdd3";
+  return "var(--hex-honey-border)";
+}
+
+function parsePayload(value: string) {
+  try {
+    const parsed = JSON.parse(value);
+    return parsed && typeof parsed === "object" ? parsed as Record<string, unknown> : null;
+  } catch {
+    return null;
+  }
+}
+
+function asPayloadRecord(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : null;
+}
+
+function payloadValue(record: Record<string, unknown>, keys: string[]) {
+  for (const key of keys) {
+    const value = record[key];
+    if (value !== undefined && value !== null && value !== "") return String(value);
+  }
+  return "";
+}
+
+function payloadNumber(record: Record<string, unknown>, keys: string[]) {
+  for (const key of keys) {
+    const value = record[key];
+    const parsed = typeof value === "number" ? value : typeof value === "string" ? Number(value) : NaN;
+    if (Number.isFinite(parsed)) return parsed;
+  }
+  return undefined;
+}
+
+function PolymarketPayloadCard({ item }: { item: SwarmEventItem }) {
+  const parsed = asPayloadRecord(item.raw) ?? parsePayload(item.body);
+  const nestedData = parsed?.data && typeof parsed.data === "object" ? parsed.data as Record<string, unknown> : null;
+  const market = nestedData?.market && typeof nestedData.market === "object" ? nestedData.market as Record<string, unknown> : parsed;
+  const price = payloadValue(market ?? {}, ["price_yes", "yes_price", "price", "probability", "odds"]);
+  const question = payloadValue(market ?? {}, ["question", "title", "name"]);
+  const outcomes = [payloadValue(market ?? {}, ["outcome_a"]), payloadValue(market ?? {}, ["outcome_b"])]
+    .filter(Boolean)
+    .join(" / ");
+  const created = payloadValue(market ?? {}, ["created_at", "timestamp", "time"]);
+  const pricePoints = Array.isArray(nestedData?.prices) ? nestedData.prices.length : "";
+  const summaryRows = [
+    ["Question", question],
+    ["YES price", price],
+    ["Outcomes", outcomes],
+    ["Created", created],
+    ["Price points", pricePoints ? String(pricePoints) : ""],
+  ].filter(([, value]) => value);
+
+  return (
+    <article style={{
+      padding: "10px 12px", borderRadius: 8,
+      border: "1px solid rgba(148,163,184,0.14)", background: "var(--panel-bg-soft)",
+      minWidth: 0,
+    }}>
+      <div className="flex flex-wrap justify-between" style={{ gap: 8 }}>
+        <strong style={{ fontFamily: "var(--f-display)", fontSize: 13 }}>{item.title}</strong>
+        {item.meta ? <span style={{ fontFamily: "var(--f-mono)", fontSize: 10, color: "var(--muted)" }}>{item.meta}</span> : null}
+      </div>
+      {summaryRows.length ? (
+        <dl className="grid" style={{ gap: 5, margin: "8px 0 0" }}>
+          {summaryRows.map(([label, value]) => (
+            <div key={label} className="grid" style={{ gridTemplateColumns: "88px minmax(0,1fr)", gap: 8 }}>
+              <dt className="uppercase" style={{ fontFamily: "var(--f-mono)", fontSize: 9, color: "var(--muted)", letterSpacing: 0.08 }}>
+                {label}
+              </dt>
+              <dd style={{ margin: 0, fontSize: 12.5, lineHeight: 1.35, overflowWrap: "anywhere", wordBreak: "break-word" }}>
+                {value}
+              </dd>
+            </div>
+          ))}
+        </dl>
+      ) : (
+        <p style={{ margin: "6px 0 0", color: "var(--muted)", fontSize: 12.5, lineHeight: 1.45, overflowWrap: "anywhere" }}>
+          {item.body}
+        </p>
+      )}
+      {parsed ? (
+        <details style={{ marginTop: 8 }}>
+          <summary className="uppercase cursor-pointer" style={{
+            fontFamily: "var(--f-mono)", fontSize: 10, color: "var(--hex-active-border)", letterSpacing: 0.08,
+          }}>
+            raw payload
+          </summary>
+          <pre style={{
+            margin: "8px 0 0", maxHeight: 180, overflow: "auto", whiteSpace: "pre-wrap",
+            overflowWrap: "anywhere", fontFamily: "var(--f-mono)", fontSize: 10.5,
+            lineHeight: 1.45, color: "var(--muted)",
+          }}>{JSON.stringify(parsed, null, 2)}</pre>
+        </details>
+      ) : null}
+    </article>
+  );
+}
+
+function integrationRows(item: SwarmEventItem) {
+  const raw = asPayloadRecord(item.raw) ?? parsePayload(item.body);
+  const data = raw?.data;
+  const records = Array.isArray(data)
+    ? data.slice(0, 3)
+    : Array.isArray(raw)
+      ? raw.slice(0, 3)
+      : [];
+  const objectData = asPayloadRecord(data);
+  const source = objectData ?? raw;
+  const rows: Array<[string, string]> = [];
+  if (source) {
+    for (const key of ["success", "error", "message", "status", "category", "description", "name", "title"]) {
+      const value = source[key];
+      if (value !== undefined && value !== null && typeof value !== "object") rows.push([key, String(value)]);
+    }
+  }
+  for (const [index, record] of records.entries()) {
+    const row = asPayloadRecord(record);
+    if (!row) continue;
+    const title = payloadValue(row, ["name", "title", "id", "category"]) || `item ${index + 1}`;
+    const detail = payloadValue(row, ["description", "summary", "message", "status", "injection"]) || JSON.stringify(row).slice(0, 120);
+    rows.push([`#${index + 1} ${title}`, detail]);
+  }
+  return { raw, rows: rows.slice(0, 5) };
+}
+
+function IntegrationPayloadCard({ item }: { item: SwarmEventItem }) {
+  const { raw, rows } = integrationRows(item);
+  const tone = item.level === "warn" ? "var(--hex-honey-border)" : item.level === "error" ? "var(--danger)" : "var(--muted)";
+  return (
+    <article style={{
+      minWidth: 0, padding: "10px 12px", borderRadius: 8,
+      border: `1px solid ${item.level === "warn" ? "rgba(255,212,90,0.22)" : "rgba(148,163,184,0.16)"}`,
+      background: "var(--panel-bg-soft)",
+    }}>
+      <div className="uppercase" style={{
+        fontFamily: "var(--f-mono)", fontSize: 10,
+        color: tone, letterSpacing: 0.08,
+      }}>
+        {item.meta ?? item.title}
+      </div>
+      <strong style={{ display: "block", marginTop: 4, fontSize: 13, color: "var(--foreground)" }}>{item.title}</strong>
+      {rows.length ? (
+        <dl className="grid" style={{ gap: 6, margin: "8px 0 0" }}>
+          {rows.map(([label, value]) => (
+            <div key={`${label}-${value.slice(0, 18)}`} className="grid" style={{ gap: 3 }}>
+              <dt className="uppercase" style={{ fontFamily: "var(--f-mono)", fontSize: 9, color: "var(--muted)", letterSpacing: 0.08 }}>
+                {label.replaceAll("_", " ")}
+              </dt>
+              <dd style={{ margin: 0, color: "var(--foreground)", fontSize: 12.5, lineHeight: 1.45, overflowWrap: "anywhere", wordBreak: "break-word" }}>
+                {value}
+              </dd>
+            </div>
+          ))}
+        </dl>
+      ) : (
+        <p style={{ margin: "4px 0 0", color: "var(--muted)", fontSize: 12, lineHeight: 1.45, overflowWrap: "anywhere" }}>
+          {item.body}
+        </p>
+      )}
+      {raw ? (
+        <details style={{ marginTop: 8 }}>
+          <summary className="uppercase cursor-pointer" style={{
+            fontFamily: "var(--f-mono)", fontSize: 10, color: "var(--hex-active-border)", letterSpacing: 0.08,
+          }}>
+            raw payload
+          </summary>
+          <pre style={{
+            margin: "8px 0 0", maxHeight: 180, overflow: "auto", whiteSpace: "pre-wrap",
+            overflowWrap: "anywhere", fontFamily: "var(--f-mono)", fontSize: 10.5,
+            lineHeight: 1.45, color: "var(--muted)",
+          }}>{JSON.stringify(raw, null, 2)}</pre>
+        </details>
+      ) : null}
+    </article>
+  );
+}
+
+export function PolymarketView({ run, market }: { run: SwarmRun; market: SwarmMarket }) {
+  const items = [
+    ...(run.marketItems ?? []),
+    ...(run.marketPriceItems ?? []),
+  ].slice(0, 10);
+  const marketRecords = items.flatMap((item) => {
+    const parsed = asPayloadRecord(item.raw) ?? parsePayload(item.body);
+    const data = asPayloadRecord(parsed?.data);
+    const nestedMarket = asPayloadRecord(data?.market);
+    return [nestedMarket, parsed].filter(Boolean) as Record<string, unknown>[];
+  });
+  const snapshotOdds = marketRecords
+    .map((record) => payloadNumber(record, ["price_yes", "yes_price", "price", "probability", "odds"]))
+    .find((value) => value !== undefined);
+  const latest = market.ticks.at(-1) ?? snapshotOdds;
+  const open = market.ticks[0] ?? snapshotOdds;
+  const delta = market.ticks.length >= 2 && latest !== undefined && open !== undefined ? latest - open : undefined;
+  const hasOdds = latest !== undefined;
+  const oddsSource = market.ticks.length ? "price history" : snapshotOdds !== undefined ? "market snapshot" : "";
+  const marketQuestion = market.symbol !== "MiroShark markets" && market.symbol !== "No market data"
+    ? market.symbol
+    : run.title;
+  const scenario = run.scenario && run.scenario !== marketQuestion ? run.scenario : run.summary;
+  const headlines = market.headlines.length ? market.headlines : (run.timelineItems ?? []).slice(0, 6).map((item, index) => ({
+    t: item.meta ?? `T+${index + 1}`,
+    body: `${item.title}: ${item.body}`,
+    tone: item.tone ?? "neutral" as const,
+  }));
+
+  return (
+    <div style={{
+      width: "min(900px, 100%)", margin: "0 auto", color: "var(--foreground)",
+      display: "grid", gap: 14,
+    }}>
+      <section style={{
+        borderRadius: 10, border: "1px solid rgba(94,234,212,0.22)",
+        background: "linear-gradient(180deg, rgba(94,234,212,0.08), var(--panel-bg))",
+        padding: 16,
+      }}>
+        <div className="grid" style={{ gridTemplateColumns: "minmax(0, 1fr) 220px", gap: 14, alignItems: "stretch" }}>
+          <div style={{
+            minWidth: 0, padding: 14, borderRadius: 8,
+            border: "1px solid rgba(148,163,184,0.14)", background: "rgba(2,6,23,0.26)",
+          }}>
+            <div className="uppercase" style={{
+              fontFamily: "var(--f-mono)", fontSize: 10, letterSpacing: 0.12,
+              color: "var(--hex-active-border)",
+            }}>
+              Polymarket simulation · {run.state}
+            </div>
+            <div className="uppercase" style={{
+              marginTop: 14, fontFamily: "var(--f-mono)", fontSize: 10,
+              color: "var(--muted)", letterSpacing: 0.1,
+            }}>
+              market question
+            </div>
+            <h2 style={{
+              margin: "5px 0 12px", fontFamily: "var(--f-display)", fontSize: 21,
+              lineHeight: 1.24, letterSpacing: 0, fontWeight: 750,
+            }}>
+              {marketQuestion}
+            </h2>
+            <div className="uppercase" style={{
+              fontFamily: "var(--f-mono)", fontSize: 10,
+              color: "var(--muted)", letterSpacing: 0.1,
+            }}>
+              scenario brief
+            </div>
+            <p style={{ margin: "5px 0 0", color: "var(--muted)", fontSize: 13, lineHeight: 1.55 }}>
+              {scenario}
+            </p>
+          </div>
+          <div className="grid" style={{
+            gap: 8, padding: 14, borderRadius: 8,
+            border: "1px solid rgba(148,163,184,0.16)", background: "var(--code-bg)",
+            alignContent: "center",
+          }}>
+            <span className="uppercase" style={{ fontFamily: "var(--f-mono)", fontSize: 10, color: "var(--muted)", letterSpacing: 0.1 }}>
+              latest yes odds
+            </span>
+            <strong style={{
+              fontFamily: "var(--f-display)", fontSize: hasOdds ? 42 : 28, lineHeight: 1,
+              color: oddsTone(latest),
+            }}>
+              {hasOdds ? percent(latest) : "No odds"}
+            </strong>
+            <span style={{ fontFamily: "var(--f-mono)", fontSize: 11, color: delta === undefined ? "var(--muted)" : oddsTone(latest) }}>
+              {delta !== undefined
+                ? `${delta >= 0 ? "+" : ""}${Math.round(delta * 100)} pts from open`
+                : oddsSource
+                  ? `from ${oddsSource}`
+                  : "MiroShark returned no odds data"}
+            </span>
+          </div>
+        </div>
+      </section>
+
+      <section className="grid" style={{
+        gridTemplateColumns: "minmax(0, 1.1fr) minmax(260px, 0.9fr)",
+        gap: 14, alignItems: "start",
+      }}>
+        <div style={{
+          borderRadius: 10, border: "1px solid rgba(148,163,184,0.16)",
+          background: "var(--panel-bg)", padding: 14, minWidth: 0,
+        }}>
+          <div className="uppercase" style={{ fontFamily: "var(--f-mono)", fontSize: 10, color: "var(--muted)", letterSpacing: 0.1 }}>
+            market payload
+          </div>
+          <div className="grid" style={{ gap: 8, marginTop: 10, maxHeight: 390, overflow: "auto", paddingRight: 2 }}>
+            {items.length ? items.map((item) => (
+              <PolymarketPayloadCard key={item.id} item={item} />
+            )) : (
+              <p style={{ margin: 0, color: "var(--muted)", fontSize: 13 }}>
+                This run returned a market shell but no detailed market rows.
+              </p>
+            )}
+          </div>
+        </div>
+
+        <div style={{
+          borderRadius: 10, border: "1px solid rgba(148,163,184,0.16)",
+          background: "var(--panel-bg)", padding: 14, minWidth: 0,
+        }}>
+          <div className="uppercase" style={{ fontFamily: "var(--f-mono)", fontSize: 10, color: "var(--muted)", letterSpacing: 0.1 }}>
+            evidence timeline
+          </div>
+          <div className="grid" style={{ gap: 8, marginTop: 10 }}>
+            {headlines.length ? headlines.map((headline, index) => (
+              <article key={`${headline.t}-${index}`} className="grid" style={{
+                gridTemplateColumns: "46px minmax(0,1fr)", gap: 10,
+                padding: "8px 10px", borderRadius: 8,
+                border: "1px solid rgba(148,163,184,0.14)", background: "var(--panel-bg-soft)",
+              }}>
+                <span style={{ fontFamily: "var(--f-mono)", fontSize: 10, color: "var(--muted)", overflowWrap: "anywhere" }}>{headline.t}</span>
+                <span style={{ fontSize: 12.5, lineHeight: 1.45, overflowWrap: "anywhere", wordBreak: "break-word" }}>
+                  {headline.body}
+                </span>
+              </article>
+            )) : (
+              <p style={{ margin: 0, color: "var(--muted)", fontSize: 13, lineHeight: 1.5 }}>
+                No separate evidence events were returned for this Polymarket run.
+              </p>
+            )}
+          </div>
+        </div>
+      </section>
+    </div>
+  );
+}
+
 /* ─── Research brief view ────────────────────────────────────────────── */
 export function ResearchView({ run }: { run: SwarmRun }) {
   const items = [
@@ -295,6 +632,66 @@ export function OpsView({ run }: { run: SwarmRun }) {
           );
         })}
       </div>
+    </div>
+  );
+}
+
+export function MiroSharkIntegrationView({ run }: { run: SwarmRun }) {
+  const items = [
+    ...(run.integrationItems ?? []),
+    ...(run.marketPriceItems ?? []),
+  ].slice(0, 18);
+  const links = run.exportLinks ?? [];
+  return (
+    <div style={{
+      width: "min(780px, 100%)", margin: "0 auto", padding: 18,
+      borderRadius: 10, border: "1px solid rgba(148,163,184,0.16)",
+      background: "var(--panel-bg)", color: "var(--foreground)",
+      display: "grid", gap: 14,
+    }}>
+      <header>
+        <div className="uppercase" style={{
+          fontFamily: "var(--f-mono)", fontSize: 10, letterSpacing: 0.12, color: "var(--hex-active-border)",
+        }}>
+          MiroShark integration layer
+        </div>
+        <h2 className="font-bold" style={{
+          margin: "4px 0 0", fontFamily: "var(--f-display)", fontSize: 22, letterSpacing: -0.3,
+        }}>
+          Reports, graph, exports, interviews, markets
+        </h2>
+      </header>
+      <div className="grid" style={{ gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 10 }}>
+        {items.length ? items.map((item) => (
+          <IntegrationPayloadCard key={item.id} item={item} />
+        )) : (
+          <article style={{
+            gridColumn: "1 / -1", padding: "10px 12px", borderRadius: 8,
+            border: "1px solid rgba(148,163,184,0.16)", background: "var(--panel-bg-soft)",
+          }}>
+            <strong>No extended integration payloads yet</strong>
+            <p style={{ margin: "4px 0 0", color: "var(--muted)", fontSize: 12 }}>
+              This run has not returned report, graph, interview, export, webhook, or market-price payloads yet.
+            </p>
+          </article>
+        )}
+      </div>
+      {links.length ? (
+        <div className="flex flex-wrap" style={{ gap: 7 }}>
+          {links.map((link) => (
+            <a key={link.key} href={link.href} target="_blank" rel="noreferrer"
+              className="uppercase font-bold"
+              style={{
+                padding: "6px 9px", borderRadius: 999,
+                border: "1px solid rgba(148,163,184,0.22)",
+                color: "var(--hex-honey-border)", fontFamily: "var(--f-mono)",
+                fontSize: 10, letterSpacing: 0.06, textDecoration: "none",
+              }}>
+              {link.label}
+            </a>
+          ))}
+        </div>
+      ) : null}
     </div>
   );
 }

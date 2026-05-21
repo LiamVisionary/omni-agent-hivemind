@@ -1,6 +1,7 @@
 type Env = {
   DB: D1Database;
   HIVE_PER_MILLION_TOKENS?: string;
+  OBSERVED_DAILY_TOKEN_CAP?: string;
   HONEY_LEDGER_SECRET?: string;
   HONEY_LEDGER_READ_TOKEN?: string;
   HONEY_LEDGER_ADMIN_TOKEN?: string;
@@ -19,6 +20,8 @@ type UsageReceipt = {
   timestamp: string;
   signature?: string;
 };
+
+type ObservedUsage = Omit<UsageReceipt, "issuerId" | "signature">;
 
 type AgentBalanceRow = {
   workspace_id: string;
@@ -69,6 +72,9 @@ const worker: ExportedHandler<Env> = {
       }
       if (request.method === "POST" && url.pathname === "/receipts") {
         return handleReceipt(request, env);
+      }
+      if (request.method === "POST" && url.pathname === "/observations") {
+        return handleObservation(request, env);
       }
       if (request.method === "POST" && url.pathname === "/exchange") {
         return handleExchange(request, env);
@@ -146,6 +152,85 @@ async function handleReceipt(request: Request, env: Env) {
   const balance = await getBalance(env, receipt.workspaceId, receipt.agentId);
   const updatedPool = await getRewardPoolState(env);
   return ok(env, { ok: true, duplicate: (inserted.meta.changes ?? 0) === 0, honeyDelta, balance, economics: toEconomics(env, updatedPool) });
+}
+
+async function handleObservation(request: Request, env: Env) {
+  const observation = await request.json().catch(() => null);
+  if (!isObservedUsage(observation)) return fail(env, "Invalid observed usage.", 400);
+
+  await ensureRewardPoolState(env);
+  const dailyCap = Math.max(0, Math.round(positiveNumber(env.OBSERVED_DAILY_TOKEN_CAP, 50_000)));
+  const usedToday = await observedTokensToday(env, observation.workspaceId);
+  const acceptedTokens = Math.max(0, Math.min(observation.tokensUsed, dailyCap - usedToday));
+  if (acceptedTokens <= 0) {
+    const pool = await getRewardPoolState(env);
+    return ok(env, {
+      ok: true,
+      duplicate: false,
+      capped: true,
+      acceptedTokens: 0,
+      honeyDelta: 0,
+      economics: toEconomics(env, pool),
+    });
+  }
+
+  const pool = await getRewardPoolState(env);
+  const targetHoneyMicro = rewardForTokensMicro(env, acceptedTokens);
+  const poolRemainingMicro = Math.max(0, pool.total_pool_micro - pool.emitted_micro);
+  const honeyDeltaMicro = Math.min(targetHoneyMicro, poolRemainingMicro);
+  const honeyDelta = fromMicro(honeyDeltaMicro);
+  const inserted = await env.DB.prepare(
+    `INSERT OR IGNORE INTO usage_receipts
+      (event_id, issuer_id, workspace_id, agent_id, tokens_used, honey_delta_micro, model, source, occurred_at, signature)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+  )
+    .bind(
+      observation.eventId,
+      "hivemindos-runtime-observer",
+      observation.workspaceId,
+      observation.agentId,
+      acceptedTokens,
+      honeyDeltaMicro,
+      observation.model,
+      observation.source,
+      observation.timestamp,
+      "observed-runtime-usage",
+    )
+    .run();
+
+  if ((inserted.meta.changes ?? 0) > 0) {
+    await env.DB.batch([
+      env.DB.prepare(
+        `INSERT INTO agent_balances
+          (workspace_id, agent_id, tokens_used, lifetime_honey, available_honey, lifetime_honey_micro, available_honey_micro, updated_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now'))
+          ON CONFLICT(workspace_id, agent_id) DO UPDATE SET
+            tokens_used = tokens_used + excluded.tokens_used,
+            lifetime_honey_micro = lifetime_honey_micro + excluded.lifetime_honey_micro,
+            available_honey_micro = available_honey_micro + excluded.available_honey_micro,
+            lifetime_honey = ROUND((lifetime_honey_micro + excluded.lifetime_honey_micro) / 1000000.0, 6),
+            available_honey = ROUND((available_honey_micro + excluded.available_honey_micro) / 1000000.0, 6),
+            updated_at = datetime('now')`,
+      ).bind(observation.workspaceId, observation.agentId, acceptedTokens, honeyDelta, honeyDelta, honeyDeltaMicro, honeyDeltaMicro),
+      env.DB.prepare(
+        `UPDATE reward_pool_state
+          SET emitted_micro = emitted_micro + ?, updated_at = datetime('now')
+          WHERE id = 1`,
+      ).bind(honeyDeltaMicro),
+    ]);
+  }
+
+  const balance = await getBalance(env, observation.workspaceId, observation.agentId);
+  const updatedPool = await getRewardPoolState(env);
+  return ok(env, {
+    ok: true,
+    duplicate: (inserted.meta.changes ?? 0) === 0,
+    capped: acceptedTokens < observation.tokensUsed,
+    acceptedTokens,
+    honeyDelta,
+    balance,
+    economics: toEconomics(env, updatedPool),
+  });
 }
 
 async function handleLedger(request: Request, env: Env, url: URL) {
@@ -323,6 +408,34 @@ function isUsageReceipt(value: unknown): value is UsageReceipt {
     Number.isInteger(receipt.tokensUsed) &&
     receipt.tokensUsed > 0,
   );
+}
+
+function isObservedUsage(value: unknown): value is ObservedUsage {
+  if (!value || typeof value !== "object") return false;
+  const receipt = value as Partial<UsageReceipt>;
+  return Boolean(
+    cleanId(receipt.eventId ?? "") &&
+    cleanId(receipt.workspaceId ?? "") &&
+    cleanId(receipt.agentId ?? "") &&
+    typeof receipt.model === "string" &&
+    /^observed-(hermes|openclaw|runtime)-usage$/.test(receipt.source ?? "") &&
+    typeof receipt.timestamp === "string" &&
+    typeof receipt.tokensUsed === "number" &&
+    Number.isInteger(receipt.tokensUsed) &&
+    receipt.tokensUsed > 0 &&
+    receipt.tokensUsed <= 250_000,
+  );
+}
+
+async function observedTokensToday(env: Env, workspaceId: string) {
+  const row = await env.DB.prepare(
+    `SELECT COALESCE(SUM(tokens_used), 0) AS tokens
+      FROM usage_receipts
+      WHERE workspace_id = ?
+        AND source IN ('observed-hermes-usage', 'observed-openclaw-usage', 'observed-runtime-usage')
+        AND date(occurred_at) = date('now')`,
+  ).bind(workspaceId).first<{ tokens: number }>();
+  return Math.max(0, Math.round(Number(row?.tokens ?? 0)));
 }
 
 async function signReceipt(receipt: Omit<UsageReceipt, "signature">, secret: string) {

@@ -10,12 +10,12 @@ import { Composer } from "./composer";
 import { HexTile } from "./hex-tile";
 import { HeadlinesPanel, MarketPanel, SocialPanel } from "./feeds";
 import {
-  XThreadView, RedditView, ResearchView, OpsView,
+  XThreadView, RedditView, PolymarketView, ResearchView, OpsView, MiroSharkIntegrationView,
 } from "./output-views";
 import { Runs } from "./runs";
 import {
   type SwarmAgent, type SwarmDecision, type SwarmMarket, type SwarmRun, type SwarmSocialPost,
-  type SwarmTemplate, type TemplateId,
+  type SwarmTemplate, type SwarmTemplateField, type TemplateId,
 } from "./swarm-data";
 import styles from "./swarm-tokens.module.css";
 
@@ -30,12 +30,31 @@ interface SwarmViewProps {
   selectedRunId?: string;
   onSelectRun?: (run: SwarmRun) => void;
   onLaunch?: (template: TemplateId) => void;
+  onPickTemplate?: (template: TemplateId) => void;
+  draftScenario?: string;
+  draftRounds?: number;
+  draftPlatform?: string;
+  templateFields?: SwarmTemplateField[];
+  templateInputs?: Record<string, string>;
+  missingTemplateFields?: number;
+  runPending?: boolean;
+  onDraftScenarioChange?: (value: string) => void;
+  onDraftRoundsChange?: (value: number) => void;
+  onDraftPlatformChange?: (value: string) => void;
+  onTemplateInputChange?: (key: string, value: string) => void;
+  onStartRun?: () => void;
+  onAskScenario?: () => void;
+  onSuggestScenarios?: () => void;
+  helperPending?: "ask" | "suggest" | "";
+  helperStatus?: string;
+  loading?: boolean;
+  loadingLabel?: string;
   onPublishX?: (run: SwarmRun) => void;
 }
 
 const EMPTY_MARKET: SwarmMarket = {
   symbol: "No market data",
-  ticks: [0, 0],
+  ticks: [],
   ladder: [],
   headlines: [],
 };
@@ -51,13 +70,36 @@ export function SwarmView({
   selectedRunId,
   onSelectRun,
   onLaunch,
+  onPickTemplate,
+  draftScenario,
+  draftRounds,
+  draftPlatform,
+  templateFields = [],
+  templateInputs = {},
+  missingTemplateFields = 0,
+  runPending = false,
+  onDraftScenarioChange,
+  onDraftRoundsChange,
+  onDraftPlatformChange,
+  onTemplateInputChange,
+  onStartRun,
+  onAskScenario,
+  onSuggestScenarios,
+  helperPending,
+  helperStatus,
+  loading = false,
+  loadingLabel = "Loading swarm run",
   onPublishX,
 }: SwarmViewProps = {}) {
-  const [internalSelectedId, setInternalSelectedId] = React.useState<string>("");
+  const [internalSelectedId, setInternalSelectedId] = React.useState<string>(runs[0]?.id ?? "");
   const [template, setTemplate] = React.useState<TemplateId>(runs[0]?.template ?? templates[0]?.id ?? "custom");
-  const requestedSelectedId = selectedRunId ?? internalSelectedId;
-  const selectedId = runs.some((r) => r.id === requestedSelectedId) ? requestedSelectedId : runs[0]?.id ?? "";
-  const run = runs.find((r) => r.id === selectedId) ?? runs[0] ?? null;
+  const requestedSelectedId = selectedRunId !== undefined ? selectedRunId : internalSelectedId;
+  const selectedId = requestedSelectedId === ""
+    ? ""
+    : runs.some((r) => r.id === requestedSelectedId)
+      ? requestedSelectedId
+      : runs[0]?.id ?? "";
+  const run = selectedId ? runs.find((r) => r.id === selectedId) ?? runs[0] ?? null : null;
   const today = new Date().toLocaleDateString("en-US", {
     weekday: "long", month: "short", day: "numeric", year: "numeric",
   });
@@ -71,14 +113,29 @@ export function SwarmView({
     }
   }, [onSelectRun, runs]);
 
+  const handlePickTemplate = React.useCallback((id: TemplateId) => {
+    setTemplate(id);
+    setInternalSelectedId("");
+    onPickTemplate?.(id);
+  }, [onPickTemplate]);
+
+  const handleLaunch = React.useCallback(() => {
+    const nextTemplate = templates.some((item) => item.id === template) ? template : templates[0]?.id ?? "custom";
+    setTemplate(nextTemplate);
+    setInternalSelectedId("");
+    onLaunch?.(nextTemplate);
+  }, [onLaunch, template, templates]);
+
   const activeTemplate = run?.template ?? template;
   const liveCount = runs.filter((r) => r.state === "live").length;
   const totalPosts = run?.posts ?? 0;
   const totalTrades = run?.trades ?? 0;
+  const isLoading = loading || runPending;
 
   return (
     <TooltipProvider delayDuration={120}>
       <div className={`${styles.root} relative overflow-hidden`}
+        aria-busy={isLoading || undefined}
         style={{
           width: "100%", height: "100%",
           background: "var(--background)", color: "var(--foreground)",
@@ -119,7 +176,9 @@ export function SwarmView({
             <div className="text-center uppercase" style={{
               fontFamily: "var(--f-mono)", fontSize: 11, color: "var(--muted)", letterSpacing: 0.1,
             }}>
-              {today} · miroshark · <span style={{ color: "var(--hex-active-border)" }}>{statusLabel}</span>
+              {today} · miroshark · <span style={{ color: "var(--hex-active-border)" }}>
+                {isLoading ? loadingLabel : statusLabel}
+              </span>
             </div>
             <div />
           </div>
@@ -151,7 +210,7 @@ export function SwarmView({
             runs={runs}
             selectedId={selectedId}
             onSelect={handleSelectRun}
-            onLaunch={() => onLaunch?.(activeTemplate)}
+            onLaunch={handleLaunch}
           />
 
           {/* CENTER — theater + feeds (varies by template) */}
@@ -159,7 +218,9 @@ export function SwarmView({
             minWidth: 0, minHeight: 0, padding: "20px 28px 28px",
             gap: 16, gridTemplateColumns: "minmax(0, 1fr)", alignContent: "start",
           }}>
-            {run ? (
+            {isLoading ? (
+              <LoadingStage label={loadingLabel} />
+            ) : run ? (
               <CenterStage
                 run={run}
                 agents={agents}
@@ -176,9 +237,25 @@ export function SwarmView({
           <Composer
             templates={templates}
             activeTemplate={activeTemplate}
-            onPickTemplate={setTemplate}
+            onPickTemplate={handlePickTemplate}
             run={run}
             agents={agents}
+            draftScenario={draftScenario}
+            draftRounds={draftRounds}
+            draftPlatform={draftPlatform}
+            templateFields={templateFields}
+            templateInputs={templateInputs}
+            missingTemplateFields={missingTemplateFields}
+            runPending={runPending}
+            onDraftScenarioChange={onDraftScenarioChange}
+            onDraftRoundsChange={onDraftRoundsChange}
+            onDraftPlatformChange={onDraftPlatformChange}
+            onTemplateInputChange={onTemplateInputChange}
+            onStartRun={onStartRun}
+            onAskScenario={onAskScenario}
+            onSuggestScenarios={onSuggestScenarios}
+            helperPending={helperPending}
+            helperStatus={helperStatus}
           />
         </div>
       </div>
@@ -220,24 +297,50 @@ function CenterStage({
 
   switch (run.template) {
     case "x-thread":
-      return wrap(
-        "autoposter · draft ready", "rgba(29,155,240,0.10)",
-        <XThreadView run={run} />,
-        <button onClick={onPublishX} className="uppercase font-bold cursor-pointer"
-          style={{
-            padding: "6px 14px", borderRadius: 999, border: 0,
-            background: "#1d9bf0", color: "#fff",
-            fontFamily: "var(--f-mono)", fontSize: 10, letterSpacing: 0.08,
-          }}>publish thread</button>,
+      return (
+        <>
+          {wrap(
+            "autoposter · draft ready", "rgba(29,155,240,0.10)",
+            <XThreadView run={run} />,
+            <button onClick={onPublishX} className="uppercase font-bold cursor-pointer"
+              style={{
+                padding: "6px 14px", borderRadius: 999, border: 0,
+                background: "#1d9bf0", color: "#fff",
+                fontFamily: "var(--f-mono)", fontSize: 10, letterSpacing: 0.08,
+              }}>publish thread</button>,
+          )}
+          <MiroSharkIntegrationView run={run} />
+        </>
       );
     case "reddit-narrative":
-      return wrap("reddit · narrative cascade", "rgba(255,69,0,0.10)", <RedditView run={run} />);
+      return (
+        <>
+          {wrap("reddit · narrative cascade", "rgba(255,69,0,0.10)", <RedditView run={run} />)}
+          <MiroSharkIntegrationView run={run} />
+        </>
+      );
     case "research-swarm":
-      return wrap("research · consensus brief", "rgba(94,234,212,0.10)", <ResearchView run={run} />);
+      return (
+        <>
+          {wrap("research · consensus brief", "rgba(94,234,212,0.10)", <ResearchView run={run} />)}
+          <MiroSharkIntegrationView run={run} />
+        </>
+      );
     case "ops":
-      return wrap("ops · storm console", "rgba(251,113,133,0.10)", <OpsView run={run} />);
-    case "market-maker":
+      return (
+        <>
+          {wrap("ops · storm console", "rgba(251,113,133,0.10)", <OpsView run={run} />)}
+          <MiroSharkIntegrationView run={run} />
+        </>
+      );
     case "polymarket":
+      return (
+        <>
+          {wrap("polymarket · result board", "rgba(94,234,212,0.08)", <PolymarketView run={run} market={market} />)}
+          <MiroSharkIntegrationView run={run} />
+        </>
+      );
+    case "market-maker":
     case "custom":
     default:
       return (
@@ -250,7 +353,7 @@ function CenterStage({
             }}>
             <div className="absolute flex items-center" style={{ top: 14, left: 16, gap: 10 }}>
               <span className={`${styles.dot} ${styles.dotLive}`} style={{ color: "var(--accent)" }} />
-              <span className={styles.monoCap} style={{ color: "var(--hex-active-border)" }}>theater · running</span>
+              <span className={styles.monoCap} style={{ color: "var(--hex-active-border)" }}>theater · {run.state}</span>
               <span className={styles.monoCap} style={{ color: "var(--muted)" }}>{run.title}</span>
             </div>
             <div className="absolute flex flex-wrap justify-end" style={{ right: 16, bottom: 14, gap: 6 }}>
@@ -269,6 +372,7 @@ function CenterStage({
             <SocialPanel posts={socialPosts} />
           </div>
           <HeadlinesPanel headlines={market.headlines} />
+          <MiroSharkIntegrationView run={run} />
         </>
       );
   }
@@ -289,6 +393,30 @@ function EmptyStage({ statusLabel }: { statusLabel: string }) {
         <p style={{ margin: 0, color: "var(--muted)", maxWidth: 460 }}>
           Connect MiroShark or load a saved simulation to populate the theater with real runs, agents, posts, and events.
         </p>
+      </div>
+    </div>
+  );
+}
+
+function LoadingStage({ label }: { label: string }) {
+  return (
+    <div className={styles.loadingStage}>
+      <div className={styles.loadingCard}>
+        <div className={styles.loadingComb} aria-hidden="true">
+          {Array.from({ length: 9 }).map((_, index) => (
+            <span key={index} style={{ animationDelay: `${index * 90}ms` }} />
+          ))}
+        </div>
+        <div className={styles.monoCap} style={{ color: "var(--hex-active-border)" }}>
+          MiroShark is working
+        </div>
+        <h2>{label}</h2>
+        <p>
+          Preparing the theater, run shelf, and output surfaces for the latest simulation data.
+        </p>
+        <div className={styles.loadingRail} aria-hidden="true">
+          <span />
+        </div>
       </div>
     </div>
   );

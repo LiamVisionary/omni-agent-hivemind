@@ -346,6 +346,11 @@ export function FleetView({
                   onSelectMachine={handleSelectMachine}
                   onSelectAgent={handleSelectAgent}
                   onAddAgent={handleAddAgent}
+                  onOpenChat={onOpenChat}
+                  onOpenWallet={onOpenWallet}
+                  onEditSettings={onEditSettings}
+                  onDuplicate={onDuplicate}
+                  onRemove={onRemove}
                 />
               )}
             </div>

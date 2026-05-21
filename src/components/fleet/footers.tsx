@@ -5,7 +5,7 @@ import { Copy, MessageSquare, Monitor, Settings2, Trash2, Wallet, X } from "luci
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { BeeIcon } from "./bee-icon";
 import { HexTile } from "./hex-tile";
-import type { AgentState, FleetAgent, FleetMachine } from "./fleet-data";
+import { fleetAgentCanChat, type AgentState, type FleetAgent, type FleetMachine } from "./fleet-data";
 import styles from "./fleet-tokens.module.css";
 
 const stateTone = (s: AgentState) =>
@@ -94,6 +94,7 @@ export function AgentFooter({
   onOpenChat, onOpenWallet, onEditSettings, onDuplicate, onRemove,
 }: AgentFooterProps) {
   const color = stateColor[agent.state];
+  const canChat = fleetAgentCanChat(agent);
   const fire = (fn?: (m: FleetMachine, a: FleetAgent) => void) =>
     () => { if (fn) fn(machine, agent); };
 
@@ -150,26 +151,30 @@ export function AgentFooter({
       </div>
 
       <div className="flex items-center flex-shrink-0" style={{ gap: 10 }}>
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <button
-              onClick={fire(onOpenChat)}
-              className="inline-flex items-center uppercase font-bold"
-              style={{
-                gap: 8, padding: "9px 14px", borderRadius: 8, cursor: "pointer",
-                fontFamily: "var(--f-mono)", fontSize: 11, letterSpacing: 0.06,
-                border: "1px solid rgba(94,234,212,0.55)",
-                background: "rgba(45,212,191,0.18)",
-                color: "var(--accent-strong)",
-              }}
-            >
-              <MessageSquare size={14} /> Open chat
-            </button>
-          </TooltipTrigger>
-          <TooltipContent>Open chat with this agent</TooltipContent>
-        </Tooltip>
+        {canChat && (
+          <>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <button
+                  onClick={fire(onOpenChat)}
+                  className="inline-flex items-center uppercase font-bold"
+                  style={{
+                    gap: 8, padding: "9px 14px", borderRadius: 8, cursor: "pointer",
+                    fontFamily: "var(--f-mono)", fontSize: 11, letterSpacing: 0.06,
+                    border: "1px solid rgba(94,234,212,0.55)",
+                    background: "rgba(45,212,191,0.18)",
+                    color: "var(--accent-strong)",
+                  }}
+                >
+                  <MessageSquare size={14} /> Open chat
+                </button>
+              </TooltipTrigger>
+              <TooltipContent>Open chat with this agent</TooltipContent>
+            </Tooltip>
 
-        <span aria-hidden style={{ width: 1, height: 20, background: "rgba(148,163,184,0.16)" }} />
+            <span aria-hidden style={{ width: 1, height: 20, background: "rgba(148,163,184,0.16)" }} />
+          </>
+        )}
 
         <div role="group" aria-label="Agent actions" className="inline-flex" style={{ gap: 4 }}>
           {[

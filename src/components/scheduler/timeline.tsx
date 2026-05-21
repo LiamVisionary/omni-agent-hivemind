@@ -10,10 +10,14 @@ interface TimelineProps {
   onSelect: (id: string) => void;
 }
 
-const HOURS = 24;
-const SLOT_MIN = 15;
+const FUTURE_HOURS = 24;
+const PAST_HOURS = 2;
+const TOTAL_HOURS = PAST_HOURS + FUTURE_HOURS;
 const COL_W = 280;
 const COL_GAP = 12;
+const JOB_GUTTER = 44;
+const TRACK_PAD_TOP = 22;
+const TRACK_PAD_BOTTOM = 14;
 
 function PausedGlyph() {
   return (
@@ -25,49 +29,34 @@ function PausedGlyph() {
 }
 
 export function Timeline({ jobs, selectedId, onSelect }: TimelineProps) {
-  const ticks = Array.from({ length: HOURS + 1 }, (_, i) => i);
+  const ticks = Array.from({ length: TOTAL_HOURS + 1 }, (_, i) => i - PAST_HOURS);
+  const nowT = PAST_HOURS / TOTAL_HOURS;
+  const toTrackT = (futureMinutes: number) => (futureMinutes / 60 + PAST_HOURS) / TOTAL_HOURS;
+  const trackTop = (t: number) => `calc(${TRACK_PAD_TOP}px + ${t * 100}% - ${(TRACK_PAD_TOP + TRACK_PAD_BOTTOM) * t}px)`;
 
   type Pin = { job: SchedulerJob; t: number; mins: number; isPaused: boolean; _col?: number; _slotT?: number };
   const placed: Pin[] = jobs
     .map((j) => {
       const m = minutesFromLabel(j.nextRun);
       if (m == null) return null;
-      const t = Math.min(Math.max(m / (HOURS * 60), 0), 1);
+      const t = Math.min(Math.max(toTrackT(m), 0), 1);
       return { job: j, t, mins: m, isPaused: !j.enabled || j.nextRun === "paused" };
     })
     .filter((x): x is Pin => x != null);
 
-  const slotKey = (m: number) => Math.round(m / SLOT_MIN);
-  const slots = new Map<number, Pin[]>();
-  for (const p of placed) {
-    const k = slotKey(p.mins);
-    if (!slots.has(k)) slots.set(k, []);
-    slots.get(k)!.push(p);
-  }
-
   const bucketed: Pin[] = [];
-  let maxCols = 1;
-  for (const [k, arr] of slots) {
-    arr.forEach((p, i) => {
-      p._col = i;
-      p._slotT = (k * SLOT_MIN) / (HOURS * 60);
-      bucketed.push(p);
-    });
-    if (arr.length > maxCols) maxCols = arr.length;
-  }
-  // Anti-collision within a column (rare but possible)
-  const byCol: Record<number, Pin[]> = {};
-  for (const p of bucketed) (byCol[p._col!] ||= []).push(p);
+  const colLastT: number[] = [];
   const MIN_GAP = 0.045;
-  for (const col of Object.values(byCol)) {
-    col.sort((a, b) => a._slotT! - b._slotT!);
-    for (let i = 1; i < col.length; i++) {
-      if (col[i]._slotT! - col[i - 1]._slotT! < MIN_GAP) {
-        col[i]._slotT = col[i - 1]._slotT! + MIN_GAP;
-      }
-    }
+  for (const p of [...placed].sort((a, b) => a.t - b.t)) {
+    const col = colLastT.findIndex((lastT) => p.t - lastT >= MIN_GAP);
+    const nextCol = col === -1 ? colLastT.length : col;
+    p._col = nextCol;
+    p._slotT = p.t;
+    colLastT[nextCol] = p.t;
+    bucketed.push(p);
   }
-  const railWidth = maxCols * COL_W + (maxCols - 1) * COL_GAP;
+  const maxCols = Math.max(colLastT.length, 1);
+  const railWidth = JOB_GUTTER + maxCols * COL_W + (maxCols - 1) * COL_GAP;
 
   return (
     <div className="relative grid overflow-hidden rounded-2xl"
@@ -84,14 +73,14 @@ export function Timeline({ jobs, selectedId, onSelect }: TimelineProps) {
           const isMajor = h % 6 === 0;
           return (
             <div key={h} className="flex items-center justify-end" style={{
-              position: "absolute", top: `${(h / HOURS) * 100}%`, left: 0, right: 0,
+              position: "absolute", top: trackTop((h + PAST_HOURS) / TOTAL_HOURS), left: 0, right: 0,
               transform: "translateY(-50%)", gap: 6, paddingRight: 10, height: 18,
             }}>
               <span style={{
                 fontFamily: "var(--f-mono)", fontSize: isMajor ? 11 : 9,
                 color: isMajor ? "var(--foreground)" : "var(--muted)",
                 fontWeight: isMajor ? 700 : 500, letterSpacing: 0.04,
-              }}>{h === 0 ? "now" : h === 24 ? "+24h" : `+${h}h`}</span>
+              }}>{h === 0 ? "now" : h > 0 ? `+${h}h` : `${h}h`}</span>
               <span style={{
                 width: isMajor ? 10 : 5, height: 1,
                 background: isMajor ? "rgba(148,163,184,0.32)" : "rgba(148,163,184,0.16)",
@@ -103,18 +92,19 @@ export function Timeline({ jobs, selectedId, onSelect }: TimelineProps) {
 
       {/* Rail */}
       <div className="relative overflow-x-auto overflow-y-hidden"
-        style={{ padding: "32px 16px 12px 28px" }}>
+        style={{ padding: "0 16px 0 28px" }}>
         <div className="relative" style={{ width: railWidth, minWidth: "100%", height: "100%" }}>
           {ticks.slice(0, -1).map((h) => h % 6 === 0 && (
             <div key={h} style={{
               position: "absolute", left: 0, right: 0,
-              top: `${(h / HOURS) * 100}%`, height: `${(6 / HOURS) * 100}%`,
+              top: trackTop((h + PAST_HOURS) / TOTAL_HOURS),
+              height: `calc(${(6 / TOTAL_HOURS) * 100}% - ${((TRACK_PAD_TOP + TRACK_PAD_BOTTOM) * 6) / TOTAL_HOURS}px)`,
               background: h % 12 === 0 ? "rgba(255,212,90,0.025)" : "rgba(45,212,191,0.02)",
               pointerEvents: "none",
             }} />
           ))}
           <div style={{
-            position: "absolute", top: 0, left: 0, right: 0, height: 0,
+            position: "absolute", top: trackTop(nowT), left: 0, right: 0, height: 0,
             borderTop: "1px dashed var(--accent, #2dd4bf)", zIndex: 2, pointerEvents: "none",
             opacity: 0.5,
           }}>
@@ -133,8 +123,9 @@ export function Timeline({ jobs, selectedId, onSelect }: TimelineProps) {
               className="grid items-center text-left cursor-pointer"
               style={{
                 position: "absolute",
-                left: (_col ?? 0) * (COL_W + COL_GAP),
-                top: `calc(${(_slotT ?? 0) * 100}% + 16px)`,
+                left: JOB_GUTTER + (_col ?? 0) * (COL_W + COL_GAP),
+                top: trackTop(_slotT ?? nowT),
+                transform: "translateY(-50%)",
                 gridTemplateColumns: "28px 1fr", gap: 8,
                 width: COL_W, padding: "6px 10px 6px 6px", borderRadius: 999,
                 border: `1px solid ${selectedId === job.id ? "var(--hex-honey-border)" : "rgba(148,163,184,0.16)"}`,

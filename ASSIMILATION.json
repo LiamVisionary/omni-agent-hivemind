@@ -428,6 +428,41 @@
       "target_path": "src/app/scheduler/page.tsx",
       "reuse_type": "copied_code",
       "note": "standalone scheduler route mount"
+    },
+    {
+      "source_repo": "aaronjmars/MiroShark",
+      "source_path": "backend/openapi.yaml",
+      "target_path": "src/app/api/miroshark/swarm/route.ts",
+      "reuse_type": "adapted_code",
+      "note": "extended Swarm proxy endpoints for template capabilities, scenario helpers, reports, graph/entity data, exports, market prices, settings, MCP, push, and public metadata"
+    },
+    {
+      "source_repo": "aaronjmars/MiroShark",
+      "source_path": "backend/openapi.yaml",
+      "target_path": "src/components/swarm/output-views.tsx",
+      "reuse_type": "adapted_code",
+      "note": "MiroShark integration panel labels and export surfaces adapted from OpenAPI publish/report/interview/graph endpoint taxonomy"
+    },
+    {
+      "source_repo": "aaronjmars/MiroShark",
+      "source_path": "backend/openapi.yaml",
+      "target_path": "docs/MIROSHARK_INTEGRATION_TODO.md",
+      "reuse_type": "adapted_code",
+      "note": "integration checklist derived from MiroShark documented HTTP surface"
+    },
+    {
+      "source_repo": "local",
+      "source_path": "/Users/liam/Downloads/nextjs-swarm/src/components/swarm/template-composers.tsx",
+      "target_path": "src/components/swarm/template-composers.tsx",
+      "reuse_type": "adapted_code",
+      "note": "mode-specific Market Maker, Reddit, Polymarket, Research, Ops, and Custom compose surfaces adapted to controlled MiroShark inputs"
+    },
+    {
+      "source_repo": "local",
+      "source_path": "/Users/liam/Downloads/nextjs-swarm/src/components/swarm/composer.tsx",
+      "target_path": "src/components/swarm/composer.tsx",
+      "reuse_type": "adapted_code",
+      "note": "template composer dispatch restored while preserving real MiroShark run state, helper actions, and launch controls"
     }
   ]
 }

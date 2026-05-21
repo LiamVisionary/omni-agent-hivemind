@@ -74,6 +74,10 @@
   padding: 0 10px;
 }
 
+.kanbanSyncPill {
+  gap: 8px;
+}
+
 .kanbanSyncPill.synced {
   border-color: rgba(94, 234, 212, 0.28);
   background: rgba(20, 184, 166, 0.09);
@@ -463,6 +467,39 @@
   justify-content: flex-end;
 }
 
+.kanbanPickupPreview {
+  display: inline-flex;
+  max-width: min(100%, 210px);
+  align-items: center;
+  gap: 7px;
+  margin-right: auto;
+  border: 1px solid rgba(250, 204, 21, 0.34);
+  border-radius: 999px;
+  background: rgba(250, 204, 21, 0.1);
+  box-shadow: 0 0 22px rgba(250, 204, 21, 0.14);
+  color: #fde68a;
+  padding: 4px 9px 4px 5px;
+}
+
+.kanbanPickupPreview img {
+  width: 26px;
+  height: 26px;
+  flex: 0 0 auto;
+  object-fit: contain;
+  transform-origin: 50% 80%;
+  animation: beeFlight 1.05s ease-in-out infinite;
+}
+
+.kanbanPickupPreview small {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  color: #fde68a;
+  font-size: 10px;
+  font-weight: 900;
+  line-height: 1.15;
+  text-transform: uppercase;
+}
+
 .kanbanCardHeader strong {
   min-width: 0;
   flex: 1;
@@ -732,6 +769,7 @@
 .liveDot {
   width: 7px;
   height: 7px;
+  flex: 0 0 auto;
   border-radius: 999px;
   background: var(--kb-cyan-2);
   box-shadow: 0 0 0 4px rgba(45, 212, 191, 0.12);

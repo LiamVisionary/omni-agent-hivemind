@@ -145,11 +145,126 @@
   cursor: grab;
   touch-action: none;
   user-select: none;
+  transition: opacity 180ms ease, filter 180ms ease;
+}
+
+.brainGraphCanvas svg.dimmed {
+  opacity: 0.38;
+  filter: saturate(0.75) blur(1px);
 }
 
 .brainGraphCanvas svg:active,
 .brainGraphCanvas svg.dragging {
   cursor: grabbing;
+}
+
+.brainLoader {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  display: grid;
+  align-content: center;
+  justify-items: center;
+  gap: 14px;
+  padding: 28px;
+  background:
+    radial-gradient(circle at 50% 44%, rgba(251, 191, 36, 0.12), transparent 28%),
+    radial-gradient(circle at 50% 54%, rgba(45, 212, 191, 0.14), transparent 36%),
+    rgba(6, 10, 16, 0.74);
+  color: var(--foreground);
+  text-align: center;
+}
+
+.brainLoader.compact {
+  inset: auto 18px 18px auto;
+  width: min(330px, calc(100% - 36px));
+  align-content: start;
+  justify-items: start;
+  gap: 10px;
+  border: 1px solid rgba(45, 212, 191, 0.26);
+  border-radius: 8px;
+  background:
+    linear-gradient(90deg, rgba(45, 212, 191, 0.1), transparent 55%),
+    rgba(6, 10, 18, 0.86);
+  box-shadow: 0 18px 46px rgba(0, 0, 0, 0.34);
+  padding: 14px;
+  text-align: left;
+}
+
+.brainLoader > div:not(.brainLoaderComb, .brainLoadingRail) {
+  display: grid;
+  gap: 3px;
+}
+
+.brainLoader strong {
+  font-size: 13px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.brainLoader span {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.brainLoaderComb {
+  position: relative;
+  width: 118px;
+  height: 92px;
+}
+
+.brainLoader.compact .brainLoaderComb {
+  width: 76px;
+  height: 58px;
+}
+
+.brainLoaderComb span {
+  position: absolute;
+  width: 38px;
+  aspect-ratio: 1;
+  clip-path: polygon(25% 6%, 75% 6%, 100% 50%, 75% 94%, 25% 94%, 0 50%);
+  background: rgba(13, 22, 31, 0.94);
+  border: 1px solid rgba(94, 234, 212, 0.54);
+  box-shadow: 0 0 18px rgba(45, 212, 191, 0.16);
+  animation: brainCombPulse 1.45s ease-in-out infinite;
+}
+
+.brainLoader.compact .brainLoaderComb span {
+  width: 25px;
+}
+
+.brainLoaderComb span:nth-child(1) { left: 40px; top: 0; animation-delay: 0ms; }
+.brainLoaderComb span:nth-child(2) { left: 20px; top: 27px; animation-delay: 90ms; }
+.brainLoaderComb span:nth-child(3) { left: 60px; top: 27px; animation-delay: 180ms; }
+.brainLoaderComb span:nth-child(4) { left: 0; top: 54px; animation-delay: 270ms; }
+.brainLoaderComb span:nth-child(5) { left: 40px; top: 54px; animation-delay: 360ms; }
+.brainLoaderComb span:nth-child(6) { left: 80px; top: 54px; animation-delay: 450ms; }
+.brainLoaderComb span:nth-child(7) { left: 40px; top: 27px; animation-delay: 540ms; }
+
+.brainLoader.compact .brainLoaderComb span:nth-child(1) { left: 26px; top: 0; }
+.brainLoader.compact .brainLoaderComb span:nth-child(2) { left: 13px; top: 18px; }
+.brainLoader.compact .brainLoaderComb span:nth-child(3) { left: 39px; top: 18px; }
+.brainLoader.compact .brainLoaderComb span:nth-child(4) { left: 0; top: 36px; }
+.brainLoader.compact .brainLoaderComb span:nth-child(5) { left: 26px; top: 36px; }
+.brainLoader.compact .brainLoaderComb span:nth-child(6) { left: 52px; top: 36px; }
+.brainLoader.compact .brainLoaderComb span:nth-child(7) { left: 26px; top: 18px; }
+
+.brainLoadingRail {
+  position: relative;
+  width: min(280px, 100%);
+  height: 4px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: rgba(148, 163, 184, 0.13);
+}
+
+.brainLoadingRail span {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 42%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, transparent, var(--accent), #facc15, transparent);
+  animation: brainRail 1.15s ease-in-out infinite;
 }
 
 .brainEdge,
@@ -285,6 +400,30 @@
 @keyframes brainSpin {
   to {
     transform: rotate(360deg);
+  }
+}
+
+@keyframes brainCombPulse {
+  0%,
+  100% {
+    background: rgba(13, 22, 31, 0.94);
+    border-color: rgba(94, 234, 212, 0.42);
+    transform: translateY(0) scale(1);
+  }
+  45% {
+    background: rgba(251, 191, 36, 0.22);
+    border-color: rgba(251, 191, 36, 0.92);
+    box-shadow: 0 0 22px rgba(251, 191, 36, 0.26);
+    transform: translateY(-3px) scale(1.04);
+  }
+}
+
+@keyframes brainRail {
+  0% {
+    transform: translateX(-110%);
+  }
+  100% {
+    transform: translateX(280%);
   }
 }
 
@@ -809,6 +948,24 @@
   background-size: 28px 28px, 28px 28px, auto, auto;
 }
 
+:global(:root[data-theme="hive-light"]) .brainLoader {
+  background:
+    radial-gradient(circle at 50% 44%, rgba(212, 180, 111, 0.18), transparent 28%),
+    radial-gradient(circle at 50% 54%, rgba(45, 212, 191, 0.1), transparent 36%),
+    rgba(248, 244, 232, 0.78);
+}
+
+:global(:root[data-theme="hive-light"]) .brainLoader.compact {
+  background:
+    linear-gradient(90deg, rgba(212, 180, 111, 0.14), transparent 55%),
+    rgba(248, 244, 232, 0.92);
+}
+
+:global(:root[data-theme="hive-light"]) .brainLoaderComb span {
+  background: rgba(238, 230, 208, 0.96);
+  border-color: rgba(111, 86, 37, 0.4);
+}
+
 :global(:root[data-theme="hive-light"]) .brainNode polygon {
   fill: rgba(238, 230, 208, 0.94);
   stroke: rgba(111, 86, 37, 0.46);
@@ -822,6 +979,7 @@
 :global(:root[data-theme="hive-light"]) .brainSkillsHeader h3,
 :global(:root[data-theme="hive-light"]) .sharedSkillCard strong,
 :global(:root[data-theme="hive-light"]) .brainSkillsEmpty strong,
+:global(:root[data-theme="hive-light"]) .brainLoader strong,
 :global(:root[data-theme="hive-light"]) .providerSkillsToolbar strong,
 :global(:root[data-theme="hive-light"]) .providerSkillStrip strong,
 :global(:root[data-theme="hive-light"]) .brainInspector dd,

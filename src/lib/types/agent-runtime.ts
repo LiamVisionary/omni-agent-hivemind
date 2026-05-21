@@ -73,6 +73,7 @@ export interface SharedVaultConfig {
   sharedNotePath: string;
   kanbanFolder: string;
   notificationsFolder: string;
+  scheduledFolder: string;
   noteTaskImportFolders: string;
   noteTaskImportEnabled: boolean;
   controlRoomPath: string;
@@ -93,6 +94,7 @@ export const DEFAULT_SHARED_VAULT: SharedVaultConfig = {
   sharedNotePath: "HivemindOS/Shared Context.md",
   kanbanFolder: process.env.NEXT_PUBLIC_OBSIDIAN_KANBAN_FOLDER ?? "Projects/HivemindOS/Kanban",
   notificationsFolder: process.env.NEXT_PUBLIC_OBSIDIAN_NOTIFICATIONS_FOLDER ?? "agent-notifications",
+  scheduledFolder: process.env.NEXT_PUBLIC_OBSIDIAN_SCHEDULED_FOLDER ?? "Scheduled",
   noteTaskImportFolders: "Projects\nInbox",
   noteTaskImportEnabled: false,
   controlRoomPath: process.env.NEXT_PUBLIC_HERMES_CONTROL_ROOM_PATH ?? "~/agent-control-room",

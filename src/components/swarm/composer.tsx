@@ -1,7 +1,8 @@
 // src/components/swarm/composer.tsx
 "use client";
 
-import type { SwarmAgent, SwarmRun, SwarmTemplate, TemplateId } from "./swarm-data";
+import type { SwarmAgent, SwarmRun, SwarmTemplate, SwarmTemplateField, TemplateId } from "./swarm-data";
+import { TemplateComposer } from "./template-composers";
 import styles from "./swarm-tokens.module.css";
 
 interface ComposerProps {
@@ -10,6 +11,22 @@ interface ComposerProps {
   onPickTemplate: (id: TemplateId) => void;
   run: SwarmRun | null;
   agents: SwarmAgent[];
+  draftScenario?: string;
+  draftRounds?: number;
+  draftPlatform?: string;
+  templateFields?: SwarmTemplateField[];
+  templateInputs?: Record<string, string>;
+  missingTemplateFields?: number;
+  runPending?: boolean;
+  onDraftScenarioChange?: (value: string) => void;
+  onDraftRoundsChange?: (value: number) => void;
+  onDraftPlatformChange?: (value: string) => void;
+  onTemplateInputChange?: (key: string, value: string) => void;
+  onStartRun?: () => void;
+  onAskScenario?: () => void;
+  onSuggestScenarios?: () => void;
+  helperPending?: "ask" | "suggest" | "";
+  helperStatus?: string;
 }
 
 function Stat({ k, v, c }: { k: string; v: string | number; c?: string }) {
@@ -26,8 +43,39 @@ function Stat({ k, v, c }: { k: string; v: string | number; c?: string }) {
   );
 }
 
-export function Composer({ templates, activeTemplate, onPickTemplate, run, agents }: ComposerProps) {
+function simulationLabel(platform?: string) {
+  if (platform === "reddit") return "Reddit Simulation";
+  if (platform === "polymarket") return "Polymarket Simulation";
+  if (platform === "parallel") return "Multi-surface Simulation";
+  return "X Post Simulation";
+}
+
+export function Composer({
+  templates,
+  activeTemplate,
+  onPickTemplate,
+  run,
+  agents,
+  draftScenario = "",
+  draftRounds = 1,
+  draftPlatform = "twitter",
+  templateFields = [],
+  templateInputs = {},
+  missingTemplateFields = 0,
+  runPending = false,
+  onDraftScenarioChange,
+  onDraftRoundsChange,
+  onDraftPlatformChange,
+  onTemplateInputChange,
+  onStartRun,
+  onAskScenario,
+  onSuggestScenarios,
+  helperPending = "",
+  helperStatus = "",
+}: ComposerProps) {
   const active = templates.find((t) => t.id === activeTemplate);
+  const isComposing = !run;
+  const surfaceLabel = simulationLabel(run?.platform ?? draftPlatform);
 
   return (
     <aside className="flex flex-col overflow-auto"
@@ -37,7 +85,12 @@ export function Composer({ templates, activeTemplate, onPickTemplate, run, agent
         background: "var(--panel-bg-soft)",
       }}>
       <div>
-        <div className={styles.monoCap} style={{ color: "var(--muted)" }}>Template</div>
+        <div className="flex items-center justify-between" style={{ gap: 10 }}>
+          <div className={styles.monoCap} style={{ color: "var(--muted)" }}>Template</div>
+          <div className={styles.monoCap} style={{ color: "var(--hex-active-border)", textAlign: "right" }}>
+            &bull; {surfaceLabel}
+          </div>
+        </div>
         <div className="flex justify-between items-baseline">
           <h2 className="font-bold" style={{
             margin: "4px 0 0", fontFamily: "var(--f-display)", fontSize: 20, letterSpacing: -0.3,
@@ -75,10 +128,34 @@ export function Composer({ templates, activeTemplate, onPickTemplate, run, agent
         display: "grid", gap: 10, padding: "12px 14px", borderRadius: 10,
         border: "1px solid rgba(148,163,184,0.16)", background: "var(--panel-bg-soft)",
       }}>
-        <div className={styles.monoCap} style={{ color: "var(--muted)" }}>Run context</div>
-        <p style={{ margin: 0, color: "var(--foreground)", fontSize: 12.5, lineHeight: 1.5, overflowWrap: "anywhere" }}>
-          {run?.scenario || run?.summary || "No active scenario loaded."}
-        </p>
+        <div className={styles.monoCap} style={{ color: "var(--muted)" }}>
+          {isComposing ? "Template controls" : "Run context"}
+        </div>
+        {isComposing ? (
+          <TemplateComposer
+            templateId={activeTemplate}
+            draftScenario={draftScenario}
+            draftRounds={draftRounds}
+            draftPlatform={draftPlatform}
+            templateFields={templateFields}
+            templateInputs={templateInputs}
+            missingTemplateFields={missingTemplateFields}
+            runPending={runPending}
+            helperPending={helperPending}
+            helperStatus={helperStatus}
+            onDraftScenarioChange={onDraftScenarioChange}
+            onDraftRoundsChange={onDraftRoundsChange}
+            onDraftPlatformChange={onDraftPlatformChange}
+            onTemplateInputChange={onTemplateInputChange}
+            onStartRun={onStartRun}
+            onAskScenario={onAskScenario}
+            onSuggestScenarios={onSuggestScenarios}
+          />
+        ) : (
+          <p style={{ margin: 0, color: "var(--foreground)", fontSize: 12.5, lineHeight: 1.5, overflowWrap: "anywhere" }}>
+            {run?.scenario || run?.summary || "No active scenario loaded."}
+          </p>
+        )}
         {run?.tags.length ? (
           <div className="flex flex-wrap" style={{ gap: 5 }}>
             {run.tags.map((tag) => (

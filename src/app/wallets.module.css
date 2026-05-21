@@ -1,338 +1,740 @@
+/* ──────────────────────────────────────────────────────────────────
+   Wallet view — editorial layout
+   One accent (teal) for the wallet surface. Bee-amber is reserved
+   strictly for the Hive ledger band. Hierarchy comes from type and
+   spacing, not nested boxes.
+   ────────────────────────────────────────────────────────────────── */
+
 .walletPanel {
-  border: 1px solid rgba(148, 163, 184, 0.16);
-  border-radius: 8px;
-  background: rgba(16, 20, 29, 0.78);
-  box-shadow: 0 18px 60px rgba(0, 0, 0, 0.24);
-  overflow: hidden;
-  padding: 18px;
-}
-
-.walletActions button:not([data-slot="button"]) {
-  border: 0;
-  border-radius: 6px;
-  background: var(--accent);
-  color: #06201d;
-  font-weight: 800;
-  padding: 12px 16px;
-}
-
-.walletForm input,
-.walletForm select,
-.walletForm textarea {
-  width: 100%;
-  border: 1px solid var(--line);
-  border-radius: 6px;
-  background: #090d14;
-  color: var(--foreground);
-  padding: 12px;
-  outline: none;
-}
-
-.walletForm input:focus,
-.walletForm select:focus,
-.walletForm textarea:focus {
-  border-color: var(--accent);
-}
-
-.walletHeader,
-.walletFormHeader {
   display: flex;
-  gap: 16px;
-  align-items: flex-start;
+  flex-direction: column;
+  gap: 22px;
+  border: 1px solid rgba(148, 163, 184, 0.12);
+  border-radius: 12px;
+  background: rgba(10, 13, 19, 0.55);
+  padding: 24px 26px;
+}
+
+/* Header — a single editorial block, not a row of stat cards. */
+.walletHeader {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 18px 28px;
+  align-items: flex-end;
   justify-content: space-between;
 }
 
-.walletHeader h2,
-.walletFormHeader h3,
-.walletRunbook h3 {
+.walletHeader h2 {
   margin: 0;
+  font-size: 22px;
+  font-weight: 700;
+  letter-spacing: -0.2px;
 }
 
-.walletHeader p,
-.walletFormHeader p,
-.walletRunbook p,
-.survivalStrip p,
-.walletForm small {
-  margin: 6px 0 0;
+.walletHeader p {
+  max-width: 540px;
+  margin: 4px 0 0;
   color: var(--muted);
   font-size: 13px;
-  line-height: 1.4;
+  line-height: 1.5;
 }
 
+/* Inline stat row — labels and numbers, no boxes. */
 .walletTotals {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(82px, 1fr));
-  gap: 8px;
-  min-width: min(420px, 40vw);
+  display: flex;
+  gap: 22px;
+  flex-wrap: wrap;
 }
 
-.walletTotals span,
-.survivalStrip > div {
-  border: 1px solid rgba(148, 163, 184, 0.18);
-  border-radius: 8px;
-  background: rgba(9, 13, 20, 0.72);
-  padding: 12px;
-}
-
-.walletTotals span,
-.survivalStrip span {
+.walletTotals span {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  border: 0;
+  background: transparent;
+  padding: 0;
   color: var(--muted);
-  font-size: 11px;
-  font-weight: 900;
+  font-family: "JetBrains Mono", ui-monospace, monospace;
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 1.1px;
   text-transform: uppercase;
 }
 
-.walletTotals strong,
-.survivalStrip strong {
+.walletTotals strong {
   display: block;
-  margin-top: 7px;
-  color: #f8fafc;
-  font-size: 24px;
-  line-height: 1;
-  text-transform: capitalize;
+  margin: 0;
+  color: var(--foreground);
+  font-family: "Space Grotesk", system-ui, sans-serif;
+  font-size: 22px;
+  font-weight: 700;
+  letter-spacing: -0.2px;
+  text-transform: none;
 }
 
-.walletWorkspace {
-  display: grid;
-  grid-template-columns: 250px minmax(0, 1fr);
-  gap: 14px;
-  margin-top: 18px;
-}
+/* ─── Hive ledger band ────────────────────────────────────────────── */
 
 .hiveLedger {
-  margin-top: 18px;
-  border: 1px solid rgba(245, 158, 11, 0.24);
-  border-radius: 8px;
-  background: rgba(9, 13, 20, 0.5);
-  padding: 14px;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  border: 1px solid rgba(242, 183, 5, 0.18);
+  border-radius: 10px;
+  background:
+    linear-gradient(90deg, rgba(242, 183, 5, 0.07), transparent 38%),
+    rgba(12, 15, 21, 0.6);
+  padding: 18px 20px 18px 22px;
+}
+
+.hiveLedger::before {
+  content: "";
+  position: absolute;
+  inset: 14px auto 14px 0;
+  width: 3px;
+  border-radius: 3px;
+  background: linear-gradient(180deg, var(--bee), var(--honey));
+  opacity: 0.7;
 }
 
 .hiveLedgerDormant {
-  border-color: rgba(148, 163, 184, 0.2);
-  background: linear-gradient(135deg, rgba(15, 23, 42, 0.74), rgba(9, 13, 20, 0.48));
+  border-color: rgba(148, 163, 184, 0.14);
+  background: rgba(12, 15, 21, 0.4);
+}
+
+.hiveLedgerDormant::before {
+  background: rgba(148, 163, 184, 0.32);
+  opacity: 0.5;
 }
 
 .hiveLedgerOptIn {
   display: flex;
-  gap: 16px;
+  gap: 18px;
   align-items: center;
   justify-content: space-between;
 }
 
 .hiveLedgerOptIn h3 {
   margin: 0;
+  font-size: 16px;
+  font-weight: 700;
 }
 
 .hiveLedgerOptIn p {
-  max-width: 880px;
+  max-width: 760px;
   margin: 6px 0 0;
   color: var(--muted);
-  font-size: 13px;
-  line-height: 1.5;
+  font-size: 12.5px;
+  line-height: 1.55;
 }
 
-.honeyTreasuryHeader,
-.honeyAgentActions {
+.honeyTreasuryHeader {
   display: flex;
-  gap: 14px;
-  align-items: center;
+  gap: 16px;
+  align-items: flex-start;
   justify-content: space-between;
 }
 
-.honeyTreasuryHeader h3,
-.honeyAgentPanel h3 {
+.honeyTreasuryHeader h3 {
   margin: 0;
+  font-size: 16px;
+  font-weight: 700;
 }
 
-.honeyTreasuryHeader p,
-.honeyAgentPanel p,
-.honeyAgentActions small {
-  margin: 6px 0 0;
+.honeyTreasuryHeader p {
+  max-width: 720px;
+  margin: 4px 0 0;
   color: var(--muted);
-  font-size: 13px;
-  line-height: 1.4;
+  font-size: 12.5px;
+  line-height: 1.5;
 }
 
-.hiveLedgerGrid,
-.honeyAgentGrid {
-  display: grid;
-  gap: 10px;
-}
-
+/* Three primary Hive stats — inline row separated by hairlines. */
 .hiveLedgerGrid {
+  display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  margin-top: 12px;
+  gap: 0;
+  border-top: 1px solid rgba(242, 183, 5, 0.12);
+  margin-top: 2px;
+  padding-top: 14px;
 }
 
 .hiveLedgerStat,
-.hiveLedgerConvert,
-.honeyAgentGrid span {
-  border: 1px solid rgba(245, 158, 11, 0.18);
-  border-radius: 8px;
-  background: rgba(2, 6, 23, 0.34);
-  padding: 12px;
+.hiveLedgerConvert {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  padding: 4px 16px 4px 0;
   color: var(--muted);
-  font-size: 11px;
-  font-weight: 900;
+  font-family: "JetBrains Mono", ui-monospace, monospace;
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 1.1px;
+  text-align: left;
   text-transform: uppercase;
 }
 
-.hiveLedgerStat strong,
-.hiveLedgerConvert strong,
-.honeyAgentGrid strong {
-  display: block;
-  margin-top: 7px;
-  color: #fef3c7;
-  font-size: 18px;
-  line-height: 1.05;
-  text-transform: none;
+.hiveLedgerGrid > *:not(:first-child) {
+  padding-left: 18px;
+  border-left: 1px solid rgba(242, 183, 5, 0.1);
 }
 
-.hiveLedgerConvert {
-  cursor: pointer;
-  text-align: left;
-  transition: border-color 0.15s ease, background 0.15s ease, transform 0.15s ease;
+.hiveLedgerStat strong,
+.hiveLedgerConvert strong {
+  display: block;
+  margin: 0;
+  color: var(--foreground);
+  font-family: "Space Grotesk", system-ui, sans-serif;
+  font-size: 22px;
+  font-weight: 700;
+  letter-spacing: -0.2px;
+  line-height: 1.1;
+  text-transform: none;
 }
 
 .hiveLedgerStat small,
 .hiveLedgerConvert small {
   display: block;
-  margin-top: 5px;
-  color: #fde68a;
-  font-size: 12px;
-  font-weight: 800;
+  margin-top: 2px;
+  color: var(--muted);
+  font-family: inherit;
+  font-size: 11px;
+  font-weight: 400;
+  letter-spacing: 0.2px;
   text-transform: none;
 }
 
+.hiveLedgerConvert {
+  cursor: pointer;
+  position: relative;
+  transition: color 0.15s ease, opacity 0.15s ease;
+}
+
+.hiveLedgerConvert strong::after {
+  content: " →";
+  color: var(--honey);
+  font-weight: 600;
+}
+
 .hiveLedgerConvert:not(:disabled):hover {
-  border-color: rgba(245, 158, 11, 0.42);
-  background: rgba(245, 158, 11, 0.08);
-  transform: translateY(-1px);
+  color: var(--honey);
+}
+
+.hiveLedgerConvert:not(:disabled):hover strong {
+  color: var(--honey);
 }
 
 .hiveLedgerConvert:disabled {
   cursor: default;
-  opacity: 0.62;
+  opacity: 0.45;
 }
 
+/* Pool meta is secondary — render inside a slim disclosure. */
+.hiveLedgerMeta {
+  display: flex;
+  gap: 18px;
+  flex-wrap: wrap;
+  border-top: 1px solid rgba(242, 183, 5, 0.1);
+  padding-top: 12px;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.hiveLedgerMeta dt {
+  color: var(--muted);
+  font-family: "JetBrains Mono", ui-monospace, monospace;
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 1.1px;
+  text-transform: uppercase;
+}
+
+.hiveLedgerMeta dd {
+  margin: 2px 0 0;
+  color: var(--foreground);
+  font-family: "Space Grotesk", system-ui, sans-serif;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.hiveLedgerMeta dd small {
+  display: block;
+  margin-top: 1px;
+  color: var(--muted);
+  font-family: inherit;
+  font-size: 11px;
+  font-weight: 400;
+}
+
+/* ─── Two-pane workspace: wallet area | hive rail ─────────────────── */
+
+.walletWorkspace {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 300px;
+  gap: 24px;
+  align-items: start;
+}
+
+/* ─── Wallet grid (default view) ──────────────────────────────────── */
+
+.walletGridList {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 14px;
+  align-items: stretch;
+}
+
+.walletGridList > [role="listitem"] {
+  display: flex;
+}
+
+.walletGridList > [role="listitem"] > * {
+  flex: 1;
+  min-height: 168px;
+}
+
+/* ─── Back button (detail view) ───────────────────────────────────── */
+
+.walletBackBtn {
+  display: inline-flex;
+  gap: 6px;
+  align-items: center;
+  width: fit-content;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--muted);
+  padding: 6px 12px 6px 8px;
+  font-size: 12.5px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+.walletBackBtn:hover {
+  background: rgba(45, 212, 191, 0.08);
+  color: var(--accent-strong);
+}
+
+.walletBackBtn svg {
+  transition: transform 0.15s ease;
+}
+
+.walletBackBtn:hover svg {
+  transform: translateX(-2px);
+}
+
+/* ─── Hive rail (right column) ────────────────────────────────────── */
+
+.hiveRail {
+  position: sticky;
+  top: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  border: 1px solid rgba(242, 183, 5, 0.18);
+  border-radius: 12px;
+  background:
+    linear-gradient(180deg, rgba(242, 183, 5, 0.06), transparent 50%),
+    rgba(10, 13, 19, 0.62);
+  padding: 18px;
+}
+
+.hiveRailDormant {
+  border-color: rgba(148, 163, 184, 0.14);
+  background: rgba(10, 13, 19, 0.45);
+}
+
+.hiveRailHeader h3 {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: -0.1px;
+}
+
+.hiveRailBlurb {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12.5px;
+  line-height: 1.5;
+}
+
+.hiveRailStats {
+  display: grid;
+  gap: 10px;
+  margin: 0;
+}
+
+.hiveRailStats > div {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: baseline;
+  gap: 12px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.08);
+}
+
+.hiveRailStats > div:last-child {
+  border-bottom: 0;
+  padding-bottom: 0;
+}
+
+.hiveRailStats dt {
+  color: var(--muted);
+  font-size: 12.5px;
+  font-weight: 500;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+.hiveRailStats dd {
+  margin: 0;
+  color: var(--foreground);
+  font-family: "Space Grotesk", system-ui, sans-serif;
+  font-size: 16px;
+  font-weight: 700;
+  letter-spacing: -0.1px;
+  text-align: right;
+}
+
+.hiveRailConvert {
+  justify-content: center;
+  width: 100%;
+  white-space: normal;
+  text-align: center;
+  line-height: 1.35;
+}
+
+.hiveRailDetails {
+  border-top: 1px solid rgba(148, 163, 184, 0.1);
+  padding-top: 12px;
+  color: var(--muted);
+  font-size: 12.5px;
+  line-height: 1.5;
+}
+
+.hiveRailDetails summary {
+  cursor: pointer;
+  color: var(--text-soft);
+  font-size: 12px;
+  font-weight: 600;
+  padding: 2px 0;
+  list-style: none;
+}
+
+.hiveRailDetails summary::-webkit-details-marker { display: none; }
+
+.hiveRailDetails summary::before {
+  content: "›";
+  display: inline-block;
+  margin-right: 6px;
+  color: var(--muted);
+  transition: transform 0.15s ease;
+}
+
+.hiveRailDetails[open] summary::before {
+  transform: rotate(90deg);
+}
+
+.hiveRailDetails p {
+  margin: 10px 0 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.55;
+}
+
+.hiveRailDetails dl {
+  display: grid;
+  gap: 10px;
+  margin: 12px 0 0;
+}
+
+.hiveRailDetails dl > div {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: baseline;
+}
+
+.hiveRailDetails dt {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.hiveRailDetails dd {
+  margin: 0;
+  color: var(--foreground);
+  font-family: "Space Grotesk", system-ui, sans-serif;
+  font-size: 13px;
+  font-weight: 600;
+  text-align: right;
+}
+
+.hiveRailDetails dd small {
+  display: block;
+  margin-top: 1px;
+  color: var(--muted);
+  font-family: inherit;
+  font-size: 11px;
+  font-weight: 400;
+}
+
+/* Per-agent honey subsection inside the rail. */
+.hiveRailAgent {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  border-top: 1px solid rgba(242, 183, 5, 0.12);
+  padding-top: 14px;
+}
+
+.hiveRailAgent header { display: flex; align-items: baseline; justify-content: space-between; }
+.hiveRailAgent header h3 { margin: 0; font-size: 13px; font-weight: 700; }
+
+/* Agent sidebar — slim list, status dot, no chunky buttons. */
 .walletAgentList {
   display: grid;
   align-content: start;
-  gap: 8px;
+  gap: 2px;
+  border-right: 1px solid rgba(148, 163, 184, 0.1);
+  padding-right: 16px;
 }
 
 .walletAgentButton {
+  position: relative;
   display: grid;
-  gap: 5px;
-  min-height: 86px;
-  border: 1px solid rgba(148, 163, 184, 0.16);
-  border-radius: 8px;
-  background: rgba(9, 13, 20, 0.66);
+  grid-template-columns: 10px minmax(0, 1fr);
+  gap: 10px;
+  align-items: center;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
   color: var(--foreground);
-  padding: 12px;
+  padding: 9px 10px 9px 8px;
   text-align: left;
+  transition: background 0.12s ease, color 0.12s ease;
+}
+
+.walletAgentButton::before {
+  content: "";
+  width: 7px;
+  height: 7px;
+  border-radius: 999px;
+  background: var(--muted);
+  opacity: 0.5;
+}
+
+.walletAgentButton[data-tier="high"]::before,
+.walletAgentButton[data-tier="normal"]::before {
+  background: var(--accent);
+  opacity: 0.9;
+}
+
+.walletAgentButton[data-tier="low_compute"]::before {
+  background: var(--honey);
+  opacity: 0.9;
+}
+
+.walletAgentButton[data-tier="critical"]::before,
+.walletAgentButton[data-tier="dead"]::before {
+  background: var(--danger);
+  opacity: 0.9;
+}
+
+.walletAgentButton:hover {
+  background: rgba(45, 212, 191, 0.05);
 }
 
 .walletAgentButton.active {
-  border-color: rgba(94, 234, 212, 0.72);
-  background: linear-gradient(180deg, rgba(45, 212, 191, 0.14), rgba(9, 13, 20, 0.78));
+  background: rgba(45, 212, 191, 0.08);
+  color: var(--foreground);
+  box-shadow: inset 2px 0 0 var(--accent);
 }
 
-.walletAgentButton span,
-.walletAgentButton small {
-  color: var(--muted);
-  font-size: 11px;
-  font-weight: 900;
-  text-transform: uppercase;
+.walletAgentButton > div {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
 }
 
 .walletAgentButton strong {
   overflow: hidden;
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: -0.1px;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
+.walletAgentButton span {
+  display: none;
+}
+
+.walletAgentButton small {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 400;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+/* ─── Detail pane ─────────────────────────────────────────────────── */
+
 .walletDetail {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
   min-width: 0;
 }
 
+/* Per-agent Honey — slim inline row, not a card. */
 .honeyAgentPanel {
-  margin-bottom: 14px;
-  border: 1px solid rgba(245, 158, 11, 0.22);
-  border-radius: 8px;
-  background: rgba(15, 23, 42, 0.56);
-  padding: 14px;
+  display: grid;
+  grid-template-columns: minmax(0, 1.2fr) minmax(0, 2fr);
+  gap: 20px;
+  align-items: center;
+  border: 1px solid rgba(242, 183, 5, 0.16);
+  border-radius: 10px;
+  background:
+    linear-gradient(90deg, rgba(242, 183, 5, 0.05), transparent 40%),
+    rgba(12, 15, 21, 0.45);
+  padding: 14px 16px;
+}
+
+.honeyAgentPanel h3 {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.honeyAgentPanel p {
+  margin: 3px 0 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.45;
 }
 
 .honeyAgentGrid {
+  display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
-  margin-top: 12px;
+  gap: 0;
+}
+
+.honeyAgentGrid span {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  border: 0;
+  background: transparent;
+  padding: 0 14px;
+  color: var(--muted);
+  font-family: "JetBrains Mono", ui-monospace, monospace;
+  font-size: 9.5px;
+  font-weight: 500;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+}
+
+.honeyAgentGrid span + span {
+  border-left: 1px solid rgba(242, 183, 5, 0.1);
+}
+
+.honeyAgentGrid strong {
+  display: block;
+  margin: 0;
+  color: var(--foreground);
+  font-family: "Space Grotesk", system-ui, sans-serif;
+  font-size: 17px;
+  font-weight: 700;
+  letter-spacing: -0.1px;
+  line-height: 1.1;
+  text-transform: none;
 }
 
 .honeyAgentActions {
-  margin-top: 12px;
-}
-
-.honeyAgentActions small {
-  max-width: 560px;
-  text-align: right;
-}
-
-.survivalStrip {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 10px;
-  margin-bottom: 10px;
-}
-
-.walletPrimaryAction {
+  grid-column: 1 / -1;
   display: flex;
   gap: 14px;
   align-items: center;
   justify-content: space-between;
-  border: 1px solid rgba(94, 234, 212, 0.24);
-  border-radius: 8px;
-  background: rgba(45, 212, 191, 0.08);
-  margin-bottom: 14px;
-  padding: 14px;
-}
-
-.walletPrimaryAction h3,
-.walletPrimaryAction p {
-  margin: 0;
-}
-
-.walletPrimaryAction p {
-  color: var(--muted);
-  font-size: 13px;
+  border-top: 1px solid rgba(242, 183, 5, 0.1);
   margin-top: 4px;
+  padding-top: 12px;
 }
 
-.survivalStrip.high > div {
-  border-color: rgba(94, 234, 212, 0.32);
+.honeyAgentActions small {
+  max-width: 480px;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.45;
+  text-align: right;
 }
 
-.survivalStrip.low_compute > div,
-.survivalStrip.critical > div {
-  border-color: rgba(234, 179, 8, 0.42);
-}
+/* ─── Survival strip (used by WalletCell tier hints) ──────────────── */
 
-.survivalStrip.dead > div {
-  border-color: rgba(251, 113, 133, 0.52);
-}
-
-.walletGrid {
+.survivalStrip {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 300px;
-  gap: 14px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
 }
+
+.survivalStrip > div {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  border: 0;
+  border-left: 2px solid rgba(148, 163, 184, 0.18);
+  border-radius: 0;
+  background: transparent;
+  padding: 4px 0 4px 12px;
+}
+
+.survivalStrip span {
+  color: var(--muted);
+  font-family: "JetBrains Mono", ui-monospace, monospace;
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 1.1px;
+  text-transform: uppercase;
+}
+
+.survivalStrip strong {
+  margin-top: 2px;
+  color: var(--foreground);
+  font-family: "Space Grotesk", system-ui, sans-serif;
+  font-size: 18px;
+  font-weight: 700;
+  line-height: 1.1;
+  text-transform: none;
+}
+
+.survivalStrip p {
+  margin: 4px 0 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.survivalStrip.high > div { border-left-color: var(--accent); }
+.survivalStrip.normal > div { border-left-color: rgba(45, 212, 191, 0.7); }
+.survivalStrip.low_compute > div { border-left-color: var(--honey); }
+.survivalStrip.critical > div,
+.survivalStrip.dead > div { border-left-color: var(--danger); }
+
+/* ─── Wallet form / runbook / empty state ─────────────────────────── */
 
 .walletForm,
 .walletRunbook,
 .walletEmpty {
-  border: 1px solid rgba(148, 163, 184, 0.16);
-  border-radius: 8px;
-  background: rgba(9, 13, 20, 0.5);
+  border: 1px solid rgba(148, 163, 184, 0.12);
+  border-radius: 10px;
+  background: rgba(10, 13, 19, 0.5);
   padding: 16px;
 }
 
@@ -341,12 +743,40 @@
   gap: 12px;
 }
 
+.walletForm input,
+.walletForm select,
+.walletForm textarea {
+  width: 100%;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--field);
+  color: var(--foreground);
+  padding: 9px 10px;
+  font-size: 13px;
+  outline: none;
+  transition: border-color 0.15s ease;
+}
+
+.walletForm input:focus,
+.walletForm select:focus,
+.walletForm textarea:focus {
+  border-color: var(--accent);
+}
+
 .walletForm label {
   display: grid;
-  gap: 8px;
-  color: #d7dee9;
-  font-size: 13px;
-  font-weight: 800;
+  gap: 6px;
+  color: var(--text-soft);
+  font-size: 12.5px;
+  font-weight: 600;
+}
+
+.walletForm small {
+  margin: 4px 0 0;
+  color: var(--muted);
+  font-size: 11.5px;
+  line-height: 1.45;
+  font-weight: 400;
 }
 
 .walletTwoCol,
@@ -355,46 +785,59 @@
   gap: 10px;
 }
 
-.walletTwoCol {
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+.walletTwoCol { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.walletThreeCol { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+
+.walletPrimaryAction {
+  display: flex;
+  gap: 14px;
+  align-items: center;
+  justify-content: space-between;
+  border: 1px solid rgba(94, 234, 212, 0.22);
+  border-radius: 8px;
+  background: rgba(45, 212, 191, 0.06);
+  padding: 12px 14px;
 }
 
-.walletThreeCol {
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+.walletPrimaryAction h3,
+.walletPrimaryAction p { margin: 0; }
+.walletPrimaryAction p {
+  color: var(--muted);
+  font-size: 12.5px;
+  margin-top: 3px;
 }
 
 .walletAutopay {
   width: fit-content;
   border: 1px solid rgba(45, 212, 191, 0.22);
   border-radius: 999px;
-  background: rgba(45, 212, 191, 0.08);
-  padding: 8px 12px;
+  background: rgba(45, 212, 191, 0.06);
+  padding: 6px 12px;
 }
 
 .walletPower {
   flex: 0 0 auto;
   border: 1px solid rgba(45, 212, 191, 0.28);
   border-radius: 999px;
-  background: rgba(2, 6, 23, 0.56);
+  background: rgba(2, 6, 23, 0.5);
   color: #d7fff7;
-  font-weight: 900;
-  padding: 9px 12px;
+  font-weight: 700;
+  padding: 7px 12px;
 }
 
 .walletDisclosure {
-  border: 1px solid rgba(148, 163, 184, 0.16);
+  border: 1px solid rgba(148, 163, 184, 0.12);
   border-radius: 8px;
-  background: rgba(2, 6, 23, 0.26);
-  padding: 0;
+  background: rgba(2, 6, 23, 0.22);
 }
 
 .walletDisclosure summary {
   cursor: pointer;
-  color: #d7dee9;
-  font-size: 13px;
-  font-weight: 900;
+  color: var(--text-soft);
+  font-size: 12.5px;
+  font-weight: 700;
   list-style-position: inside;
-  padding: 11px 12px;
+  padding: 10px 12px;
 }
 
 .walletDisclosure[open] {
@@ -402,8 +845,8 @@
 }
 
 .walletDisclosure[open] summary {
-  margin-bottom: 12px;
-  border-bottom: 1px solid rgba(148, 163, 184, 0.12);
+  margin-bottom: 10px;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.1);
 }
 
 .walletDisclosure > label,
@@ -418,8 +861,17 @@
   display: flex;
   flex-wrap: wrap;
   gap: 10px;
-  border-top: 1px solid rgba(148, 163, 184, 0.14);
+  border-top: 1px solid rgba(148, 163, 184, 0.12);
   padding-top: 14px;
+}
+
+.walletActions button:not([data-slot="button"]) {
+  border: 0;
+  border-radius: 6px;
+  background: var(--accent);
+  color: #06201d;
+  font-weight: 700;
+  padding: 10px 14px;
 }
 
 .walletRunbook {
@@ -427,9 +879,20 @@
   gap: 14px;
 }
 
+.walletRunbook h3 { margin: 0; }
+.walletRunbook p {
+  display: grid;
+  grid-template-columns: 24px minmax(0, 1fr);
+  gap: 8px;
+  margin: 0;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
 .walletRunbook section,
 .walletRunbook details {
-  border-bottom: 1px solid rgba(148, 163, 184, 0.12);
+  border-bottom: 1px solid rgba(148, 163, 184, 0.1);
   padding-bottom: 14px;
 }
 
@@ -437,12 +900,6 @@
 .walletRunbook details:last-child {
   border-bottom: 0;
   padding-bottom: 0;
-}
-
-.walletRunbook p {
-  display: grid;
-  grid-template-columns: 24px minmax(0, 1fr);
-  gap: 8px;
 }
 
 .walletRunbook p span {
@@ -454,86 +911,164 @@
   background: rgba(45, 212, 191, 0.12);
   color: var(--accent-strong);
   font-size: 11px;
-  font-weight: 900;
+  font-weight: 700;
+}
+
+.walletGrid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 300px;
+  gap: 14px;
+}
+
+.walletFormHeader {
+  display: flex;
+  gap: 16px;
+  align-items: flex-start;
+  justify-content: space-between;
+}
+
+.walletFormHeader h3 { margin: 0; }
+
+.walletFormHeader p {
+  margin: 6px 0 0;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.4;
 }
 
 .walletEmpty {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  justify-content: center;
   min-height: 220px;
   color: var(--muted);
+  text-align: center;
 }
 
-@media (max-width: 880px) {
-  .walletHeader {
-    align-items: stretch;
-    flex-direction: column;
-  }
+.walletEmpty strong {
+  color: var(--foreground);
+  font-size: 15px;
+  font-weight: 700;
+}
 
-  .walletWorkspace,
-  .walletGrid,
-  .survivalStrip,
-  .hiveLedgerGrid,
-  .honeyAgentGrid {
+/* ─── Responsive ──────────────────────────────────────────────────── */
+
+@media (max-width: 1180px) {
+  .walletWorkspace {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .hiveRail {
+    position: static;
+    order: 3;
+  }
+}
+
+@media (max-width: 980px) {
+  .walletWorkspace {
     grid-template-columns: 1fr;
   }
-
-  .walletTotals {
-    width: 100%;
-    min-width: 0;
+  .walletGridList {
+    grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
   }
+  .hiveLedgerGrid,
+  .honeyAgentGrid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    row-gap: 14px;
+  }
+  .hiveLedgerGrid > *,
+  .honeyAgentGrid > * {
+    border-left: 0 !important;
+    padding-left: 0 !important;
+  }
+  .honeyAgentPanel {
+    grid-template-columns: 1fr;
+  }
+}
 
+@media (max-width: 720px) {
+  .walletPanel {
+    border-radius: 10px;
+    padding: 18px 16px;
+  }
+  .walletHeader { align-items: stretch; flex-direction: column; }
+  .hiveLedgerGrid,
+  .honeyAgentGrid,
+  .survivalStrip,
   .walletTwoCol,
   .walletThreeCol {
     grid-template-columns: 1fr;
   }
-
   .honeyTreasuryHeader,
   .hiveLedgerOptIn,
   .honeyAgentActions {
     align-items: flex-start;
     flex-direction: column;
   }
-
-  .honeyAgentActions small {
-    text-align: left;
-  }
+  .honeyAgentActions small { text-align: left; }
 }
 
-@media (max-width: 720px) {
-  .walletPanel {
-    border-radius: 7px;
-  }
-}
+/* ─── Hive-light theme ────────────────────────────────────────────── */
 
 :global(:root[data-theme="hive-light"]) .walletPanel,
 :global(:root[data-theme="hive-light"]) .walletForm,
 :global(:root[data-theme="hive-light"]) .walletRunbook,
 :global(:root[data-theme="hive-light"]) .walletEmpty,
-:global(:root[data-theme="hive-light"]) .hiveLedger,
-:global(:root[data-theme="hive-light"]) .honeyAgentPanel,
-:global(:root[data-theme="hive-light"]) .walletTotals span,
-:global(:root[data-theme="hive-light"]) .hiveLedgerStat,
-:global(:root[data-theme="hive-light"]) .hiveLedgerConvert,
-:global(:root[data-theme="hive-light"]) .honeyAgentGrid span,
-:global(:root[data-theme="hive-light"]) .survivalStrip > div,
-:global(:root[data-theme="hive-light"]) .walletAgentButton,
 :global(:root[data-theme="hive-light"]) .walletDisclosure {
   border-color: var(--comb-line);
   background: var(--surface);
   color: var(--foreground);
 }
 
-:global(:root[data-theme="hive-light"]) .walletAgentButton.active,
-:global(:root[data-theme="hive-light"]) .walletPrimaryAction,
-:global(:root[data-theme="hive-light"]) .walletAutopay {
-  border-color: rgba(185, 139, 47, 0.34);
-  background: rgba(212, 180, 111, 0.16);
+:global(:root[data-theme="hive-light"]) .hiveLedger,
+:global(:root[data-theme="hive-light"]) .honeyAgentPanel {
+  border-color: rgba(185, 139, 47, 0.32);
+  background:
+    linear-gradient(90deg, rgba(212, 180, 111, 0.18), transparent 38%),
+    var(--surface);
+}
+
+:global(:root[data-theme="hive-light"]) .hiveLedger::before {
+  background: linear-gradient(180deg, var(--bee), var(--honey));
+  opacity: 0.85;
 }
 
 :global(:root[data-theme="hive-light"]) .walletTotals strong,
+:global(:root[data-theme="hive-light"]) .hiveLedgerStat strong,
+:global(:root[data-theme="hive-light"]) .hiveLedgerConvert strong,
+:global(:root[data-theme="hive-light"]) .honeyAgentGrid strong,
 :global(:root[data-theme="hive-light"]) .survivalStrip strong,
 :global(:root[data-theme="hive-light"]) .walletForm label,
 :global(:root[data-theme="hive-light"]) .walletDisclosure summary {
   color: var(--foreground);
+}
+
+:global(:root[data-theme="hive-light"]) .hiveLedgerConvert strong::after {
+  color: var(--accent-strong);
+}
+
+:global(:root[data-theme="hive-light"]) .hiveLedgerConvert:not(:disabled):hover,
+:global(:root[data-theme="hive-light"]) .hiveLedgerConvert:not(:disabled):hover strong {
+  color: var(--accent-strong);
+}
+
+:global(:root[data-theme="hive-light"]) .walletAgentButton:hover {
+  background: rgba(185, 139, 47, 0.08);
+}
+
+:global(:root[data-theme="hive-light"]) .walletAgentButton.active {
+  background: rgba(185, 139, 47, 0.12);
+  box-shadow: inset 2px 0 0 var(--accent);
+}
+
+:global(:root[data-theme="hive-light"]) .walletAgentList {
+  border-right-color: var(--comb-line);
+}
+
+:global(:root[data-theme="hive-light"]) .walletPrimaryAction,
+:global(:root[data-theme="hive-light"]) .walletAutopay {
+  border-color: rgba(185, 139, 47, 0.34);
+  background: rgba(212, 180, 111, 0.14);
 }
 
 :global(:root[data-theme="hive-light"]) .walletForm input,
@@ -544,14 +1079,37 @@
   color: var(--foreground);
 }
 
-:global(:root[data-theme="hive-light"]) .hiveLedgerStat strong,
-:global(:root[data-theme="hive-light"]) .hiveLedgerConvert strong,
-:global(:root[data-theme="hive-light"]) .honeyAgentGrid strong {
-  color: var(--accent-strong);
-}
-
 :global(:root[data-theme="hive-light"]) .walletPower {
   border-color: rgba(185, 139, 47, 0.36);
   background: var(--surface-strong);
   color: var(--accent-strong);
+}
+
+:global(:root[data-theme="hive-light"]) .hiveLedgerStat small,
+:global(:root[data-theme="hive-light"]) .hiveLedgerConvert small,
+:global(:root[data-theme="hive-light"]) .hiveLedgerMeta dd small {
+  color: var(--muted);
+}
+
+:global(:root[data-theme="hive-light"]) .hiveRail {
+  border-color: rgba(185, 139, 47, 0.32);
+  background:
+    linear-gradient(180deg, rgba(212, 180, 111, 0.18), transparent 50%),
+    var(--surface);
+}
+
+:global(:root[data-theme="hive-light"]) .hiveRailDormant {
+  border-color: var(--comb-line);
+  background: var(--surface);
+}
+
+:global(:root[data-theme="hive-light"]) .hiveRailStats dd,
+:global(:root[data-theme="hive-light"]) .hiveRailDetails dd {
+  color: var(--foreground);
+}
+
+:global(:root[data-theme="hive-light"]) .hiveRailStats > div,
+:global(:root[data-theme="hive-light"]) .hiveRailDetails,
+:global(:root[data-theme="hive-light"]) .hiveRailAgent {
+  border-color: rgba(185, 139, 47, 0.2);
 }

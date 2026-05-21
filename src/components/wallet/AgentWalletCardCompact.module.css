@@ -1,0 +1,236 @@
+/* ──────────────────────────────────────────────────────────────────
+   AgentWalletCardCompact — wallet picker tile shown in a grid.
+   Smaller than the full card, with a "lift" hover effect, and
+   clickable to expand into the full AgentWalletCard.
+   ────────────────────────────────────────────────────────────────── */
+
+.card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  width: 100%;
+  border: 1px solid rgba(148, 163, 184, 0.14);
+  border-radius: 18px;
+  background:
+    radial-gradient(circle at 50% -20%, rgba(45, 212, 191, 0.07), transparent 55%),
+    linear-gradient(180deg, rgba(15, 19, 27, 0.92), rgba(6, 9, 14, 0.94));
+  padding: 18px 18px 16px;
+  color: var(--foreground);
+  text-align: left;
+  cursor: pointer;
+  transition:
+    transform 0.18s cubic-bezier(0.2, 0.8, 0.2, 1),
+    border-color 0.18s ease,
+    background 0.18s ease,
+    box-shadow 0.18s ease;
+  overflow: hidden;
+}
+
+.card::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  border-radius: inherit;
+  background: linear-gradient(135deg, rgba(45, 212, 191, 0.0), rgba(45, 212, 191, 0.0));
+  transition: background 0.18s ease;
+}
+
+.card:hover {
+  transform: translateY(-3px);
+  border-color: rgba(94, 234, 212, 0.42);
+  box-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.04) inset,
+    0 18px 40px rgba(0, 0, 0, 0.45),
+    0 0 0 1px rgba(45, 212, 191, 0.18);
+}
+
+.card:hover::before {
+  background: linear-gradient(135deg, rgba(45, 212, 191, 0.12), rgba(45, 212, 191, 0.0) 55%);
+}
+
+.card:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}
+
+.card:active {
+  transform: translateY(-1px) scale(0.99);
+}
+
+.card[data-tier="critical"],
+.card[data-tier="dead"] {
+  background:
+    radial-gradient(circle at 50% -20%, rgba(251, 113, 133, 0.10), transparent 55%),
+    linear-gradient(180deg, rgba(20, 13, 18, 0.94), rgba(8, 5, 8, 0.96));
+}
+
+.card[data-tier="low_compute"] {
+  background:
+    radial-gradient(circle at 50% -20%, rgba(242, 183, 5, 0.10), transparent 55%),
+    linear-gradient(180deg, rgba(20, 17, 11, 0.94), rgba(9, 7, 4, 0.96));
+}
+
+.card[data-tier="off"] {
+  background: linear-gradient(180deg, rgba(15, 19, 27, 0.88), rgba(6, 9, 14, 0.92));
+}
+
+/* ─── Header: agent identity + power dot ─────────────────────────── */
+
+.head {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+
+.dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background: var(--muted);
+  opacity: 0.55;
+  flex-shrink: 0;
+}
+
+.card[data-tier="high"] .dot,
+.card[data-tier="normal"] .dot {
+  background: var(--accent);
+  opacity: 1;
+  box-shadow: 0 0 0 4px rgba(45, 212, 191, 0.16);
+}
+
+.card[data-tier="low_compute"] .dot {
+  background: var(--honey);
+  opacity: 1;
+  box-shadow: 0 0 0 4px rgba(242, 183, 5, 0.18);
+}
+
+.card[data-tier="critical"] .dot,
+.card[data-tier="dead"] .dot {
+  background: var(--danger);
+  opacity: 1;
+  box-shadow: 0 0 0 4px rgba(251, 113, 133, 0.18);
+}
+
+.name {
+  overflow: hidden;
+  color: var(--foreground);
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: -0.1px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ─── Hero balance ───────────────────────────────────────────────── */
+
+.balance {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 4px 0 2px;
+}
+
+.amount {
+  font-family: "Space Grotesk", system-ui, sans-serif;
+  font-size: 30px;
+  font-weight: 700;
+  letter-spacing: -0.8px;
+  line-height: 1;
+  color: var(--foreground);
+}
+
+.card[data-tier="off"] .amount,
+.card[data-tier="dead"] .amount {
+  color: rgba(244, 247, 251, 0.55);
+}
+
+.unit {
+  color: var(--muted);
+  font-size: 11.5px;
+  font-weight: 500;
+  letter-spacing: 0.1px;
+}
+
+/* ─── Status footer ──────────────────────────────────────────────── */
+
+.statusRow {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: auto;
+}
+
+.statusChip {
+  display: inline-flex;
+  gap: 6px;
+  align-items: center;
+  border-radius: 999px;
+  padding: 4px 10px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.1px;
+}
+
+.statusChip[data-tone="ok"] {
+  background: rgba(45, 212, 191, 0.14);
+  color: var(--accent-strong);
+}
+
+.statusChip[data-tone="warn"] {
+  background: rgba(242, 183, 5, 0.16);
+  color: var(--honey);
+}
+
+.statusChip[data-tone="danger"] {
+  background: rgba(251, 113, 133, 0.14);
+  color: #fda4af;
+}
+
+.statusChip[data-tone="off"],
+.statusChip[data-tone="muted"] {
+  background: rgba(148, 163, 184, 0.12);
+  color: var(--muted);
+}
+
+.statusChip svg {
+  width: 11px;
+  height: 11px;
+}
+
+.openIcon {
+  display: inline-flex;
+  align-items: center;
+  color: var(--muted);
+  opacity: 0;
+  transition: opacity 0.18s ease, transform 0.18s ease;
+}
+
+.card:hover .openIcon {
+  color: var(--accent-strong);
+  opacity: 1;
+  transform: translateX(2px);
+}
+
+/* ─── Hive-light theme ───────────────────────────────────────────── */
+
+:global(:root[data-theme="hive-light"]) .card {
+  border-color: var(--comb-line);
+  background:
+    radial-gradient(circle at 50% -20%, rgba(212, 180, 111, 0.22), transparent 55%),
+    var(--surface);
+}
+
+:global(:root[data-theme="hive-light"]) .card:hover {
+  border-color: rgba(185, 139, 47, 0.42);
+  box-shadow:
+    0 18px 40px rgba(92, 75, 45, 0.18),
+    0 0 0 1px rgba(185, 139, 47, 0.18);
+}
+
+:global(:root[data-theme="hive-light"]) .card:hover::before {
+  background: linear-gradient(135deg, rgba(185, 139, 47, 0.14), rgba(185, 139, 47, 0.0) 55%);
+}

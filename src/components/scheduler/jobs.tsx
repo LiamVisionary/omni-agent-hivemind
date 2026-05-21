@@ -28,7 +28,19 @@ function JobCard({ job, selected, onSelect, onToggle }: {
 }) {
   const t = STATUS_TONE[job.lastRun.status] || STATUS_TONE.idle;
   return (
-    <button onClick={onSelect} className="grid text-left cursor-pointer rounded-xl"
+    <article
+      role="button"
+      tabIndex={0}
+      aria-pressed={selected}
+      onClick={onSelect}
+      onKeyDown={(event) => {
+        if (event.target !== event.currentTarget) return;
+        if (event.key === "Enter" || event.key === " ") {
+          event.preventDefault();
+          onSelect();
+        }
+      }}
+      className="grid text-left cursor-pointer rounded-xl"
       style={{
         gap: 8, padding: 12,
         border: `1px solid ${selected ? "var(--hex-honey-border)" : "rgba(148,163,184,0.16)"}`,
@@ -81,7 +93,7 @@ function JobCard({ job, selected, onSelect, onToggle }: {
           {job.enabled ? <Pause size={10} /> : <Play size={10} />}
         </button>
       </div>
-    </button>
+    </article>
   );
 }
 

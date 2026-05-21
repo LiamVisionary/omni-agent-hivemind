@@ -11,7 +11,7 @@ export type HoneyLedgerEvent = {
   agentId: string;
   agentName?: string;
   kind: "usage" | "exchange";
-  source: "chat" | "kanban-chat" | "scheduler" | "manual";
+  source: "chat" | "kanban-chat" | "scheduler" | "manual" | "observed-hermes-usage" | "observed-openclaw-usage" | "observed-runtime-usage";
   tokensUsed: number;
   honeyDelta: number;
   hiveDelta: number;
@@ -94,6 +94,72 @@ export async function recordHoneyUsage(input: {
     honeyDelta,
     hiveDelta: 0,
     createdAt: new Date().toISOString(),
+  };
+
+  ledger.agentTokenUsage[input.agentId] = (ledger.agentTokenUsage[input.agentId] ?? 0) + tokensUsed;
+  ledger.rewardPoolEmittedHive = Math.round((ledger.rewardPoolEmittedHive + honeyDelta) * 1_000_000) / 1_000_000;
+  ledger.rewardPoolRemainingHive = Math.max(0, Math.round((ledger.rewardPoolHive - ledger.rewardPoolEmittedHive) * 1_000_000) / 1_000_000);
+  ledger.events.unshift(event);
+  ledger.updatedAt = event.createdAt;
+  await writeHoneyLedger(ledger);
+  return { ledger, event };
+}
+
+export async function recordObservedHoneyUsage(input: {
+  eventId: string;
+  agentId: string;
+  agentName?: string;
+  source: Extract<HoneyLedgerEvent["source"], "observed-hermes-usage" | "observed-openclaw-usage" | "observed-runtime-usage">;
+  model: string;
+  tokensUsed: number;
+  timestamp?: string;
+}) {
+  const tokensUsed = Math.max(0, Math.round(input.tokensUsed));
+  const ledger = await readHoneyLedger();
+  if (!input.eventId.trim() || tokensUsed <= 0) return { ledger, event: null };
+
+  const remote = getRemoteLedgerConfig();
+  if (remote) {
+    const remoteResult = await recordRemoteHoneyObservation(remote, {
+      eventId: input.eventId,
+      agentId: input.agentId,
+      model: input.model,
+      source: input.source,
+      tokensUsed,
+      timestamp: input.timestamp ?? new Date().toISOString(),
+    }).catch(() => null);
+    if (remoteResult) {
+      return {
+        ledger: remoteResult.ledger,
+        event: remoteResult.acceptedTokens > 0 ? {
+          id: input.eventId,
+          agentId: input.agentId,
+          agentName: input.agentName,
+          kind: "usage" as const,
+          source: input.source,
+          tokensUsed: remoteResult.acceptedTokens,
+          honeyDelta: remoteResult.honeyDelta,
+          hiveDelta: 0,
+          createdAt: remoteResult.createdAt,
+        } : null,
+      };
+    }
+  }
+
+  if (ledger.events.some((event) => event.id === input.eventId)) return { ledger, event: null };
+  const targetHoneyDelta = calculateHoneyForTokens(tokensUsed, ledger.honeyPerThousandTokens);
+  const remainingPool = Math.max(0, ledger.rewardPoolHive - ledger.rewardPoolEmittedHive);
+  const honeyDelta = Math.min(targetHoneyDelta, remainingPool);
+  const event: HoneyLedgerEvent = {
+    id: input.eventId,
+    agentId: input.agentId,
+    agentName: input.agentName,
+    kind: "usage",
+    source: input.source,
+    tokensUsed,
+    honeyDelta,
+    hiveDelta: 0,
+    createdAt: input.timestamp ?? new Date().toISOString(),
   };
 
   ledger.agentTokenUsage[input.agentId] = (ledger.agentTokenUsage[input.agentId] ?? 0) + tokensUsed;
@@ -232,6 +298,40 @@ async function recordRemoteHoneyUsage(
     eventId: receipt.eventId,
     honeyDelta: Number(data.honeyDelta) || 0,
     createdAt: timestamp,
+  };
+}
+
+async function recordRemoteHoneyObservation(
+  remote: RemoteLedgerConfig,
+  input: { eventId: string; agentId: string; tokensUsed: number; model: string; source: HoneyLedgerEvent["source"]; timestamp: string },
+) {
+  const receipt: Omit<RemoteUsageReceipt, "issuerId"> & { issuerId?: string } = {
+    eventId: input.eventId,
+    workspaceId: await getWorkspaceId(),
+    agentId: input.agentId,
+    tokensUsed: input.tokensUsed,
+    model: input.model,
+    source: input.source,
+    timestamp: input.timestamp,
+  };
+  const response = await fetch(`${remote.url}/observations`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(receipt),
+  });
+  if (!response.ok) return null;
+  const data = await response.json().catch(() => null) as {
+    ok?: boolean;
+    honeyDelta?: number;
+    acceptedTokens?: number;
+  } | null;
+  const ledger = await readRemoteHoneyLedger(remote);
+  if (!data?.ok || !ledger) return null;
+  return {
+    ledger,
+    honeyDelta: Number(data.honeyDelta) || 0,
+    acceptedTokens: Math.max(0, Math.round(Number(data.acceptedTokens ?? input.tokensUsed) || 0)),
+    createdAt: input.timestamp,
   };
 }
 

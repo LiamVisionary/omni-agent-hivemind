@@ -12,12 +12,17 @@ type MiroSharkResponse<T = Record<string, unknown>> = {
 };
 
 type SwarmRunRequest = {
-  action?: "run" | "stop" | "inject" | "fork" | "branch" | "publish";
+  action?: "run" | "stop" | "inject" | "fork" | "branch" | "publish" | "ask" | "suggest" | "fetch-url" | "report" | "interview" | "resolve" | "outcome";
   simulationId?: string;
   event?: string;
+  question?: string;
+  textPreview?: string;
+  url?: string;
+  agentName?: string;
   scenario?: string;
   rounds?: number;
   platform?: "twitter" | "reddit" | "parallel" | "polymarket";
+  templateId?: string;
   projectName?: string;
 };
 
@@ -36,6 +41,7 @@ type SwarmJob = {
   simulationId?: string;
   rounds?: number;
   platform?: string;
+  templateId?: string;
   projectName?: string;
   links?: Record<string, string>;
 };
@@ -82,6 +88,77 @@ async function requestJson<T>(url: string, init?: RequestInit): Promise<MiroShar
     throw new Error(payload?.error ?? `MiroShark request failed: HTTP ${response.status}`);
   }
   return payload;
+}
+
+async function fetchJson(url: string, init?: RequestInit) {
+  return fetch(url, {
+    ...init,
+    cache: "no-store",
+    signal: AbortSignal.timeout(30_000),
+  }).then((r) => r.json()).catch((error) => ({ success: false, error: String(error) }));
+}
+
+function extractId(value: unknown, keys: string[]): string | undefined {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
+  const record = value as Record<string, unknown>;
+  for (const key of keys) {
+    const candidate = record[key];
+    if (typeof candidate === "string" || typeof candidate === "number") return String(candidate);
+  }
+  return undefined;
+}
+
+function payloadData(value: unknown): unknown {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return value;
+  const record = value as Record<string, unknown>;
+  return Object.prototype.hasOwnProperty.call(record, "data") ? record.data : value;
+}
+
+function payloadArray(value: unknown): unknown[] {
+  const data = payloadData(value);
+  if (Array.isArray(data)) return data;
+  if (!data || typeof data !== "object") return [];
+  const record = data as Record<string, unknown>;
+  for (const key of ["items", "markets", "history", "reports", "entities", "data", "posts"]) {
+    const candidate = record[key];
+    if (Array.isArray(candidate)) return candidate;
+  }
+  return [];
+}
+
+function buildRunLinks(baseUrl: string, simulationId: string) {
+  return {
+    runStatus: `${baseUrl}/api/simulation/${simulationId}/run-status`,
+    runStatusDetail: `${baseUrl}/api/simulation/${simulationId}/run-status/detail`,
+    actions: `${baseUrl}/api/simulation/${simulationId}/actions`,
+    posts: `${baseUrl}/api/simulation/${simulationId}/posts`,
+    timeline: `${baseUrl}/api/simulation/${simulationId}/timeline`,
+    profiles: `${baseUrl}/api/simulation/${simulationId}/profiles`,
+    beliefDrift: `${baseUrl}/api/simulation/${simulationId}/belief-drift`,
+    influence: `${baseUrl}/api/simulation/${simulationId}/influence`,
+    interactionNetwork: `${baseUrl}/api/simulation/${simulationId}/interaction-network`,
+    demographics: `${baseUrl}/api/simulation/${simulationId}/demographics`,
+    quality: `${baseUrl}/api/simulation/${simulationId}/quality`,
+    markets: `${baseUrl}/api/simulation/${simulationId}/polymarket/markets`,
+    lineage: `${baseUrl}/api/simulation/${simulationId}/lineage`,
+    embedSummary: `${baseUrl}/api/simulation/${simulationId}/embed-summary`,
+    shareCard: `${baseUrl}/api/simulation/${simulationId}/share-card.png`,
+    replayGif: `${baseUrl}/api/simulation/${simulationId}/replay.gif`,
+    transcriptMd: `${baseUrl}/api/simulation/${simulationId}/transcript.md`,
+    transcriptJson: `${baseUrl}/api/simulation/${simulationId}/transcript.json`,
+    trajectoryCsv: `${baseUrl}/api/simulation/${simulationId}/trajectory.csv`,
+    trajectoryJsonl: `${baseUrl}/api/simulation/${simulationId}/trajectory.jsonl`,
+    chartSvg: `${baseUrl}/api/simulation/${simulationId}/chart.svg`,
+    threadTxt: `${baseUrl}/api/simulation/${simulationId}/thread.txt`,
+    threadJson: `${baseUrl}/api/simulation/${simulationId}/thread.json`,
+    reproduceJson: `${baseUrl}/api/simulation/${simulationId}/reproduce.json`,
+    notebook: `${baseUrl}/api/simulation/${simulationId}/notebook.ipynb`,
+    surfaceStats: `${baseUrl}/api/simulation/${simulationId}/surface-stats`,
+    webhookLog: `${baseUrl}/api/simulation/${simulationId}/webhook-log`,
+    dkgCitation: `${baseUrl}/api/simulation/${simulationId}/dkg-citation`,
+    report: `${baseUrl}/api/report/by-simulation/${simulationId}`,
+    export: `${baseUrl}/api/simulation/${simulationId}/export`,
+  };
 }
 
 async function pollTask(baseUrl: string, taskId: string) {
@@ -205,11 +282,41 @@ export async function POST(request: Request) {
   const body = await request.json().catch(() => null) as SwarmRunRequest | null;
   if (body?.action && body.action !== "run") {
     try {
-      const simulationId = body.simulationId?.trim();
-      if (!simulationId) return Response.json({ ok: false, error: "simulationId is required" }, { status: 400 });
       const status = await getMiroSharkCompanionStatus();
       if (!status.ok) return Response.json({ ok: false, error: status.error ?? "MiroShark is not connected" }, { status: 503 });
       const baseUrl = status.baseUrl;
+      if (body.action === "ask") {
+        const question = (body.question ?? body.scenario ?? "").trim();
+        if (!question) return Response.json({ ok: false, error: "question is required" }, { status: 400 });
+        const payload = await requestJson(`${baseUrl}/api/simulation/ask`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ question }),
+        });
+        return Response.json({ ok: true, action: body.action, payload });
+      }
+      if (body.action === "suggest") {
+        const textPreview = (body.textPreview ?? body.scenario ?? "").trim();
+        if (!textPreview) return Response.json({ ok: false, error: "textPreview is required" }, { status: 400 });
+        const payload = await requestJson(`${baseUrl}/api/simulation/suggest-scenarios`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ text_preview: textPreview, simulation_prompt: body.question }),
+        });
+        return Response.json({ ok: true, action: body.action, payload });
+      }
+      if (body.action === "fetch-url") {
+        const url = body.url?.trim();
+        if (!url) return Response.json({ ok: false, error: "url is required" }, { status: 400 });
+        const payload = await requestJson(`${baseUrl}/api/graph/fetch-url`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ url }),
+        });
+        return Response.json({ ok: true, action: body.action, payload });
+      }
+      const simulationId = body.simulationId?.trim();
+      if (!simulationId) return Response.json({ ok: false, error: "simulationId is required" }, { status: 400 });
       if (body.action === "stop") {
         const payload = await requestJson(`${baseUrl}/api/simulation/stop`, {
           method: "POST",
@@ -232,6 +339,42 @@ export async function POST(request: Request) {
           method: "POST",
           headers: { "Content-Type": "application/json", Authorization: `Bearer ${adminToken}` },
           body: JSON.stringify({ simulation_id: simulationId }),
+        });
+        return Response.json({ ok: true, action: body.action, simulationId, payload });
+      }
+      if (body.action === "report") {
+        const payload = await requestJson(`${baseUrl}/api/report/generate`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ simulation_id: simulationId }),
+        });
+        return Response.json({ ok: true, action: body.action, simulationId, payload });
+      }
+      if (body.action === "interview") {
+        const agentName = body.agentName?.trim();
+        const question = body.question?.trim();
+        if (!agentName || !question) return Response.json({ ok: false, error: "agentName and question are required" }, { status: 400 });
+        const payload = await requestJson(`${baseUrl}/api/simulation/interview`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ simulation_id: simulationId, agent_name: agentName, question }),
+        });
+        return Response.json({ ok: true, action: body.action, simulationId, payload });
+      }
+      if (body.action === "resolve" || body.action === "outcome") {
+        const adminToken = getMiroSharkAdminToken(status.installPath);
+        if (!adminToken) {
+          return Response.json({
+            ok: false,
+            action: body.action,
+            simulationId,
+            error: "MiroShark admin auth is not configured. Use Configure publish auth in the Swarm tab.",
+          }, { status: 400 });
+        }
+        const payload = await requestJson(`${baseUrl}/api/simulation/${simulationId}/${body.action}`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${adminToken}` },
+          body: JSON.stringify({ outcome: body.event?.trim() || "resolved from HivemindOS" }),
         });
         return Response.json({ ok: true, action: body.action, simulationId, payload });
       }
@@ -280,6 +423,7 @@ export async function POST(request: Request) {
   const projectName = body?.projectName?.trim() || `HivemindOS swarm ${new Date().toISOString().slice(0, 16)}`;
   const rounds = Math.max(1, Math.min(200, Number(body?.rounds ?? 5)));
   const platform = body?.platform ?? "twitter";
+  const templateId = body?.templateId?.trim();
   jobs.set(jobId, {
     ok: true,
     jobId,
@@ -289,6 +433,7 @@ export async function POST(request: Request) {
     startedAt: Date.now(),
     rounds,
     platform,
+    templateId,
     projectName,
   });
 
@@ -367,21 +512,12 @@ export async function POST(request: Request) {
         step: "started",
         message: "Simulation started",
         finishedAt: Date.now(),
+        templateId,
         links: {
-          runStatus: `${baseUrl}/api/simulation/${simulationId}/run-status`,
+          ...buildRunLinks(baseUrl, simulationId),
           actions: `${baseUrl}/api/simulation/${simulationId}/actions?platform=${resultPlatform}`,
           posts: `${baseUrl}/api/simulation/${simulationId}/posts?platform=${resultPlatform}`,
-          timeline: `${baseUrl}/api/simulation/${simulationId}/timeline`,
           profiles: `${baseUrl}/api/simulation/${simulationId}/profiles?platform=${resultPlatform}`,
-          beliefDrift: `${baseUrl}/api/simulation/${simulationId}/belief-drift`,
-          influence: `${baseUrl}/api/simulation/${simulationId}/influence`,
-          interactionNetwork: `${baseUrl}/api/simulation/${simulationId}/interaction-network`,
-          demographics: `${baseUrl}/api/simulation/${simulationId}/demographics`,
-          quality: `${baseUrl}/api/simulation/${simulationId}/quality`,
-          markets: `${baseUrl}/api/simulation/${simulationId}/polymarket/markets`,
-          lineage: `${baseUrl}/api/simulation/${simulationId}/lineage`,
-          thread: `${baseUrl}/api/simulation/${simulationId}/thread.json`,
-          export: `${baseUrl}/api/simulation/${simulationId}/export`,
         },
       });
     } catch (error) {
@@ -407,15 +543,43 @@ export async function GET(request: Request) {
     if (!status.ok) {
       return Response.json({ ok: false, error: status.error ?? "MiroShark is not connected" }, { status: 503 });
     }
-    const [templates, history, trending, observabilityStats, observabilityEvents, llmCalls] = await Promise.all([
-      fetch(`${status.baseUrl}/api/templates/list`, { cache: "no-store" }).then((r) => r.json()).catch((error) => ({ success: false, error: String(error) })),
-      fetch(`${status.baseUrl}/api/simulation/history`, { cache: "no-store" }).then((r) => r.json()).catch((error) => ({ success: false, error: String(error) })),
-      fetch(`${status.baseUrl}/api/simulation/trending`, { cache: "no-store" }).then((r) => r.json()).catch((error) => ({ success: false, error: String(error) })),
-      fetch(`${status.baseUrl}/api/observability/stats`, { cache: "no-store" }).then((r) => r.json()).catch((error) => ({ success: false, error: String(error) })),
-      fetch(`${status.baseUrl}/api/observability/events?limit=30`, { cache: "no-store" }).then((r) => r.json()).catch((error) => ({ success: false, error: String(error) })),
-      fetch(`${status.baseUrl}/api/observability/llm-calls?limit=20`, { cache: "no-store" }).then((r) => r.json()).catch((error) => ({ success: false, error: String(error) })),
+    const [templates, templateCapabilities, history, publicRuns, simulationList, trending, observabilityStats, observabilityEvents, llmCalls, settings, mcpStatus, pushVapidKey] = await Promise.all([
+      fetchJson(`${status.baseUrl}/api/templates/list`),
+      fetchJson(`${status.baseUrl}/api/templates/capabilities`),
+      fetchJson(`${status.baseUrl}/api/simulation/history`),
+      fetchJson(`${status.baseUrl}/api/simulation/public`),
+      fetchJson(`${status.baseUrl}/api/simulation/list`),
+      fetchJson(`${status.baseUrl}/api/simulation/trending`),
+      fetchJson(`${status.baseUrl}/api/observability/stats`),
+      fetchJson(`${status.baseUrl}/api/observability/events?limit=30`),
+      fetchJson(`${status.baseUrl}/api/observability/llm-calls?limit=20`),
+      fetchJson(`${status.baseUrl}/api/settings`),
+      fetchJson(`${status.baseUrl}/api/mcp/status`),
+      fetchJson(`${status.baseUrl}/api/simulation/push/vapid-public-key`),
     ]);
-    return Response.json({ ok: true, baseUrl: status.baseUrl, templates, history, trending, observabilityStats, observabilityEvents, llmCalls });
+    const templateDetails = await Promise.all(
+      payloadArray(templates).slice(0, 12).flatMap((template) => {
+        const templateId = extractId(template, ["id", "template_id"]);
+        return templateId ? [fetchJson(`${status.baseUrl}/api/templates/${encodeURIComponent(templateId)}?enrich=true`)] : [];
+      }),
+    );
+    return Response.json({
+      ok: true,
+      baseUrl: status.baseUrl,
+      templates,
+      templateCapabilities,
+      templateDetails,
+      history,
+      publicRuns,
+      simulationList,
+      trending,
+      observabilityStats,
+      observabilityEvents,
+      llmCalls,
+      settings,
+      mcpStatus,
+      pushVapidKey,
+    });
   }
 
   const jobId = searchParams.get("job_id");
@@ -426,7 +590,8 @@ export async function GET(request: Request) {
   }
   const simulationId = searchParams.get("simulation_id");
   const requestedPlatform = searchParams.get("platform") || "twitter";
-  const platform = requestedPlatform === "reddit" ? "reddit" : "twitter";
+  const platform = requestedPlatform === "reddit" || requestedPlatform === "polymarket" || requestedPlatform === "parallel" ? requestedPlatform : "twitter";
+  const socialPlatform = platform === "reddit" ? "reddit" : "twitter";
   const limit = Math.max(1, Math.min(2_000, Number(searchParams.get("limit") ?? 500) || 500));
   if (!simulationId) {
     return Response.json({ ok: false, error: "simulation_id is required" }, { status: 400 });
@@ -435,33 +600,51 @@ export async function GET(request: Request) {
   if (!status.ok) {
     return Response.json({ ok: false, error: status.error ?? "MiroShark is not connected" }, { status: 503 });
   }
-  const [runStatus, actions, posts, timeline, profiles, realtimeProfiles, beliefDrift, counterfactual, agentStats, influence, interactionNetwork, demographics, quality, markets, surfaceStats, lineage, threadJson, observabilityStats, observabilityEvents, llmCalls] = await Promise.all([
-    fetch(`${status.baseUrl}/api/simulation/${simulationId}/run-status`, { cache: "no-store" }).then((r) => r.json()).catch((error) => ({ success: false, error: String(error) })),
-    fetch(`${status.baseUrl}/api/simulation/${simulationId}/actions?platform=${platform}`, { cache: "no-store" }).then((r) => r.json()).catch((error) => ({ success: false, error: String(error) })),
-    fetch(`${status.baseUrl}/api/simulation/${simulationId}/posts?platform=${platform}&limit=${limit}`, { cache: "no-store" }).then((r) => r.json()).catch((error) => ({ success: false, error: String(error) })),
-    fetch(`${status.baseUrl}/api/simulation/${simulationId}/timeline`, { cache: "no-store" }).then((r) => r.json()).catch((error) => ({ success: false, error: String(error) })),
-    fetch(`${status.baseUrl}/api/simulation/${simulationId}/profiles?platform=${platform}`, { cache: "no-store" }).then((r) => r.json()).catch((error) => ({ success: false, error: String(error) })),
-    fetch(`${status.baseUrl}/api/simulation/${simulationId}/profiles/realtime`, { cache: "no-store" }).then((r) => r.json()).catch((error) => ({ success: false, error: String(error) })),
-    fetch(`${status.baseUrl}/api/simulation/${simulationId}/belief-drift`, { cache: "no-store" }).then((r) => r.json()).catch((error) => ({ success: false, error: String(error) })),
-    fetch(`${status.baseUrl}/api/simulation/${simulationId}/counterfactual`, { cache: "no-store" }).then((r) => r.json()).catch((error) => ({ success: false, error: String(error) })),
-    fetch(`${status.baseUrl}/api/simulation/${simulationId}/agent-stats`, { cache: "no-store" }).then((r) => r.json()).catch((error) => ({ success: false, error: String(error) })),
-    fetch(`${status.baseUrl}/api/simulation/${simulationId}/influence`, { cache: "no-store" }).then((r) => r.json()).catch((error) => ({ success: false, error: String(error) })),
-    fetch(`${status.baseUrl}/api/simulation/${simulationId}/interaction-network`, { cache: "no-store" }).then((r) => r.json()).catch((error) => ({ success: false, error: String(error) })),
-    fetch(`${status.baseUrl}/api/simulation/${simulationId}/demographics`, { cache: "no-store" }).then((r) => r.json()).catch((error) => ({ success: false, error: String(error) })),
-    fetch(`${status.baseUrl}/api/simulation/${simulationId}/quality`, { cache: "no-store" }).then((r) => r.json()).catch((error) => ({ success: false, error: String(error) })),
-    fetch(`${status.baseUrl}/api/simulation/${simulationId}/polymarket/markets`, { cache: "no-store" }).then((r) => r.json()).catch((error) => ({ success: false, error: String(error) })),
-    fetch(`${status.baseUrl}/api/simulation/${simulationId}/surface-stats`, { cache: "no-store" }).then((r) => r.json()).catch((error) => ({ success: false, error: String(error) })),
-    fetch(`${status.baseUrl}/api/simulation/${simulationId}/lineage`, { cache: "no-store" }).then((r) => r.json()).catch((error) => ({ success: false, error: String(error) })),
-    fetch(`${status.baseUrl}/api/simulation/${simulationId}/thread.json`, { cache: "no-store" }).then((r) => r.json()).catch((error) => ({ success: false, error: String(error) })),
-    fetch(`${status.baseUrl}/api/observability/stats`, { cache: "no-store" }).then((r) => r.json()).catch((error) => ({ success: false, error: String(error) })),
-    fetch(`${status.baseUrl}/api/observability/events?limit=30`, { cache: "no-store" }).then((r) => r.json()).catch((error) => ({ success: false, error: String(error) })),
-    fetch(`${status.baseUrl}/api/observability/llm-calls?limit=20`, { cache: "no-store" }).then((r) => r.json()).catch((error) => ({ success: false, error: String(error) })),
+  const links = buildRunLinks(status.baseUrl, simulationId);
+  const [runStatus, runStatusDetail, actions, posts, timeline, profiles, realtimeProfiles, beliefDrift, counterfactual, agentStats, influence, interactionNetwork, demographics, quality, markets, surfaceStats, lineage, threadJson, transcriptJson, embedSummary, webhookLog, report, interviewHistory, graphData, entities, project, observabilityStats, observabilityEvents, llmCalls] = await Promise.all([
+    fetchJson(`${status.baseUrl}/api/simulation/${simulationId}/run-status`),
+    fetchJson(`${status.baseUrl}/api/simulation/${simulationId}/run-status/detail?platform=${socialPlatform}`),
+    fetchJson(`${status.baseUrl}/api/simulation/${simulationId}/actions?platform=${socialPlatform}`),
+    fetchJson(`${status.baseUrl}/api/simulation/${simulationId}/posts?platform=${socialPlatform}&limit=${limit}`),
+    fetchJson(`${status.baseUrl}/api/simulation/${simulationId}/timeline`),
+    fetchJson(`${status.baseUrl}/api/simulation/${simulationId}/profiles?platform=${socialPlatform}`),
+    fetchJson(`${status.baseUrl}/api/simulation/${simulationId}/profiles/realtime`),
+    fetchJson(`${status.baseUrl}/api/simulation/${simulationId}/belief-drift`),
+    fetchJson(`${status.baseUrl}/api/simulation/${simulationId}/counterfactual`),
+    fetchJson(`${status.baseUrl}/api/simulation/${simulationId}/agent-stats`),
+    fetchJson(`${status.baseUrl}/api/simulation/${simulationId}/influence`),
+    fetchJson(`${status.baseUrl}/api/simulation/${simulationId}/interaction-network`),
+    fetchJson(`${status.baseUrl}/api/simulation/${simulationId}/demographics`),
+    fetchJson(`${status.baseUrl}/api/simulation/${simulationId}/quality`),
+    fetchJson(`${status.baseUrl}/api/simulation/${simulationId}/polymarket/markets`),
+    fetchJson(`${status.baseUrl}/api/simulation/${simulationId}/surface-stats`),
+    fetchJson(`${status.baseUrl}/api/simulation/${simulationId}/lineage`),
+    fetchJson(`${status.baseUrl}/api/simulation/${simulationId}/thread.json`),
+    fetchJson(`${status.baseUrl}/api/simulation/${simulationId}/transcript.json`),
+    fetchJson(`${status.baseUrl}/api/simulation/${simulationId}/embed-summary`),
+    fetchJson(`${status.baseUrl}/api/simulation/${simulationId}/webhook-log`),
+    fetchJson(`${status.baseUrl}/api/report/by-simulation/${simulationId}`),
+    fetchJson(`${status.baseUrl}/api/simulation/interview/history?simulation_id=${encodeURIComponent(simulationId)}`),
+    searchParams.get("graph_id") ? fetchJson(`${status.baseUrl}/api/graph/data/${encodeURIComponent(searchParams.get("graph_id") ?? "")}?limit=100`) : Promise.resolve({ success: false, error: "graph_id unavailable" }),
+    searchParams.get("graph_id") ? fetchJson(`${status.baseUrl}/api/simulation/entities/${encodeURIComponent(searchParams.get("graph_id") ?? "")}`) : Promise.resolve({ success: false, error: "graph_id unavailable" }),
+    searchParams.get("project_id") ? fetchJson(`${status.baseUrl}/api/graph/project/${encodeURIComponent(searchParams.get("project_id") ?? "")}`) : Promise.resolve({ success: false, error: "project_id unavailable" }),
+    fetchJson(`${status.baseUrl}/api/observability/stats`),
+    fetchJson(`${status.baseUrl}/api/observability/events?limit=30`),
+    fetchJson(`${status.baseUrl}/api/observability/llm-calls?limit=20`),
   ]);
+  const marketPrices = await Promise.all(
+    payloadArray(markets).slice(0, 8).flatMap((market) => {
+      const marketId = extractId(market, ["market_id", "id"]);
+      return marketId ? [fetchJson(`${status.baseUrl}/api/simulation/${simulationId}/polymarket/market/${encodeURIComponent(marketId)}/prices`)] : [];
+    }),
+  );
   return Response.json({
     ok: true,
     simulationId,
     platform,
+    links,
     runStatus,
+    runStatusDetail,
     actions,
     posts: cleanPostsPayload(posts),
     timeline,
@@ -475,9 +658,18 @@ export async function GET(request: Request) {
     demographics,
     quality,
     markets,
+    marketPrices,
     surfaceStats,
     lineage,
     threadJson,
+    transcriptJson,
+    embedSummary,
+    webhookLog,
+    report,
+    interviewHistory,
+    graphData,
+    entities,
+    project,
     observabilityStats,
     observabilityEvents,
     llmCalls,

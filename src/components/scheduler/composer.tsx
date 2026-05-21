@@ -3,12 +3,14 @@
 
 import * as React from "react";
 import { BeeIcon } from "./bee-icon";
+import type { SchedulerRunState } from "./SchedulerView";
 import type { CadenceTemplate, SchedulerJob } from "./scheduler-data";
 import styles from "./scheduler-tokens.module.css";
 
 interface ComposerProps {
   job: SchedulerJob;
   templates: CadenceTemplate[];
+  runState?: SchedulerRunState;
   onRunNow?: () => void;
   onEdit?: () => void;
 }
@@ -35,8 +37,28 @@ const STATUS_COLOR = {
   idle:   "var(--muted)",
 };
 
-export function Composer({ job, templates, onRunNow, onEdit }: ComposerProps) {
+function runStatePhase(runState?: SchedulerRunState) {
+  return typeof runState === "string" ? runState : runState?.phase;
+}
+
+function runStateLabel(runState?: SchedulerRunState) {
+  if (!runState) return "run now";
+  if (typeof runState !== "string" && runState.label) return runState.label;
+  const phase = runStatePhase(runState);
+  if (phase === "assigned") return "assigned";
+  if (phase === "thinking") return "thinking";
+  if (phase === "executing") return "executing";
+  if (phase === "wrapping") return "wrapping up";
+  if (phase === "done") return "done";
+  return "running";
+}
+
+export function Composer({ job, templates, runState, onRunNow, onEdit }: ComposerProps) {
   const [activeTpl, setActiveTpl] = React.useState<CadenceTemplate["id"]>("cron");
+  const phase = runStatePhase(runState);
+  const running = Boolean(phase && phase !== "done");
+  const done = phase === "done";
+  const runLabel = runStateLabel(runState);
   return (
     <aside className="flex flex-col overflow-auto"
       style={{
@@ -69,13 +91,19 @@ export function Composer({ job, templates, onRunNow, onEdit }: ComposerProps) {
           {job.cronLabel}
         </div>
         <div className="flex" style={{ gap: 8, marginTop: 8 }}>
-          <button onClick={onRunNow} className="uppercase font-bold cursor-pointer"
+          <button onClick={onRunNow} disabled={running || done} className="uppercase font-bold cursor-pointer"
             style={{
               flex: 1, padding: "9px 12px", borderRadius: 7,
               border: "1px solid rgba(94,234,212,0.55)",
-              background: "rgba(45,212,191,0.18)", color: "var(--hex-active-border)",
+              background: done ? "rgba(45,212,191,0.24)" : "rgba(45,212,191,0.18)",
+              color: done ? "var(--hex-active-border)" : "var(--hex-active-border)",
               fontFamily: "var(--f-mono)", fontSize: 11, letterSpacing: 0.06,
-            }}>▶ run now</button>
+              display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 8,
+              opacity: running || done ? 0.95 : 1,
+            }}>
+              {running ? <span className={styles.runSpinner} aria-hidden="true" /> : done ? <span className={styles.runCheck} aria-hidden="true">✓</span> : "▶"}
+              {runLabel}
+            </button>
           <button onClick={onEdit} className="uppercase font-bold cursor-pointer"
             style={{
               flex: 1, padding: "9px 12px", borderRadius: 7,

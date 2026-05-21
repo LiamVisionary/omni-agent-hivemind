@@ -10,8 +10,10 @@ const ACCESS_LOG_PATH = "Projects/HivemindOS/Brain Access/access-log.jsonl";
 const OBSIDIAN_CLI = process.env.OBSIDIAN_CLI_PATH ?? "obsidian";
 const MAX_NOTE_BYTES = 524_288;
 const MAX_GRAPH_NOTES = 260;
+const GRAPH_CACHE_TTL_MS = 30_000;
 const SKIPPED_DIRS = new Set([".git", ".obsidian", ".trash", "node_modules"]);
 const execFileAsync = promisify(execFile);
+const graphCache = new Map<string, { cachedAt: number; graph: BrainGraph }>();
 
 export type BrainAccessEvent = {
   id: string;
@@ -82,6 +84,10 @@ function accessLogFile(root: string): string {
   return path;
 }
 
+function isSyncConflictFile(path: string): boolean {
+  return /(?:^|[./])[^/]*sync-conflict-[^/]*\.md$/i.test(path);
+}
+
 async function walkMarkdown(root: string, dir = root, output: string[] = []): Promise<string[]> {
   if (output.length >= MAX_GRAPH_NOTES) return output;
   const entries = await readdir(dir, { withFileTypes: true });
@@ -92,7 +98,7 @@ async function walkMarkdown(root: string, dir = root, output: string[] = []): Pr
     assertInside(root, fullPath);
     if (entry.isDirectory()) {
       if (!SKIPPED_DIRS.has(entry.name)) await walkMarkdown(root, fullPath, output);
-    } else if (entry.isFile() && entry.name.toLowerCase().endsWith(".md")) {
+    } else if (entry.isFile() && entry.name.toLowerCase().endsWith(".md") && !isSyncConflictFile(entry.name)) {
       output.push(fullPath);
     }
   }
@@ -162,8 +168,11 @@ export async function readAccessEvents(root: string): Promise<BrainAccessEvent[]
     .slice(0, 500);
 }
 
-export async function buildBrainGraph(vaultPath?: string): Promise<BrainGraph> {
+export async function buildBrainGraph(vaultPath?: string, options: { force?: boolean } = {}): Promise<BrainGraph> {
   const root = resolveVaultPath(vaultPath);
+  const cached = graphCache.get(root);
+  if (!options.force && cached && Date.now() - cached.cachedAt < GRAPH_CACHE_TTL_MS) return cached.graph;
+
   const rootStat = await stat(root);
   if (!rootStat.isDirectory()) throw new Error("Vault path is not a directory.");
   await access(root, constants.R_OK);
@@ -226,7 +235,7 @@ export async function buildBrainGraph(vaultPath?: string): Promise<BrainGraph> {
     })),
   ].sort((a, b) => (b.incoming + b.outgoing + b.accessCount) - (a.incoming + a.outgoing + a.accessCount));
 
-  return {
+  const graph = {
     vaultPath: root,
     accessLogPath: accessLogFile(root),
     generatedAt: new Date().toISOString(),
@@ -235,6 +244,8 @@ export async function buildBrainGraph(vaultPath?: string): Promise<BrainGraph> {
     recentAccesses: accesses.slice(0, 24),
     truncated,
   };
+  graphCache.set(root, { cachedAt: Date.now(), graph });
+  return graph;
 }
 
 export async function recordBrainAccess(input: {

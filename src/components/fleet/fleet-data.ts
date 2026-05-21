@@ -10,6 +10,7 @@ export interface FleetAgent {
   id: string;
   name: string;
   runtime: string;
+  canChat?: boolean;
   state: AgentState;
   role: string;
   beeRole?: string;
@@ -18,6 +19,11 @@ export interface FleetAgent {
   balance: "healthy" | "low_compute" | "dead" | "off";
   task: string;
   since: string;      // formatted e.g. "2m", "5h"
+}
+
+export function fleetAgentCanChat(agent: FleetAgent) {
+  if (typeof agent.canChat === "boolean") return agent.canChat;
+  return /^(hermes|openclaw)$/i.test(agent.runtime.trim());
 }
 
 export type MachineVersionState = "current" | "stale" | "needs-setup";

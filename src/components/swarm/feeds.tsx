@@ -26,6 +26,17 @@ function PanelHeader({ title, right }: { title: string; right?: React.ReactNode 
 }
 
 export function MarketPanel({ data }: { data: SwarmMarket }) {
+  if (!data.ticks.length) {
+    return (
+      <section style={panelStyle}>
+        <PanelHeader title="Market · no price ticks"
+          right={<span style={{ color: "var(--muted)" }}>{data.symbol}</span>} />
+        <div style={{ padding: "12px", color: "var(--muted)", fontSize: 12.5, lineHeight: 1.5 }}>
+          MiroShark did not return market price points for this run.
+        </div>
+      </section>
+    );
+  }
   const min = Math.min(...data.ticks);
   const max = Math.max(...data.ticks);
   const w = 280, h = 60;

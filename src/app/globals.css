@@ -206,11 +206,21 @@ a {
 }
 
 .brandHex {
+  border: 0;
+  padding: 0;
   display: grid;
   width: 78px;
   height: 82px;
   flex: 0 0 auto;
   place-items: center;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+}
+
+.brandHex:focus-visible {
+  outline: 2px solid var(--honey);
+  outline-offset: 4px;
 }
 
 .brandLogo {

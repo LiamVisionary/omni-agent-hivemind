@@ -2,10 +2,11 @@
 "use client";
 
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import { Monitor } from "lucide-react";
+import * as React from "react";
+import { ChevronDown, Copy, MessageSquare, Monitor, Settings2, Trash2, Wallet } from "lucide-react";
 import { BeeIcon } from "./bee-icon";
 import { HexTile } from "./hex-tile";
-import { type AgentState, type FleetAgent, type FleetMachine } from "./fleet-data";
+import { fleetAgentCanChat, type AgentState, type FleetAgent, type FleetMachine } from "./fleet-data";
 import styles from "./fleet-tokens.module.css";
 
 interface ListViewProps {
@@ -15,6 +16,11 @@ interface ListViewProps {
   onSelectMachine: (id: string) => void;
   onSelectAgent: (m: FleetMachine, a: FleetAgent) => void;
   onAddAgent: (m: FleetMachine) => void;
+  onOpenChat?: (m: FleetMachine, a: FleetAgent) => void;
+  onOpenWallet?: (m: FleetMachine, a: FleetAgent) => void;
+  onEditSettings?: (m: FleetMachine, a: FleetAgent) => void;
+  onDuplicate?: (m: FleetMachine, a: FleetAgent) => void;
+  onRemove?: (m: FleetMachine, a: FleetAgent) => void;
 }
 
 const STATE_COLOR: Record<AgentState, string> = {
@@ -40,7 +46,29 @@ export function ListView({
   machines,
   selected, selectedAgentId,
   onSelectMachine, onSelectAgent, onAddAgent,
+  onOpenChat, onOpenWallet, onEditSettings, onDuplicate, onRemove,
 }: ListViewProps) {
+  const [expandedTaskIds, setExpandedTaskIds] = React.useState<Set<string>>(() => new Set());
+  const toggleTaskPreview = (agentId: string) => {
+    setExpandedTaskIds((current) => {
+      const next = new Set(current);
+      if (next.has(agentId)) {
+        next.delete(agentId);
+      } else {
+        next.add(agentId);
+      }
+      return next;
+    });
+  };
+  const fire = (
+    machine: FleetMachine,
+    agent: FleetAgent,
+    fn?: (m: FleetMachine, a: FleetAgent) => void,
+  ) => (event: React.MouseEvent) => {
+    event.stopPropagation();
+    fn?.(machine, agent);
+  };
+
   return (
     <div className="w-full h-full overflow-auto px-5 py-3">
       <div className="rounded-xl overflow-hidden bg-[rgba(16,20,29,0.78)]"
@@ -131,6 +159,8 @@ export function ListView({
 
                   {m.agents.map((a) => {
                     const isASel = selected === m.id && selectedAgentId === a.id;
+                    const isTaskExpanded = expandedTaskIds.has(a.id);
+                    const canChat = fleetAgentCanChat(a);
                     return (
                       <tr
                         key={a.id}
@@ -161,9 +191,87 @@ export function ListView({
                             </div>
                           </div>
                         </td>
-                        <td colSpan={2} className="px-4 py-1.5"
-                          style={{ fontFamily: "var(--f-mono)", fontSize: 11, color: "var(--muted)" }}>
-                          <span>{a.task}</span>
+                        <td colSpan={2} className="px-4 py-1.5">
+                          <div className="grid" style={{ gap: 7 }}>
+                            <button
+                              type="button"
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                toggleTaskPreview(a.id);
+                              }}
+                              className={`${styles.rosterTaskPreview} ${styles.listTaskPreview} ${isTaskExpanded ? styles.rosterTaskPreviewExpanded : ""}`}
+                              aria-expanded={isTaskExpanded}
+                              aria-label={`${isTaskExpanded ? "Collapse" : "Expand"} recent task for ${a.name}`}
+                            >
+                              <span
+                                className={`${styles.rosterTaskPreviewText} ${styles.listTaskPreviewText} ${isTaskExpanded ? "" : styles.rosterTaskPreviewTextCollapsed}`}
+                              >
+                                {a.task}
+                              </span>
+                              <ChevronDown size={13} aria-hidden="true" />
+                            </button>
+                            {isASel && (
+                              <div className="flex items-center flex-wrap" style={{ gap: 6 }}>
+                                {canChat && (
+                                  <Tooltip>
+                                    <TooltipTrigger asChild>
+                                      <button
+                                        type="button"
+                                        onClick={fire(m, a, onOpenChat)}
+                                        className="inline-flex items-center uppercase font-bold"
+                                        style={{
+                                          gap: 6,
+                                          padding: "7px 9px",
+                                          borderRadius: 7,
+                                          cursor: "pointer",
+                                          fontFamily: "var(--f-mono)",
+                                          fontSize: 9.5,
+                                          letterSpacing: 0.04,
+                                          border: "1px solid rgba(94,234,212,0.48)",
+                                          background: "rgba(45,212,191,0.16)",
+                                          color: "var(--accent-strong)",
+                                        }}
+                                      >
+                                        <MessageSquare size={12} /> Chat
+                                      </button>
+                                    </TooltipTrigger>
+                                    <TooltipContent>Open chat with {a.name}</TooltipContent>
+                                  </Tooltip>
+                                )}
+
+                                {[
+                                  { id: "wallet", label: "Wallet & limits", Icon: Wallet, onClick: fire(m, a, onOpenWallet) },
+                                  { id: "edit", label: "Edit settings", Icon: Settings2, onClick: fire(m, a, onEditSettings) },
+                                  { id: "dup", label: "Duplicate", Icon: Copy, onClick: fire(m, a, onDuplicate) },
+                                  { id: "remove", label: "Remove agent", Icon: Trash2, onClick: fire(m, a, onRemove), danger: true },
+                                ].map(({ id, label, Icon, onClick, danger }) => (
+                                  <Tooltip key={id}>
+                                    <TooltipTrigger asChild>
+                                      <button
+                                        type="button"
+                                        onClick={onClick}
+                                        aria-label={label}
+                                        className="inline-grid place-items-center cursor-pointer"
+                                        style={{
+                                          width: 28,
+                                          height: 28,
+                                          borderRadius: 7,
+                                          border: danger
+                                            ? "1px solid rgba(251,113,133,0.30)"
+                                            : "1px solid rgba(148,163,184,0.22)",
+                                          background: "rgba(15,23,42,0.62)",
+                                          color: danger ? "#fecdd3" : "var(--foreground)",
+                                        }}
+                                      >
+                                        <Icon size={12} />
+                                      </button>
+                                    </TooltipTrigger>
+                                    <TooltipContent>{label}</TooltipContent>
+                                  </Tooltip>
+                                ))}
+                              </div>
+                            )}
+                          </div>
                         </td>
                         <td className="px-4 py-1.5" style={{ fontFamily: "var(--f-mono)", fontSize: 10, color: "var(--muted)" }}>{a.wallet}</td>
                         <td className="px-4 py-1.5" style={{ fontFamily: "var(--f-mono)", fontSize: 10, color: "var(--muted)" }}>{a.since}</td>

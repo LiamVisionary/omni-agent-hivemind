@@ -8,6 +8,7 @@ import type { AgentWalletConfig } from "@/lib/types/agent-wallet";
 import { summarizeX402Policy } from "@/lib/services/wallet/x402-agent-fetch";
 import { getRuntimeAdapter } from "@/lib/services/runtime-adapters/registry";
 import { getHoneyWorkspaceId, recordHoneyUsage } from "@/lib/services/wallet/honey-ledger";
+import { recordTelemetryBatch } from "@/lib/services/telemetry/local-telemetry";
 
 export const runtime = "nodejs";
 export const maxDuration = 120;
@@ -21,6 +22,66 @@ type IncomingMessage = {
     file?: { filename?: string; file_data?: string };
   }>;
 };
+
+type RuntimeRouteTelemetry = {
+  request: NextRequest;
+  routeStartedAt: number;
+};
+
+const INTERACTIVE_RUNTIME_LOCK_MS = 130_000;
+const interactiveRuntimeLocks = new Map<string, number>();
+
+function telemetryPayloadForProfile(profile?: AgentProfile) {
+  if (!profile) return {};
+  return {
+    agentId: profile.id,
+    agentName: profile.name,
+    runtime: profile.runtime,
+    runtimeKind: profile.runtimeKind ?? null,
+    hasGatewayUrl: Boolean(profile.gatewayUrl?.trim()),
+    hasTelemetryUrl: Boolean(profile.telemetryUrl?.trim()),
+    hasToken: Boolean(profile.token?.trim()),
+    machineName: profile.machineName ?? null,
+  };
+}
+
+async function recordRouteTelemetry(request: NextRequest, type: string, payload: Record<string, unknown> = {}) {
+  const runId = request.headers.get("x-hivemind-run-id");
+  await recordTelemetryBatch([{
+    source: "route",
+    type,
+    runId,
+    payload,
+  }]).catch(() => undefined);
+}
+
+function recordRuntimeTelemetry(telemetry: RuntimeRouteTelemetry | undefined, type: string, payload: Record<string, unknown> = {}) {
+  if (!telemetry) return;
+  void recordRouteTelemetry(telemetry.request, type, {
+    ...payload,
+    elapsedMs: Date.now() - telemetry.routeStartedAt,
+  });
+}
+
+function interactiveRuntimeLockKey(profile: AgentProfile, url: string) {
+  if (profile.runtime !== "hermes") return "";
+  if ((profile.runtimeKind ?? "interactive") !== "interactive") return "";
+  return url;
+}
+
+function reserveInteractiveRuntime(key: string) {
+  if (!key) return true;
+  const now = Date.now();
+  const lockedAt = interactiveRuntimeLocks.get(key) ?? 0;
+  if (lockedAt && now - lockedAt < INTERACTIVE_RUNTIME_LOCK_MS) return false;
+  interactiveRuntimeLocks.set(key, now);
+  return true;
+}
+
+function releaseInteractiveRuntime(key: string) {
+  if (!key) return;
+  interactiveRuntimeLocks.delete(key);
+}
 
 function buildWorkingDirectoryContext(workingDirectory?: string): string {
   const trimmed = workingDirectory?.trim();
@@ -242,12 +303,22 @@ async function streamHttpRuntime(
   workingDirectory?: string,
   wallet?: AgentWalletConfig,
   honeyLedgerEnabled = false,
+  telemetry?: RuntimeRouteTelemetry,
 ) {
   const inputCheck = proxyInput(userText);
   if (inputCheck.verdict === "block") {
     return Response.json({ error: inputCheck.reason ?? "Message blocked by security policy" }, { status: 400 });
   }
   const url = getRuntimeUrl(profile, profile.chatPath || "/chat");
+  const lockKey = interactiveRuntimeLockKey(profile, url);
+  if (!reserveInteractiveRuntime(lockKey)) {
+    const message = `${profile.name || profile.runtime} is already running another interactive request at ${url}. Wait for that run to finish before sending another chat, scheduler run, or Kanban assignment.`;
+    recordRuntimeTelemetry(telemetry, "agent_runtime.http.busy", {
+      ...telemetryPayloadForProfile(profile),
+      url,
+    });
+    return Response.json({ error: message }, { status: 409 });
+  }
   const vaultContext = buildVaultContext(sharedVault);
   const walletContext = buildWalletToolContext(wallet);
   const context = [buildWorkingDirectoryContext(workingDirectory), vaultContext, walletContext].filter(Boolean).join("\n\n");
@@ -258,7 +329,25 @@ async function streamHttpRuntime(
     ? `${context}\n\nUser message:\n${inputCheck.text}`
     : inputCheck.text;
   let upstream: Response;
+  const fetchStartedAt = Date.now();
+  let fetchSettled = false;
+  const slowTimers = [10_000, 30_000, 60_000].map((waitMs) => setTimeout(() => {
+    if (fetchSettled) return;
+    recordRuntimeTelemetry(telemetry, "agent_runtime.http.fetch.slow", {
+      ...telemetryPayloadForProfile(profile),
+      url,
+      waitMs,
+      fetchElapsedMs: Date.now() - fetchStartedAt,
+    });
+  }, waitMs));
   try {
+    recordRuntimeTelemetry(telemetry, "agent_runtime.http.fetch.start", {
+      ...telemetryPayloadForProfile(profile),
+      url,
+      contextLength: context.length,
+      messageCount: runtimeMessages.length,
+      runtimeMessageLength: runtimeMessage.length,
+    });
     upstream = await fetch(url, {
       method: "POST",
       headers: {
@@ -281,13 +370,32 @@ async function streamHttpRuntime(
       }),
       signal: AbortSignal.timeout(110_000),
     });
+    recordRuntimeTelemetry(telemetry, "agent_runtime.http.fetch.response", {
+      ...telemetryPayloadForProfile(profile),
+      url,
+      status: upstream.status,
+      ok: upstream.ok,
+      contentType: upstream.headers.get("content-type") ?? null,
+      fetchElapsedMs: Date.now() - fetchStartedAt,
+    });
   } catch (error) {
+    releaseInteractiveRuntime(lockKey);
+    recordRuntimeTelemetry(telemetry, "agent_runtime.http.fetch.failed", {
+      ...telemetryPayloadForProfile(profile),
+      url,
+      errorName: error instanceof Error ? error.name : null,
+      errorMessage: error instanceof Error ? error.message : String(error),
+      fetchElapsedMs: Date.now() - fetchStartedAt,
+    });
     return Response.json(
       {
         error: runtimeFetchError(profile, url, error),
       },
       { status: 502 },
     );
+  } finally {
+    fetchSettled = true;
+    slowTimers.forEach(clearTimeout);
   }
 
   if (!upstream.ok) {
@@ -295,6 +403,14 @@ async function streamHttpRuntime(
     const message = upstream.status === 404 && profile.runtime === "hermes" && profile.telemetryUrl
       ? "This machine's collector is connected but does not have the Hermes chat bridge yet. Run Update/Setup on that machine, then try again."
       : errorText || `${profile.runtime} returned ${upstream.status}`;
+    recordRuntimeTelemetry(telemetry, "agent_runtime.http.upstream_error", {
+      ...telemetryPayloadForProfile(profile),
+      url,
+      status: upstream.status,
+      bodyPreview: message.slice(0, 500),
+      fetchElapsedMs: Date.now() - fetchStartedAt,
+    });
+    releaseInteractiveRuntime(lockKey);
     return new Response(
       ssePayload({ error: message }) + "data: [DONE]\n\n",
       { headers: { "Content-Type": "text/event-stream", "Cache-Control": "no-cache" } },
@@ -303,9 +419,16 @@ async function streamHttpRuntime(
 
   const contentType = upstream.headers.get("content-type") ?? "";
   if (!contentType.includes("text/event-stream")) {
+    recordRuntimeTelemetry(telemetry, "agent_runtime.http.non_stream_response", {
+      ...telemetryPayloadForProfile(profile),
+      url,
+      contentType,
+      fetchElapsedMs: Date.now() - fetchStartedAt,
+    });
     const json = await upstream.json().catch(async () => ({ text: await upstream.text().catch(() => "") }));
     const outputCheck = proxyOutput(extractChunk(json));
     if (outputCheck.verdict === "block") {
+      releaseInteractiveRuntime(lockKey);
       return new Response(
         ssePayload({ error: outputCheck.reason ?? "Response blocked by security policy" }) + "data: [DONE]\n\n",
         { headers: { "Content-Type": "text/event-stream", "Cache-Control": "no-cache" } },
@@ -313,6 +436,7 @@ async function streamHttpRuntime(
     }
     const chunk = outputCheck.text;
     const event = await recordChatHoney(profile, userText, chunk, honeyLedgerEnabled);
+    releaseInteractiveRuntime(lockKey);
     return new Response(
       ssePayload({ choices: [{ delta: { content: chunk || JSON.stringify(json) } }] })
       + (event ? ssePayload({ honey: event }) : "")
@@ -329,48 +453,85 @@ async function streamHttpRuntime(
       if (!reader) {
         controller.enqueue(encoder.encode(ssePayload({ error: "Runtime response body is empty" })));
         controller.enqueue(encoder.encode("data: [DONE]\n\n"));
+        releaseInteractiveRuntime(lockKey);
         controller.close();
         return;
       }
 
       let buffer = "";
       let fullText = "";
-      while (true) {
-        const { value, done } = await reader.read();
-        if (done) break;
-        buffer += decoder.decode(value, { stream: true });
-        const events = buffer.split("\n\n");
-        buffer = events.pop() ?? "";
-        for (const eventText of events) {
-          const dataLine = eventText.split("\n").find((line) => line.startsWith("data:"));
-          if (!dataLine) continue;
-          const raw = dataLine.replace(/^data:\s*/, "");
-          if (raw === "[DONE]") continue;
-          try {
-            const parsed = JSON.parse(raw);
-            const outputCheck = proxyOutput(extractChunk(parsed));
-            if (outputCheck.verdict === "block") {
-              controller.enqueue(encoder.encode(ssePayload({ error: outputCheck.reason ?? "Response blocked by security policy" })));
-              continue;
+      let sawFirstChunk = false;
+      recordRuntimeTelemetry(telemetry, "agent_runtime.http.stream.start", {
+        ...telemetryPayloadForProfile(profile),
+        url,
+        fetchElapsedMs: Date.now() - fetchStartedAt,
+      });
+      try {
+        while (true) {
+          const { value, done } = await reader.read();
+          if (done) break;
+          if (!sawFirstChunk) {
+            sawFirstChunk = true;
+            recordRuntimeTelemetry(telemetry, "agent_runtime.http.stream.first_chunk", {
+              ...telemetryPayloadForProfile(profile),
+              url,
+              byteLength: value.byteLength,
+              streamElapsedMs: Date.now() - fetchStartedAt,
+            });
+          }
+          buffer += decoder.decode(value, { stream: true });
+          const events = buffer.split("\n\n");
+          buffer = events.pop() ?? "";
+          for (const eventText of events) {
+            const dataLine = eventText.split("\n").find((line) => line.startsWith("data:"));
+            if (!dataLine) continue;
+            const raw = dataLine.replace(/^data:\s*/, "");
+            if (raw === "[DONE]") continue;
+            try {
+              const parsed = JSON.parse(raw);
+              const outputCheck = proxyOutput(extractChunk(parsed));
+              if (outputCheck.verdict === "block") {
+                controller.enqueue(encoder.encode(ssePayload({ error: outputCheck.reason ?? "Response blocked by security policy" })));
+                continue;
+              }
+              const chunk = outputCheck.text;
+              if (chunk) fullText += chunk;
+              controller.enqueue(encoder.encode(chunk
+                ? ssePayload({ choices: [{ delta: { content: chunk } }] })
+                : ssePayload(parsed)));
+            } catch {
+              const outputCheck = proxyOutput(raw);
+              if (outputCheck.verdict !== "block") fullText += outputCheck.text;
+              controller.enqueue(encoder.encode(outputCheck.verdict === "block"
+                ? ssePayload({ error: outputCheck.reason ?? "Response blocked by security policy" })
+                : ssePayload({ choices: [{ delta: { content: outputCheck.text } }] })));
             }
-            const chunk = outputCheck.text;
-            if (chunk) fullText += chunk;
-            controller.enqueue(encoder.encode(chunk
-              ? ssePayload({ choices: [{ delta: { content: chunk } }] })
-              : ssePayload(parsed)));
-          } catch {
-            const outputCheck = proxyOutput(raw);
-            if (outputCheck.verdict !== "block") fullText += outputCheck.text;
-            controller.enqueue(encoder.encode(outputCheck.verdict === "block"
-              ? ssePayload({ error: outputCheck.reason ?? "Response blocked by security policy" })
-              : ssePayload({ choices: [{ delta: { content: outputCheck.text } }] })));
           }
         }
+        const event = await recordChatHoney(profile, userText, fullText, honeyLedgerEnabled);
+        if (event) controller.enqueue(encoder.encode(ssePayload({ honey: event })));
+        recordRuntimeTelemetry(telemetry, "agent_runtime.http.stream.completed", {
+          ...telemetryPayloadForProfile(profile),
+          url,
+          outputLength: fullText.length,
+          sawFirstChunk,
+          streamElapsedMs: Date.now() - fetchStartedAt,
+        });
+        controller.enqueue(encoder.encode("data: [DONE]\n\n"));
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "Runtime stream failed";
+        recordRuntimeTelemetry(telemetry, "agent_runtime.http.stream.failed", {
+          ...telemetryPayloadForProfile(profile),
+          url,
+          message,
+          streamElapsedMs: Date.now() - fetchStartedAt,
+        });
+        controller.enqueue(encoder.encode(ssePayload({ error: message })));
+        controller.enqueue(encoder.encode("data: [DONE]\n\n"));
+      } finally {
+        releaseInteractiveRuntime(lockKey);
+        controller.close();
       }
-      const event = await recordChatHoney(profile, userText, fullText, honeyLedgerEnabled);
-      if (event) controller.enqueue(encoder.encode(ssePayload({ honey: event })));
-      controller.enqueue(encoder.encode("data: [DONE]\n\n"));
-      controller.close();
     },
   });
 
@@ -384,6 +545,7 @@ async function streamHttpRuntime(
 }
 
 export async function POST(request: NextRequest) {
+  const routeStartedAt = Date.now();
   let profile: AgentProfile;
   let messages: IncomingMessage[];
   let sharedVault: SharedVaultConfig | undefined;
@@ -407,15 +569,36 @@ export async function POST(request: NextRequest) {
     wallet = body.wallet;
     honeyLedgerEnabled = body.honeyLedgerEnabled === true;
   } catch {
+    await recordRouteTelemetry(request, "agent_runtime.request.invalid", { elapsedMs: Date.now() - routeStartedAt });
     return Response.json({ error: "Expected { agent, messages }" }, { status: 400 });
   }
+  await recordRouteTelemetry(request, "agent_runtime.request.received", {
+    ...telemetryPayloadForProfile(profile),
+    messageCount: messages.length,
+    workingDirectorySet: Boolean(workingDirectory?.trim()),
+    sharedVaultEnabled: Boolean(sharedVault?.enabled),
+    honeyLedgerEnabled,
+    elapsedMs: Date.now() - routeStartedAt,
+  });
 
   const userMessage = latestUserMessage(messages);
   const userText = extractUserText(messages).trim();
   const userPrompt = userText || attachmentPromptSummary(userMessage);
-  if (!userMessage || !userPrompt) return Response.json({ error: "User message is empty" }, { status: 400 });
+  if (!userMessage || !userPrompt) {
+    await recordRouteTelemetry(request, "agent_runtime.request.invalid", {
+      reason: "empty-user-message",
+      ...telemetryPayloadForProfile(profile),
+      elapsedMs: Date.now() - routeStartedAt,
+    });
+    return Response.json({ error: "User message is empty" }, { status: 400 });
+  }
   const promptCheck = proxyInput(userPrompt);
   if (promptCheck.verdict === "block") {
+    await recordRouteTelemetry(request, "agent_runtime.security.blocked", {
+      reason: promptCheck.reason ?? null,
+      ...telemetryPayloadForProfile(profile),
+      elapsedMs: Date.now() - routeStartedAt,
+    });
     return Response.json({ error: promptCheck.reason ?? "Message blocked by security policy" }, { status: 400 });
   }
   const vault = activeSharedVault(profile, sharedVault);
@@ -428,31 +611,77 @@ export async function POST(request: NextRequest) {
     : messages;
 
   if (honeyLedgerEnabled) {
+    await recordRouteTelemetry(request, "agent_runtime.dispatch.trusted_compute", {
+      ...telemetryPayloadForProfile(profile),
+      promptLength: userPrompt.length,
+      contextLength: runtimeContexts.length,
+      elapsedMs: Date.now() - routeStartedAt,
+    });
     return streamTrustedComputeGateway(profile, rewardGatewayMessages);
   }
 
   if (profile.runtime !== "openclaw") {
     const adapter = getRuntimeAdapter(profile.runtime);
     if (!adapter.capabilities.chat) {
+      await recordRouteTelemetry(request, "agent_runtime.validation_failed", {
+        reason: "adapter-chat-unavailable",
+        adapterKind: adapter.kind,
+        adapterLabel: adapter.label,
+        ...telemetryPayloadForProfile(profile),
+        elapsedMs: Date.now() - routeStartedAt,
+      });
       return Response.json({
         error: `${adapter.label} is configured as a ${adapter.kind} runtime here and does not expose interactive chat. Use Scheduler, skills, or runs for this runtime.`,
       }, { status: 400 });
     }
     if (profile.runtime === "hermes" && profile.telemetryUrl?.trim() && profile.collectorCapabilities?.chat === false) {
+      await recordRouteTelemetry(request, "agent_runtime.validation_failed", {
+        reason: "collector-chat-unavailable",
+        ...telemetryPayloadForProfile(profile),
+        elapsedMs: Date.now() - routeStartedAt,
+      });
       return Response.json({
         error: `${profile.machineName || "This machine"} is connected, but its collector does not have the Hermes chat bridge installed yet. Run setup/update on that machine after these dashboard changes are available there.`,
       }, { status: 400 });
     }
     const effectiveProfile = collectorChatProfile(profile) ?? profile;
     const profileError = validateHttpRuntimeProfile(effectiveProfile);
-    if (profileError) return Response.json({ error: profileError }, { status: 400 });
-    return streamHttpRuntime(effectiveProfile, messages, promptCheck.text, vault, workingDirectory, wallet, honeyLedgerEnabled);
+    if (profileError) {
+      await recordRouteTelemetry(request, "agent_runtime.validation_failed", {
+        reason: "profile-error",
+        message: profileError,
+        ...telemetryPayloadForProfile(effectiveProfile),
+        elapsedMs: Date.now() - routeStartedAt,
+      });
+      return Response.json({ error: profileError }, { status: 400 });
+    }
+    await recordRouteTelemetry(request, "agent_runtime.dispatch.http", {
+      ...telemetryPayloadForProfile(effectiveProfile),
+      promptLength: userPrompt.length,
+      contextLength: runtimeContexts.length,
+      elapsedMs: Date.now() - routeStartedAt,
+    });
+    return streamHttpRuntime(effectiveProfile, messages, promptCheck.text, vault, workingDirectory, wallet, honeyLedgerEnabled, {
+      request,
+      routeStartedAt,
+    });
   }
 
   const token = await getGatewayAuthToken(profile.token);
   if (!profile.gatewayUrl || !token) {
+    await recordRouteTelemetry(request, "agent_runtime.validation_failed", {
+      reason: "missing-openclaw-gateway-or-token",
+      ...telemetryPayloadForProfile(profile),
+      elapsedMs: Date.now() - routeStartedAt,
+    });
     return Response.json({ error: "Missing OpenClaw gateway URL or token" }, { status: 400 });
   }
+  await recordRouteTelemetry(request, "agent_runtime.dispatch.openclaw", {
+    ...telemetryPayloadForProfile(profile),
+    promptLength: userPrompt.length,
+    contextLength: runtimeContexts.length,
+    elapsedMs: Date.now() - routeStartedAt,
+  });
 
   const encoder = new TextEncoder();
   const readable = new ReadableStream({
@@ -467,6 +696,9 @@ export async function POST(request: NextRequest) {
 
       try {
         let fullText = "";
+        let contentChunkCount = 0;
+        let statusEventCount = 0;
+        let toolEventCount = 0;
         await sendMessageViaGateway(
           {
             gatewayUrl: profile.gatewayUrl,
@@ -477,17 +709,58 @@ export async function POST(request: NextRequest) {
           },
           (chunk) => {
             fullText += chunk;
+            contentChunkCount += 1;
+            if (contentChunkCount === 1 || contentChunkCount % 5 === 0) {
+              void recordRouteTelemetry(request, "agent_runtime.openclaw.content", {
+                ...telemetryPayloadForProfile(profile),
+                contentChunkCount,
+                outputLength: fullText.length,
+                elapsedMs: Date.now() - routeStartedAt,
+              });
+            }
             controller.enqueue(encoder.encode(ssePayload({ choices: [{ delta: { content: chunk } }] })));
           },
           undefined,
-          (toolData) => controller.enqueue(encoder.encode(ssePayload({ tool_call: toolData }))),
-          (status) => controller.enqueue(encoder.encode(ssePayload({ status }))),
+          (toolData) => {
+            toolEventCount += 1;
+            void recordRouteTelemetry(request, "agent_runtime.openclaw.tool_call", {
+              ...telemetryPayloadForProfile(profile),
+              toolEventCount,
+              toolName: typeof toolData.name === "string" ? toolData.name : typeof toolData.tool === "string" ? toolData.tool : null,
+              elapsedMs: Date.now() - routeStartedAt,
+            });
+            controller.enqueue(encoder.encode(ssePayload({ tool_call: toolData })));
+          },
+          (status) => {
+            statusEventCount += 1;
+            void recordRouteTelemetry(request, "agent_runtime.openclaw.status", {
+              ...telemetryPayloadForProfile(profile),
+              statusEventCount,
+              statusType: status.type,
+              elapsedMs: Date.now() - routeStartedAt,
+            });
+            controller.enqueue(encoder.encode(ssePayload({ status })));
+          },
         );
         const event = await recordChatHoney(profile, textWithVaultContext, fullText, honeyLedgerEnabled);
         if (event) controller.enqueue(encoder.encode(ssePayload({ honey: event })));
+        await recordRouteTelemetry(request, "agent_runtime.openclaw.completed", {
+          ...telemetryPayloadForProfile(profile),
+          outputLength: fullText.length,
+          contentChunkCount,
+          statusEventCount,
+          toolEventCount,
+          elapsedMs: Date.now() - routeStartedAt,
+        });
         controller.enqueue(encoder.encode("data: [DONE]\n\n"));
       } catch (error) {
         const message = error instanceof Error ? error.message : "Agent runtime error";
+        await recordRouteTelemetry(request, "agent_runtime.openclaw.failed", {
+          ...telemetryPayloadForProfile(profile),
+          errorName: error instanceof Error ? error.name : "unknown",
+          message,
+          elapsedMs: Date.now() - routeStartedAt,
+        });
         controller.enqueue(encoder.encode(ssePayload({ error: message })));
       } finally {
         clearInterval(heartbeat);

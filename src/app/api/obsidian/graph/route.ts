@@ -5,8 +5,8 @@ export const runtime = "nodejs";
 
 export async function POST(request: NextRequest) {
   try {
-    const body = (await request.json().catch(() => ({}))) as { vaultPath?: string };
-    const graph = await buildBrainGraph(body.vaultPath);
+    const body = (await request.json().catch(() => ({}))) as { vaultPath?: string; force?: boolean };
+    const graph = await buildBrainGraph(body.vaultPath, { force: body.force === true });
     return Response.json({ ok: true, graph });
   } catch (error) {
     return Response.json({

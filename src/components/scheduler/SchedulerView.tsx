@@ -12,8 +12,16 @@ import { Timeline } from "./timeline";
 import { SCH_JOBS, SCH_TEMPLATES, type SchedulerJob } from "./scheduler-data";
 import styles from "./scheduler-tokens.module.css";
 
+export type SchedulerRunPhase = "running" | "assigned" | "thinking" | "executing" | "wrapping" | "done";
+
+export type SchedulerRunState = SchedulerRunPhase | {
+  phase: SchedulerRunPhase;
+  label?: string;
+};
+
 interface SchedulerViewProps {
   jobs?: SchedulerJob[];
+  runStates?: Record<string, SchedulerRunState>;
   onToggleJob?: (j: SchedulerJob) => void;
   onRunNow?: (j: SchedulerJob) => void;
   onEditJob?: (j: SchedulerJob) => void;
@@ -23,7 +31,7 @@ interface SchedulerViewProps {
 }
 
 export function SchedulerView({
-  jobs: initialJobs = SCH_JOBS, onToggleJob, onRunNow, onEditJob, onNewJob, toolbar, status,
+  jobs: initialJobs = SCH_JOBS, runStates = {}, onToggleJob, onRunNow, onEditJob, onNewJob, toolbar, status,
 }: SchedulerViewProps = {}) {
   const jobs = initialJobs;
   const [selectedId, setSelectedId] = React.useState<string>(initialJobs[0]?.id ?? "");
@@ -131,6 +139,7 @@ export function SchedulerView({
           </section>
 
           <Composer job={selected} templates={SCH_TEMPLATES}
+            runState={runStates[selected.id]}
             onRunNow={() => onRunNow?.(selected)}
             onEdit={() => onEditJob?.(selected)} />
         </div> : (

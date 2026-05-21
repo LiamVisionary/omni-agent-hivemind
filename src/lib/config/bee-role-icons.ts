@@ -12,6 +12,11 @@ const WORKER_CLASS_ICON: Record<BeeWorkerClass, string> = {
   qa: "/icons/worker-bee-qa-v2.png",
 };
 
+export const BEE_ROLE_ICON_PATHS = [
+  "/icons/queen-bee-v2.png",
+  ...Object.values(WORKER_CLASS_ICON),
+] as const;
+
 export function beeRoleIconPath(role?: BeeAgentRole, workerClass: BeeWorkerClass = "general") {
   if (role === "queen") return "/icons/queen-bee-v2.png";
   return WORKER_CLASS_ICON[workerClass] ?? WORKER_CLASS_ICON.general;

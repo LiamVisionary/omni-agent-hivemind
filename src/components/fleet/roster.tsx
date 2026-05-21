@@ -6,7 +6,7 @@ import { ChevronDown, ChevronRight, Copy, MessageSquare, Monitor, Plus, Settings
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { BeeIcon } from "./bee-icon";
 import { HexTile } from "./hex-tile";
-import { type AgentState, type FleetAgent, type FleetMachine } from "./fleet-data";
+import { fleetAgentCanChat, type AgentState, type FleetAgent, type FleetMachine } from "./fleet-data";
 import styles from "./fleet-tokens.module.css";
 
 const STATE_COLOR: Record<AgentState, string> = {
@@ -117,6 +117,7 @@ function RosterRow({
           {machine.agents.map((a) => {
             const isSelA = selectedAgentId === a.id;
             const isTaskExpanded = expandedTaskIds.has(a.id);
+            const canChat = fleetAgentCanChat(a);
             return (
               <div
                 key={a.id}
@@ -189,25 +190,27 @@ function RosterRow({
                       <ChevronDown size={13} aria-hidden="true" />
                     </button>
                     <div className="flex items-center flex-wrap" style={{ gap: 6 }}>
-                      <Tooltip>
-                        <TooltipTrigger asChild>
-                          <button
-                            type="button"
-                            onClick={fire(a, onOpenChat)}
-                            className="inline-flex items-center uppercase font-bold"
-                            style={{
-                              gap: 6, padding: "7px 9px", borderRadius: 7, cursor: "pointer",
-                              fontFamily: "var(--f-mono)", fontSize: 9.5, letterSpacing: 0.04,
-                              border: "1px solid rgba(94,234,212,0.48)",
-                              background: "rgba(45,212,191,0.16)",
-                              color: "var(--accent-strong)",
-                            }}
-                          >
-                            <MessageSquare size={12} /> Chat
-                          </button>
-                        </TooltipTrigger>
-                        <TooltipContent>Open chat with {a.name}</TooltipContent>
-                      </Tooltip>
+                      {canChat && (
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <button
+                              type="button"
+                              onClick={fire(a, onOpenChat)}
+                              className="inline-flex items-center uppercase font-bold"
+                              style={{
+                                gap: 6, padding: "7px 9px", borderRadius: 7, cursor: "pointer",
+                                fontFamily: "var(--f-mono)", fontSize: 9.5, letterSpacing: 0.04,
+                                border: "1px solid rgba(94,234,212,0.48)",
+                                background: "rgba(45,212,191,0.16)",
+                                color: "var(--accent-strong)",
+                              }}
+                            >
+                              <MessageSquare size={12} /> Chat
+                            </button>
+                          </TooltipTrigger>
+                          <TooltipContent>Open chat with {a.name}</TooltipContent>
+                        </Tooltip>
+                      )}
 
                       {[
                         { id: "wallet", label: "Wallet & limits", Icon: Wallet, onClick: fire(a, onOpenWallet) },

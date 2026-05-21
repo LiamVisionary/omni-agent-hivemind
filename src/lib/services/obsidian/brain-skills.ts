@@ -68,6 +68,23 @@ export type RemoteBrainSkillInput = {
   githubUrl?: string;
 };
 
+type GitHubSkillSource = {
+  owner: string;
+  repo: string;
+  ref?: string;
+  path: string;
+};
+
+type GitHubContentEntry = {
+  name: string;
+  path: string;
+  type: "file" | "dir" | string;
+  size?: number;
+  download_url?: string | null;
+  content?: string;
+  encoding?: string;
+};
+
 const PROVIDERS: Array<{
   id: BrainSkillProviderId;
   label: string;
@@ -135,6 +152,10 @@ const PROVIDERS: Array<{
 
 const SKIPPED_DIRS = new Set([".git", "node_modules", ".next", "dist", "build", ".cache"]);
 const SOURCE_METADATA_FILE = ".hivemind-skill-source.json";
+const GITHUB_API_BASE = "https://api.github.com";
+const GITHUB_API_VERSION = "2022-11-28";
+const MAX_GITHUB_SKILL_FILES = 120;
+const MAX_GITHUB_SKILL_FILE_BYTES = 5 * 1024 * 1024;
 const BUNDLED_SHARED_SKILLS = [
   {
     slug: "karpathy-guidelines",
@@ -267,6 +288,161 @@ async function readManagedMetadata(skillDir: string): Promise<Record<string, unk
   } catch {
     return null;
   }
+}
+
+function githubHeaders(): HeadersInit {
+  const headers: Record<string, string> = {
+    Accept: "application/vnd.github+json",
+    "X-GitHub-Api-Version": GITHUB_API_VERSION,
+    "User-Agent": "hivemindos-skill-browser",
+  };
+  const token = process.env.GITHUB_TOKEN || process.env.GH_TOKEN;
+  if (token?.trim()) headers.Authorization = `Bearer ${token.trim()}`;
+  return headers;
+}
+
+function classifyGitHubError(status: number) {
+  switch (status) {
+    case 401:
+      return "GitHub could not authenticate this request. Check GITHUB_TOKEN or GH_TOKEN for private repositories.";
+    case 403:
+      return "GitHub rate limit or permissions blocked the download.";
+    case 404:
+      return "GitHub repository or skill path was not found.";
+    case 422:
+      return "GitHub could not read that repository. It may be empty or unavailable.";
+    default:
+      return `GitHub API error (HTTP ${status}).`;
+  }
+}
+
+function parseGitHubSkillUrl(url: string): GitHubSkillSource {
+  const parsed = new URL(url.trim());
+  const host = parsed.hostname.toLowerCase();
+  if (host === "raw.githubusercontent.com") {
+    const [owner, repo, ref, ...pathParts] = parsed.pathname.split("/").filter(Boolean);
+    if (!owner || !repo || !ref || !pathParts.length) throw new Error("Enter a GitHub repository, skill folder, or SKILL.md URL.");
+    const filePath = pathParts.join("/");
+    return { owner, repo, ref, path: filePath.endsWith("/SKILL.md") ? dirname(filePath) : filePath };
+  }
+
+  if (host !== "github.com") throw new Error("Enter a github.com URL.");
+  const [owner, repoWithSuffix, view, ref, ...pathParts] = parsed.pathname.split("/").filter(Boolean);
+  if (!owner || !repoWithSuffix) throw new Error("Enter a GitHub repository URL.");
+  const repo = repoWithSuffix.replace(/\.git$/, "");
+  if (!view) return { owner, repo, path: "" };
+  if (view !== "tree" && view !== "blob") throw new Error("Use a GitHub repository, folder, or SKILL.md URL.");
+  if (!ref) throw new Error("GitHub URL is missing a branch or tag.");
+  const requestedPath = pathParts.join("/");
+  const skillPath = view === "blob" && requestedPath.endsWith("SKILL.md") ? dirname(requestedPath) : requestedPath;
+  return { owner, repo, ref, path: skillPath === "." ? "" : skillPath };
+}
+
+async function fetchGitHubJson<T>(url: string): Promise<T> {
+  const response = await fetch(url, {
+    headers: githubHeaders(),
+    signal: AbortSignal.timeout(15_000),
+  });
+  if (!response.ok) throw new Error(classifyGitHubError(response.status));
+  return response.json() as Promise<T>;
+}
+
+async function getDefaultBranch(source: GitHubSkillSource) {
+  if (source.ref) return source.ref;
+  const repo = await fetchGitHubJson<{ default_branch?: string }>(
+    `${GITHUB_API_BASE}/repos/${source.owner}/${source.repo}`,
+  );
+  return repo.default_branch || "main";
+}
+
+function encodedGitHubPath(path: string) {
+  return path.split("/").filter(Boolean).map(encodeURIComponent).join("/");
+}
+
+async function listGitHubDirectory(source: GitHubSkillSource, path: string, ref: string): Promise<GitHubContentEntry[]> {
+  const encodedPath = encodedGitHubPath(path);
+  const url = `${GITHUB_API_BASE}/repos/${source.owner}/${source.repo}/contents${encodedPath ? `/${encodedPath}` : ""}?ref=${encodeURIComponent(ref)}`;
+  const contents = await fetchGitHubJson<GitHubContentEntry | GitHubContentEntry[]>(url);
+  return Array.isArray(contents) ? contents : [contents];
+}
+
+async function fetchGitHubFileBytes(source: GitHubSkillSource, path: string, ref: string) {
+  const encodedPath = encodedGitHubPath(path);
+  const file = await fetchGitHubJson<GitHubContentEntry>(
+    `${GITHUB_API_BASE}/repos/${source.owner}/${source.repo}/contents/${encodedPath}?ref=${encodeURIComponent(ref)}`,
+  );
+  if (file.type !== "file" || file.encoding !== "base64" || typeof file.content !== "string") {
+    throw new Error(`GitHub did not return file content for ${path}.`);
+  }
+  const cleanBase64 = file.content.replace(/\n/g, "");
+  return Uint8Array.from(Buffer.from(cleanBase64, "base64"));
+}
+
+async function resolveGitHubSkillDirectory(source: GitHubSkillSource, ref: string) {
+  const entries = await listGitHubDirectory(source, source.path, ref);
+  if (entries.some((entry) => entry.type === "file" && entry.name === "SKILL.md")) return source.path;
+
+  const skillDirs: string[] = [];
+  async function walk(path: string, depth: number): Promise<void> {
+    if (depth > 4 || skillDirs.length > 8) return;
+    const dirEntries = await listGitHubDirectory(source, path, ref);
+    if (dirEntries.some((entry) => entry.type === "file" && entry.name === "SKILL.md")) {
+      skillDirs.push(path);
+      return;
+    }
+    for (const entry of dirEntries) {
+      if (entry.type !== "dir" || SKIPPED_DIRS.has(entry.name)) continue;
+      await walk(entry.path, depth + 1);
+    }
+  }
+  await walk(source.path, 0);
+
+  if (skillDirs.length === 1) return skillDirs[0];
+  if (skillDirs.length > 1) {
+    throw new Error("That repository contains multiple skills. Paste the GitHub URL for one skill folder or its SKILL.md file.");
+  }
+  throw new Error("No SKILL.md was found at that GitHub URL.");
+}
+
+function safeDestinationPath(root: string, relativePath: string) {
+  const destination = resolve(root, relativePath);
+  if (destination !== root && !destination.startsWith(`${root}/`)) throw new Error("GitHub skill contains an unsafe file path.");
+  return destination;
+}
+
+async function downloadGitHubSkillDirectory(input: {
+  source: GitHubSkillSource;
+  ref: string;
+  sourcePath: string;
+  destinationDir: string;
+}) {
+  let fileCount = 0;
+  const root = resolve(input.destinationDir);
+
+  async function walk(path: string) {
+    const entries = await listGitHubDirectory(input.source, path, input.ref);
+    for (const entry of entries) {
+      if (SKIPPED_DIRS.has(entry.name)) continue;
+      const relativePath = relative(input.sourcePath || ".", entry.path);
+      if (!relativePath || relativePath.startsWith("..")) continue;
+      if (entry.type === "dir") {
+        await walk(entry.path);
+        continue;
+      }
+      if (entry.type !== "file") continue;
+      if ((entry.size ?? 0) > MAX_GITHUB_SKILL_FILE_BYTES) {
+        throw new Error(`${entry.path} is too large to import as a shared skill.`);
+      }
+      fileCount += 1;
+      if (fileCount > MAX_GITHUB_SKILL_FILES) throw new Error("That GitHub skill contains too many files to import safely.");
+      const destination = safeDestinationPath(root, relativePath);
+      await mkdir(dirname(destination), { recursive: true });
+      await writeFile(destination, await fetchGitHubFileBytes(input.source, entry.path, input.ref));
+    }
+  }
+
+  await walk(input.sourcePath);
+  if (!(await exists(join(input.destinationDir, "SKILL.md")))) throw new Error("GitHub download finished without a SKILL.md file.");
 }
 
 function firstParagraph(markdown: string) {
@@ -507,6 +683,45 @@ export async function importRemoteBrainSkill(input: {
     provider: "remote",
     providerLabel: skill.source || "Skill browser",
     sourceUrl: skill.skillMdUrl || skill.githubUrl || "",
+    importedAt: new Date().toISOString(),
+  }, null, 2), "utf8");
+
+  const after = await getBrainSkillInventory(input.vaultPath);
+  await writeSkillsReadme(after);
+  return after;
+}
+
+export async function importGitHubBrainSkill(input: {
+  vaultPath?: string;
+  githubUrl: string;
+}): Promise<BrainSkillInventory> {
+  const source = parseGitHubSkillUrl(input.githubUrl);
+  const ref = await getDefaultBranch(source);
+  const sourcePath = await resolveGitHubSkillDirectory(source, ref);
+  const before = await getBrainSkillInventory(input.vaultPath);
+  await mkdir(before.skillsFolder, { recursive: true });
+
+  const skillSlug = sanitizeSlug(basename(sourcePath) || source.repo);
+  const sharedBySlug = new Map(before.shared.map((item) => [item.slug, item]));
+  const destinationSlug = await nextDestinationSlug(before.skillsFolder, skillSlug, "shared", sharedBySlug);
+  const destinationDir = join(before.skillsFolder, destinationSlug);
+  await rm(destinationDir, { recursive: true, force: true });
+  await mkdir(destinationDir, { recursive: true });
+
+  try {
+    await downloadGitHubSkillDirectory({ source, ref, sourcePath, destinationDir });
+  } catch (error) {
+    await rm(destinationDir, { recursive: true, force: true });
+    throw error;
+  }
+
+  await writeFile(join(destinationDir, SOURCE_METADATA_FILE), JSON.stringify({
+    provider: "github",
+    providerLabel: "GitHub",
+    sourceUrl: input.githubUrl.trim(),
+    sourceRepo: `${source.owner}/${source.repo}`,
+    sourceRef: ref,
+    sourcePath,
     importedAt: new Date().toISOString(),
   }, null, 2), "utf8");
 

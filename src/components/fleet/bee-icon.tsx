@@ -33,7 +33,7 @@ export function BeeIcon({ role = "worker", workerClass = "general", size = 24, d
       style={{
         filter: dim ? "saturate(0.55) brightness(0.85)" : undefined,
       }}
-      priority={false}
+      unoptimized
     />
   );
 }

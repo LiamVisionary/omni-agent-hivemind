@@ -160,6 +160,16 @@
   -webkit-line-clamp: 2;
 }
 
+.listTaskPreview {
+  max-width: 34rem;
+  padding: 6px 8px;
+  background: rgba(15, 23, 42, 0.28);
+}
+
+.listTaskPreviewText {
+  font-size: 11px;
+}
+
 .hexContent {
   position: absolute;
   inset: 0;

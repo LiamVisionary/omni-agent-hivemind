@@ -3,6 +3,310 @@
 This file records user-visible changes before they are committed. New work should
 be added here first, then marked `Committed` or `Pushed` after the git action.
 
+## 2026-05-22 02:31 WITA - Cache Bee Icons
+
+- Status: Pushed
+- Areas changed: Bee role icon config, app layout preloads, Next icon cache headers, Fleet/Swarm/Scheduler bee icon rendering, dashboard bee image usage, changelog
+- Summary: Preload the bee role icon set, serve `/icons/*` with long-lived immutable browser cache headers, and make bee icon images request the public files directly so they stop visibly popping in on repeated page loads.
+- Verification: `pnpm exec tsc --noEmit --pretty false`; `pnpm exec eslint src/app/page.tsx src/app/api/chat/agent-runtime/route.ts` (0 errors, existing page warnings only); `git diff --check -- src/app/page.tsx src/app/api/chat/agent-runtime/route.ts CHANGELOG.md`; patched the affected Kanban task to clear its stale agent session after confirming the mixed scheduler/Kanban/chat Hermes session in local telemetry.
+- Intended commit message: `Cache bee icon images`
+
+## 2026-05-22 02:34 WITA - Isolate Hermes Chat Context And Stalls
+
+- Status: Pushed
+- Areas changed: Agent chat context filtering, Hermes runtime request locking, Kanban session stall handling, local telemetry, changelog
+- Summary: Keep scheduler and Kanban transcript messages out of normal agent chat context, tag new chat messages by surface, block overlapping interactive Hermes runtime calls instead of letting background work interrupt manual chat, clear stale agent sessions when cards move to Needs You, and add telemetry-backed stall handling for sessions that advance without assistant output.
+- Verification: Pending.
+- Intended commit message: `Isolate Hermes chat context and stalls`
+
+## 2026-05-22 02:18 WITA - Add Swarm Loading State
+
+- Status: Pushed
+- Areas changed: Swarm theater loading view, dashboard Swarm loading wiring, changelog
+- Summary: Show a dedicated MiroShark loading state in the Swarm theater while a new simulation starts or a saved run loads, instead of briefly falling through to the empty-run message.
+- Verification: `pnpm exec eslint src/components/swarm/SwarmView.tsx src/components/swarm/swarm-tokens.module.css src/app/page.tsx` (0 errors, existing page warnings only; CSS module ignored by eslint config); `pnpm exec tsc --noEmit --pretty false`; `git diff --check -- src/components/swarm/SwarmView.tsx src/components/swarm/swarm-tokens.module.css src/app/page.tsx CHANGELOG.md`; in-app browser smoke at `http://127.0.0.1:5020/swarm` rendered the Swarm theater with no console errors.
+- Intended commit message: `Add Swarm loading state`
+
+## 2026-05-22 02:16 WITA - Hide Fleet Chat For Background Agents
+
+- Status: Pushed
+- Areas changed: Fleet roster/list/agent footer actions, fleet agent data, changelog
+- Summary: Hide Fleet chat buttons for agents whose runtime does not advertise chat support, so Aeon background agents no longer show a dead Chat action while Hermes and OpenClaw still do.
+- Verification: `pnpm exec tsc --noEmit --pretty false`; `pnpm exec eslint src/components/fleet/fleet-data.ts src/components/fleet/roster.tsx src/components/fleet/list-view.tsx src/components/fleet/footers.tsx src/app/page.tsx` (0 errors, existing page warnings only); `git diff --check -- src/components/fleet/fleet-data.ts src/components/fleet/roster.tsx src/components/fleet/list-view.tsx src/components/fleet/footers.tsx src/app/page.tsx CHANGELOG.md`.
+- Intended commit message: `Hide fleet chat for background agents`
+
+## 2026-05-22 02:10 WITA - Add Verified Reward Compute Gateway
+
+- Status: Pushed
+- Areas changed: Compute gateway OpenAI-compatible API, reward gateway docs, README Honey setup, changelog
+- Summary: Add spoof-proof reward compute mode so Hermes, OpenClaw, and other OpenAI-compatible clients can keep being used directly while pointing their model base URL at the HivemindOS compute gateway. The gateway accepts Bankr-backed reward keys, forwards calls through Bankr, reads provider-returned token usage, signs Honey receipts server-side, and returns OpenAI-compatible chat completion responses.
+- Verification: `pnpm typecheck` in `workers/compute-gateway`; `pnpm exec eslint workers/compute-gateway/src/index.ts`; `git diff --check -- workers/compute-gateway/src/index.ts workers/compute-gateway/README.md README.md CHANGELOG.md`; deployed `hivemindos-compute-gateway` to Cloudflare via Wrangler dry-run bundle plus authenticated Cloudflare API upload after Wrangler's Node fetch failed; applied D1 schema remotely; live smokes confirmed `/health`, `/v1/models` missing-key rejection, `/v1/chat/completions` missing-key rejection, and invalid reward key passthrough rejection from Bankr without creating Honey.
+- Intended commit message: `Add verified reward compute gateway`
+
+## 2026-05-22 02:02 WITA - Fix Polymarket Completed Result Surface
+
+- Status: Pushed
+- Areas changed: Swarm completed-run center stage, Polymarket result view, market tick mapping, integration payload cards, changelog
+- Summary: Replace the generic agent arena for completed Polymarket runs with a dedicated result board showing the market question, run state, summarized market payload rows, expandable raw payloads, price history payloads, and evidence timeline. Missing price-history ticks now fall back to a real `price_yes` market snapshot when present instead of fake 0% odds, long payload strings wrap inside bounded cards, integration/report cards summarize structured status/error/template payloads, and raw diagnostics move behind disclosures.
+- Verification: `pnpm exec eslint src/components/swarm/SwarmView.tsx src/components/swarm/output-views.tsx src/components/swarm/feeds.tsx src/app/page.tsx`; `git diff --check -- src/app/page.tsx src/components/swarm/SwarmView.tsx src/components/swarm/output-views.tsx src/components/swarm/feeds.tsx src/components/swarm/swarm-data.ts CHANGELOG.md`. `pnpm typecheck` is currently blocked by unrelated nullable snapshot errors in `src/lib/services/obsidian/scheduled-runs.ts`.
+- Intended commit message: `Fix polymarket completed result surface`
+
+## 2026-05-22 02:58 WITA - Share Scheduler Runs Through Obsidian
+
+- Status: Pushed
+- Areas changed: Scheduler shared-vault API, Obsidian scheduled-run store, scheduler run context injection, task modal history option, shared vault defaults, setup script, changelog
+- Summary: Add a shared Obsidian `Scheduled/` shelf where schedule definitions are mirrored as `Scheduled/<device>/<schedule>/schedule.md` and executions are recorded as auto-incremented `run0001-<agent>-<timestamp>.md` notes. The scheduler view now syncs schedule definitions back from that shelf, so schedules written by other Tailscale-synced machines can appear in the dashboard, and the toolbar includes a manual `Sync vault` refresh. Scheduler tasks can opt into injecting recent run notes as context for continuity, anti-repetition, and comparisons, and imported runtime schedules are mirrored into the same shelf.
+- Verification: `pnpm exec tsc --noEmit --pretty false`; `pnpm exec eslint src/app/page.tsx src/components/task-modal/TaskModal.tsx src/app/api/scheduler/shared/route.ts src/lib/services/obsidian/scheduled-runs.ts src/lib/types/agent-runtime.ts` (0 errors, existing page warnings only); `bash -n setup.sh`; `git diff --check -- src/app/page.tsx src/components/task-modal/TaskModal.tsx src/app/api/scheduler/shared/route.ts src/lib/services/obsidian/scheduled-runs.ts src/lib/types/agent-runtime.ts setup.sh CHANGELOG.md`; temp-vault API smoke wrote `Scheduled/Liams-MacBook-Pro/Apple-Notes-Poster/schedule.md`, generated `run0001-Hermes-...md` and `run0002-Hermes-...md`, and returned both as past-run context newest-first; `list-schedules` smoke read `Scheduled/Remote-Worker-01/Vault-List-Smoke/schedule.md` back into a schedule payload with shared paths and history settings.
+- Intended commit message: `Share scheduler runs through Obsidian`
+
+## 2026-05-22 02:40 WITA - Wallet Grid + Honest Defaults
+
+- Status: Pushed
+- Areas changed: `src/lib/utils/agent-wallet.ts` defaults, new `AgentWalletCardCompact` component + CSS, wallet section markup in `src/app/page.tsx`, `src/app/wallets.module.css`, changelog
+- Summary: Two wallet view changes. First, zero out the misleading $10 placeholder in `DEFAULT_AGENT_WALLET` — `seedBalanceUsd`, `currentBalanceUsd`, and `dailyComputeBurnUsd` now default to 0 so newly-created agent wallets honestly show "$0.00" with no fake runway until the user funds them; existing locally-stored wallets are unaffected. Second, replace the agent sidebar with a responsive grid of compact wallet tiles. Each tile shows the agent name with a status-colored dot, the current balance in 30px Space Grotesk, and a status chip ("Wallet off" / "N days runway" / "Needs funding"). Tiles have a lift-and-glow hover effect with a chevron reveal; clicking expands into the full `AgentWalletCard` with an "← All wallets" back button at the top. Workspace is now a two-pane layout (grid/detail on the left, Hive ledger rail on the right) — the slim agent sidebar is gone since the grid IS the agent picker.
+- Verification: `npm run typecheck` (no new errors; pre-existing apple-notes route warnings unchanged). Visual verification requires `npm run dev` on http://localhost:5020/wallet — pending user confirmation.
+- Intended commit message: `Add wallet grid view and zero placeholder balances`
+
+## 2026-05-22 01:24 WITA - Restore Mode-Specific Swarm Composers
+
+- Status: Pushed
+- Areas changed: Swarm template composer UI, launch controls, assimilation manifest, changelog
+- Summary: Restore the downloaded nextjs-swarm mode-specific compose surfaces for Market Maker, Reddit Narrative, Polymarket Binary, Research Swarm, Ops Stress Test, and Blank Canvas while keeping the controlled MiroShark launch wiring and real scenario inputs.
+- Verification: `pnpm typecheck`; `pnpm exec eslint src/components/swarm/composer.tsx src/components/swarm/template-composers.tsx`; audited reused downloaded Swarm composer paths; `verify_assimilation_manifest.py`; `git diff --check -- src/components/swarm/template-composers.tsx src/components/swarm/composer.tsx CHANGELOG.md ASSIMILATION.json`; browser smoke confirmed `/swarm` still renders the standalone compose shell; source scan confirmed the restored Polymarket odds/news, Market Maker instrument/shock, and Ops failure-profile controls.
+- Intended commit message: `Restore mode-specific swarm composers`
+
+## 2026-05-22 02:43 WITA - Document Honey And HIVE Compute Rewards
+
+- Status: Pushed
+- Areas changed: README reward overview, Wallets Honey copy, Honey usage observer API, Hermes token observer, Honey ledger worker observed-usage endpoint, changelog
+- Summary: Wire opt-in Honey rewards to observed local runtime usage while the dashboard is running: Hermes CLI sessions are credited from Hermes' persisted token counters, OpenClaw sessions are credited from real documented usage fields in session/transcript stores, observed events send only token metadata to the official ledger, the ledger dedupes/caps observed usage server-side, and README/Wallets copy now describes Honey as runtime usage rewards rather than dashboard-routed compute only.
+- Verification: Verified Hermes `~/.hermes/state.db` exposes actual token columns on `sessions`; checked OpenClaw token-use docs for `/usage`, `/status`, CLI, and transcript usage surfaces; `pnpm typecheck`; `pnpm typecheck` in `workers/honey-ledger`; targeted eslint for Honey observer/ledger files passed with no new errors; deployed `hivemindos-honey-ledger` to Cloudflare version `fd3432b3-0120-4d77-8eeb-4e15100e8ee6`; live smokes confirmed `/health`, invalid observed usage rejection, and valid observed Hermes usage acceptance with reward-pool clipping; `git diff --check` for touched Honey docs/code.
+- Intended commit message: `Observe runtime token usage for Honey`
+
+## 2026-05-22 02:31 WITA - Disable Scheduler Skill Action Fast Path
+
+- Status: Pushed
+- Areas changed: Scheduler Run Now execution, scheduler skill-action telemetry, agent runtime stream telemetry, installed Hermes Apple Notes skill, changelog
+- Summary: Temporarily disable the dynamic scheduler skill-action shortcut so attached skills run through Hermes while investigating Hermes skill execution latency, minimize scheduler context for attached Hermes skill runs, add stream-completion telemetry, and update the installed Hermes Apple Notes skill away from missing `memo`/Homebrew toward single-command built-in osascript.
+- Verification: Hermes Apple Notes direct runtime probes improved from 83.38s with the missing `memo` skill fallback, to 49.94s after switching the installed skill to osascript with shared-vault context still enabled, to 35.43s with shared-vault context disabled, to 33.59s after removing post-create verification, and to 22.14s when the scheduler-style request also omitted the default repo working directory. Route telemetry confirmed the optimized no-workdir run used `contextLength: 0`, first chunk at 6.15s, one skill-read tool turn, one osascript tool result, and stream completion at 20.19s route elapsed. `pnpm exec eslint src/app/page.tsx src/app/api/chat/agent-runtime/route.ts src/app/api/scheduler/skill-action/route.ts` passed with 0 errors and existing page warnings; `git diff --check -- src/app/page.tsx src/app/api/chat/agent-runtime/route.ts CHANGELOG.md` passed; `pnpm exec tsc --noEmit --pretty false` is currently blocked by an unrelated wallet action nullability error at `src/app/page.tsx:10912`.
+- Intended commit message: `Disable scheduler skill action fast path`
+
+## 2026-05-22 01:13 WITA - E2E Test Swarm Simulation Surfaces
+
+- Status: Pushed
+- Areas changed: MiroShark surface launch verification, app run history archive, changelog
+- Summary: Ran one real HivemindOS app-path E2E launch for each Swarm simulation surface label: X Post Simulation, Reddit Simulation, Polymarket Simulation, and Multi-surface Simulation, then archived each result through the app history endpoint so the runs are available in Past Simulations.
+- Verification: Started Docker Desktop and a local Neo4j container after the first app-path launch exposed `localhost:7687` was down; launched each run through `/api/miroshark/swarm`, polled the app job/run endpoints, archived through `/api/miroshark/runs`, and loaded each archive by simulation id. History now contains `sim_1bb2a7a20baa` (twitter/X, 5 posts, complete), `sim_25481b352b36` (reddit, 5 posts, complete), `sim_07c1127378d9` (polymarket, 0 posts, 1 market payload, saved), and `sim_18f35b160bae` (parallel/multi-surface, 4 posts, 1 market payload, complete). `/api/mcp/status` reports Neo4j connected with 4 graphs and 26 entities after the suite.
+- Intended commit message: `E2E test swarm simulation surfaces`
+
+## 2026-05-22 02:18 WITA - Run Scheduler Skill Actions Dynamically
+
+- Status: Pushed
+- Areas changed: Scheduler Run Now execution, generic scheduler skill-action API, shared Apple Notes skill metadata, scheduler telemetry, changelog
+- Summary: Add a generic dynamic scheduler skill-action runner that executes action blocks declared inside attached skill files, then use that mechanism for fast Apple Notes runs without creating a dedicated per-skill route.
+- Verification: `pnpm exec tsc --noEmit --pretty false`; `pnpm exec eslint src/app/api/scheduler/skill-action/route.ts src/app/page.tsx` (0 errors, existing dashboard warnings only); `curl` smoke for `shared-apple-notes` created Apple Notes through the dynamic skill action in 0.853s and 1.516s route time; `curl` smoke for `karpathy-guidelines` returned `skipped` in 7ms so non-action skills still fall back to agent runtime; telemetry confirmed `scheduler.skill_action.start` and `scheduler.skill_action.completed` events.
+- Intended commit message: `Run scheduler skill actions dynamically`
+
+## 2026-05-22 02:10 WITA - Phantom-Style Agent Wallet Card
+
+- Status: Pushed
+- Areas changed: New `src/components/wallet/AgentWalletCard.tsx` + CSS module, wallet section markup in `src/app/page.tsx`, wallet view CSS (three-pane workspace + slim agent sidebar + sticky Hive rail), changelog
+- Summary: Replace the wallet view's stacked-card "settings dashboard" treatment with a Phantom-style portrait wallet card. Each selected agent gets a single tall card with a centered 52px hero balance, a runway chip below it, a four-button action grid (Send · Receive · Limits · Autopay), and a holdings list (USDC · Gas · Honey · HIVE) styled like Phantom's token rows. Send/Receive/Limits each open an in-card sheet instead of expanding nested disclosures. Power lives as a single On/Off pill in the card header. Advanced setup (provider, network, x402 base URL, ClawCard env, notes) collapses behind one disclosure at the bottom. The "Bee reward meter" amber card and the "Next safe steps" `Cell` are gone — the meter content now lives as a Honey token row in the holdings list. Page workspace stays as a three-pane console: slim agents rail with status-colored dots → centered wallet card (max 460px) → sticky Hive ledger rail. Dropped unused `WalletCell`, `CreditCard`, `SOVEREIGN_AGENT_LAUNCH_STEPS`, and `PAYMENT_SAFETY_RULES` imports from `page.tsx`.
+- Verification: `npm run typecheck` (no new errors; pre-existing apple-notes route warnings unchanged). Visual verification requires `npm run dev` on http://localhost:5020/wallet — pending user confirmation.
+- Intended commit message: `Add Phantom-style agent wallet card`
+
+## 2026-05-22 00:58 WITA - Trace Hermes Runtime Handoff
+
+- Status: Pushed
+- Areas changed: Agent runtime route telemetry, scheduler runtime diagnostics, changelog
+- Summary: Add server-side telemetry around the HTTP handoff to Hermes so scheduler runs show whether the delay is before Hermes returns headers, during upstream streaming, or in an upstream failure path.
+- Verification: `pnpm exec tsc --noEmit --pretty false`; `pnpm exec eslint src/app/api/chat/agent-runtime/route.ts`; `git diff --check -- src/app/api/chat/agent-runtime/route.ts CHANGELOG.md`; debug POST to `/api/chat/agent-runtime` with `x-hivemind-run-id: debug:hermes-pong-runtime-handoff` confirmed route telemetry now records `agent_runtime.http.fetch.start`, `agent_runtime.http.fetch.slow`, `agent_runtime.http.fetch.response`, `agent_runtime.http.stream.start`, and `agent_runtime.http.stream.first_chunk`.
+- Intended commit message: `Trace Hermes runtime handoff`
+
+## 2026-05-22 00:42 WITA - Surface MiroShark Integration Depth
+
+- Status: Pushed
+- Areas changed: MiroShark swarm proxy, Swarm compose helpers, Swarm integration panels, market price data, integration TODO docs, changelog
+- Summary: Load the missing MiroShark integration surfaces into the Swarm API and UI: template capabilities/enrichment, scenario Ask/Suggest helpers, graph/entity/project payloads, report/interview metadata, export/share links, webhook/embed/transcript payloads, public/settings/MCP/push snapshots, and per-market Polymarket price histories, plus a durable TODO note for the integrations that still need richer in-app controls.
+- Verification: `pnpm typecheck`; `pnpm exec eslint src/components/swarm src/app/api/miroshark/swarm/route.ts src/app/page.tsx` (0 errors, existing dashboard warnings only); `git diff --check -- src/app/api/miroshark/swarm/route.ts src/app/page.tsx src/components/swarm docs/MIROSHARK_INTEGRATION_TODO.md CHANGELOG.md ASSIMILATION.json`; `verify_assimilation_manifest.py`; Playwright smoke at `http://127.0.0.1:5020/swarm` confirmed the Swarm theater renders with Ask MiroShark/Suggest controls and no blank page.
+- Intended commit message: `Surface MiroShark integration depth`
+
+## 2026-05-22 00:38 WITA - Keep Scheduler Runs Live
+
+- Status: Pushed
+- Areas changed: Scheduler Run Now lifecycle, scheduler button labels, scheduler telemetry, changelog
+- Summary: Stop aborting dashboard scheduler runs after 30 seconds, keep the run live until the runtime stream completes, record slow-run telemetry instead, and show realtime button phases for running, assigned, thinking, executing, wrapping up, and done.
+- Verification: `pnpm exec tsc --noEmit --pretty false`; `pnpm exec eslint src/app/page.tsx src/components/scheduler` (0 errors, existing dashboard warnings only); `git diff --check -- src/app/page.tsx src/components/scheduler CHANGELOG.md`; Playwright slow-run smoke on `http://localhost:5020` with a 32s delayed runtime confirmed Run Now stays live past 30s, records waiting/slow/completed telemetry, and resets only after completion; Playwright phase smoke confirmed assigned/thinking/executing/wrapping labels, done checkmark, and reset to Run Now.
+- Intended commit message: `Keep scheduler runs live`
+
+## 2026-05-22 00:26 WITA - Restore Swarm Launch Presets
+
+- Status: Pushed
+- Areas changed: Swarm template presets, MiroShark launch payloads, template fields, launch API metadata, changelog
+- Summary: Reintroduce the downloaded Swarm modes as real launch presets alongside MiroShark templates, mapping X Thread, Market Maker, Reddit Narrative, Polymarket Binary, Research Swarm, Ops Stress Test, and Blank Canvas to concrete MiroShark scenarios and surfaces instead of placeholder data.
+- Verification: Audited `/Users/liam/Downloads/nextjs-swarm` selected swarm data/composer paths; `pnpm typecheck`; `pnpm exec eslint src/components/swarm src/app/api/miroshark/swarm/route.ts src/app/page.tsx` (0 errors, existing dashboard warnings only); `git diff --check -- src/components/swarm src/app/page.tsx src/app/api/miroshark/swarm/route.ts CHANGELOG.md`; in-app browser smoke confirmed New Simulation exposes Market Maker, Reddit Narrative, Polymarket Binary, Research Swarm, Ops Stress Test, and Blank Canvas presets, Market Maker shows `Polymarket Simulation` with Instrument/Market Shock fields, and Research Swarm shows its research fields.
+- Intended commit message: `Restore swarm launch presets`
+
+## 2026-05-22 00:18 WITA - Label Swarm Simulation Surface
+
+- Status: Pushed
+- Areas changed: Swarm template header, simulation surface labeling, changelog
+- Summary: Add a right-aligned template surface label such as `• X Post Simulation`, `• Reddit Simulation`, `• Polymarket Simulation`, or `• Multi-surface Simulation` so MiroShark templates clearly show which surface is being composed or viewed.
+- Verification: Pending.
+- Intended commit message: `Label swarm simulation surface`
+
+## 2026-05-22 00:18 WITA - Install Brain Skills From GitHub
+
+- Status: Pushed
+- Areas changed: Shared brain skill browser, Obsidian skill import API, GitHub skill download service, skill browser styling, assimilation manifest, changelog
+- Summary: Add an `Install From Github` action to the shared brain Skill Browser that opens a GitHub URL form, downloads a repository skill folder or `SKILL.md` path through the GitHub API, writes the full skill folder into the shared Obsidian `Skills/` shelf with source metadata, and refreshes the skill inventory after install.
+- Verification: `pnpm exec tsc --noEmit --pretty false`; `pnpm exec eslint src/lib/services/obsidian/brain-skills.ts src/app/api/obsidian/skills/route.ts src/app/page.tsx` (0 errors, existing dashboard warnings only); `git diff --check -- src/lib/services/obsidian/brain-skills.ts src/app/api/obsidian/skills/route.ts src/app/page.tsx src/app/fleet.module.css CHANGELOG.md ASSIMILATION.json`; `verify_assimilation_manifest.py`; temp-vault POST to `/api/obsidian/skills` with `action: "import-github"` and `https://github.com/multica-ai/andrej-karpathy-skills/tree/main/skills/karpathy-guidelines` returned `ok: true` and wrote the imported `SKILL.md` plus source metadata.
+- Intended commit message: `Install brain skills from GitHub`
+
+## 2026-05-22 00:05 WITA - Instrument Scheduler Runtime Runs
+
+- Status: Pushed
+- Areas changed: Scheduler Run Now telemetry, agent runtime route telemetry, scheduler timeout handling, changelog
+- Summary: Add detailed local telemetry for scheduler run dispatch, waiting, first-byte, stream status/tool/content events, completion, failure, and server-side runtime route phases, and time out stuck dashboard scheduler runs instead of leaving the button spinning forever.
+- Verification: `pnpm exec tsc --noEmit --pretty false`; `pnpm exec eslint src/app/page.tsx src/app/api/chat/agent-runtime/route.ts` (0 errors, existing dashboard warnings only); `git diff --check -- src/app/page.tsx src/app/api/chat/agent-runtime/route.ts CHANGELOG.md`; Playwright smoke on `http://localhost:5020` intercepted a 12s delayed `/api/chat/agent-runtime` response and confirmed the run ID header is sent, Run Now remains running while waiting, done appears after the response, and telemetry captures requested, waiting, first-byte, status, tool-call, content, and completed events.
+- Intended commit message: `Instrument scheduler runtime runs`
+
+## 2026-05-22 00:07 WITA - Pad Scheduler Timeline Now
+
+- Status: Pushed
+- Areas changed: Scheduler timeline view, changelog
+- Summary: Add -2h and -1h space above the scheduler's now marker and map the dashed now line, hour labels, and future job cards through the same timeline scale so the marker no longer appears near +1h or clips at the top. Keep close-together jobs at their true time and resolve collisions with extra columns instead of pushing tasks down the time axis.
+- Verification: `pnpm exec eslint src/components/scheduler/timeline.tsx`; `git diff --check -- src/components/scheduler/timeline.tsx CHANGELOG.md`; Playwright smoke on `http://localhost:5020/scheduler` confirmed near-term jobs render around now, close jobs fan into columns instead of moving down toward +1h/+2h, no horizontal overflow appears, and no browser console errors were logged. `pnpm exec tsc --noEmit --pretty false` is currently blocked by an unrelated `src/lib/services/obsidian/brain-skills.ts` Buffer type error.
+- Intended commit message: `Pad scheduler timeline now`
+
+## 2026-05-22 00:06 WITA - Wire Swarm Template Launch
+
+- Status: Pushed
+- Areas changed: Swarm new-simulation compose mode, MiroShark template inputs, launch controls, parallel platform preservation, changelog
+- Summary: Connect the downloaded Swarm shell to the existing MiroShark template/run logic so New Simulation opens a compose state, template chips apply real MiroShark templates and required fields, Start Simulation launches through the app API, and parallel/polymarket platform choices no longer get rewritten to X/Twitter after refresh.
+- Verification: `pnpm typecheck`; `pnpm exec eslint src/components/swarm src/app/api/miroshark/swarm/route.ts src/app/page.tsx` (0 errors, existing dashboard warnings only); `git diff --check -- src/components/swarm src/app/page.tsx src/app/api/miroshark/swarm/route.ts CHANGELOG.md`; in-app browser smoke opened Swarm compose mode, selected Product Announcement, confirmed real required template fields render, required-field gating works, and filling Company/Product regenerates the launch scenario.
+- Intended commit message: `Wire swarm template launch`
+
+## 2026-05-21 23:56 WITA - Execute Scheduler Run Now
+
+- Status: Pushed
+- Areas changed: Scheduler Run Now execution, agent runtime dispatch, scheduler status reporting, changelog
+- Summary: Send dashboard-managed scheduler runs through the assigned agent runtime instead of immediately marking local task state as complete, so Run Now waits for the runtime response and only shows the completion checkmark after execution returns.
+- Verification: `pnpm exec tsc --noEmit --pretty false`; `pnpm exec eslint src/app/page.tsx src/components/scheduler` (0 errors, existing dashboard warnings only); `git diff --check -- src/app/page.tsx src/components/scheduler CHANGELOG.md`; Playwright smoke on `http://localhost:5020` intercepted `/api/chat/agent-runtime` with a delayed SSE response and confirmed Run Now calls the runtime once, stays `running` before the runtime returns, shows `done` only after the response, resets to Run Now, stays on Scheduler, and logs no hydration errors.
+- Intended commit message: `Execute scheduler run now`
+
+## 2026-05-21 23:50 WITA - Keep Swarm History Order
+
+- Status: Pushed
+- Areas changed: Swarm history rail selection, archived-run data merge, changelog
+- Summary: Merge the loaded archived simulation data back into its existing history row instead of prepending the selected run to the top of the shelf, so pressing a past simulation highlights/selects it in place.
+- Verification: `pnpm typecheck`; `pnpm exec eslint src/app/page.tsx src/components/swarm` (0 errors, existing dashboard warnings only); `git diff --check -- src/app/page.tsx src/components/swarm CHANGELOG.md`; in-app browser smoke clicked Historical What-If and Political Debate history rows, confirmed each opened its own simulation content without `Simulation sim_*` titles, and confirmed the top Product Announcement history card stayed in place.
+- Intended commit message: `Keep swarm history order`
+
+## 2026-05-21 23:47 WITA - Fix Scheduler Run Now State
+
+- Status: Pushed
+- Areas changed: Scheduler run-now interaction, scheduler job card markup, changelog
+- Summary: Keep dashboard scheduler runs in place with a running spinner, completion checkmark, and delayed reset, and replace the nested job-card button markup that caused the Next hydration error.
+- Verification: `pnpm exec tsc --noEmit --pretty false`; `pnpm exec eslint src/app/page.tsx src/components/scheduler src/components/task-modal src/app/api/scheduler/browse-folder/route.ts` (0 errors, existing dashboard warnings only); `git diff --check -- src/app/page.tsx src/components/scheduler src/components/task-modal src/app/api/scheduler/browse-folder/route.ts CHANGELOG.md`; Playwright smoke on `http://localhost:5020` with seeded scheduler data confirmed Run Now stays on the Scheduler view, shows running/done state, resets to Run Now after 3 seconds, has no horizontal overflow, and logs no hydration/nested-button errors.
+- Intended commit message: `Fix scheduler run now state`
+
+## 2026-05-21 23:44 WITA - Fix Swarm Template Keys
+
+- Status: Pushed
+- Areas changed: Swarm template IDs, MiroShark template mapping, changelog
+- Summary: Preserve real MiroShark template IDs in the Swarm template picker instead of collapsing multiple templates onto shared presentation IDs like `polymarket`.
+- Verification: `pnpm typecheck`; `pnpm exec eslint src/components/swarm src/app/page.tsx` (0 errors, existing dashboard warnings only); `git diff --check -- src/components/swarm/swarm-data.ts src/app/page.tsx CHANGELOG.md`; in-app browser smoke on the Swarm tab confirmed all six real template buttons render and no duplicate-key/`polymarket` warning is logged.
+- Intended commit message: `Fix swarm template keys`
+
+## 2026-05-21 23:36 WITA - Add Local Kanban Telemetry
+
+- Status: Pushed
+- Areas changed: Local telemetry API, client telemetry buffering, Kanban orchestration diagnostics, stalled tool-output summaries, changelog
+- Summary: Add a local-dev structured telemetry pipeline modeled after Claw Mobile's batched client events, writing `/api/telemetry/events` JSONL records under `~/.hivemindos/telemetry/`, and instrument Kanban pickup, dispatch, session polling, chat persistence, and stalled tool-output paths. Also summarize structured search/tool output instead of dumping raw JSON into Needs You notes.
+- Verification: `pnpm exec tsc --noEmit --pretty false`; `pnpm exec eslint src/app/page.tsx src/lib/utils/client-telemetry.ts src/lib/services/telemetry/local-telemetry.ts src/app/api/telemetry/events/route.ts` (0 errors, existing dashboard warnings only); `git diff --check -- src/app/page.tsx src/lib/utils/client-telemetry.ts src/lib/services/telemetry/local-telemetry.ts src/app/api/telemetry/events/route.ts CHANGELOG.md`; `curl -sS -X POST http://localhost:5020/api/telemetry/events ...` and `GET /api/telemetry/events?type=telemetry.smoke&limit=1` confirmed a local JSONL event was written and queried.
+- Intended commit message: `Add local Kanban telemetry`
+
+## 2026-05-21 23:31 WITA - Attach Scheduler Folders
+
+- Status: Pushed
+- Areas changed: Scheduler task modal folder attachments, scheduler browse-folder API, changelog
+- Summary: Make the task modal's `Choose folder` action attach folders through a scheduler-specific native macOS folder picker, while keeping `Choose files` as a separate file-browser action.
+- Verification: `pnpm exec tsc --noEmit --pretty false`; `pnpm exec eslint src/components/task-modal src/app/api/scheduler/browse-folder/route.ts`; `git diff --check -- src/app/page.tsx src/components/task-modal src/app/api/scheduler/browse-folder/route.ts CHANGELOG.md`; Playwright smoke on `http://localhost:5020` confirmed `+ path` exposes both `Choose folder` and `Choose files`, no longer shows static fallback path values, and no horizontal overflow appears.
+- Intended commit message: `Attach scheduler folders`
+
+## 2026-05-21 23:25 WITA - Persist Dashboard Chat Messages
+
+- Status: Pushed
+- Areas changed: Dashboard chat state hydration, Kanban task chat history, changelog
+- Summary: Persist non-system dashboard chat messages by agent in local storage so Kanban assignment and steering transcripts survive reloads and remain visible in the task chat modal.
+- Verification: `pnpm exec tsc --noEmit --pretty false`; `pnpm exec eslint src/app/page.tsx` (0 errors, existing dashboard warnings only); `git diff --check -- src/app/page.tsx CHANGELOG.md`
+- Intended commit message: `Persist dashboard chat messages`
+
+## 2026-05-21 23:21 WITA - Remove Duplicate Work Add Button
+
+- Status: Pushed
+- Areas changed: Work board add-task controls, changelog
+- Summary: Remove the top-level Work board `new task` button now that each lane has its own add control, and rename the empty-lane CTA from `nothing here` to `Add Task`.
+- Verification: `pnpm exec tsc --noEmit --pretty false`; `pnpm exec eslint src/app/page.tsx` (0 errors, existing dashboard warnings only); `git diff --check -- src/app/page.tsx CHANGELOG.md`; Browser DOM smoke on `http://localhost:5020` confirmed no top-level `new task` button and visible empty-lane `Add Task` buttons.
+- Intended commit message: `Remove duplicate work add button`
+
+## 2026-05-21 23:12 WITA - Clarify Kanban Pickup And Tool Blocks
+
+- Status: Pushed
+- Areas changed: Work board ready pickup flow, Kanban card motion, task chat diagnostics, changelog
+- Summary: Show a one-second springing worker bee pickup preview before Ready tasks move to Working, and include the last tool-output snippet when a Working task is moved to Needs You because no final agent response arrived.
+- Verification: `pnpm exec tsc --noEmit --pretty false`; `pnpm exec eslint src/app/page.tsx` (0 errors, existing dashboard warnings only); `git diff --check -- src/app/page.tsx src/app/kanban-board.module.css CHANGELOG.md`; Browser smoke on `http://localhost:5020` confirmed the Work board renders after the card-header motion changes.
+- Intended commit message: `Clarify kanban pickup and tool blocks`
+
+## 2026-05-21 23:00 WITA - Add Fleet List Agent Controls
+
+- Status: Pushed
+- Areas changed: Fleet list view agent rows, fleet view action wiring, fleet token styling, changelog
+- Summary: Collapse Fleet list agent task messages behind the same caret preview used in The Roster and show the selected agent's chat, wallet, settings, duplicate, and remove controls directly in the list row.
+- Verification: `pnpm exec tsc --noEmit --pretty false`; `pnpm exec eslint src/components/fleet/list-view.tsx src/components/fleet/FleetView.tsx`; `git diff --check -- src/components/fleet/list-view.tsx src/components/fleet/FleetView.tsx src/components/fleet/fleet-tokens.module.css CHANGELOG.md`; Browser smoke on `http://localhost:5020` confirmed the Fleet list tab renders collapsed recent-task buttons, the caret expands a Queen Bee message, and selecting the agent row reveals Chat, Wallet, Settings, Duplicate, and Remove controls.
+- Intended commit message: `Add fleet list agent controls`
+
+## 2026-05-21 23:00 WITA - Use Pickers For Scheduler Paths
+
+- Status: Pushed
+- Areas changed: Scheduler task modal path attachment picker, changelog
+- Summary: Replace the modal's `+ path` static fallback-value dropdown with picker actions for choosing a folder or choosing files, using the browser file-system picker when available and an input fallback otherwise.
+- Verification: `pnpm exec tsc --noEmit --pretty false`; `pnpm exec eslint src/app/page.tsx src/components/task-modal` (0 errors, existing dashboard warnings only); `git diff --check -- src/app/page.tsx src/components/task-modal CHANGELOG.md`; Playwright smoke on `http://localhost:5020` confirmed `+ path` shows `Choose folder` and `Choose files`, no longer shows `~/Obsidian/hive` or `~/.hivemindos/.env` as menu choices, and no horizontal overflow appears.
+- Intended commit message: `Use pickers for scheduler paths`
+
+## 2026-05-21 22:56 WITA - Constrain Scheduler Skill Picker
+
+- Status: Pushed
+- Areas changed: Scheduler task modal skill attachment picker, changelog
+- Summary: Give the modal's skill attachment picker the same name/slug/description search ranking as the custom worker role skill chooser, add a search input above the skill list, and constrain the dropdown to a scrollable height so long shared-skill inventories do not stretch the modal.
+- Verification: `pnpm exec tsc --noEmit --pretty false`; `pnpm exec eslint src/app/page.tsx src/components/task-modal` (0 errors, existing dashboard warnings only); `git diff --check -- src/app/page.tsx src/components/task-modal CHANGELOG.md`; Playwright smoke on `http://localhost:5020` confirmed the task modal skill picker shows a search input, the result list has `max-height: 220px` and `overflow-y: auto`, filtering accepts `brain`, and no horizontal overflow appears.
+- Intended commit message: `Constrain scheduler skill picker`
+
+## 2026-05-21 22:55 WITA - Optimize Bee Icons
+
+- Status: Pushed
+- Areas changed: Bee icon PNG assets, changelog
+- Summary: Losslessly optimize the queen and worker bee icon PNGs under `public/icons/` to reduce shipped asset size without changing dimensions or transparency.
+- Verification: `oxipng -o 4 --strip safe public/icons/*bee*.png` processed 22 PNGs and reduced total size from 1.32 MiB to 1.23 MiB, saving 91.1 KiB (6.75%); `file public/icons/*bee*.png` confirmed all optimized bee icons remain 256 x 256 RGBA PNGs; `git diff --check -- public/icons CHANGELOG.md`
+- Intended commit message: `Optimize bee icons`
+
+## 2026-05-21 22:26 WITA - Use Task Modal For Scheduler Creation
+
+- Status: Pushed
+- Areas changed: Scheduler create/edit flow, task modal component bundle, assimilation manifest, changelog
+- Summary: Replace the below-scheduler create task section with the downloaded `nextjs-task-modal` modal, wire Schedule new task and Edit into the modal, and map modal saves back into the existing scheduler state with cadence, target, prompt/steps, and attachments preserved.
+- Verification: `pnpm exec tsc --noEmit --pretty false`; `pnpm exec eslint src/app/page.tsx src/components/task-modal src/components/scheduler` (0 errors, existing dashboard warnings only); `python3 /Users/liam/.codex/skills/github-assimilator/scripts/verify_assimilation_manifest.py`; `git diff --check -- src/app/page.tsx src/components/task-modal CHANGELOG.md ASSIMILATION.json`; Playwright smoke on `http://localhost:5020` confirmed Schedule new task opens the modal, the old inline creation section stays hidden, saving `Modal smoke schedule` adds it to the scheduler rail/detail view, and no horizontal overflow appears.
+- Intended commit message: `Use task modal for scheduler creation`
+
+## 2026-05-21 22:16 WITA - Make Hivemind Logo Return To Fleet
+
+- Status: Pushed
+- Areas changed: Dashboard topbar logo navigation, global header styling, changelog
+- Summary: Turn the HivemindOS logo tile into an accessible button that returns the dashboard to the Fleet view.
+- Verification: `pnpm exec eslint src/app/page.tsx` (0 errors, existing dashboard warnings only); `git diff --check -- src/app/page.tsx src/app/globals.css CHANGELOG.md`; Browser smoke on `http://localhost:5020` switched to Work, clicked the HivemindOS logo button, and confirmed the Fleet header and active Fleet tab returned.
+- Intended commit message: `Make hivemind logo return to fleet`
+
 ## 2026-05-21 12:50 UTC - Load Shared Skill Hints Through Hermes SOUL
 
 - Status: Pushed

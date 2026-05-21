@@ -365,6 +365,25 @@ set_env_local "HONEY_LEDGER_ISSUER_ID" "${HONEY_LEDGER_ISSUER_ID:-hivemindos}"
 set_env_local "HONEY_COMPUTE_GATEWAY_URL" "${HONEY_COMPUTE_GATEWAY_URL:-https://hivemindos-compute-gateway.hivemindos.workers.dev}"
 set_env_local "HIVE_TOKEN_ADDRESS" "${HIVE_TOKEN_ADDRESS:-}"
 set_env_local "BANKR_LLM_KEY" "${BANKR_LLM_KEY:-}"
+set_env_local "NEXT_PUBLIC_OBSIDIAN_SCHEDULED_FOLDER" "${NEXT_PUBLIC_OBSIDIAN_SCHEDULED_FOLDER:-Scheduled}"
+
+shared_vault_path="${NEXT_PUBLIC_OBSIDIAN_VAULT_PATH:-$HOME/Documents/Obsidian/hivemindos-vault}"
+if [[ "$shared_vault_path" == "~/"* ]]; then
+  shared_vault_path="$HOME/${shared_vault_path#~/}"
+fi
+scheduled_folder="${NEXT_PUBLIC_OBSIDIAN_SCHEDULED_FOLDER:-Scheduled}"
+mkdir -p "$shared_vault_path/$scheduled_folder"
+if [[ ! -f "$shared_vault_path/$scheduled_folder/README.md" ]]; then
+  cat > "$shared_vault_path/$scheduled_folder/README.md" <<'EOF'
+# Scheduled
+
+Shared schedule definitions and run history for HivemindOS agents.
+
+- `Scheduled/<device>/<schedule>/schedule.md` stores each schedule snapshot.
+- `run0001-<agent>-<timestamp>.md` files store execution history.
+- Schedules can opt into injecting past run notes for continuity, anti-repetition, and comparisons.
+EOF
+fi
 
 install_hive_env_add
 

@@ -28,6 +28,7 @@ Clone it, run one setup command, and get a local-first dashboard for the agents 
 - **Create and import schedules** so supported runtimes can keep working in the background.
 - **Run MiroShark simulations** from the same control room.
 - **Give agents controlled Base and Solana wallets** so they can pay for approved tools, APIs, transactions, and actions.
+- **Earn Honey from regular agent usage** and convert it into HIVE, the HivemindOS token, to help fund agent compute.
 
 ## Quick Start
 
@@ -60,6 +61,31 @@ hive-env-add OPENAI_API_KEY
 hive-env-add ANTHROPIC_API_KEY=...
 ```
 
+## Honey, HIVE, And Compute
+
+HivemindOS includes an opt-in rewards loop for normal agent usage:
+
+1. The dashboard watches supported local runtimes while Honey rewards are enabled.
+2. When a runtime reports real token usage, HivemindOS submits only the token delta to the official Honey ledger.
+3. The ledger credits Honey to your workspace.
+4. Available Honey can be exchanged for HIVE.
+5. HIVE can be used to fund Bankr LLM credits for future agent compute.
+
+Honey is the in-app reward meter. HIVE is the Bankr-launched token behind the reward economy. The official ledger is the source of truth, so editing the frontend display does not mint spendable HIVE. Rewards are capped by the official HIVE reward pool, which is funded from the configured share of creator fees, and observed runtime usage is deduped and capped server-side.
+
+Privacy stays local-first. Honey rewards are disabled by default; you enable them from the Wallets view. When enabled, HivemindOS sends usage metadata such as workspace id, agent id, token count, model label, timestamp, source, and event id. Prompts, responses, files, wallet keys, and machine details are not sent to the Honey ledger.
+
+Hermes CLI sessions are credited from Hermes' own persisted token counters when the dashboard is running. OpenClaw exposes token usage through its `/usage`, `/status`, CLI, and transcript usage surfaces; HivemindOS only credits OpenClaw once it can read real usage fields, not from text-length guesses. If you fork the reward backend to run your own ledger, that fork is no longer the official HIVE-compatible Honey ledger.
+
+For spoof-proof Honey, use reward compute mode. Keep using Hermes, OpenClaw, or another OpenAI-compatible client directly, but set its provider endpoint to the HivemindOS reward gateway:
+
+```txt
+OPENAI_BASE_URL=https://hivemindos-compute-gateway.hivemindos.workers.dev/v1
+OPENAI_API_KEY=hive-v1.<workspace-id>.<bankr-llm-key>
+```
+
+Your workspace id is stored at `~/.hivemindos/install-id` after setup. The gateway forwards the request through Bankr, reads the provider-returned token usage, signs the Honey receipt server-side, and credits official Honey without requiring the dashboard chat surface.
+
 ## Features
 
 | Feature | What it does |
@@ -75,6 +101,7 @@ hive-env-add ANTHROPIC_API_KEY=...
 | **Agent chat bridge** | Sends chat to supported runtimes through a local safety and redaction proxy |
 | **MiroShark integration** | Runs and tracks MiroShark simulations from the HivemindOS dashboard |
 | **Agent wallets** | Provisions controlled Base and Solana wallets for agents that need budgets or payment rails |
+| **Honey rewards and HIVE compute** | Lets opt-in users earn Honey from measured agent token usage, exchange it for HIVE, and fund Bankr LLM compute with HIVE-backed credits |
 | **Alerts** | Surfaces auth failures, stuck work, runtime issues, and handoff problems in one inbox |
 | **Skill shelf** | Shares skills across Codex, Claude, Hermes, Gemini, OpenClaw, and Aeon |
 | **Local-first storage** | Keeps runtime profiles, vault paths, and local URLs on your machine |

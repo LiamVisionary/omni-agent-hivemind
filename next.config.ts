@@ -39,6 +39,19 @@ const nextConfig: NextConfig = {
     ...splitOrigins(process.env.NEXT_ALLOWED_DEV_ORIGINS),
     ...detectedTailnetDevOrigins(),
   ],
+  async headers() {
+    return [
+      {
+        source: "/icons/:path*",
+        headers: [
+          {
+            key: "Cache-Control",
+            value: "public, max-age=31536000, immutable",
+          },
+        ],
+      },
+    ];
+  },
   turbopack: {
     root: projectRoot,
   },

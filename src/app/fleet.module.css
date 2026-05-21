@@ -2628,18 +2628,26 @@
 
 .skillBrowserSearch {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-columns: minmax(0, 1fr) auto auto;
   gap: 10px;
   margin-top: 16px;
 }
 
-.skillBrowserSearch input {
+.skillBrowserSearch input,
+.skillBrowserGithubForm input {
   min-height: 42px;
   border: 1px solid rgba(148, 163, 184, 0.18);
   border-radius: 7px;
   background: var(--field);
   color: var(--foreground);
   padding: 0 12px;
+}
+
+.skillBrowserGithubForm {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
+  margin-top: 10px;
 }
 
 .skillBrowserGrid {
@@ -2875,6 +2883,11 @@
   }
 
   .addAgent {
+    grid-template-columns: 1fr;
+  }
+
+  .skillBrowserSearch,
+  .skillBrowserGithubForm {
     grid-template-columns: 1fr;
   }
 

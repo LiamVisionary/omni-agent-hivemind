@@ -13,12 +13,12 @@ import {
   Check,
   CheckCheck,
   ChevronDown,
+  ChevronLeft,
   ChevronRight,
   Clock3,
   CircleAlert,
   Copy,
   CopyPlus,
-  CreditCard,
   Cpu,
   Download,
   Eye,
@@ -65,9 +65,10 @@ import { createAgentProfile, DEFAULT_SHARED_VAULT, RUNTIME_CAPABILITIES, RUNTIME
 import type { AgentPaymentProvider, AgentWalletConfig, HoneyTreasuryConfig } from "@/lib/types/agent-wallet";
 import type { KanbanBoard, KanbanStatus, KanbanTask } from "@/lib/types/kanban";
 import { KANBAN_COLUMNS } from "@/lib/types/kanban";
-import { AGENT_PAYMENT_PROVIDER_COPY, PAYMENT_SAFETY_RULES, SOVEREIGN_AGENT_LAUNCH_STEPS } from "@/lib/config/agent-payments";
+import { AGENT_PAYMENT_PROVIDER_COPY } from "@/lib/config/agent-payments";
 import { beeRoleIconPath } from "@/lib/config/bee-role-icons";
 import { BEE_WORKER_PRESET_LIST, beeWorkerPreset } from "@/lib/config/bee-worker-presets";
+import { logClientTelemetry } from "@/lib/utils/client-telemetry";
 import {
   buildAgentPaymentPrompt,
   createDefaultAgentWallet,
@@ -98,13 +99,15 @@ import {
   MachineCell,
   MemoryCell,
   SetupCell,
-  WalletCell,
   type AgentTaskRow,
   type CellMenuItem,
   type SetupStep,
 } from "@/components/cells";
+import { AgentWalletCard } from "@/components/wallet/AgentWalletCard";
+import { AgentWalletCardCompact } from "@/components/wallet/AgentWalletCardCompact";
 import { FleetView, type FleetAgent, type FleetAlert, type FleetMachine, type FleetTask } from "@/components/fleet";
-import { SchedulerView, type SchedulerJob } from "@/components/scheduler";
+import { SchedulerView, type SchedulerJob, type SchedulerRunPhase, type SchedulerRunState } from "@/components/scheduler";
+import { TaskModal, type NewTaskPayload } from "@/components/task-modal";
 import {
   SwarmView,
   type SwarmAgent,
@@ -145,9 +148,16 @@ type ChatMessage = {
   content: string;
   createdAt?: number;
   kanbanTaskId?: string;
+  surface?: "chat" | "kanban" | "scheduler";
   sourceSessionId?: string;
   sourceIndex?: number;
   attachments?: ChatAttachment[];
+};
+
+type KanbanPickupPreview = {
+  icon: string;
+  label: string;
+  assignee: string;
 };
 
 type ChatAttachment = {
@@ -269,6 +279,10 @@ type AgentSchedule = {
   externalJobId?: string;
   lastStatus?: string;
   lastSummary?: string;
+  usePastRuns?: boolean;
+  pastRunLimit?: number;
+  sharedSchedulePath?: string;
+  sharedRunFolder?: string;
 };
 
 type ScheduleDraft = {
@@ -281,9 +295,14 @@ type ScheduleDraft = {
   skills: string[];
   paths: string[];
   steps: SchedulerStep[];
+  usePastRuns: boolean;
+  pastRunLimit: number;
 };
 
 const SCHEDULE_PRESETS = ["5m", "15m", "30m", "1h", "2h", "6h", "12h", "24h"] as const;
+
+const SCHEDULER_DYNAMIC_SKILL_ACTIONS_ENABLED = false;
+const SCHEDULER_HERMES_SKILL_CONTEXT_ENABLED = false;
 
 const SCHEDULER_MODEL_OPTIONS = [
   { value: "", label: "Default" },
@@ -580,6 +599,41 @@ type NotificationsResponse = Partial<AgentNotificationSummary> & {
 };
 
 const MIROSHARK_TEMPLATE_INPUTS: Record<string, MiroSharkTemplateInputField[]> = {
+  "x-thread": [
+    { key: "topic", label: "Thread topic", placeholder: "e.g. HivemindOS ships a new Swarm Theater", required: true },
+    { key: "audience", label: "Audience", placeholder: "Builders, operators, customers, investors" },
+    { key: "angle", label: "Narrative angle", placeholder: "What should the thread convince readers to notice?" },
+  ],
+  "market-maker": [
+    { key: "instrument", label: "Instrument", placeholder: "e.g. Fed July rate-cut odds, BTC ETF flow, AI chip demand", required: true },
+    { key: "shock", label: "Market shock", placeholder: "e.g. hot CPI, dovish Fed, whale unwind, liquidity drain", required: true },
+    { key: "agents", label: "Market participants", placeholder: "Market makers, takers, whales, hedgers, news traders" },
+    { key: "question", label: "Prediction question", placeholder: "What binary market or price belief should move?" },
+  ],
+  "reddit-narrative": [
+    { key: "community", label: "Community", placeholder: "e.g. r/wallstreetbets, r/singularity, r/apple", required: true },
+    { key: "seed", label: "Seed post", placeholder: "What initial post should trigger the comment cascade?", required: true, kind: "textarea" },
+    { key: "conflict", label: "Debate fault line", placeholder: "What factions form in replies?" },
+  ],
+  polymarket: [
+    { key: "question", label: "Binary question", placeholder: "e.g. Will the Fed cut rates by 25bp at the July meeting?", required: true },
+    { key: "initialOdds", label: "Initial odds", placeholder: "e.g. YES 62c / NO 38c" },
+    { key: "news", label: "News shocks", placeholder: "What headlines should agents react to?", kind: "textarea" },
+  ],
+  "research-swarm": [
+    { key: "question", label: "Research question", placeholder: "e.g. What evidence supports launching this product?", required: true },
+    { key: "sources", label: "Sources", placeholder: "URLs, files, authors, datasets, or search targets", kind: "textarea" },
+    { key: "deliverable", label: "Deliverable", placeholder: "Consensus brief, risk memo, launch recommendation, source map" },
+  ],
+  ops: [
+    { key: "system", label: "System", placeholder: "e.g. Obsidian sync, agent queue, wallet ledger, scheduler", required: true },
+    { key: "failure", label: "Failure profile", placeholder: "e.g. vault conflict storm, tailnet partition, stale env keys", required: true },
+    { key: "intensity", label: "Intensity", placeholder: "e.g. 2 sigma, 5 rounds, high concurrency" },
+    { key: "success", label: "Success criteria", placeholder: "What should survive or recover?" },
+  ],
+  custom: [
+    { key: "scenario", label: "Scenario", placeholder: "Describe the world and participants to simulate.", required: true, kind: "textarea" },
+  ],
   campus_controversy: [
     { key: "institution", label: "Institution", placeholder: "e.g. UC Berkeley", required: true },
     { key: "policy", label: "Policy change", placeholder: "e.g. mandatory AI disclosure for coursework", required: true },
@@ -626,6 +680,79 @@ const MIROSHARK_TEMPLATE_INPUTS: Record<string, MiroSharkTemplateInputField[]> =
   ],
 };
 
+const SWARM_LAUNCH_PRESETS: MiroSharkTemplate[] = [
+  {
+    id: "x-thread",
+    name: "X thread",
+    category: "Autoposter",
+    description: "Simulate how an X thread travels through agents, quote-posts, replies, and narrative drift.",
+    estimated_agents: 12,
+    estimated_rounds: 12,
+    platforms: ["twitter"],
+    tags: ["x", "autoposter", "thread"],
+  },
+  {
+    id: "market-maker",
+    name: "Market maker",
+    category: "Market",
+    description: "Simulate market makers, takers, liquidity shocks, and prediction-market price discovery.",
+    estimated_agents: 24,
+    estimated_rounds: 24,
+    platforms: ["polymarket"],
+    tags: ["market-maker", "liquidity", "shock"],
+  },
+  {
+    id: "reddit-narrative",
+    name: "Reddit narrative",
+    category: "Social",
+    description: "Simulate a seeded Reddit post and the factional comment cascade that follows it.",
+    estimated_agents: 16,
+    estimated_rounds: 16,
+    platforms: ["reddit"],
+    tags: ["reddit", "cascade", "narrative"],
+  },
+  {
+    id: "polymarket",
+    name: "Polymarket binary",
+    category: "Market",
+    description: "Simulate binary prediction-market odds as agents react to new evidence and headlines.",
+    estimated_agents: 48,
+    estimated_rounds: 32,
+    platforms: ["polymarket"],
+    tags: ["polymarket", "prediction-market", "odds"],
+  },
+  {
+    id: "research-swarm",
+    name: "Research swarm",
+    category: "Research",
+    description: "Simulate research agents reading sources, disagreeing, and converging on a consensus brief.",
+    estimated_agents: 8,
+    estimated_rounds: 8,
+    platforms: ["twitter"],
+    tags: ["research", "sources", "brief"],
+  },
+  {
+    id: "ops",
+    name: "Ops stress test",
+    category: "Ops",
+    description: "Simulate an operational failure storm and how agents detect, triage, and recover.",
+    estimated_agents: 6,
+    estimated_rounds: 5,
+    platforms: ["twitter"],
+    tags: ["ops", "failure", "recovery"],
+  },
+  {
+    id: "custom",
+    name: "Blank canvas",
+    category: "Custom",
+    description: "Launch a custom MiroShark simulation from a hand-written scenario.",
+    estimated_agents: 1,
+    estimated_rounds: 5,
+    platforms: ["twitter"],
+    tags: ["custom"],
+  },
+];
+
 function defaultMirosharkTemplateInputs(templateId?: string): MiroSharkTemplateInputState {
   return Object.fromEntries((MIROSHARK_TEMPLATE_INPUTS[templateId ?? ""] ?? []).map((field) => [field.key, ""]));
 }
@@ -638,8 +765,26 @@ function composeMirosharkTemplateScenario(template: MiroSharkTemplate, inputs: M
   const facts = filledInputs.map(({ field, value }) => `${field.label}: ${value}.`);
   const requiredMissing = fields.filter((field) => field.required && !inputs[field.key]?.trim());
   const templateName = template.name ?? template.id ?? "MiroShark rehearsal";
+  const templateId = template.id ?? "";
+  const presetInstruction = templateId === "market-maker"
+    ? "Model market makers and takers as distinct agents. Include order-book pressure, liquidity gaps, spread changes, and a prediction-market style belief update."
+    : templateId === "polymarket"
+      ? "Model a binary prediction market. Agents should update YES/NO odds as news arrives and explain what moves the price."
+      : templateId === "reddit-narrative"
+        ? "Model a Reddit comment cascade. Include nested replies, faction formation, moderation pressure, memes, skepticism, and consensus drift."
+        : templateId === "research-swarm"
+          ? "Model research agents reviewing sources, challenging each other, identifying uncertainty, and converging on a concise consensus brief."
+          : templateId === "ops"
+            ? "Model an operational incident drill. Include detection, triage, escalation, recovery attempts, residual risk, and clear pass/fail signals."
+            : templateId === "x-thread"
+              ? "Model X/Twitter post dynamics. Include quote-posts, replies, influencer amplification, backlash, and shareable thread takeaways."
+              : "";
+  const baseScenario = templateId === "custom" && inputs.scenario?.trim()
+    ? inputs.scenario.trim()
+    : `${templateName}: ${template.description ?? "Run this MiroShark template."}`;
   const baseLines = [
-    `${templateName}: ${template.description ?? "Run this MiroShark template."}`,
+    baseScenario,
+    presetInstruction,
     facts.length ? `Concrete rehearsal inputs:\n${facts.join("\n")}` : "",
     requiredMissing.length ? `Missing required inputs before this becomes a strong rehearsal: ${requiredMissing.map((field) => field.label).join(", ")}.` : "",
     template.tags?.length ? `Focus tags: ${template.tags.join(", ")}.` : "",
@@ -826,6 +971,7 @@ type MiroSharkRunResult = {
   simulationId?: string;
   rounds?: number;
   platform?: string;
+  templateId?: string;
   links?: Record<string, string>;
   runStatus?: unknown;
   actions?: unknown;
@@ -841,9 +987,19 @@ type MiroSharkRunResult = {
   demographics?: unknown;
   quality?: unknown;
   markets?: unknown;
+  marketPrices?: unknown;
   surfaceStats?: unknown;
   lineage?: unknown;
   threadJson?: unknown;
+  transcriptJson?: unknown;
+  embedSummary?: unknown;
+  webhookLog?: unknown;
+  report?: unknown;
+  interviewHistory?: unknown;
+  graphData?: unknown;
+  entities?: unknown;
+  project?: unknown;
+  runStatusDetail?: unknown;
   observabilityStats?: unknown;
   observabilityEvents?: unknown;
   llmCalls?: unknown;
@@ -910,11 +1066,18 @@ type MiroSharkMetadata = {
   ok?: boolean;
   baseUrl?: string;
   templates?: unknown;
+  templateCapabilities?: unknown;
+  templateDetails?: unknown;
   history?: unknown;
+  publicRuns?: unknown;
+  simulationList?: unknown;
   trending?: unknown;
   observabilityStats?: unknown;
   observabilityEvents?: unknown;
   llmCalls?: unknown;
+  settings?: unknown;
+  mcpStatus?: unknown;
+  pushVapidKey?: unknown;
   error?: string;
 };
 
@@ -1044,6 +1207,8 @@ function swarmTemplateIdFromSurface(platform?: string): TemplateId {
 }
 
 function swarmTemplateIdFromMirosharkTemplate(template: MiroSharkTemplate): TemplateId {
+  if (template.id?.trim()) return template.id.trim();
+
   const text = `${template.id ?? ""} ${template.name ?? ""} ${template.category ?? ""} ${(template.platforms ?? []).join(" ")}`.toLowerCase();
   if (text.includes("polymarket")) return "polymarket";
   if (text.includes("reddit")) return "reddit-narrative";
@@ -1070,7 +1235,7 @@ function numericRecordValue(record: Record<string, unknown>, keys: string[], fal
   return fallback;
 }
 
-function swarmEventItem(value: unknown, index: number): { id: string; title: string; body: string; meta?: string; tone?: "bear" | "bull" | "neutral"; level?: "info" | "warn" | "error" | "fatal" } {
+function swarmEventItem(value: unknown, index: number): { id: string; title: string; body: string; meta?: string; tone?: "bear" | "bull" | "neutral"; level?: "info" | "warn" | "error" | "fatal"; raw?: unknown } {
   const record = asRecord(value);
   const title = String(record.event_type ?? record.type ?? record.action_type ?? record.name ?? record.status ?? `record ${index + 1}`);
   const body = String(record.content ?? record.text ?? record.message ?? record.description ?? record.summary ?? compactValue(value));
@@ -1084,6 +1249,45 @@ function swarmEventItem(value: unknown, index: number): { id: string; title: str
     meta: metaValue == null ? undefined : String(metaValue),
     tone: level === "error" || level === "fatal" ? "bear" : level === "warn" ? "neutral" : "bull",
     level,
+    raw: value,
+  };
+}
+
+function swarmMarketEventItem(value: unknown, index: number): ReturnType<typeof swarmEventItem> {
+  const record = asRecord(value);
+  const question = String(record.question ?? record.title ?? record.name ?? `market ${index + 1}`);
+  const price = numericRecordValue(record, ["price_yes", "yes_price", "price", "probability", "odds"], Number.NaN);
+  const outcomes = [record.outcome_a, record.outcome_b].filter((item) => item !== undefined && item !== null).join(" / ");
+  return {
+    id: String(record.market_id ?? record.id ?? `market-${index}`),
+    title: question,
+    body: [
+      Number.isFinite(price) ? `YES ${Math.round(price * 100)}%` : "",
+      outcomes ? `Outcomes ${outcomes}` : "",
+    ].filter(Boolean).join(" · ") || compactValue(value),
+    meta: record.created_at == null ? undefined : String(record.created_at),
+    tone: Number.isFinite(price) ? price >= 0.5 ? "bull" : "bear" : "neutral",
+    raw: value,
+  };
+}
+
+function swarmMarketPriceEventItem(value: unknown, index: number): ReturnType<typeof swarmEventItem> {
+  const record = asRecord(value);
+  const data = asRecord(record.data ?? value);
+  const market = asRecord(data.market);
+  const prices = Array.isArray(data.prices) ? data.prices : [];
+  const question = String(market.question ?? record.question ?? `Market price history ${index + 1}`);
+  const price = numericRecordValue(market, ["price_yes", "yes_price", "price", "probability", "odds"], Number.NaN);
+  return {
+    id: `market-prices-${index}`,
+    title: question,
+    body: [
+      prices.length ? `${prices.length} price points` : "",
+      Number.isFinite(price) ? `latest snapshot YES ${Math.round(price * 100)}%` : "",
+    ].filter(Boolean).join(" · ") || compactValue(value),
+    meta: `${payloadCount(value)} price points`,
+    tone: "bull",
+    raw: value,
   };
 }
 
@@ -1091,10 +1295,9 @@ function swarmMarketFromItems(items: Record<string, unknown>[], timelineItems: R
   const ticks = items
     .map((item) => numericRecordValue(item, ["price", "odds", "probability", "yes_price", "value"], Number.NaN))
     .filter(Number.isFinite);
-  const usableTicks = ticks.length >= 2 ? ticks : [0, 0];
   return {
     symbol: String(items[0]?.question ?? items[0]?.title ?? items[0]?.name ?? "MiroShark markets"),
-    ticks: usableTicks,
+    ticks,
     ladder: items.slice(0, 9).map((item, index) => {
       const px = numericRecordValue(item, ["price", "odds", "probability", "yes_price", "value"], index + 1);
       return {
@@ -1121,11 +1324,17 @@ const SCHEDULE_STORAGE_KEY = "hivemindos.agentSchedules.v1";
 const WALLET_STORAGE_KEY = "hivemindos.agentWallets.v1";
 const HONEY_LEDGER_ENABLED_STORAGE_KEY = "hivemindos.honeyLedger.enabled.v1";
 const THEME_STORAGE_KEY = "hivemindos.theme.v1";
+const CHAT_MESSAGES_STORAGE_KEY = "hivemindos.chatMessages.v1";
 const CHAT_FOLDER_STORAGE_KEY = "hivemindos.chatFolders.v1";
 const DISCOVERED_MACHINES_STORAGE_KEY = "hivemindos.discoveredMachines.v1";
 const KANBAN_STALE_WORK_MS = 30 * 60 * 1000;
 const KANBAN_TOOL_OUTPUT_STALL_MS = 5 * 60 * 1000;
+const KANBAN_NO_ASSISTANT_STALL_MS = 2 * 60 * 1000;
+const KANBAN_SESSION_POLL_FAILURE_LIMIT = 3;
 const KANBAN_STALE_AGENT_COOLDOWN_MS = 20 * 60 * 1000;
+const KANBAN_PICKUP_PREVIEW_MS = 1_000;
+const SCHEDULER_RUN_STALE_MS = 30_000;
+const BRAIN_GRAPH_CLIENT_CACHE_MS = 30_000;
 const REPO_CLONE_URL = "https://github.com/LiamVisionary/hivemindos.git";
 const QUIET_SNAPSHOT_HOLD_MS = 15 * 60 * 1000;
 const STORAGE_SUFFIXES = {
@@ -1136,6 +1345,7 @@ const STORAGE_SUFFIXES = {
   wallets: ".agentWallets.v1",
   honeyLedgerEnabled: ".honeyLedger.enabled.v1",
   theme: ".theme.v1",
+  chatMessages: ".chatMessages.v1",
   chatFolders: ".chatFolders.v1",
 };
 const STARTER_AGENT_IDS = new Set([
@@ -1284,6 +1494,7 @@ function parseStoredVault(): SharedVaultConfig {
       ...parsed,
       vaultPath: migratedVaultPath || DEFAULT_SHARED_VAULT.vaultPath,
       kanbanFolder: migratedKanbanFolder || DEFAULT_SHARED_VAULT.kanbanFolder,
+      scheduledFolder: parsed.scheduledFolder?.trim() || DEFAULT_SHARED_VAULT.scheduledFolder,
     };
   } catch {
     return DEFAULT_SHARED_VAULT;
@@ -1330,6 +1541,8 @@ function parseStoredSchedules(): AgentSchedule[] {
           model: typeof step.model === "string" ? step.model : "",
         }))
         : [],
+      usePastRuns: schedule.usePastRuns === true,
+      pastRunLimit: Math.max(1, Math.min(12, Number(schedule.pastRunLimit) || 3)),
     })) : [];
   } catch {
     return [];
@@ -1350,6 +1563,36 @@ function parseStoredChatFolders(): ChatCustomFolder[] {
     ));
   } catch {
     return [];
+  }
+}
+
+function parseStoredChatMessages(): Record<string, ChatMessage[]> {
+  if (typeof window === "undefined") return {};
+  const raw = readStoredValue(CHAT_MESSAGES_STORAGE_KEY, STORAGE_SUFFIXES.chatMessages);
+  if (!raw) return {};
+  try {
+    const parsed = JSON.parse(raw) as Record<string, ChatMessage[]>;
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return {};
+    return Object.fromEntries(Object.entries(parsed)
+      .filter(([agentId, messages]) => typeof agentId === "string" && Array.isArray(messages))
+      .map(([agentId, messages]) => [
+        agentId,
+        messages.filter((message) => (
+          (message?.role === "user" || message?.role === "assistant" || message?.role === "system")
+          && typeof message.content === "string"
+        )).map((message) => ({
+          role: message.role,
+          content: message.content,
+          createdAt: typeof message.createdAt === "number" ? message.createdAt : undefined,
+          kanbanTaskId: typeof message.kanbanTaskId === "string" ? message.kanbanTaskId : undefined,
+          surface: message.surface === "chat" || message.surface === "kanban" || message.surface === "scheduler" ? message.surface : undefined,
+          sourceSessionId: typeof message.sourceSessionId === "string" ? message.sourceSessionId : undefined,
+          sourceIndex: typeof message.sourceIndex === "number" ? message.sourceIndex : undefined,
+          attachments: Array.isArray(message.attachments) ? message.attachments : undefined,
+        })).slice(-120),
+      ]));
+  } catch {
+    return {};
   }
 }
 
@@ -1442,6 +1685,82 @@ function isKanbanStaleWorkingTask(task: KanbanTask, now = Date.now()) {
 
 function kanbanToolOutputStalledMessage(agentName: string) {
   return `${agentName} produced terminal/tool output but has not sent a final agent response. The dashboard stopped treating tool output as completion; steer the agent or move the card back to Ready for Queen to retry.`;
+}
+
+function kanbanNoAssistantStalledMessage(agentName: string, latestCount: number, latestRole: string | null) {
+  const roleLabel = latestRole ? ` Latest observed session message role: ${latestRole}.` : "";
+  return `${agentName} accepted the task and the session is updating, but no assistant response has appeared after ${latestCount} messages.${roleLabel} Check the agent runtime session or move the card back to Ready for Queen to retry.`;
+}
+
+function isDashboardWorkChatMessage(message: ChatMessage) {
+  if (message.kanbanTaskId) return true;
+  if (message.surface === "kanban" || message.surface === "scheduler") return true;
+  const content = message.content.trim();
+  return content.startsWith("This is a scheduled dashboard run.")
+    || content.startsWith("You are receiving an automated Kanban assignment")
+    || content.startsWith("Needs human: ");
+}
+
+function isManualAgentChatMessage(message: ChatMessage) {
+  return !isDashboardWorkChatMessage(message);
+}
+
+function compactDiagnosticPreview(value: string, maxLength = 180) {
+  const compact = value.trim().replace(/\s+/g, " ");
+  return compact.length > maxLength ? `${compact.slice(0, maxLength).trimEnd()} [truncated]` : compact;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function summarizeKanbanToolOutput(toolOutput: string) {
+  const trimmed = toolOutput.trim();
+  if (!trimmed) return "";
+  try {
+    const parsed = JSON.parse(trimmed) as unknown;
+    if (isRecord(parsed) && Array.isArray(parsed.matches)) {
+      const matches = parsed.matches.filter(isRecord);
+      const totalCount = typeof parsed.total_count === "number" ? parsed.total_count : matches.length;
+      const files = new Set(matches.map((match) => typeof match.path === "string" ? match.path : "").filter(Boolean));
+      const preview = matches.slice(0, 3).map((match) => {
+        const path = typeof match.path === "string" ? match.path.split("/").slice(-3).join("/") : "unknown file";
+        const line = typeof match.line === "number" ? `:${match.line}` : "";
+        const content = typeof match.content === "string" ? ` — ${compactDiagnosticPreview(match.content, 120)}` : "";
+        return `- ${path}${line}${content}`;
+      });
+      return [
+        `Last tool output before blocking: search results with ${totalCount} match${totalCount === 1 ? "" : "es"} across ${files.size || "unknown"} file${files.size === 1 ? "" : "s"}.`,
+        preview.length ? ["Preview:", ...preview].join("\n") : "",
+        matches.length > preview.length ? `${matches.length - preview.length} additional match${matches.length - preview.length === 1 ? "" : "es"} were omitted from this dashboard summary.` : "",
+      ].filter(Boolean).join("\n");
+    }
+    if (isRecord(parsed)) {
+      const keys = Object.keys(parsed).slice(0, 8);
+      return `Last tool output before blocking: structured JSON with keys ${keys.join(", ")}.`;
+    }
+  } catch {
+    // Fall through to plain-text preview.
+  }
+  const lines = trimmed.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+  const preview = lines.slice(0, 4).map((line) => `- ${compactDiagnosticPreview(line, 160)}`);
+  return [
+    `Last tool output before blocking: ${lines.length} line${lines.length === 1 ? "" : "s"} of terminal/tool output.`,
+    preview.length ? ["Preview:", ...preview].join("\n") : compactDiagnosticPreview(trimmed, 360),
+    lines.length > preview.length ? `${lines.length - preview.length} additional line${lines.length - preview.length === 1 ? "" : "s"} were omitted from this dashboard summary.` : "",
+  ].filter(Boolean).join("\n");
+}
+
+function kanbanToolOutputStalledDetail(agentName: string, toolOutput: string) {
+  const summary = summarizeKanbanToolOutput(toolOutput);
+  return [
+    kanbanToolOutputStalledMessage(agentName),
+    summary,
+  ].filter(Boolean).join("\n\n");
+}
+
+function wait(ms: number) {
+  return new Promise((resolve) => window.setTimeout(resolve, ms));
 }
 
 function formatDurationShort(ms: number) {
@@ -1753,6 +2072,9 @@ function kanbanCardMessage(task: KanbanTask) {
   if (!result) return "No task body yet.";
 
   const compact = result.replace(/\s+/g, " ");
+  if (/produced terminal\/tool output but has not sent a final agent response/i.test(result)) {
+    return result.split(/\n\n+/)[0] ?? compact;
+  }
   const looksLikeToolDump = /^{["{[]|^\[Subdirectory context discovered:|#\s+Project Rules|AGENTS\.md|total_count/i.test(result);
   if (looksLikeToolDump || result.length > 280) {
     return compact.startsWith("Dispatch reached")
@@ -2543,6 +2865,25 @@ function splitBrainLabel(label: string): string[] {
   return [first, second ? `${second}${compact.length > 25 ? "..." : ""}` : ""].filter(Boolean);
 }
 
+function BrainGraphLoader({ compact = false }: { compact?: boolean }) {
+  return (
+    <div className={vaultClass("brainLoader", compact && "compact")} role="status" aria-live="polite">
+      <div className={vaultClass("brainLoaderComb")} aria-hidden="true">
+        {Array.from({ length: 7 }).map((_, index) => (
+          <span key={index} />
+        ))}
+      </div>
+      <div>
+        <strong>Mapping shared brain</strong>
+        <span>Reading vault notes and link edges</span>
+      </div>
+      <div className={vaultClass("brainLoadingRail")} aria-hidden="true">
+        <span />
+      </div>
+    </div>
+  );
+}
+
 type BrainHexCoord = { q: number; r: number };
 type BrainPoint = { x: number; y: number };
 
@@ -2713,6 +3054,7 @@ export default function Home() {
   const [hydrated, setHydrated] = useState(false);
   const [agents, setAgents] = useState<AgentProfile[]>(seedAgents);
   const [selectedAgentId, setSelectedAgentId] = useState(() => seedAgents()[0]?.id ?? "");
+  const [walletExpanded, setWalletExpanded] = useState(false);
   const [text, setText] = useState("");
   const [chatAttachments, setChatAttachments] = useState<ChatAttachment[]>([]);
   const [attachmentError, setAttachmentError] = useState("");
@@ -2731,6 +3073,8 @@ export default function Home() {
   const [brainGraph, setBrainGraph] = useState<BrainGraph | null>(null);
   const [brainGraphStatus, setBrainGraphStatus] = useState("");
   const [brainGraphLoading, setBrainGraphLoading] = useState(false);
+  const brainGraphLoadedAtRef = useRef(0);
+  const brainGraphVaultPathRef = useRef("");
   const [selectedBrainNodeId, setSelectedBrainNodeId] = useState("");
   const [brainPan, setBrainPan] = useState({ x: 0, y: 0 });
   const [brainSkills, setBrainSkills] = useState<BrainSkillInventory | null>(null);
@@ -2745,6 +3089,9 @@ export default function Home() {
   const [skillBrowserStatus, setSkillBrowserStatus] = useState("");
   const [skillBrowserLoading, setSkillBrowserLoading] = useState(false);
   const [skillBrowserImporting, setSkillBrowserImporting] = useState("");
+  const [skillBrowserGithubOpen, setSkillBrowserGithubOpen] = useState(false);
+  const [skillBrowserGithubUrl, setSkillBrowserGithubUrl] = useState("");
+  const [skillBrowserGithubInstalling, setSkillBrowserGithubInstalling] = useState(false);
   const [messagesByAgent, setMessagesByAgent] = useState<Record<string, ChatMessage[]>>({});
   const [tasks, setTasks] = useState<AgentTask[]>([]);
   const [schedules, setSchedules] = useState<AgentSchedule[]>([]);
@@ -2758,6 +3105,8 @@ export default function Home() {
     skills: [],
     paths: [],
     steps: [{ id: "draft-step-0", text: "", skills: [], paths: [], model: "" }],
+    usePastRuns: false,
+    pastRunLimit: 3,
   });
   const [schedulerAttachMenu, setSchedulerAttachMenu] = useState<"menu" | "skill" | "model" | "path" | null>(null);
   const [schedulerSkillSearch, setSchedulerSkillSearch] = useState("");
@@ -2768,6 +3117,7 @@ export default function Home() {
   const [scheduleImportStatus, setScheduleImportStatus] = useState("");
   const [scheduleImporting, setScheduleImporting] = useState(false);
   const [schedulerDraftOpen, setSchedulerDraftOpen] = useState(false);
+  const [schedulerRunStates, setSchedulerRunStates] = useState<Record<string, SchedulerRunState>>({});
   const [walletsByAgent, setWalletsByAgent] = useState<Record<string, AgentWalletConfig>>({});
   const [honeyTreasury, setHoneyTreasury] = useState<HoneyTreasuryConfig>(createDefaultHoneyTreasuryConfig);
   const [honeyLedgerEnabled, setHoneyLedgerEnabled] = useState(false);
@@ -2863,6 +3213,7 @@ export default function Home() {
   const [kanbanSteerTargetMenuOpen, setKanbanSteerTargetMenuOpen] = useState(false);
   const [kanbanSteeringTaskId, setKanbanSteeringTaskId] = useState("");
   const [expandedKanbanCards, setExpandedKanbanCards] = useState<Record<string, boolean>>({});
+  const [kanbanPickupPreviewByTask, setKanbanPickupPreviewByTask] = useState<Record<string, KanbanPickupPreview>>({});
   const [quickAddStatus, setQuickAddStatus] = useState<KanbanStatus | "">("");
   const [quickAddDrafts, setQuickAddDrafts] = useState<Record<string, string>>({});
   const [quickAddAttachments, setQuickAddAttachments] = useState<Record<string, ChatAttachment[]>>({});
@@ -2891,6 +3242,8 @@ export default function Home() {
   const [mirosharkExperimentEvent, setMirosharkExperimentEvent] = useState("A city health official issues a public warning and demands proof of food handling compliance.");
   const [mirosharkExperimentStatus, setMirosharkExperimentStatus] = useState("");
   const [mirosharkExperimentPending, setMirosharkExperimentPending] = useState("");
+  const [mirosharkHelperPending, setMirosharkHelperPending] = useState<"ask" | "suggest" | "">("");
+  const [mirosharkHelperStatus, setMirosharkHelperStatus] = useState("");
   const [activeView, setActiveView] = useState<DashboardView>("agents");
   const [dashboardTheme, setDashboardTheme] = useState<DashboardTheme>("dark");
   const [busy, setBusy] = useState(false);
@@ -2938,6 +3291,7 @@ export default function Home() {
   const kanbanDispatchCooldownRef = useRef<Map<string, number>>(new Map());
   const kanbanStaleRequeueAttemptRef = useRef<Set<string>>(new Set());
   const kanbanSessionPollRef = useRef<Map<string, number>>(new Map());
+  const kanbanSessionPollFailureRef = useRef<Map<string, number>>(new Map());
   const kanbanRuntimeAbortRef = useRef<Map<string, AbortController>>(new Map());
   const syncthingAutoPairRef = useRef<Set<string>>(new Set());
   const brainDragRef = useRef<{
@@ -2966,6 +3320,12 @@ export default function Home() {
     setTasks(parseStoredTasks());
     setSchedules(parseStoredSchedules());
     setWalletsByAgent(parseStoredWallets());
+    const storedChatMessages = parseStoredChatMessages();
+    setMessagesByAgent(storedChatMessages);
+    logClientTelemetry("chat.messages.hydrated", {
+      agentCount: Object.keys(storedChatMessages).length,
+      messageCount: Object.values(storedChatMessages).reduce((count, messages) => count + messages.length, 0),
+    });
     setHoneyLedgerEnabled(parseStoredHoneyLedgerEnabled());
     setHoneyTreasury(parseStoredHoneyTreasury());
     setChatCustomFolders(parseStoredChatFolders());
@@ -2978,7 +3338,11 @@ export default function Home() {
 
   useEffect(() => {
     if (!hydrated || !honeyLedgerEnabled) return;
-    void refreshHoneyLedger();
+    void observeHoneyUsage();
+    const timer = window.setInterval(() => {
+      void observeHoneyUsage();
+    }, 30_000);
+    return () => window.clearInterval(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [honeyLedgerEnabled, hydrated]);
 
@@ -3017,6 +3381,23 @@ export default function Home() {
     if (!hydrated) return;
     window.localStorage.setItem(WALLET_STORAGE_KEY, JSON.stringify(walletsByAgent));
   }, [hydrated, walletsByAgent]);
+
+  useEffect(() => {
+    if (!hydrated) return;
+    const compactMessages: Record<string, ChatMessage[]> = Object.fromEntries(Object.entries(messagesByAgent)
+      .map(([agentId, messages]) => [
+        agentId,
+        messages
+          .filter((message) => message.role !== "system" && (message.content.trim() || message.attachments?.length))
+          .slice(-120),
+      ])
+      .filter(([, messages]) => Array.isArray(messages) && messages.length > 0));
+    window.localStorage.setItem(CHAT_MESSAGES_STORAGE_KEY, JSON.stringify(compactMessages));
+    logClientTelemetry("chat.messages.persisted", {
+      agentCount: Object.keys(compactMessages).length,
+      messageCount: Object.values(compactMessages).reduce((count, messages) => count + messages.length, 0),
+    });
+  }, [hydrated, messagesByAgent]);
 
   useEffect(() => {
     if (!hydrated) return;
@@ -3102,6 +3483,7 @@ export default function Home() {
   }, [chatContextMenu]);
 
   useEffect(() => {
+    if (!hydrated || activeView !== "agents") return;
     let cancelled = false;
     async function refreshFleetSnapshot() {
       const response = await fetch("/api/fleet/snapshot", {
@@ -3124,7 +3506,7 @@ export default function Home() {
       cancelled = true;
       window.clearInterval(timer);
     };
-  }, [agents, sharedVault]);
+  }, [activeView, agents, hydrated, sharedVault]);
 
   useEffect(() => {
     async function refreshTailscaleDevices() {
@@ -3142,6 +3524,7 @@ export default function Home() {
   }, []);
 
   useEffect(() => {
+    if (!hydrated || activeView !== "agents") return;
     let cancelled = false;
     async function refreshDiscovery() {
       const response = await fetch("/api/fleet/discover", { cache: "no-store" }).catch(() => null);
@@ -3162,7 +3545,7 @@ export default function Home() {
       cancelled = true;
       window.clearInterval(timer);
     };
-  }, []);
+  }, [activeView, hydrated]);
 
   useEffect(() => {
     async function refreshVersion() {
@@ -3226,25 +3609,30 @@ export default function Home() {
     setMirosharkActionPending("");
   }
 
-  function startNewMirosharkSimulation() {
+  function startNewMirosharkSimulation(templateId?: TemplateId) {
     setMirosharkWorkspaceMode("new");
     setMirosharkRun(null);
     setMirosharkRunPending(false);
     setSelectedMirosharkRunId("");
     setMirosharkArchiveStatus("");
     setMirosharkWorkbenchTab("surface");
+    const template = allMirosharkTemplates.find((item) => item.id === templateId) ?? allMirosharkTemplates[0];
+    if (template) applyMirosharkTemplate(template);
   }
 
   function applyMirosharkTemplate(template: MiroSharkTemplate) {
     if (!template.id) return;
     setMirosharkWorkspaceMode("new");
+    setMirosharkRun(null);
+    setMirosharkRunPending(false);
+    setSelectedMirosharkRunId("");
     setMirosharkSelectedTemplateId(template.id);
     const nextInputs = defaultMirosharkTemplateInputs(template.id);
     setMirosharkTemplateInputs(nextInputs);
-    const platform = template.platforms?.includes("polymarket")
-      ? "polymarket"
-      : template.platforms?.includes("reddit") && template.platforms?.includes("twitter")
-        ? "parallel"
+    const platform = template.platforms && template.platforms.length > 1
+      ? "parallel"
+      : template.platforms?.includes("polymarket")
+        ? "polymarket"
         : template.platforms?.includes("reddit")
           ? "reddit"
           : "twitter";
@@ -3261,11 +3649,52 @@ export default function Home() {
     });
   }
 
-  async function runMirosharkSwarm(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
+  function extractMirosharkHelperText(payload: unknown) {
+    const data = payloadData((payload as { payload?: unknown } | null)?.payload ?? payload);
+    if (typeof data === "string") return data;
+    const record = asRecord(data);
+    const direct = record.briefing ?? record.scenario ?? record.text ?? record.answer ?? record.content ?? record.summary;
+    if (typeof direct === "string") return direct;
+    const suggestions = payloadArray(data);
+    const first = suggestions[0];
+    if (typeof first === "string") return first;
+    const firstRecord = asRecord(first);
+    const suggestion = firstRecord.scenario ?? firstRecord.text ?? firstRecord.title ?? firstRecord.summary;
+    return typeof suggestion === "string" ? suggestion : "";
+  }
+
+  async function runMirosharkScenarioHelper(action: "ask" | "suggest") {
+    const draft = mirosharkScenario.trim();
+    if (!draft) return;
+    setMirosharkHelperPending(action);
+    setMirosharkHelperStatus("");
+    const response = await fetch("/api/miroshark/swarm", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(action === "ask"
+        ? { action, question: draft }
+        : { action, textPreview: draft, question: mirosharkSelectedTemplate?.name }),
+    }).catch(() => null);
+    const data = await response?.json().catch(() => null) as { ok?: boolean; error?: string; payload?: unknown } | null;
+    setMirosharkHelperPending("");
+    if (!data?.ok) {
+      setMirosharkHelperStatus(data?.error ?? "MiroShark helper failed.");
+      return;
+    }
+    const helperText = extractMirosharkHelperText(data);
+    if (helperText) {
+      setMirosharkScenario(helperText);
+      setMirosharkHelperStatus(action === "ask" ? "Seed brief loaded from MiroShark." : "Suggested scenario loaded from MiroShark.");
+    } else {
+      setMirosharkHelperStatus("MiroShark returned no helper text.");
+    }
+  }
+
+  async function launchMirosharkSwarm() {
     setMirosharkRunPending(true);
     setMirosharkWorkspaceMode("run");
     setMirosharkRun(null);
+    setSelectedMirosharkRunId("");
     setMirosharkArchiveStatus("");
     const response = await fetch("/api/miroshark/swarm", {
       method: "POST",
@@ -3274,11 +3703,18 @@ export default function Home() {
         scenario: mirosharkScenario,
         rounds: mirosharkRounds,
         platform: mirosharkPlatform,
+        templateId: mirosharkSelectedTemplate?.id,
+        projectName: mirosharkSelectedTemplate?.name ? `${mirosharkSelectedTemplate.name} · HivemindOS` : undefined,
       }),
     }).catch(() => null);
     const data = await response?.json().catch(() => null) as MiroSharkRunResult | null;
     setMirosharkRun(data ?? { ok: false, error: "MiroShark run request failed" });
     if (!data?.jobId) setMirosharkRunPending(false);
+  }
+
+  async function runMirosharkSwarm(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    await launchMirosharkSwarm();
   }
 
   async function runMirosharkExperiment(action: "stop" | "inject" | "fork" | "branch" | "publish") {
@@ -3321,17 +3757,26 @@ export default function Home() {
     }
   }, [sharedVault.enabled, sharedVault.vaultPath]);
 
-  const refreshBrainGraph = useCallback(async () => {
+  const refreshBrainGraph = useCallback(async (force = false) => {
     if (!sharedVault.enabled) {
       setBrainGraph(null);
       setBrainGraphStatus("Shared brain is off.");
+      brainGraphLoadedAtRef.current = 0;
+      brainGraphVaultPathRef.current = "";
       return;
     }
+    const requestedVaultPath = sharedVault.vaultPath.trim();
+    if (
+      !force
+      && brainGraph
+      && brainGraphVaultPathRef.current === requestedVaultPath
+      && Date.now() - brainGraphLoadedAtRef.current < BRAIN_GRAPH_CLIENT_CACHE_MS
+    ) return;
     setBrainGraphLoading(true);
     const response = await fetch("/api/obsidian/graph", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ vaultPath: sharedVault.vaultPath.trim() || undefined }),
+      body: JSON.stringify({ vaultPath: requestedVaultPath || undefined, force }),
     }).catch(() => null);
     const data = await response?.json().catch(() => null) as BrainGraphResponse | null;
     setBrainGraphLoading(false);
@@ -3340,11 +3785,14 @@ export default function Home() {
       return;
     }
     setBrainGraph(data.graph);
+    brainGraphLoadedAtRef.current = Date.now();
+    brainGraphVaultPathRef.current = requestedVaultPath;
     setSelectedBrainNodeId((current) => current || data.graph?.nodes[0]?.id || "");
+    const noteCount = data.graph.nodes.filter((node) => !node.id.startsWith("unresolved:")).length;
     setBrainGraphStatus(data.graph.truncated
-      ? `Loaded first ${data.graph.nodes.length} notes and links.`
-      : `Loaded ${data.graph.nodes.length} notes and ${data.graph.links.length} links.`);
-  }, [sharedVault.enabled, sharedVault.vaultPath]);
+      ? `Loaded first ${noteCount} notes, ${data.graph.nodes.length} cells, and ${data.graph.links.length} links.`
+      : `Loaded ${noteCount} notes, ${data.graph.nodes.length} cells, and ${data.graph.links.length} links.`);
+  }, [brainGraph, sharedVault.enabled, sharedVault.vaultPath]);
 
   const refreshBrainSkills = useCallback(async () => {
     if (!sharedVault.enabled) {
@@ -3531,6 +3979,44 @@ export default function Home() {
     void refreshBrainSkills();
   }, [importBrainSkills, refreshBrainGraph, refreshBrainSkills, sharedVault.enabled, sharedVault.vaultPath]);
 
+  const installGithubSkillToBrain = useCallback(async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const githubUrl = skillBrowserGithubUrl.trim();
+    if (!githubUrl) {
+      setSkillBrowserStatus("Enter a GitHub skill URL first.");
+      return;
+    }
+    if (!sharedVault.enabled) {
+      setSkillBrowserStatus("Turn on the shared brain before installing from GitHub.");
+      return;
+    }
+
+    setSkillBrowserGithubInstalling(true);
+    setSkillBrowserStatus("");
+    const response = await fetch("/api/obsidian/skills", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        action: "import-github",
+        vaultPath: sharedVault.vaultPath.trim() || undefined,
+        githubUrl,
+      }),
+    }).catch(() => null);
+    const data = await response?.json().catch(() => null) as BrainSkillInventory | { ok?: boolean; error?: string } | null;
+    setSkillBrowserGithubInstalling(false);
+    if (!response?.ok || !data?.ok) {
+      setSkillBrowserStatus(data?.error ?? "Could not install that GitHub skill.");
+      return;
+    }
+
+    setBrainSkills(data as BrainSkillInventory);
+    setSkillBrowserGithubUrl("");
+    setSkillBrowserGithubOpen(false);
+    setSkillBrowserStatus("Installed GitHub skill into the shared brain.");
+    void refreshBrainGraph();
+    void refreshBrainSkills();
+  }, [refreshBrainGraph, refreshBrainSkills, sharedVault.enabled, sharedVault.vaultPath, skillBrowserGithubUrl]);
+
   const refreshNotifications = useCallback(async (options: { append?: boolean } = {}) => {
     if (!sharedVault.enabled) {
       setNotifications([]);
@@ -3612,13 +4098,20 @@ export default function Home() {
 
   const refreshMirosharkRun = useCallback(async () => {
     if (mirosharkRun?.archived) return;
+    const runParams = new URLSearchParams();
+    if (mirosharkRun?.simulationId) {
+      runParams.set("simulation_id", mirosharkRun.simulationId);
+      runParams.set("platform", mirosharkRun.platform ?? mirosharkPlatform);
+      if (mirosharkRun.graphId) runParams.set("graph_id", mirosharkRun.graphId);
+      if (mirosharkRun.projectId) runParams.set("project_id", mirosharkRun.projectId);
+    }
     const shouldFetchRun = mirosharkRun?.simulationId && mirosharkRun.status === "started";
     const query = shouldFetchRun
-      ? `simulation_id=${encodeURIComponent(mirosharkRun.simulationId ?? "")}&platform=${encodeURIComponent(mirosharkRun.platform ?? mirosharkPlatform)}`
+      ? runParams.toString()
       : mirosharkRun?.jobId
         ? `job_id=${encodeURIComponent(mirosharkRun.jobId)}`
         : mirosharkRun?.simulationId
-          ? `simulation_id=${encodeURIComponent(mirosharkRun.simulationId)}&platform=${encodeURIComponent(mirosharkRun.platform ?? mirosharkPlatform)}`
+          ? runParams.toString()
           : "";
     if (!query) return;
     const response = await fetch(`/api/miroshark/swarm?${query}`, {
@@ -3680,7 +4173,16 @@ export default function Home() {
     return mirosharkRunPending ? "Starting run" : "Working";
   })();
   const mirosharkTemplates = getMiroSharkTemplates(mirosharkMetadata);
-  const mirosharkSelectedTemplate = mirosharkTemplates.find((template) => template.id === mirosharkSelectedTemplateId);
+  const allMirosharkTemplates = useMemo(() => {
+    const seen = new Set<string>();
+    return [...SWARM_LAUNCH_PRESETS, ...mirosharkTemplates].filter((template) => {
+      const id = template.id;
+      if (!id || seen.has(id)) return false;
+      seen.add(id);
+      return true;
+    });
+  }, [mirosharkTemplates]);
+  const mirosharkSelectedTemplate = allMirosharkTemplates.find((template) => template.id === mirosharkSelectedTemplateId);
   const mirosharkSelectedTemplateFields = MIROSHARK_TEMPLATE_INPUTS[mirosharkSelectedTemplate?.id ?? ""] ?? [];
   const mirosharkMissingTemplateFields = mirosharkSelectedTemplateFields.filter((field) => (
     field.required && !mirosharkTemplateInputs[field.key]?.trim()
@@ -3695,14 +4197,15 @@ export default function Home() {
   const mirosharkObservabilityItems = payloadArray<Record<string, unknown>>(mirosharkRun?.observabilityEvents ?? mirosharkMetadata?.observabilityEvents).slice(0, 18);
   const mirosharkLlmCallItems = payloadArray<Record<string, unknown>>(mirosharkRun?.llmCalls ?? mirosharkMetadata?.llmCalls).slice(0, 10);
   const swarmTemplates = useMemo<SwarmTemplate[]>(() => (
-    mirosharkTemplates.map((template) => ({
+    allMirosharkTemplates.map((template) => ({
       id: swarmTemplateIdFromMirosharkTemplate(template),
       label: template.name ?? template.id ?? "MiroShark template",
       kind: template.category ?? template.platforms?.join(" + ") ?? "simulation",
       agents: template.estimated_agents ?? 0,
       desc: template.description ?? "MiroShark template returned by the companion.",
+      platforms: template.platforms,
     }))
-  ), [mirosharkTemplates]);
+  ), [allMirosharkTemplates]);
   const swarmTimelineItems = useMemo(() => (
     [...mirosharkTimelineItems, ...mirosharkActionItems].slice(0, 24).map(swarmEventItem)
   ), [mirosharkActionItems, mirosharkTimelineItems]);
@@ -3770,6 +4273,65 @@ export default function Home() {
   const swarmMarket = useMemo<SwarmMarket>(() => (
     swarmMarketFromItems(mirosharkMarketItems, swarmTimelineItems)
   ), [mirosharkMarketItems, swarmTimelineItems]);
+  const swarmIntegrationItems = useMemo(() => {
+    const sections: Array<[string, unknown]> = [
+      ["Run detail", mirosharkRun?.runStatusDetail],
+      ["Template capabilities", mirosharkMetadata?.templateCapabilities],
+      ["Enriched templates", mirosharkMetadata?.templateDetails],
+      ["Graph data", mirosharkRun?.graphData],
+      ["Entities", mirosharkRun?.entities],
+      ["Project", mirosharkRun?.project],
+      ["Report", mirosharkRun?.report],
+      ["Interviews", mirosharkRun?.interviewHistory],
+      ["Embed summary", mirosharkRun?.embedSummary],
+      ["Transcript", mirosharkRun?.transcriptJson],
+      ["Webhook log", mirosharkRun?.webhookLog],
+      ["Surface stats", mirosharkRun?.surfaceStats],
+      ["Public gallery", mirosharkMetadata?.publicRuns],
+      ["Run list", mirosharkMetadata?.simulationList],
+      ["Settings", mirosharkMetadata?.settings],
+      ["MCP", mirosharkMetadata?.mcpStatus],
+      ["Push", mirosharkMetadata?.pushVapidKey],
+    ];
+    return sections.map(([title, payload], index) => ({
+      id: `miroshark-integration-${index}`,
+      title,
+      body: payloadPreview(payload, 3).map(([key, value]) => `${key}: ${value}`).join(" · ") || compactValue(payload),
+      meta: `${payloadCount(payload)} records`,
+      level: asRecord(payload).success === false ? "warn" as const : "info" as const,
+      raw: payload,
+    }));
+  }, [
+    mirosharkMetadata?.mcpStatus,
+    mirosharkMetadata?.publicRuns,
+    mirosharkMetadata?.pushVapidKey,
+    mirosharkMetadata?.settings,
+    mirosharkMetadata?.simulationList,
+    mirosharkMetadata?.templateCapabilities,
+    mirosharkMetadata?.templateDetails,
+    mirosharkRun?.embedSummary,
+    mirosharkRun?.entities,
+    mirosharkRun?.graphData,
+    mirosharkRun?.interviewHistory,
+    mirosharkRun?.project,
+    mirosharkRun?.report,
+    mirosharkRun?.runStatusDetail,
+    mirosharkRun?.surfaceStats,
+    mirosharkRun?.transcriptJson,
+    mirosharkRun?.webhookLog,
+  ]);
+  const swarmMarketPriceItems = useMemo(() => (
+    (Array.isArray(mirosharkRun?.marketPrices) ? mirosharkRun.marketPrices : []).map(swarmMarketPriceEventItem)
+  ), [mirosharkRun?.marketPrices]);
+  const swarmExportLinks = useMemo(() => (
+    Object.entries(mirosharkRun?.links ?? {})
+      .filter(([key]) => /shareCard|replayGif|transcript|trajectory|chartSvg|threadTxt|threadJson|reproduceJson|notebook|embedSummary|webhookLog|dkgCitation|report|export/.test(key))
+      .map(([key, href]) => ({
+        key,
+        label: key.replace(/([A-Z])/g, " $1").replace(/^./, (char) => char.toUpperCase()),
+        href,
+      }))
+  ), [mirosharkRun?.links]);
   const currentSwarmRun = useMemo<SwarmRun | null>(() => {
     if (!mirosharkRun) return null;
     const archivedSummary = mirosharkRun.archivedSummary
@@ -3782,7 +4344,7 @@ export default function Home() {
     return {
       id: mirosharkRun.simulationId ?? mirosharkRun.jobId ?? "active-miroshark-run",
       title,
-      template: swarmTemplateIdFromSurface(mirosharkRun.platform ?? mirosharkPlatform),
+      template: mirosharkRun.templateId ?? swarmTemplateIdFromSurface(mirosharkRun.platform ?? mirosharkPlatform),
       state: swarmRunState(mirosharkRun, mirosharkRunnerStatus),
       rounds: totalRounds,
       currentRound: Math.min(mirosharkCurrentRound || totalRounds, totalRounds || mirosharkCurrentRound),
@@ -3801,9 +4363,12 @@ export default function Home() {
       scenario: runScenario,
       threadPosts: swarmThreadPosts,
       timelineItems: swarmTimelineItems,
-      marketItems: mirosharkMarketItems.map(swarmEventItem),
+      marketItems: mirosharkMarketItems.map(swarmMarketEventItem),
       profileItems: mirosharkProfileItems.map(swarmEventItem),
       observabilityItems: swarmObservabilityItems,
+      integrationItems: swarmIntegrationItems,
+      exportLinks: swarmExportLinks,
+      marketPriceItems: swarmMarketPriceItems,
     };
   }, [
     mirosharkActionCount,
@@ -3821,6 +4386,9 @@ export default function Home() {
     mirosharkScenario,
     mirosharkTotalRounds,
     swarmAgents.length,
+    swarmExportLinks,
+    swarmIntegrationItems,
+    swarmMarketPriceItems,
     swarmObservabilityItems,
     swarmThreadPosts,
     swarmTimelineItems,
@@ -3845,10 +4413,20 @@ export default function Home() {
       platform: run.platform,
       scenario: run.scenario,
     }));
-    return currentSwarmRun ? [currentSwarmRun, ...archived.filter((run) => run.id !== currentSwarmRun.id)] : archived;
+
+    if (!currentSwarmRun) return archived;
+
+    const selectedArchivedIndex = archived.findIndex((run) => run.id === currentSwarmRun.id);
+    if (selectedArchivedIndex === -1) return [currentSwarmRun, ...archived];
+
+    return archived.map((run, index) => (
+      index === selectedArchivedIndex
+        ? { ...run, ...currentSwarmRun, started: run.started, state: run.state }
+        : run
+    ));
   }, [currentSwarmRun, mirosharkArchiveRuns]);
   const swarmStatusLabel = mirosharkStatus?.ok ? "connected" : mirosharkStatus?.install.running ? "starting" : "offline";
-  const selectedSwarmRunId = selectedMirosharkRunId || currentSwarmRun?.id;
+  const selectedSwarmRunId = selectedMirosharkRunId || currentSwarmRun?.id || (mirosharkWorkspaceMode === "new" ? "" : undefined);
 
   useEffect(() => {
     if (!hydrated || activeView !== "swarm") return;
@@ -3862,9 +4440,14 @@ export default function Home() {
     if (!hydrated || activeView !== "vault") return;
     const timer = window.setTimeout(() => {
       void refreshBrainGraph();
-      void refreshBrainSkills();
     }, 0);
-    return () => window.clearTimeout(timer);
+    const skillsTimer = window.setTimeout(() => {
+      void refreshBrainSkills();
+    }, 350);
+    return () => {
+      window.clearTimeout(timer);
+      window.clearTimeout(skillsTimer);
+    };
   }, [activeView, hydrated, refreshBrainGraph, refreshBrainSkills]);
 
   useEffect(() => {
@@ -3959,8 +4542,13 @@ export default function Home() {
 
     const simulationId = mirosharkRun.simulationId;
     const platform = mirosharkRun.platform ?? mirosharkPlatform;
+    const graphId = mirosharkRun.graphId;
+    const projectId = mirosharkRun.projectId;
     const pollRun = async () => {
-      const response = await fetch(`/api/miroshark/swarm?simulation_id=${encodeURIComponent(simulationId)}&platform=${encodeURIComponent(platform)}`, {
+      const params = new URLSearchParams({ simulation_id: simulationId, platform });
+      if (graphId) params.set("graph_id", graphId);
+      if (projectId) params.set("project_id", projectId);
+      const response = await fetch(`/api/miroshark/swarm?${params.toString()}`, {
         cache: "no-store",
       }).catch(() => null);
       const data = await response?.json().catch(() => null) as MiroSharkRunResult | null;
@@ -3983,6 +4571,8 @@ export default function Home() {
     mirosharkPlatform,
     mirosharkRun?.archived,
     mirosharkRun?.platform,
+    mirosharkRun?.graphId,
+    mirosharkRun?.projectId,
     mirosharkRun?.simulationId,
     mirosharkRun?.status,
     mirosharkRunnerStatus,
@@ -3995,6 +4585,7 @@ export default function Home() {
   }, [sharedVault.enabled, sharedVault.kanbanFolder, sharedVault.vaultPath]);
 
   useEffect(() => {
+    if (!hydrated || activeView !== "kanban") return;
     let cancelled = false;
     async function refreshKanban() {
       const params = new URLSearchParams({
@@ -4037,6 +4628,8 @@ export default function Home() {
     kanbanTenantFilter,
     kanbanAssigneeFilter,
     kanbanSearch,
+    activeView,
+    hydrated,
     sharedVault.enabled,
     sharedVault.kanbanFolder,
     sharedVault.vaultPath,
@@ -4109,6 +4702,12 @@ export default function Home() {
     () => candidateAgents.filter((agent) => !isStarterPlaceholder(agent, candidateWorkById, messagesByAgent)),
     [candidateAgents, candidateWorkById, messagesByAgent],
   );
+
+  useEffect(() => {
+    if (!hydrated || !sharedVault.enabled) return;
+    void refreshSharedSchedulesFromVault();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [hydrated, sharedVault.enabled, sharedVault.vaultPath, sharedVault.scheduledFolder, displayAgents.length]);
 
   const agentWorkById = useMemo(() => {
     return Object.fromEntries(displayAgents.map((agent) => [agent.id, candidateWorkById[agent.id] ?? []]));
@@ -4214,7 +4813,9 @@ export default function Home() {
       const relatedIds = [selectedAgent.id, ...[...agentAliases.entries()]
         .filter(([, canonicalId]) => canonicalId === selectedAgent.id)
         .map(([aliasId]) => aliasId)];
-      const mergedMessages = relatedIds.flatMap((agentId) => messagesByAgent[agentId] ?? []);
+      const mergedMessages = relatedIds
+        .flatMap((agentId) => messagesByAgent[agentId] ?? [])
+        .filter(isManualAgentChatMessage);
       const selectedMessages = mergedMessages.length ? mergedMessages : [{
         role: "system" as const,
         content: `Chatting with ${selectedAgent.name}. Pick a machine to start fresh, or resume a previous chat when one is listed.`,
@@ -4353,6 +4954,7 @@ export default function Home() {
             id: agent.id,
             name: agent.name,
             runtime: RUNTIME_LABELS[agent.runtime],
+            canChat: runtimeCan(agent, "chat"),
             state: fleetAgentState(agent, snapshot, activeCount, hasMachineWiring),
             role: beeRoleLabel(agent.beeRole),
             beeRole: agent.beeRole,
@@ -5033,6 +5635,8 @@ export default function Home() {
       skills: [],
       paths: [],
       steps: [{ id: `draft-step-${Date.now()}-0`, text: "", skills: [], paths: [], model: "" }],
+      usePastRuns: false,
+      pastRunLimit: 3,
     });
     setSchedulerSelectedStep(0);
     setSchedulerAttachMenu(null);
@@ -5061,6 +5665,8 @@ export default function Home() {
       skills: schedule.skills,
       paths: schedule.paths,
       steps,
+      usePastRuns: schedule.usePastRuns === true,
+      pastRunLimit: Math.max(1, Math.min(12, Number(schedule.pastRunLimit) || 3)),
     });
     setSchedulerSelectedStep(0);
     setSchedulerAttachMenu(null);
@@ -5105,10 +5711,15 @@ export default function Home() {
       externalJobId: editedSchedule?.externalJobId,
       lastStatus: editedSchedule?.lastStatus,
       lastSummary: editedSchedule?.lastSummary,
+      usePastRuns: scheduleDraft.usePastRuns,
+      pastRunLimit: Math.max(1, Math.min(12, Number(scheduleDraft.pastRunLimit) || 3)),
+      sharedSchedulePath: editedSchedule?.sharedSchedulePath,
+      sharedRunFolder: editedSchedule?.sharedRunFolder,
     };
     setSchedules((current) => editedSchedule
       ? current.map((schedule) => schedule.id === editedSchedule.id ? next : schedule)
       : [next, ...current]);
+    void upsertSharedSchedule(next);
     resetScheduleDraft(agent.id);
     setSchedulerDraftOpen(false);
   }
@@ -5164,10 +5775,16 @@ export default function Home() {
           externalJobId: job.id,
           lastStatus: job.lastStatus,
           lastSummary: job.lastSummary,
+          usePastRuns: existing?.usePastRuns ?? false,
+          pastRunLimit: existing?.pastRunLimit ?? 3,
+          sharedSchedulePath: existing?.sharedSchedulePath,
+          sharedRunFolder: existing?.sharedRunFolder,
         };
         byExternalId.set(key, imported);
       }
-      return [...byExternalId.values()].sort((a, b) => b.updatedAt - a.updatedAt);
+      const importedSchedules = [...byExternalId.values()].sort((a, b) => b.updatedAt - a.updatedAt);
+      void upsertSharedSchedules(importedSchedules);
+      return importedSchedules;
     });
     setScheduleImportStatus(`Imported ${jobs.length} runtime schedule${jobs.length === 1 ? "" : "s"}.`);
   }
@@ -5206,11 +5823,308 @@ export default function Home() {
     setSchedules((current) => current.map((item) => (
       item.id === id ? { ...item, enabled: nextEnabled, updatedAt: Number(new Date()) } : item
     )));
+    void upsertSharedSchedule({ ...schedule, enabled: nextEnabled, updatedAt: Number(new Date()) });
+  }
+
+  function schedulerPlainPrompt(schedule: AgentSchedule) {
+    if (schedule.mode !== "steps") return schedule.prompt || schedule.name;
+    return [
+      schedule.prompt,
+      ...schedule.steps.map((step, index) => `${index + 1}. ${step.text}`),
+    ].filter(Boolean).join("\n");
+  }
+
+  function schedulerSharedSnapshot(schedule: AgentSchedule) {
+    const agent = displayAgents.find((item) => item.id === schedule.agentId);
+    return {
+      id: schedule.id,
+      name: schedule.name,
+      agentId: schedule.agentId,
+      agentName: agent?.name ?? "",
+      machineName: agent?.machineName ?? "dashboard",
+      runtime: schedule.externalSource ?? agent?.runtime ?? "dashboard",
+      enabled: schedule.enabled,
+      every: schedule.every,
+      mode: schedule.mode,
+      prompt: schedulerPlainPrompt(schedule),
+      model: schedule.model ?? "",
+      skills: schedule.skills,
+      paths: schedule.paths,
+      steps: schedule.steps,
+      externalSource: schedule.externalSource ?? null,
+      externalJobId: schedule.externalJobId ?? null,
+      updatedAt: schedule.updatedAt,
+      usePastRuns: schedule.usePastRuns === true,
+      pastRunLimit: Math.max(1, Math.min(12, Number(schedule.pastRunLimit) || 3)),
+    };
+  }
+
+  async function upsertSharedSchedule(schedule: AgentSchedule) {
+    const response = await fetch("/api/scheduler/shared", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        action: "upsert-schedule",
+        vaultPath: sharedVault.vaultPath,
+        scheduledFolder: sharedVault.scheduledFolder,
+        schedule: schedulerSharedSnapshot(schedule),
+      }),
+    }).catch(() => null);
+    const data = await response?.json().catch(() => null) as { ok?: boolean; result?: { path?: string; folder?: string }; error?: string } | null;
+    if (response?.ok && data?.ok && data.result) {
+      setSchedules((current) => current.map((item) => (
+        item.id === schedule.id
+          ? { ...item, sharedSchedulePath: data.result?.path, sharedRunFolder: data.result?.folder }
+          : item
+      )));
+    } else if (data?.error) {
+      setScheduleImportStatus(data.error);
+    }
+  }
+
+  async function upsertSharedSchedules(nextSchedules: AgentSchedule[]) {
+    const response = await fetch("/api/scheduler/shared", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        action: "upsert-schedules",
+        vaultPath: sharedVault.vaultPath,
+        scheduledFolder: sharedVault.scheduledFolder,
+        schedules: nextSchedules.map(schedulerSharedSnapshot),
+      }),
+    }).catch(() => null);
+    const data = await response?.json().catch(() => null) as { ok?: boolean; results?: Array<{ path?: string; folder?: string }>; error?: string } | null;
+    if (response?.ok && data?.ok && data.results) {
+      setSchedules((current) => current.map((item) => {
+        const index = nextSchedules.findIndex((schedule) => schedule.id === item.id);
+        const result = index >= 0 ? data.results?.[index] : null;
+        return result ? { ...item, sharedSchedulePath: result.path, sharedRunFolder: result.folder } : item;
+      }));
+    } else if (data?.error) {
+      setScheduleImportStatus(data.error);
+    }
+  }
+
+  async function fetchPastRunContext(schedule: AgentSchedule) {
+    if (!schedule.usePastRuns) return "";
+    const response = await fetch("/api/scheduler/shared", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        action: "past-runs",
+        vaultPath: sharedVault.vaultPath,
+        scheduledFolder: sharedVault.scheduledFolder,
+        schedule: schedulerSharedSnapshot(schedule),
+        limit: Math.max(1, Math.min(12, Number(schedule.pastRunLimit) || 3)),
+      }),
+    }).catch(() => null);
+    const data = await response?.json().catch(() => null) as { ok?: boolean; runs?: Array<{ path: string; name: string; content: string }> } | null;
+    const runs = data?.runs ?? [];
+    if (!response?.ok || !data?.ok || !runs.length) return "";
+    return [
+      "Past scheduled runs context:",
+      "Use these previous run notes to preserve continuity, avoid repetition, and make useful comparisons.",
+      ...runs.map((run, index) => [
+        `Previous run ${index + 1}: ${run.path}`,
+        run.content.slice(0, 6000),
+      ].join("\n")),
+    ].join("\n\n");
+  }
+
+  function scheduleFromSharedSnapshot(snapshot: Record<string, unknown>): AgentSchedule | null {
+    const id = typeof snapshot.id === "string" ? snapshot.id : "";
+    const name = typeof snapshot.name === "string" ? snapshot.name : "";
+    if (!id || !name) return null;
+    const runtime = typeof snapshot.runtime === "string" && snapshot.runtime in RUNTIME_LABELS
+      ? snapshot.runtime as AgentRuntime
+      : undefined;
+    const agentName = typeof snapshot.agentName === "string" ? snapshot.agentName : "";
+    const sourceAgentId = typeof snapshot.agentId === "string" ? snapshot.agentId : "";
+    const agent = displayAgents.find((item) => item.id === sourceAgentId)
+      ?? displayAgents.find((item) => agentName && item.name === agentName)
+      ?? displayAgents.find((item) => runtime && item.runtime === runtime);
+    const rawSteps = Array.isArray(snapshot.steps) ? snapshot.steps : [];
+    const steps = rawSteps.map((step, index) => {
+      const value = typeof step === "object" && step ? step as Record<string, unknown> : {};
+      return {
+        id: typeof value.id === "string" ? value.id : `step-${id}-${index}`,
+        text: typeof value.text === "string" ? value.text : "",
+        skills: Array.isArray(value.skills) ? value.skills.filter((item): item is string => typeof item === "string") : [],
+        paths: Array.isArray(value.paths) ? value.paths.filter((item): item is string => typeof item === "string") : [],
+        model: typeof value.model === "string" ? value.model : "",
+      };
+    }).filter((step) => step.text.trim());
+    const externalSource = typeof snapshot.externalSource === "string" && snapshot.externalSource in RUNTIME_LABELS
+      ? snapshot.externalSource as AgentRuntime
+      : undefined;
+    return {
+      id,
+      name,
+      agentId: agent?.id ?? sourceAgentId,
+      enabled: snapshot.enabled !== false,
+      every: typeof snapshot.every === "string" ? snapshot.every : "custom",
+      mode: snapshot.mode === "steps" ? "steps" : "prompt",
+      prompt: typeof snapshot.prompt === "string" ? snapshot.prompt : "",
+      model: typeof snapshot.model === "string" ? snapshot.model : "",
+      skills: Array.isArray(snapshot.skills) ? snapshot.skills.filter((item): item is string => typeof item === "string") : [],
+      paths: Array.isArray(snapshot.paths) ? snapshot.paths.filter((item): item is string => typeof item === "string") : [],
+      steps,
+      createdAt: typeof snapshot.updatedAt === "number" ? snapshot.updatedAt : Date.now(),
+      updatedAt: typeof snapshot.updatedAt === "number" ? snapshot.updatedAt : Date.now(),
+      externalSource,
+      externalJobId: typeof snapshot.externalJobId === "string" ? snapshot.externalJobId : undefined,
+      usePastRuns: snapshot.usePastRuns === true,
+      pastRunLimit: Math.max(1, Math.min(12, Number(snapshot.pastRunLimit) || 3)),
+      sharedSchedulePath: typeof snapshot.sharedSchedulePath === "string" ? snapshot.sharedSchedulePath : undefined,
+      sharedRunFolder: typeof snapshot.sharedRunFolder === "string" ? snapshot.sharedRunFolder : undefined,
+    };
+  }
+
+  function mergeSharedSchedules(current: AgentSchedule[], sharedSchedules: AgentSchedule[]) {
+    const byId = new Map(current.map((schedule) => [schedule.id, schedule]));
+    for (const sharedSchedule of sharedSchedules) {
+      const existing = byId.get(sharedSchedule.id);
+      if (!existing || (sharedSchedule.updatedAt ?? 0) >= (existing.updatedAt ?? 0)) {
+        byId.set(sharedSchedule.id, {
+          ...existing,
+          ...sharedSchedule,
+          lastRunAt: existing?.lastRunAt,
+          lastStatus: existing?.lastStatus,
+          lastSummary: existing?.lastSummary,
+        });
+      } else if (sharedSchedule.sharedRunFolder || sharedSchedule.sharedSchedulePath) {
+        byId.set(existing.id, {
+          ...existing,
+          sharedRunFolder: existing.sharedRunFolder ?? sharedSchedule.sharedRunFolder,
+          sharedSchedulePath: existing.sharedSchedulePath ?? sharedSchedule.sharedSchedulePath,
+        });
+      }
+    }
+    return [...byId.values()].sort((a, b) => b.updatedAt - a.updatedAt);
+  }
+
+  async function refreshSharedSchedulesFromVault() {
+    if (!sharedVault.enabled) return;
+    const response = await fetch("/api/scheduler/shared", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        action: "list-schedules",
+        vaultPath: sharedVault.vaultPath,
+        scheduledFolder: sharedVault.scheduledFolder,
+      }),
+    }).catch(() => null);
+    const data = await response?.json().catch(() => null) as { ok?: boolean; schedules?: Array<Record<string, unknown>>; error?: string } | null;
+    if (!response?.ok || !data?.ok) {
+      if (data?.error) setScheduleImportStatus(data.error);
+      return;
+    }
+    const sharedSchedules = (data.schedules ?? [])
+      .map((snapshot) => scheduleFromSharedSnapshot(snapshot))
+      .filter((schedule): schedule is AgentSchedule => Boolean(schedule));
+    if (!sharedSchedules.length) return;
+    setSchedules((current) => mergeSharedSchedules(current, sharedSchedules));
+  }
+
+  async function recordSharedScheduledRun(schedule: AgentSchedule, record: {
+    runId: string;
+    status: "running" | "ok" | "failed";
+    startedAt: number;
+    completedAt?: number;
+    prompt?: string;
+    output?: string;
+    summary?: string;
+    telemetry?: Record<string, unknown>;
+  }) {
+    const agent = displayAgents.find((item) => item.id === schedule.agentId);
+    const response = await fetch("/api/scheduler/shared", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        action: "record-run",
+        vaultPath: sharedVault.vaultPath,
+        scheduledFolder: sharedVault.scheduledFolder,
+        record: {
+          schedule: schedulerSharedSnapshot(schedule),
+          runId: record.runId,
+          agentName: agent?.name ?? "",
+          machineName: agent?.machineName ?? "dashboard",
+          status: record.status,
+          startedAt: record.startedAt,
+          completedAt: record.completedAt,
+          prompt: record.prompt,
+          output: record.output,
+          summary: record.summary,
+          telemetry: record.telemetry,
+        },
+      }),
+    }).catch(() => null);
+    const data = await response?.json().catch(() => null) as { ok?: boolean; result?: { path?: string; folder?: string }; error?: string } | null;
+    if (response?.ok && data?.ok && data.result) {
+      setSchedules((current) => current.map((item) => (
+        item.id === schedule.id
+          ? {
+            ...item,
+            sharedRunFolder: data.result?.folder,
+            sharedSchedulePath: item.sharedSchedulePath ?? (data.result?.folder ? `${data.result.folder}/schedule.md` : item.sharedSchedulePath),
+          }
+          : item
+      )));
+      return data.result;
+    }
+    return null;
   }
 
   async function runScheduleNow(schedule: AgentSchedule) {
     const now = Number(new Date());
+    const runStartedAt = Date.now();
+    const runId = `scheduler:${schedule.id}:${now}`;
+    const logSchedulerRun = (type: string, payload: Record<string, unknown> = {}) => {
+      logClientTelemetry(type, {
+        scheduleId: schedule.id,
+        scheduleName: schedule.name,
+        externalSource: schedule.externalSource ?? null,
+        externalJobId: schedule.externalJobId ?? null,
+        elapsedMs: Date.now() - runStartedAt,
+        ...payload,
+      }, { runId });
+    };
+    logSchedulerRun("scheduler.run.requested", {
+      mode: schedule.mode,
+      enabled: schedule.enabled,
+      every: schedule.every,
+      promptLength: schedule.prompt.length,
+      stepCount: schedule.steps.length,
+      skillCount: schedule.skills.length,
+      pathCount: schedule.paths.length,
+      assignedAgentId: schedule.agentId,
+    });
+    const setRunPhase = (phase: SchedulerRunPhase, label?: string) => {
+      setSchedulerRunStates((current) => ({ ...current, [schedule.id]: label ? { phase, label } : { phase } }));
+      logSchedulerRun("scheduler.run.phase", { phase, label: label ?? null });
+    };
+    setRunPhase("running", "running");
+    const finishRunState = (state: "done" | "idle") => {
+      logSchedulerRun("scheduler.run.button_state", { state });
+      if (state === "idle") {
+        setSchedulerRunStates((current) => {
+          const next = { ...current };
+          delete next[schedule.id];
+          return next;
+        });
+        return;
+      }
+      setRunPhase("done", "done");
+      window.setTimeout(() => {
+        setSchedulerRunStates((current) => {
+          const next = { ...current };
+          delete next[schedule.id];
+          return next;
+        });
+      }, 3000);
+    };
     if (schedule.externalSource && schedule.externalJobId) {
+      logSchedulerRun("scheduler.run.external_request.start", { runtime: schedule.externalSource });
       const response = await fetch("/api/scheduler/runtime-action", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -5222,18 +6136,161 @@ export default function Home() {
         }),
       }).catch(() => null);
       const data = await response?.json().catch(() => null) as { ok?: boolean; error?: string } | null;
+      logSchedulerRun("scheduler.run.external_request.end", {
+        ok: Boolean(response?.ok && data?.ok),
+        httpStatus: response?.status ?? null,
+        error: data?.error ?? null,
+      });
       if (!response?.ok || !data?.ok) {
         setScheduleImportStatus(data?.error ?? "Could not run that runtime schedule.");
+        finishRunState("idle");
         return;
       }
       setSchedules((current) => current.map((item) => (
-        item.id === schedule.id ? { ...item, lastRunAt: now, updatedAt: now } : item
+        item.id === schedule.id ? { ...item, lastRunAt: now, updatedAt: now, lastStatus: "ok", lastSummary: `Started ${schedule.name}.` } : item
       )));
       setScheduleImportStatus(`Started ${schedule.name}.`);
+      void recordSharedScheduledRun(schedule, {
+        runId,
+        status: "ok",
+        startedAt: now,
+        completedAt: Date.now(),
+        prompt: schedulerPlainPrompt(schedule),
+        summary: `Started external runtime schedule ${schedule.name}.`,
+        telemetry: { externalSource: schedule.externalSource, externalJobId: schedule.externalJobId },
+      });
+      finishRunState("done");
       return;
     }
+
+    const attachedSkillSlugs = [...new Set([
+      ...schedule.skills,
+      ...schedule.steps.flatMap((step) => step.skills),
+    ].map((skill) => skill.trim()).filter(Boolean))];
+    if (attachedSkillSlugs.length && !SCHEDULER_DYNAMIC_SKILL_ACTIONS_ENABLED) {
+      logSchedulerRun("scheduler.run.skill_action.disabled", {
+        reason: "hermes-latency-test",
+        skillCount: attachedSkillSlugs.length,
+        skills: attachedSkillSlugs,
+      });
+    }
+    if (attachedSkillSlugs.length && SCHEDULER_DYNAMIC_SKILL_ACTIONS_ENABLED) {
+      setRunPhase("assigned", "checking attached skills");
+      logSchedulerRun("scheduler.run.skill_action.start", {
+        skillCount: attachedSkillSlugs.length,
+        skills: attachedSkillSlugs,
+      });
+      const response = await fetch("/api/scheduler/skill-action", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-Hivemind-Run-Id": runId,
+          "X-Hivemind-Run-Type": "scheduler",
+        },
+        body: JSON.stringify({
+          skillSlugs: attachedSkillSlugs,
+          scheduleName: schedule.name,
+          prompt: schedulerPlainPrompt(schedule),
+          vaultPath: sharedVault.enabled ? sharedVault.vaultPath : undefined,
+        }),
+      }).catch(() => null);
+      const data = await response?.json().catch(() => ({})) as {
+        ok?: boolean;
+        skipped?: boolean;
+        skill?: string;
+        actionId?: string;
+        title?: string;
+        output?: string;
+        elapsedMs?: number;
+        error?: string;
+      };
+      logSchedulerRun("scheduler.run.skill_action.end", {
+        ok: Boolean(response?.ok && data.ok),
+        skipped: Boolean(data.skipped),
+        httpStatus: response?.status ?? null,
+        skill: data.skill ?? null,
+        actionId: data.actionId ?? null,
+        routeElapsedMs: data.elapsedMs ?? null,
+        title: data.title ?? null,
+        error: data.error ?? null,
+      });
+      if (response?.ok && data.ok) {
+        const result = data.output?.trim() || `Completed ${data.skill ?? "attached skill"} action.`;
+        setRunPhase("wrapping", "wrapping up");
+        setSchedules((current) => current.map((item) => (
+          item.id === schedule.id
+            ? { ...item, lastRunAt: Date.now(), updatedAt: Date.now(), lastStatus: "ok", lastSummary: result.slice(0, 500) }
+            : item
+        )));
+        setScheduleImportStatus(`Completed ${schedule.name}${data.title ? `: ${data.title}` : ""}.`);
+        logSchedulerRun("scheduler.run.completed", {
+          dynamicSkillAction: true,
+          skill: data.skill ?? null,
+          actionId: data.actionId ?? null,
+          outputLength: result.length,
+          routeElapsedMs: data.elapsedMs ?? null,
+        });
+        void recordSharedScheduledRun(schedule, {
+          runId,
+          status: "ok",
+          startedAt: now,
+          completedAt: Date.now(),
+          prompt: schedulerPlainPrompt(schedule),
+          output: result,
+          summary: data.title ? `Completed ${data.skill ?? "skill"}: ${data.title}` : result,
+          telemetry: { dynamicSkillAction: true, skill: data.skill ?? null, actionId: data.actionId ?? null, routeElapsedMs: data.elapsedMs ?? null },
+        });
+        finishRunState("done");
+        return;
+      }
+      if (response && !data.skipped) {
+        const message = data.error || `Skill action failed with ${response.status}.`;
+        logSchedulerRun("scheduler.run.failed", {
+          dynamicSkillAction: true,
+          message,
+        });
+        setSchedules((current) => current.map((item) => (
+          item.id === schedule.id ? { ...item, updatedAt: Date.now(), lastStatus: "failed", lastSummary: message } : item
+        )));
+        setScheduleImportStatus(`Could not run ${schedule.name}: ${message}`);
+        void recordSharedScheduledRun(schedule, {
+          runId,
+          status: "failed",
+          startedAt: now,
+          completedAt: Date.now(),
+          prompt: schedulerPlainPrompt(schedule),
+          summary: message,
+          telemetry: { dynamicSkillAction: true },
+        });
+        finishRunState("idle");
+        return;
+      }
+    }
+
     const agent = displayAgents.find((item) => item.id === schedule.agentId);
-    if (!agent) return;
+    if (!agent) {
+      logSchedulerRun("scheduler.run.validation_failed", { reason: "missing-agent" });
+      setScheduleImportStatus("Could not run that schedule because its assigned agent is missing.");
+      finishRunState("idle");
+      return;
+    }
+    const setupIssue = chatSetupIssue(agent);
+    if (setupIssue) {
+      logSchedulerRun("scheduler.run.validation_failed", {
+        reason: "setup-issue",
+        agentId: agent.id,
+        agentRuntime: agent.runtime,
+        hasGatewayUrl: Boolean(agent.gatewayUrl?.trim()),
+        hasTelemetryUrl: Boolean(agent.telemetryUrl?.trim()),
+        message: setupIssue,
+      });
+      setScheduleImportStatus(`Could not run ${schedule.name}: ${setupIssue}`);
+      setSchedules((current) => current.map((item) => (
+        item.id === schedule.id ? { ...item, updatedAt: Date.now(), lastStatus: "failed", lastSummary: setupIssue } : item
+      )));
+      finishRunState("idle");
+      return;
+    }
     const attachments = [
       schedule.model ? `Model: ${SCHEDULER_MODEL_OPTIONS.find((option) => option.value === schedule.model)?.label ?? schedule.model}` : "",
       schedule.skills.length ? `Attached skills: ${schedule.skills.join(", ")}` : "",
@@ -5255,23 +6312,271 @@ export default function Home() {
         }),
       ].filter(Boolean).join("\n")
       : [attachments, schedule.prompt].filter(Boolean).join("\n\n");
+    const scheduledPrompt = [
+      "This is a scheduled dashboard run. Execute the task now; do not only acknowledge it.",
+      "If the task asks you to create or update Apple Notes, use the available Apple Notes skill/tool and report the concrete note title when finished.",
+      await fetchPastRunContext(schedule),
+      prompt || schedule.name,
+    ].filter(Boolean).join("\n\n");
+    const linkedWorkingDirectory = schedule.paths.find((path) => path.trim());
+    const minimizeHermesSkillContext = agent.runtime === "hermes"
+      && attachedSkillSlugs.length > 0
+      && !SCHEDULER_HERMES_SKILL_CONTEXT_ENABLED;
+    const workingDirectory = minimizeHermesSkillContext && !linkedWorkingDirectory
+      ? ""
+      : linkedWorkingDirectory ?? appVersion?.appDir ?? agent.localDataDir ?? "";
+    const runtimeSharedVault = minimizeHermesSkillContext
+      ? { ...sharedVault, enabled: false }
+      : sharedVault;
+    if (minimizeHermesSkillContext) {
+      logSchedulerRun("scheduler.run.hermes_skill_context.minimized", {
+        skillCount: attachedSkillSlugs.length,
+        skills: attachedSkillSlugs,
+        preservedLinkedPath: Boolean(linkedWorkingDirectory),
+        sharedVaultEnabled: runtimeSharedVault.enabled,
+        workingDirectorySet: Boolean(workingDirectory),
+      });
+    }
+    logSchedulerRun("scheduler.run.dispatch_prepared", {
+      agentId: agent.id,
+      agentName: agent.name,
+      agentRuntime: agent.runtime,
+      agentRuntimeKind: agent.runtimeKind ?? null,
+      hasGatewayUrl: Boolean(agent.gatewayUrl?.trim()),
+      hasTelemetryUrl: Boolean(agent.telemetryUrl?.trim()),
+      hasToken: Boolean(agent.token?.trim()),
+      promptLength: scheduledPrompt.length,
+      workingDirectorySet: Boolean(workingDirectory),
+      sharedVaultEnabled: runtimeSharedVault.enabled,
+      hermesSkillContextMinimized: minimizeHermesSkillContext,
+      honeyLedgerEnabled,
+      staleMs: SCHEDULER_RUN_STALE_MS,
+    });
     const task: AgentTask = {
       id: `schedule-task-${now}`,
       agentId: agent.id,
       title: schedule.name,
-      lastMessage: prompt || "Scheduled run started from the dashboard.",
+      lastMessage: "Starting scheduled run...",
       status: "active",
       startedAt: now,
       updatedAt: now,
       source: "scheduler",
+      workingDirectory,
     };
-    setTasks((current) => [task, ...current]);
-    setSchedules((current) => current.map((item) => (
-      item.id === schedule.id ? { ...item, lastRunAt: now, updatedAt: now } : item
-    )));
-    setSelectedAgentId(agent.id);
-    setText(prompt);
-    setActiveView("chat");
+    upsertTask(task);
+    appendMessage(agent.id, { role: "user", content: scheduledPrompt, surface: "scheduler" });
+    appendMessage(agent.id, { role: "assistant", content: "", surface: "scheduler" });
+    setRunPhase("assigned", `assigned to ${agent.name}`);
+    setScheduleImportStatus(`Running ${schedule.name} on ${agent.name}...`);
+
+    let waitingTicks = 0;
+    let staleLogged = false;
+    const waitingInterval = window.setInterval(() => {
+      waitingTicks += 1;
+      const waitMs = waitingTicks * 10_000;
+      logSchedulerRun("scheduler.run.waiting", {
+        tick: waitingTicks,
+        waitMs,
+      });
+      if (!staleLogged && waitMs >= SCHEDULER_RUN_STALE_MS) {
+        staleLogged = true;
+        logSchedulerRun("scheduler.run.slow", { waitMs });
+        setRunPhase("executing", "still executing");
+      }
+    }, 10_000);
+
+    try {
+      logSchedulerRun("scheduler.run.runtime_request.start", {
+        endpoint: "/api/chat/agent-runtime",
+        agentId: agent.id,
+        agentRuntime: agent.runtime,
+      });
+      setRunPhase("thinking", "thinking");
+      const response = await fetch("/api/chat/agent-runtime", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-Hivemind-Run-Id": runId,
+          "X-Hivemind-Run-Type": "scheduler",
+        },
+        body: JSON.stringify({
+          agent,
+          sharedVault: runtimeSharedVault,
+          workingDirectory,
+          wallet: walletsByAgent[agent.id] ?? createDefaultAgentWallet(agent.id),
+          honeyLedgerEnabled,
+          messages: [{ role: "user", content: scheduledPrompt }],
+        }),
+      });
+      logSchedulerRun("scheduler.run.runtime_request.response", {
+        httpStatus: response.status,
+        ok: response.ok,
+        hasBody: Boolean(response.body),
+        contentType: response.headers.get("content-type"),
+      });
+      if (!response.ok || !response.body) {
+        const data = await response.json().catch(() => ({}));
+        throw new Error(typeof data.error === "string" ? data.error : `Request failed with ${response.status}`);
+      }
+
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+      let fullText = "";
+      let sawTerminalEvent = false;
+      let sawFirstByte = false;
+      let contentChunkCount = 0;
+      let statusEventCount = 0;
+      let toolEventCount = 0;
+      let honeyEventCount = 0;
+
+      while (true) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        if (!sawFirstByte) {
+          sawFirstByte = true;
+          logSchedulerRun("scheduler.run.stream.first_byte", { byteLength: value.byteLength });
+          setRunPhase("thinking", "thinking");
+        }
+        buffer += decoder.decode(value, { stream: true });
+        const events = buffer.split("\n\n");
+        buffer = events.pop() ?? "";
+        for (const eventText of events) {
+          const line = eventText.split("\n").find((entry) => entry.startsWith("data: "));
+          if (!line) continue;
+          const payload = line.slice(6);
+          if (payload === "[DONE]") {
+            sawTerminalEvent = true;
+            continue;
+          }
+          const parsed = JSON.parse(payload) as {
+            choices?: Array<{ delta?: { content?: string; tool_results?: unknown } }>;
+            error?: string;
+            honey?: unknown;
+            status?: { type?: string };
+            tool_call?: unknown;
+          };
+          if (parsed.error) throw new Error(parsed.error);
+          if (parsed.honey) {
+            honeyEventCount += 1;
+            logSchedulerRun("scheduler.run.stream.honey", { honeyEventCount });
+            await refreshHoneyLedger();
+            continue;
+          }
+          if (parsed.status) {
+            statusEventCount += 1;
+            const statusType = parsed.status.type ?? "unknown";
+            logSchedulerRun("scheduler.run.stream.status", {
+              statusType,
+              statusEventCount,
+            });
+            if (/tool|execut|run|action/i.test(statusType)) {
+              setRunPhase("executing", "executing");
+            } else if (/wrap|final|summar/i.test(statusType)) {
+              setRunPhase("wrapping", "wrapping up");
+            } else {
+              setRunPhase("thinking", "thinking");
+            }
+          }
+          if (parsed.tool_call) {
+            toolEventCount += 1;
+            logSchedulerRun("scheduler.run.stream.tool_call", { toolEventCount });
+            setRunPhase("executing", "executing");
+          }
+          const chunk = parsed.choices?.[0]?.delta?.content;
+          if (!chunk) continue;
+          contentChunkCount += 1;
+          fullText += chunk;
+          if (contentChunkCount === 1 || contentChunkCount % 5 === 0) {
+            logSchedulerRun("scheduler.run.stream.content", {
+              contentChunkCount,
+              outputLength: fullText.length,
+            });
+          }
+          setRunPhase("wrapping", "wrapping up");
+          setMessagesByAgent((current) => {
+            const existing = current[agent.id] ?? [];
+            const next = [...existing];
+            const last = next[next.length - 1] ?? { role: "assistant" as const, content: "" };
+            if (next.length === 0) next.push(last);
+            next[next.length - 1] = { ...last, content: fullText, createdAt: last.createdAt ?? Date.now() };
+            return { ...current, [agent.id]: next };
+          });
+          updateTask(task.id, { lastMessage: fullText });
+        }
+      }
+
+      const result = fullText.trim() || `${agent.name} completed the scheduled run.`;
+      logSchedulerRun("scheduler.run.completed", {
+        sawTerminalEvent,
+        sawFirstByte,
+        outputLength: fullText.length,
+        contentChunkCount,
+        statusEventCount,
+        toolEventCount,
+        honeyEventCount,
+      });
+      updateTask(task.id, { status: "completed", lastMessage: result, completedAt: Date.now() });
+      setSchedules((current) => current.map((item) => (
+        item.id === schedule.id
+          ? { ...item, lastRunAt: Date.now(), updatedAt: Date.now(), lastStatus: "ok", lastSummary: result.slice(0, 500) }
+          : item
+      )));
+      setScheduleImportStatus(sawTerminalEvent
+        ? `Completed ${schedule.name}.`
+        : `Completed ${schedule.name}; runtime stream closed without an explicit done event.`);
+      void recordSharedScheduledRun(schedule, {
+        runId,
+        status: "ok",
+        startedAt: now,
+        completedAt: Date.now(),
+        prompt: scheduledPrompt,
+        output: result,
+        summary: result.slice(0, 500),
+        telemetry: {
+          sawTerminalEvent,
+          sawFirstByte,
+          contentChunkCount,
+          statusEventCount,
+          toolEventCount,
+          honeyEventCount,
+        },
+      });
+      finishRunState("done");
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Unknown runtime error";
+      logSchedulerRun("scheduler.run.failed", {
+        errorName: error instanceof Error ? error.name : "unknown",
+        message,
+      });
+      setMessagesByAgent((current) => {
+        const existing = current[agent.id] ?? [];
+        const next = [...existing];
+        const last = next[next.length - 1] ?? { role: "assistant" as const, content: "" };
+        if (next.length === 0) next.push(last);
+        next[next.length - 1] = { ...last, content: `Error: ${message}`, createdAt: last.createdAt ?? Date.now() };
+        return { ...current, [agent.id]: next };
+      });
+      updateTask(task.id, { status: "failed", lastMessage: message, completedAt: Date.now() });
+      setSchedules((current) => current.map((item) => (
+        item.id === schedule.id ? { ...item, updatedAt: Date.now(), lastStatus: "failed", lastSummary: message } : item
+      )));
+      setScheduleImportStatus(`Could not run ${schedule.name}: ${message}`);
+      void recordSharedScheduledRun(schedule, {
+        runId,
+        status: "failed",
+        startedAt: now,
+        completedAt: Date.now(),
+        prompt: scheduledPrompt,
+        summary: message,
+        telemetry: {
+          errorName: error instanceof Error ? error.name : "unknown",
+        },
+      });
+      finishRunState("idle");
+    } finally {
+      window.clearInterval(waitingInterval);
+    }
   }
 
   const schedulerStatusFromSchedule = useCallback((schedule: AgentSchedule): SchedulerJob["lastRun"]["status"] => {
@@ -5351,6 +6656,112 @@ export default function Home() {
     return schedules.find((schedule) => schedule.id === job.id);
   }
 
+  function modalCadenceFromEvery(every: string): NewTaskPayload["cadence"] {
+    if (every === "15m") return { kind: "every15" };
+    if (every === "1h" || every === "60m") return { kind: "hourly" };
+    if (every === "24h" || every === "1440m") return { kind: "daily" };
+    if (every === "manual") return { kind: "manual" };
+    if (/^[\d*/,-]+\s+[\d*/,-]+\s+[\d*/,-]+\s+[\d*/,-]+\s+[\d*/,-]+$/.test(every.trim())) return { kind: "cron", expr: every.trim() };
+    return { kind: "cron", expr: every.trim() || "0 2 * * *" };
+  }
+
+  function everyFromModalCadence(cadence: NewTaskPayload["cadence"]) {
+    if (cadence.kind === "every15") return "15m";
+    if (cadence.kind === "hourly") return "1h";
+    if (cadence.kind === "daily") return "24h";
+    if (cadence.kind === "weekday") return "30 13 * * 1-5";
+    if (cadence.kind === "session") return "30 13 * * 1-5";
+    if (cadence.kind === "manual") return "manual";
+    return cadence.kind === "cron" ? cadence.expr || "0 2 * * *" : "0 2 * * *";
+  }
+
+  const schedulerModalInitial = useMemo<Partial<NewTaskPayload>>(() => {
+    const selectedAgentForDraft = displayAgents.find((agent) => agent.id === scheduleDraft.agentId) ?? selectedAgent ?? displayAgents[0];
+    return {
+      title: scheduleDraft.name || (editingScheduleId ? "Edit scheduled task" : "New scheduled task"),
+      mode: scheduleDraft.mode,
+      steps: scheduleDraft.steps.map((step) => step.text).filter(Boolean),
+      prompt: scheduleDraft.prompt,
+      attachments: [
+        ...scheduleDraft.skills.map((skill) => ({ kind: "skill" as const, label: skill })),
+        ...scheduleDraft.paths.map((path) => ({ kind: "path" as const, label: path })),
+      ],
+      cadence: modalCadenceFromEvery(scheduleDraft.every),
+      target: {
+        machine: selectedAgentForDraft?.machineName ?? "dashboard",
+        bee: selectedAgentForDraft?.name ?? "",
+      },
+      templateId: null,
+      usePastRuns: scheduleDraft.usePastRuns,
+      pastRunLimit: scheduleDraft.pastRunLimit,
+    };
+  }, [displayAgents, editingScheduleId, scheduleDraft, selectedAgent]);
+
+  function saveScheduleFromModal(task: NewTaskPayload) {
+    const agent = displayAgents.find((item) => item.name === task.target.bee)
+      ?? displayAgents.find((item) => item.machineName === task.target.machine)
+      ?? selectedAgent
+      ?? displayAgents[0];
+    if (!agent) return;
+    const now = Date.now();
+    const skills = task.attachments.filter((item) => item.kind === "skill").map((item) => item.label);
+    const paths = task.attachments.filter((item) => item.kind === "path").map((item) => item.label);
+    const steps = task.mode === "steps"
+      ? task.steps.filter((step) => step.trim()).map((step, index) => ({
+        id: `step-${now}-${index}`,
+        text: step.trim(),
+        skills: [],
+        paths: [],
+        model: "",
+      }))
+      : [];
+    const prompt = task.mode === "steps"
+      ? steps.map((step, index) => `${index + 1}. ${step.text}`).join("\n")
+      : task.prompt.trim();
+    const editedSchedule = editingScheduleId ? schedules.find((schedule) => schedule.id === editingScheduleId) : null;
+    const next: AgentSchedule = {
+      id: editedSchedule?.id ?? `schedule-${now}-${Math.random().toString(36).slice(2, 7)}`,
+      name: task.title.trim() || `Run ${agent.name}`,
+      agentId: agent.id,
+      enabled: editedSchedule?.enabled ?? true,
+      every: everyFromModalCadence(task.cadence),
+      mode: task.mode,
+      prompt,
+      model: editedSchedule?.model ?? "",
+      skills,
+      paths,
+      steps,
+      createdAt: editedSchedule?.createdAt ?? now,
+      updatedAt: now,
+      lastRunAt: editedSchedule?.lastRunAt,
+      externalSource: editedSchedule?.externalSource,
+      externalJobId: editedSchedule?.externalJobId,
+      lastStatus: editedSchedule?.lastStatus,
+      lastSummary: editedSchedule?.lastSummary,
+      usePastRuns: task.usePastRuns,
+      pastRunLimit: Math.max(1, Math.min(12, Number(task.pastRunLimit) || 3)),
+      sharedSchedulePath: editedSchedule?.sharedSchedulePath,
+      sharedRunFolder: editedSchedule?.sharedRunFolder,
+    };
+    setSchedules((current) => editedSchedule
+      ? current.map((schedule) => schedule.id === editedSchedule.id ? next : schedule)
+      : [next, ...current]);
+    void upsertSharedSchedule(next);
+    resetScheduleDraft(agent.id);
+    setSchedulerDraftOpen(false);
+  }
+
+  const browseSchedulerFolder = useCallback(async () => {
+    const currentPath = scheduleDraft.paths.find((path) => path.trim()) ?? sharedVault.vaultPath ?? "";
+    const response = await fetch("/api/scheduler/browse-folder", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ currentPath }),
+    }).catch(() => null);
+    const data = await response?.json().catch(() => null) as { path?: string; cancelled?: boolean } | null;
+    return response?.ok && data?.path ? data.path : null;
+  }, [scheduleDraft.paths, sharedVault.vaultPath]);
+
   function updateSharedVault(patch: Partial<SharedVaultConfig>) {
     setSharedVault((current) => ({ ...current, ...patch }));
   }
@@ -5396,6 +6807,27 @@ export default function Home() {
     }
   }
 
+  async function observeHoneyUsage(force = false) {
+    if (!force && !honeyLedgerEnabled) return;
+    const response = await fetch("/api/honey-ledger", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "observe" }),
+    }).catch(() => null);
+    const data = await response?.json().catch(() => null) as { ok?: boolean; ledger?: HoneyTreasuryConfig } | null;
+    if (data?.ledger) {
+      setHoneyTreasury({
+        ...createDefaultHoneyTreasuryConfig(),
+        ...data.ledger,
+        agentTokenUsage: data.ledger.agentTokenUsage ?? {},
+        agentHoneyExchanged: data.ledger.agentHoneyExchanged ?? {},
+        agentHiveBalances: data.ledger.agentHiveBalances ?? {},
+      });
+      return;
+    }
+    await refreshHoneyLedger();
+  }
+
   async function exchangeHoneyForHive(agentId: string) {
     if (!honeyLedgerEnabled) return;
     await fetch("/api/honey-ledger", {
@@ -5418,17 +6850,7 @@ export default function Home() {
 
   async function enableHoneyLedger() {
     setHoneyLedgerEnabled(true);
-    const response = await fetch("/api/honey-ledger", { cache: "no-store" }).catch(() => null);
-    const data = await response?.json().catch(() => null) as { ok?: boolean; ledger?: HoneyTreasuryConfig } | null;
-    if (data?.ok && data.ledger) {
-      setHoneyTreasury({
-        ...createDefaultHoneyTreasuryConfig(),
-        ...data.ledger,
-        agentTokenUsage: data.ledger.agentTokenUsage ?? {},
-        agentHoneyExchanged: data.ledger.agentHoneyExchanged ?? {},
-        agentHiveBalances: data.ledger.agentHiveBalances ?? {},
-      });
-    }
+    await observeHoneyUsage(true);
   }
 
   function updateWalletAction(agentId: string, patch: Partial<WalletActionState>) {
@@ -5611,6 +7033,14 @@ export default function Home() {
   }
 
   function appendMessage(agentId: string, message: ChatMessage) {
+    logClientTelemetry("chat.message.appended", {
+      agentId,
+      role: message.role,
+      kanbanTaskId: message.kanbanTaskId ?? null,
+      surface: message.surface ?? null,
+      contentLength: message.content.length,
+      attachmentCount: message.attachments?.length ?? 0,
+    });
     setMessagesByAgent((current) => ({
       ...current,
       [agentId]: [...(current[agentId] ?? []), { ...message, createdAt: message.createdAt ?? Date.now() }],
@@ -5618,11 +7048,17 @@ export default function Home() {
   }
 
   const hasConversation = useCallback((agentId: string) => {
-    return (messagesByAgent[agentId] ?? []).some((message) => message.role !== "system" && message.content.trim());
+    return (messagesByAgent[agentId] ?? []).some((message) => (
+      message.role !== "system"
+      && isManualAgentChatMessage(message)
+      && message.content.trim()
+    ));
   }, [messagesByAgent]);
 
   const conversationTitle = useCallback((agentId: string) => {
-    const firstUserMessage = (messagesByAgent[agentId] ?? []).find((message) => message.role === "user")?.content.trim();
+    const firstUserMessage = (messagesByAgent[agentId] ?? [])
+      .find((message) => message.role === "user" && isManualAgentChatMessage(message))
+      ?.content.trim();
     return firstUserMessage ? firstUserMessage.slice(0, 56) : "Previous chat";
   }, [messagesByAgent]);
 
@@ -6350,8 +7786,16 @@ export default function Home() {
     setQuickAddDirectories((current) => ({ ...current, [status]: [] }));
     setQuickAddAttachmentError("");
     setQuickAddStatus("");
+    if (data.board) {
+      setKanbanBoard(data.board);
+      setKanbanStorage(data.storage ?? null);
+    }
     if (status === "ready" && data.task) {
-      await orchestrateReadyKanbanTask(data.task);
+      const readyTask = data.task;
+      kanbanReadyPickupInFlightRef.current.add(readyTask.id);
+      await orchestrateReadyKanbanTask(readyTask).finally(() => {
+        kanbanReadyPickupInFlightRef.current.delete(readyTask.id);
+      });
       return;
     }
     await refreshKanbanOnce().catch((error) => setKanbanError(error instanceof Error ? error.message : "Kanban refresh failed."));
@@ -6393,6 +7837,13 @@ export default function Home() {
     const targetStatus = status === "working" && !currentTask?.assignee?.trim()
       ? "ready"
       : status;
+    logClientTelemetry("kanban.task.move.requested", {
+      taskId,
+      fromStatus: currentTask?.status ?? null,
+      requestedStatus: status,
+      targetStatus,
+      assignee: currentTask?.assignee ?? null,
+    });
     const response = await fetch(`/api/kanban?board=${encodeURIComponent(kanbanBoardSlug)}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
@@ -6400,11 +7851,30 @@ export default function Home() {
     });
     const data = await response.json().catch(() => null) as KanbanResponse | null;
     if (!response.ok || !data?.ok) {
+      logClientTelemetry("kanban.task.move.failed", {
+        taskId,
+        targetStatus,
+        error: data?.error ?? `HTTP ${response.status}`,
+      });
       setKanbanError(data?.error ?? "Could not move task.");
       return;
     }
+    logClientTelemetry("kanban.task.move.saved", {
+      taskId,
+      targetStatus,
+      returnedStatus: data.task?.status ?? null,
+      assignee: data.task?.assignee ?? null,
+    });
+    if (data.board) {
+      setKanbanBoard(data.board);
+      setKanbanStorage(data.storage ?? null);
+    }
     if (targetStatus === "ready" && data.task) {
-      await orchestrateReadyKanbanTask(data.task);
+      const readyTask = data.task;
+      kanbanReadyPickupInFlightRef.current.add(readyTask.id);
+      await orchestrateReadyKanbanTask(readyTask).finally(() => {
+        kanbanReadyPickupInFlightRef.current.delete(readyTask.id);
+      });
       return;
     }
     await refreshKanbanOnce().catch((error) => setKanbanError(error instanceof Error ? error.message : "Kanban refresh failed."));
@@ -6488,8 +7958,8 @@ export default function Home() {
       updatedAt: Date.now(),
       source: "kanban",
     });
-    appendMessage(agent.id, { role: "user", content: prompt, kanbanTaskId: selectedKanbanTask.id });
-    appendMessage(agent.id, { role: "assistant", content: "", kanbanTaskId: selectedKanbanTask.id });
+    appendMessage(agent.id, { role: "user", content: prompt, kanbanTaskId: selectedKanbanTask.id, surface: "kanban" });
+    appendMessage(agent.id, { role: "assistant", content: "", kanbanTaskId: selectedKanbanTask.id, surface: "kanban" });
 
     try {
       const patchResponse = await fetch(`/api/kanban?board=${encodeURIComponent(kanbanBoardSlug)}`, {
@@ -6697,7 +8167,13 @@ export default function Home() {
   /* eslint-enable react-hooks/refs */
 
   async function orchestrateReadyKanbanTask(task: KanbanTask) {
+    logClientTelemetry("kanban.ready.orchestrate.start", {
+      taskId: task.id,
+      status: task.status,
+      displayAgentCount: displayAgents.length,
+    });
     if (displayAgents.length === 0) {
+      logClientTelemetry("kanban.ready.orchestrate.no_agents", { taskId: task.id });
       await refreshKanbanOnce().catch((error) => setKanbanError(error instanceof Error ? error.message : "Kanban refresh failed."));
       return;
     }
@@ -6714,6 +8190,11 @@ export default function Home() {
       });
       const assignment = chooseBeeAssignment(task, eligibleAgents);
       if (assignment.mode === "pending") {
+        logClientTelemetry("kanban.ready.orchestrate.pending", {
+          taskId: task.id,
+          excludedAgentCount: excludedAgentIds.size,
+          eligibleAgentCount: eligibleAgents.length,
+        });
         await refreshKanbanOnce().catch((error) => setKanbanError(error instanceof Error ? error.message : "Kanban refresh failed."));
         return;
       }
@@ -6722,10 +8203,35 @@ export default function Home() {
       if (!owner) return;
       const setupIssue = chatSetupIssue(owner);
       if (setupIssue) {
+        logClientTelemetry("kanban.ready.owner.setup_blocked", {
+          taskId: task.id,
+          agentId: owner.id,
+          agentName: owner.name,
+          setupIssue,
+        });
         excludedAgentIds.add(owner.id);
         await addKanbanSystemComment(task.id, `Ready for Queen, but ${owner.name} cannot receive delegated work yet: ${setupIssue}`);
         continue;
       }
+      logClientTelemetry("kanban.ready.pickup_preview", {
+        taskId: task.id,
+        agentId: owner.id,
+        agentName: owner.name,
+        assignmentMode: assignment.mode,
+        workerClass: assignment.workerClass,
+      });
+      setKanbanPickupPreviewByTask((current) => ({
+        ...current,
+        [task.id]: {
+          icon: beeRoleIconPath(
+            owner.beeRole === "queen" ? "queen" : "worker",
+            owner.workerClass ?? assignment.workerClass ?? "general",
+          ),
+          label: assignment.mode === "queen" ? "Queen Bee picked this up" : `${beeWorkerClassLabel(assignment.workerClass)} bee picked this up`,
+          assignee: owner.name,
+        },
+      }));
+      await wait(KANBAN_PICKUP_PREVIEW_MS);
       const response = await fetch(`/api/kanban?board=${encodeURIComponent(kanbanBoardSlug)}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
@@ -6741,9 +8247,29 @@ export default function Home() {
       });
       const data = await response.json().catch(() => null) as KanbanResponse | null;
       if (!response.ok || !data?.ok) {
+        logClientTelemetry("kanban.ready.claim.failed", {
+          taskId: task.id,
+          agentId: owner.id,
+          error: data?.error ?? `HTTP ${response.status}`,
+        });
+        setKanbanPickupPreviewByTask((current) => {
+          const next = { ...current };
+          delete next[task.id];
+          return next;
+        });
         setKanbanError(data?.error ?? "Queen Bee could not claim the task.");
         return;
       }
+      logClientTelemetry("kanban.ready.claim.saved", {
+        taskId: task.id,
+        agentId: owner.id,
+        returnedStatus: data.task?.status ?? null,
+      });
+      setKanbanPickupPreviewByTask((current) => {
+        const next = { ...current };
+        delete next[task.id];
+        return next;
+      });
       await addKanbanSystemComment(
         task.id,
         [
@@ -6756,6 +8282,12 @@ export default function Home() {
       );
       await refreshKanbanOnce().catch((error) => setKanbanError(error instanceof Error ? error.message : "Kanban refresh failed."));
       const dispatchResult = await dispatchKanbanTaskToAgent(task, owner, assignment, { leaveKanbanOpen: true });
+      logClientTelemetry("kanban.ready.dispatch.result", {
+        taskId: task.id,
+        agentId: owner.id,
+        ok: dispatchResult.ok,
+        messageLength: dispatchResult.message?.length ?? 0,
+      });
       if (dispatchResult.ok) return;
       excludedAgentIds.add(owner.id);
       await addKanbanSystemComment(task.id, `Queen Bee is retrying with another eligible agent because ${owner.name} failed: ${dispatchResult.message}`);
@@ -6763,7 +8295,17 @@ export default function Home() {
 
     await patchKanbanTask(task.id, {
       status: "needs-human",
+      agentSession: null,
       result: "Queen Bee could not find a reachable eligible agent for this task.",
+    });
+    logClientTelemetry("kanban.ready.orchestrate.exhausted", {
+      taskId: task.id,
+      excludedAgentCount: excludedAgentIds.size,
+    });
+    setKanbanPickupPreviewByTask((current) => {
+      const next = { ...current };
+      delete next[task.id];
+      return next;
     });
     await addKanbanSystemComment(task.id, "Queen Bee could not find a reachable eligible agent for this task.");
     await refreshKanbanOnce().catch((error) => setKanbanError(error instanceof Error ? error.message : "Kanban refresh failed."));
@@ -6816,6 +8358,14 @@ export default function Home() {
     const localTaskId = `kanban-${task.id}-${Date.now()}`;
     let fullText = "";
     let sawAgentSession = false;
+    logClientTelemetry("kanban.dispatch.start", {
+      taskId: task.id,
+      agentId: agent.id,
+      agentName: agent.name,
+      assignmentMode: assignment.mode,
+      workerClass: assignment.workerClass,
+      promptLength: prompt.length,
+    });
     kanbanRuntimeAbortRef.current.get(task.id)?.abort();
     const controller = new AbortController();
     kanbanRuntimeAbortRef.current.set(task.id, controller);
@@ -6830,8 +8380,8 @@ export default function Home() {
       updatedAt: Date.now(),
       source: "kanban",
     });
-    appendMessage(agent.id, { role: "user", content: prompt, kanbanTaskId: task.id });
-    appendMessage(agent.id, { role: "assistant", content: "", kanbanTaskId: task.id });
+    appendMessage(agent.id, { role: "user", content: prompt, kanbanTaskId: task.id, surface: "kanban" });
+    appendMessage(agent.id, { role: "assistant", content: "", kanbanTaskId: task.id, surface: "kanban" });
 
     try {
       const response = await fetch("/api/chat/agent-runtime", {
@@ -6882,6 +8432,12 @@ export default function Home() {
           }
           if (parsed.session?.id) {
             sawAgentSession = true;
+            logClientTelemetry("kanban.dispatch.session", {
+              taskId: task.id,
+              agentId: agent.id,
+              sessionId: parsed.session.id,
+              messageCount: parsed.session.messageCount ?? 0,
+            });
             await patchKanbanTask(task.id, {
               agentSession: {
                 agentId: agent.id,
@@ -6913,6 +8469,11 @@ export default function Home() {
 
       if (!fullText.trim() && sawAgentSession) {
         const message = `${agent.name} accepted the delegated work. Waiting for agent update.`;
+        logClientTelemetry("kanban.dispatch.awaiting_agent_update", {
+          taskId: task.id,
+          agentId: agent.id,
+          sawAgentSession,
+        });
         updateTask(localTaskId, { status: "active", lastMessage: message });
         await patchKanbanTask(task.id, {
           status: "working",
@@ -6924,10 +8485,20 @@ export default function Home() {
       }
 
       if (!fullText.trim()) {
+        logClientTelemetry("kanban.dispatch.empty_without_session", {
+          taskId: task.id,
+          agentId: agent.id,
+          sawAgentSession,
+        });
         throw new Error(`${agent.name} returned no task output and no pollable session. Check the agent runtime/auth before retrying.`);
       }
 
       const result = fullText.trim() || `${agent.name} accepted the delegated work.`;
+      logClientTelemetry("kanban.dispatch.completed", {
+        taskId: task.id,
+        agentId: agent.id,
+        resultLength: result.length,
+      });
       updateTask(localTaskId, { status: "completed", lastMessage: result, completedAt: Date.now() });
       await patchKanbanTask(task.id, { status: "done", result });
       await addKanbanSystemComment(task.id, `${agent.name} completed the delegated work from the Work board.`);
@@ -6940,6 +8511,12 @@ export default function Home() {
       const message = error instanceof Error ? error.message : "Unknown runtime error";
       kanbanDispatchCooldownRef.current.set(agent.id, Date.now() + 10 * 60 * 1000);
       const transientDelegation = isTransientDelegationMessage(message);
+      logClientTelemetry("kanban.dispatch.error", {
+        taskId: task.id,
+        agentId: agent.id,
+        transientDelegation,
+        message,
+      });
       if (isHermesAuthFailure(message)) {
         await raiseHermesAuthAlert(agent, task, message).catch(() => undefined);
       }
@@ -6966,7 +8543,7 @@ export default function Home() {
         return { ok: true, message };
       }
       if (!options.leaveKanbanOpen) {
-        await patchKanbanTask(task.id, { status: "needs-human", result: `Delegation failed for ${agent.name}: ${message}` });
+        await patchKanbanTask(task.id, { status: "needs-human", agentSession: null, result: `Delegation failed for ${agent.name}: ${message}` });
       }
       await addKanbanSystemComment(task.id, `Delegation failed for ${agent.name}: ${message}`);
       return { ok: false, message };
@@ -7035,14 +8612,57 @@ export default function Home() {
     const session = task.agentSession;
     if (!session?.sessionId) return;
     const agent = displayAgents.find((item) => item.id === session.agentId || item.name === session.agentName || item.telemetryUrl === session.telemetryUrl);
-    if (!agent?.telemetryUrl) return;
+    if (!agent?.telemetryUrl) {
+      logClientTelemetry("kanban.session.poll.skipped", {
+        taskId: task.id,
+        sessionId: session.sessionId,
+        reason: "missing agent telemetry URL",
+      });
+      return;
+    }
+    logClientTelemetry("kanban.session.poll.start", {
+      taskId: task.id,
+      agentId: agent.id,
+      sessionId: session.sessionId,
+      lastMessageCount: session.lastMessageCount ?? 0,
+    });
     const response = await fetch("/api/chat/agent-session", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ agent, sessionId: session.sessionId }),
     }).catch(() => null);
     const data = await response?.json().catch(() => null) as AgentSessionResponse | null;
-    if (!response?.ok || !data?.ok || !data.session?.messages) return;
+    if (!response?.ok || !data?.ok || !data.session?.messages) {
+      const failureKey = `${task.id}:${session.sessionId}`;
+      const failureCount = (kanbanSessionPollFailureRef.current.get(failureKey) ?? 0) + 1;
+      kanbanSessionPollFailureRef.current.set(failureKey, failureCount);
+      const errorMessage = data?.error ?? (response ? `HTTP ${response.status}` : "request failed");
+      logClientTelemetry("kanban.session.poll.failed", {
+        taskId: task.id,
+        agentId: agent.id,
+        sessionId: session.sessionId,
+        failureCount,
+        error: errorMessage,
+      });
+      if (task.status === "working" && failureCount >= KANBAN_SESSION_POLL_FAILURE_LIMIT) {
+        const message = `${agent.name} accepted the task, but the dashboard could not refresh the agent session after ${failureCount} attempts. Last poll error: ${errorMessage}. Check the agent runtime session or move the card back to Ready for Queen to retry.`;
+        logClientTelemetry("kanban.session.poll_failure_stalled", {
+          taskId: task.id,
+          agentId: agent.id,
+          sessionId: session.sessionId,
+          failureCount,
+          error: errorMessage,
+        });
+        await patchKanbanTask(task.id, {
+          status: "needs-human",
+          agentSession: null,
+          result: message,
+        });
+        await addKanbanSystemComment(task.id, message);
+      }
+      return;
+    }
+    kanbanSessionPollFailureRef.current.delete(`${task.id}:${session.sessionId}`);
 
     const rawMessages = data.session.messages.filter((message) => (
       message.content.trim()
@@ -7082,12 +8702,71 @@ export default function Home() {
     // eslint-disable-next-line react-hooks/purity
     const now = Date.now();
     const sessionUpdatedAt = data.session.updatedAt ?? latestRaw?.createdAt ?? now;
+    const latestCount = data.session.messageCount ?? rawMessages.length;
     const toolOutputStalled = task.status === "working"
       && latestRaw?.role === "tool"
       && now - sessionUpdatedAt >= KANBAN_TOOL_OUTPUT_STALL_MS;
-    const latestCount = data.session.messageCount ?? rawMessages.length;
+    const noAssistantStalled = task.status === "working"
+      && latestCount > 1
+      && !latestAssistant
+      && now - (session.startedAt ?? task.updatedAt) >= KANBAN_NO_ASSISTANT_STALL_MS;
     if (toolOutputStalled) {
-      const message = kanbanToolOutputStalledMessage(agent.name);
+      const message = kanbanToolOutputStalledDetail(agent.name, latestRaw?.content ?? "");
+      logClientTelemetry("kanban.session.tool_output_stalled", {
+        taskId: task.id,
+        agentId: agent.id,
+        sessionId: session.sessionId,
+        latestCount,
+        latestRole: latestRaw?.role ?? null,
+        toolOutputLength: latestRaw?.content.length ?? 0,
+      });
+      setMessagesByAgent((current) => ({
+        ...current,
+        [agent.id]: [
+          ...(current[agent.id] ?? []),
+          {
+            role: "assistant",
+            content: `Needs human: ${message}`,
+            createdAt: now,
+            kanbanTaskId: task.id,
+            sourceSessionId: session.sessionId,
+            sourceIndex: latestRaw?.index,
+          },
+        ],
+      }));
+      await patchKanbanTask(task.id, {
+        status: "needs-human",
+        agentSession: null,
+        result: message,
+      });
+      await addKanbanSystemComment(task.id, message);
+      return;
+    }
+    if (noAssistantStalled) {
+      const message = kanbanNoAssistantStalledMessage(agent.name, latestCount, latestRaw?.role ?? null);
+      logClientTelemetry("kanban.session.no_assistant_stalled", {
+        taskId: task.id,
+        agentId: agent.id,
+        sessionId: session.sessionId,
+        latestCount,
+        latestRole: latestRaw?.role ?? null,
+        startedAt: session.startedAt ?? null,
+        sessionUpdatedAt,
+      });
+      setMessagesByAgent((current) => ({
+        ...current,
+        [agent.id]: [
+          ...(current[agent.id] ?? []),
+          {
+            role: "assistant",
+            content: `Needs human: ${message}`,
+            createdAt: now,
+            kanbanTaskId: task.id,
+            sourceSessionId: session.sessionId,
+            sourceIndex: latestRaw?.index,
+          },
+        ],
+      }));
       await patchKanbanTask(task.id, {
         status: "needs-human",
         agentSession: null,
@@ -7097,6 +8776,14 @@ export default function Home() {
       return;
     }
     if (latestCount !== task.agentSession?.lastMessageCount) {
+      logClientTelemetry("kanban.session.poll.updated", {
+        taskId: task.id,
+        agentId: agent.id,
+        sessionId: session.sessionId,
+        previousCount: task.agentSession?.lastMessageCount ?? 0,
+        latestCount,
+        latestAssistantLength: latestAssistant?.content.length ?? 0,
+      });
       await patchKanbanTask(task.id, {
         agentSession: {
           ...session,
@@ -7109,7 +8796,7 @@ export default function Home() {
   }
 
   useEffect(() => {
-    if (!hydrated || !selectedKanbanTask?.agentSession?.sessionId) return;
+    if (!hydrated || selectedKanbanTask?.status !== "working" || !selectedKanbanTask.agentSession?.sessionId) return;
     const lastPoll = kanbanSessionPollRef.current.get(selectedKanbanTask.id) ?? 0;
     // eslint-disable-next-line react-hooks/purity
     const now = Date.now();
@@ -7206,8 +8893,8 @@ export default function Home() {
       updatedAt: Date.now(),
       source: "kanban",
     });
-    appendMessage(selectedKanbanAgent.id, { role: "user", content: outgoingLabel, attachments: outgoingAttachments, kanbanTaskId: selectedKanbanTask.id });
-    appendMessage(selectedKanbanAgent.id, { role: "assistant", content: "", kanbanTaskId: selectedKanbanTask.id });
+    appendMessage(selectedKanbanAgent.id, { role: "user", content: outgoingLabel, attachments: outgoingAttachments, kanbanTaskId: selectedKanbanTask.id, surface: "kanban" });
+    appendMessage(selectedKanbanAgent.id, { role: "assistant", content: "", kanbanTaskId: selectedKanbanTask.id, surface: "kanban" });
 
     try {
       if (selectedKanbanTask.status !== kanbanSteerTargetStatus) {
@@ -7886,8 +9573,8 @@ export default function Home() {
     const outgoingLabel = prompt || attachmentSummary(outgoingAttachments) || "Media message";
     const setupIssue = chatSetupIssue(selectedAgent);
     if (setupIssue) {
-      appendMessage(selectedAgent.id, { role: "user", content: outgoingLabel, attachments: outgoingAttachments });
-      appendMessage(selectedAgent.id, { role: "assistant", content: `Error: ${setupIssue}` });
+      appendMessage(selectedAgent.id, { role: "user", content: outgoingLabel, attachments: outgoingAttachments, surface: "chat" });
+      appendMessage(selectedAgent.id, { role: "assistant", content: `Error: ${setupIssue}`, surface: "chat" });
       return;
     }
 
@@ -7902,7 +9589,11 @@ export default function Home() {
     const taskId = `${selectedAgent.id}-${Date.now()}`;
     const workingDirectory = selectedChatDirectoryPath || selectedAgent.localDataDir || "";
     const contextMessages = (messagesByAgent[selectedAgent.id] ?? [])
-      .filter((message) => message.role !== "system" && (message.content.trim() || message.attachments?.length))
+      .filter((message) => (
+        message.role !== "system"
+        && isManualAgentChatMessage(message)
+        && (message.content.trim() || message.attachments?.length)
+      ))
       .slice(-5);
     const outgoingContent = messageContentParts(prompt, outgoingAttachments);
     upsertTask({
@@ -7915,8 +9606,8 @@ export default function Home() {
       updatedAt: Date.now(),
       workingDirectory,
     });
-    appendMessage(selectedAgent.id, { role: "user", content: outgoingLabel, attachments: outgoingAttachments });
-    appendMessage(selectedAgent.id, { role: "assistant", content: "" });
+    appendMessage(selectedAgent.id, { role: "user", content: outgoingLabel, attachments: outgoingAttachments, surface: "chat" });
+    appendMessage(selectedAgent.id, { role: "assistant", content: "", surface: "chat" });
 
     try {
       const response = await fetch("/api/chat/agent-runtime", {
@@ -7991,7 +9682,7 @@ export default function Home() {
       setMessagesByAgent((current) => {
         const existing = current[selectedAgent.id] ?? [];
         const next = [...existing];
-        next[next.length - 1] = { role: "assistant", content: `Error: ${message}` };
+        next[next.length - 1] = { role: "assistant", content: `Error: ${message}`, surface: "chat" };
         return { ...current, [selectedAgent.id]: next };
       });
       updateTask(taskId, { status: "failed", lastMessage: message, completedAt: Date.now() });
@@ -8136,7 +9827,13 @@ export default function Home() {
           <header className="commandTopbar" aria-label="Control room navigation">
             <div className="topbarMasthead">
               <div className="brandIntro">
-                <div className="brandHex" aria-hidden="true">
+                <button
+                  type="button"
+                  className="brandHex"
+                  aria-label="Return to Fleet"
+                  title="Return to Fleet"
+                  onClick={() => setActiveView("agents")}
+                >
                   <Image
                     className="brandLogo"
                     src="/hivemindos-logo.png"
@@ -8145,7 +9842,7 @@ export default function Home() {
                     height={194}
                     priority
                   />
-                </div>
+                </button>
                 <div className="brandCopy">
                   <p className="eyebrow">{activeHeader.eyebrow}</p>
                   <strong>{activeHeader.title}</strong>
@@ -8602,14 +10299,6 @@ export default function Home() {
               <span className={kanbanClass("liveDot")} aria-hidden="true" />
               {kanbanStorage?.source === "obsidian" ? "obsidian · synced" : "local fallback"}
             </span>
-            <button
-              type="button"
-              className={kanbanClass("workBoardPrimaryAction")}
-              onClick={() => setQuickAddStatus((current) => current === "ideas" ? "" : "ideas")}
-            >
-              <Plus aria-hidden="true" />
-              new task
-            </button>
           </section>
 
           {kanbanError ? <p className={kanbanClass("kanbanError")}>{kanbanError}</p> : null}
@@ -8700,6 +10389,7 @@ export default function Home() {
                       const canExpandMessage = message.length > 120;
                       const messageExpanded = Boolean(expandedKanbanCards[task.id]);
                       const terminalMessage = isKanbanTerminalMessage(message);
+                      const pickupPreview = kanbanPickupPreviewByTask[task.id];
                       return (
                         <article className={kanbanClass("kanbanCardShell")} key={task.id}>
                           <div
@@ -8718,6 +10408,18 @@ export default function Home() {
                           >
                             <div className={kanbanClass("kanbanCardHeader")}>
                               <span className={kanbanClass("priorityPill", task.priority)}>{task.priority}</span>
+                              {pickupPreview ? (
+                                <motion.span
+                                  className={kanbanClass("kanbanPickupPreview")}
+                                  title={`${pickupPreview.assignee} is claiming this task`}
+                                  initial={{ opacity: 0, scale: 0.55, y: 12, rotate: -9 }}
+                                  animate={{ opacity: 1, scale: 1, y: 0, rotate: 0 }}
+                                  transition={{ type: "spring", stiffness: 520, damping: 18, mass: 0.7 }}
+                                >
+                                  <Image src={pickupPreview.icon || "/icons/worker-bee-general-v2.png"} alt="" width={26} height={26} aria-hidden="true" unoptimized />
+                                  <small>{pickupPreview.label}</small>
+                                </motion.span>
+                              ) : null}
                             </div>
                             <strong className={kanbanClass("kanbanCardTitle")}>{task.title}</strong>
                             <div className={kanbanClass("kanbanMessageRow")}>
@@ -8751,7 +10453,7 @@ export default function Home() {
                               <time dateTime={new Date(task.updatedAt).toISOString()}>{formatRelativeTime(task.updatedAt)}</time>
                               {workingWithAgent ? (
                                 <span className={kanbanClass("kanbanWorkingBee", "compact")} title={`${task.assignee} is working`}>
-                                  <Image src={bee.icon || "/icons/worker-bee-general-v2.png"} alt="" width={18} height={18} aria-hidden="true" />
+                                  <Image src={bee.icon || "/icons/worker-bee-general-v2.png"} alt="" width={18} height={18} aria-hidden="true" unoptimized />
                                 </span>
                               ) : null}
                               {staleWorking ? <span className={kanbanClass("priorityPill", "stale")}>quiet {formatDurationShort(kanbanStaleAge(task))}</span> : null}
@@ -8808,7 +10510,7 @@ export default function Home() {
                         onClick={() => setQuickAddStatus(column.id)}
                       >
                         <Plus aria-hidden="true" />
-                        nothing here
+                        Add Task
                       </button>
                     ) : null}
                   </div>
@@ -9036,11 +10738,18 @@ export default function Home() {
       <section className="min-h-[760px] overflow-hidden rounded-[18px] border border-[rgba(148,163,184,0.16)] bg-[rgba(5,8,13,0.72)]">
         <SchedulerView
           jobs={schedulerJobs}
+          runStates={schedulerRunStates}
           toolbar={
-            <Button type="button" size="sm" variant="secondary" onClick={() => void importExistingSchedules()} disabled={scheduleImporting}>
-              {scheduleImporting ? <LoaderCircle aria-hidden="true" className={vaultClass("spinIcon")} /> : <FileUp aria-hidden="true" />}
-              Import existing
-            </Button>
+            <div className="flex flex-wrap items-center gap-2">
+              <Button type="button" size="sm" variant="secondary" onClick={() => void refreshSharedSchedulesFromVault()}>
+                <Repeat2 aria-hidden="true" />
+                Sync vault
+              </Button>
+              <Button type="button" size="sm" variant="secondary" onClick={() => void importExistingSchedules()} disabled={scheduleImporting}>
+                {scheduleImporting ? <LoaderCircle aria-hidden="true" className={vaultClass("spinIcon")} /> : <FileUp aria-hidden="true" />}
+                Import existing
+              </Button>
+            </div>
           }
           status={scheduleImportStatus ? <p className={fleetClass("schedulerImportStatus")}>{scheduleImportStatus}</p> : null}
           onToggleJob={(job) => void toggleSchedule(job.id)}
@@ -9064,6 +10773,30 @@ export default function Home() {
       ) : null}
 
       {activeView === "scheduler" && schedulerDraftOpen ? (
+        <TaskModal
+          key={editingScheduleId || "new-scheduler-task"}
+          open
+          initial={schedulerModalInitial}
+          skillOptions={sharedSkillOptions.map((skill) => ({
+            slug: skill.slug,
+            name: skill.name,
+            description: skill.description,
+          }))}
+          machineOptions={Array.from(new Set([
+            ...machineGroups.map((machine) => machine.name),
+            "dashboard",
+          ]))}
+          beeOptions={displayAgents.map((agent) => agent.name)}
+          onBrowseFolder={browseSchedulerFolder}
+          onClose={() => {
+            setSchedulerDraftOpen(false);
+            if (editingScheduleId) resetScheduleDraft(selectedAgent?.id ?? displayAgents[0]?.id ?? "");
+          }}
+          onSave={saveScheduleFromModal}
+        />
+      ) : null}
+
+      {activeView === "scheduler" && false ? (
       <section className={fleetClass("schedulerPanel", "tabPanel")}>
         <div className={fleetClass("schedulerStudioHeader")}>
           <div>
@@ -9572,6 +11305,12 @@ export default function Home() {
                       {schedule.paths.slice(0, 3).map((path) => <span key={path}><Paperclip aria-hidden="true" /> {path.split("/").filter(Boolean).pop() || path}</span>)}
                     </div>
                   ) : null}
+                  {schedule.usePastRuns || schedule.sharedRunFolder ? (
+                    <div className={fleetClass("scheduleSkillRow")}>
+                      {schedule.usePastRuns ? <span><Clock3 aria-hidden="true" /> past {schedule.pastRunLimit ?? 3} runs injected</span> : null}
+                      {schedule.sharedRunFolder ? <span><Paperclip aria-hidden="true" /> {schedule.sharedRunFolder}</span> : null}
+                    </div>
+                  ) : null}
                   <div className={fleetClass("scheduleActions")}>
                     <Button type="button" size="sm" variant="secondary" onClick={() => runScheduleNow(schedule)}><Send aria-hidden="true" /> Run now</Button>
                     <Button type="button" size="sm" variant="secondary" onClick={() => editSchedule(schedule)}><Pencil aria-hidden="true" /> Edit</Button>
@@ -9606,7 +11345,35 @@ export default function Home() {
           onSelectRun={(run) => {
             if (run.id !== currentSwarmRun?.id) void loadMirosharkArchivedRun(run.id);
           }}
-          onLaunch={() => startNewMirosharkSimulation()}
+          onLaunch={(templateId) => startNewMirosharkSimulation(templateId)}
+          onPickTemplate={(templateId) => {
+            const template = allMirosharkTemplates.find((item) => item.id === templateId);
+            if (template) applyMirosharkTemplate(template);
+          }}
+          draftScenario={mirosharkScenario}
+          draftRounds={mirosharkRounds}
+          draftPlatform={mirosharkPlatform}
+          templateFields={mirosharkSelectedTemplateFields}
+          templateInputs={mirosharkTemplateInputs}
+          missingTemplateFields={mirosharkMissingTemplateFields.length}
+          runPending={mirosharkRunPending}
+          onDraftScenarioChange={setMirosharkScenario}
+          onDraftRoundsChange={setMirosharkRounds}
+          onDraftPlatformChange={(platform) => {
+            if (platform === "twitter" || platform === "reddit" || platform === "parallel" || platform === "polymarket") {
+              setMirosharkPlatform(platform);
+            }
+          }}
+          onTemplateInputChange={(key, value) => {
+            if (mirosharkSelectedTemplate) updateMirosharkTemplateInput(mirosharkSelectedTemplate, key, value);
+          }}
+          onStartRun={() => void launchMirosharkSwarm()}
+          onAskScenario={() => void runMirosharkScenarioHelper("ask")}
+          onSuggestScenarios={() => void runMirosharkScenarioHelper("suggest")}
+          helperPending={mirosharkHelperPending}
+          helperStatus={mirosharkHelperStatus}
+          loading={mirosharkRunPending || mirosharkArchiveStatus === "Loading saved run..."}
+          loadingLabel={mirosharkArchiveStatus === "Loading saved run..." ? "Loading saved run" : mirosharkProgressLabel}
         />
       </section>
       ) : null}
@@ -9637,481 +11404,152 @@ export default function Home() {
           </div>
         </div>
 
-        <section className={walletClass("hiveLedger", !honeyLedgerEnabled && "hiveLedgerDormant")} aria-label="Hive ledger">
-          {honeyLedgerEnabled ? (
-            <>
-              <div className={walletClass("honeyTreasuryHeader")}>
-                <div>
-                  <p className="eyebrow">Hive ledger</p>
-                  <h3>Honey rewards</h3>
-                  <p>
-                    Honey is capped by the official HIVE reward pool: 10% of your 57% creator share of Bankr's 1.2% swap fee.
-                  </p>
-                </div>
-              </div>
-
-              <div className={walletClass("hiveLedgerGrid")}>
-                <div className={walletClass("hiveLedgerStat")}>
-                  Total Honey
-                  <strong>{formatHiveAmount(honeyStats.totalHoney)}</strong>
-                </div>
-                <button
-                  type="button"
-                  className={walletClass("hiveLedgerConvert")}
-                  disabled={honeyStats.availableHoney <= 0}
-                  onClick={exchangeAllHoneyForHive}
-                >
-                  <span>Available Honey</span>
-                  <strong>{formatHiveAmount(honeyStats.availableHoney)}</strong>
-                  <small>Convert to {formatHiveAmount(honeyStats.hiveQuote)} HIVE</small>
-                </button>
-                <div className={walletClass("hiveLedgerStat")}>
-                  HIVE held
-                  <strong>{formatHiveAmount(honeyStats.hiveBalance)}</strong>
-                </div>
-                <div className={walletClass("hiveLedgerStat")}>
-                  Reward pool
-                  <strong>{formatHiveAmount(honeyStats.rewardPoolHive)} HIVE</strong>
-                  <small>{formatHiveAmount(honeyStats.rewardPoolRemainingHive)} HIVE unissued</small>
-                </div>
-                <div className={walletClass("hiveLedgerStat")}>
-                  Pool source
-                  <strong>{honeyStats.rewardPoolSharePercent.toFixed(4)}%</strong>
-                  <small>of HIVE trading volume value</small>
-                </div>
-                <div className={walletClass("hiveLedgerStat")}>
-                  Reward rate
-                  <strong>{formatHiveAmount(honeyStats.hivePerMillionTokens)}</strong>
-                  <small>HIVE per 1M observed tokens, clipped by pool</small>
-                </div>
-              </div>
-            </>
-          ) : (
-            <div className={walletClass("hiveLedgerOptIn")}>
-              <div>
-                <p className="eyebrow">Hive ledger</p>
-                <h3>Enable Honey rewards</h3>
-                <p>
-                  Honey rewards are off by default. If enabled, this app sends usage receipts with agent id,
-                  workspace id, token count, model label, and timestamp to the official HivemindOS ledger.
-                  Prompts, responses, files, wallet keys, and machine details are not sent. Reward compute uses your
-                  local Bankr LLM key, so HIVE-funded Bankr credits pay for the model call.
-                </p>
-              </div>
-              <Button type="button" size="sm" onClick={enableHoneyLedger}>
-                <HandCoins aria-hidden="true" />
-                Enable Honey ledger
-              </Button>
-            </div>
-          )}
-        </section>
-
         <div className={walletClass("walletWorkspace")}>
-          <aside className={walletClass("walletAgentList")} aria-label="Agent wallet list">
-            {displayAgents.map((agent) => {
-              const wallet = walletsByAgent[agent.id] ?? createDefaultAgentWallet(agent.id);
-              const snapshot = getSurvivalSnapshot(wallet);
-              const summary = !wallet.enabled
-                ? "Wallet off"
-                : snapshot.tier === "critical" || snapshot.tier === "dead"
-                  ? "Needs funding"
-                  : snapshot.tier === "low_compute"
-                    ? "Slowing down"
-                    : "Can spend safely";
-              return (
-                <button
-                  type="button"
-                  className={walletClass("walletAgentButton", agent.id === selectedAgent?.id && "active")}
-                  key={agent.id}
-                  onClick={() => setSelectedAgentId(agent.id)}
-                >
-                  <span>{RUNTIME_LABELS[agent.runtime]}</span>
-                  <strong>{agent.name}</strong>
-                  <small>
-                    {summary}
-                    {wallet.enabled ? ` · $${Math.max(0, snapshot.effectiveBalanceUsd).toFixed(2)}` : ""}
-                  </small>
-                </button>
-              );
-            })}
-          </aside>
-
-          {selectedAgent && selectedWallet && selectedWalletSnapshot ? (
+          {walletExpanded && selectedAgent && selectedWallet && selectedWalletSnapshot ? (
             (() => {
               const walletAction = walletActionsByAgent[selectedAgent.id] ?? {};
               return (
             <div className={walletClass("walletDetail")}>
-              <section className={walletClass("honeyAgentPanel")}>
-                <div>
-                  <p className="eyebrow">Bee reward meter</p>
-                  <h3>{selectedAgent.name} Honey</h3>
-                  <p>
-                    {honeyLedgerEnabled
-                      ? "Track measured token usage, earn Honey, then exchange available Honey for HIVE."
-                      : "Enable the Honey ledger above before this bee can earn official Honey from usage."}
-                  </p>
-                </div>
-                <div className={walletClass("honeyAgentGrid")}>
-                  <span>
-                    Tokens used
-                    <strong>{(selectedHoneyReward?.tokensUsed ?? 0).toLocaleString()}</strong>
-                  </span>
-                  <span>
-                    Available Honey
-                    <strong>{formatHiveAmount(selectedHoneyReward?.honeyAvailable ?? 0)}</strong>
-                  </span>
-                  <span>
-                    HIVE balance
-                    <strong>{formatHiveAmount(selectedHoneyReward?.hiveBalance ?? 0)}</strong>
-                  </span>
-                  <span>
-                    Exchange quote
-                    <strong>{formatHiveAmount(selectedHoneyReward?.tokenReward ?? 0)} HIVE</strong>
-                  </span>
-                </div>
-                <div className={walletClass("honeyAgentActions")}>
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="secondary"
-                    disabled={!honeyLedgerEnabled || !selectedHoneyReward || selectedHoneyReward.honeyAvailable <= 0}
-                    onClick={() => exchangeHoneyForHive(selectedAgent.id)}
-                  >
-                    <HandCoins aria-hidden="true" />
-                    Exchange for HIVE
-                  </Button>
-                  <small>
-                    {honeyLedgerEnabled
-                      ? "Conversion uses the official backend balance, not the displayed frontend value."
-                      : "No usage receipts are sent until you enable the ledger."}
-                  </small>
-                </div>
-              </section>
-
-              <WalletCell
+              <button
+                type="button"
+                className={walletClass("walletBackBtn")}
+                onClick={() => setWalletExpanded(false)}
+              >
+                <ChevronLeft aria-hidden="true" width={16} height={16} />
+                All wallets
+              </button>
+              <AgentWalletCard
                 agentName={selectedAgent.name}
                 wallet={selectedWallet}
                 survival={selectedWalletSnapshot}
-                simpleLimits={(
-                  <div className="grid gap-2 sm:grid-cols-2">
-                    <label className="flex flex-col gap-1 text-xs text-[var(--muted)]">
-                      Current balance
-                      <input
-                        type="number"
-                        min="0"
-                        step="0.01"
-                        value={selectedWallet.currentBalanceUsd}
-                        onChange={(event) => updateWallet(selectedAgent.id, { currentBalanceUsd: normalizeMoney(event.target.value, selectedWallet.currentBalanceUsd) })}
-                        className="rounded-md border border-[rgba(148,163,184,0.18)] bg-[rgba(10,14,21,0.7)] px-2 py-1 text-[var(--foreground)]"
-                      />
-                      <small>How much money is available for this agent.</small>
-                    </label>
-                    <label className="flex flex-col gap-1 text-xs text-[var(--muted)]">
-                      Ask me over
-                      <input
-                        type="number"
-                        min="0"
-                        step="0.01"
-                        value={selectedWallet.approvalRequiredOverUsd}
-                        onChange={(event) => updateWallet(selectedAgent.id, { approvalRequiredOverUsd: normalizeMoney(event.target.value, selectedWallet.approvalRequiredOverUsd) })}
-                        className="rounded-md border border-[rgba(148,163,184,0.18)] bg-[rgba(10,14,21,0.7)] px-2 py-1 text-[var(--foreground)]"
-                      />
-                      <small>The agent must ask before spending more than this.</small>
-                    </label>
-                    <label className="flex flex-col gap-1 text-xs text-[var(--muted)]">
-                      Max per payment
-                      <input
-                        type="number"
-                        min="0"
-                        step="0.01"
-                        value={selectedWallet.maxPaymentUsd}
-                        onChange={(event) => updateWallet(selectedAgent.id, { maxPaymentUsd: normalizeMoney(event.target.value, selectedWallet.maxPaymentUsd) })}
-                        className="rounded-md border border-[rgba(148,163,184,0.18)] bg-[rgba(10,14,21,0.7)] px-2 py-1 text-[var(--foreground)]"
-                      />
-                      <small>Hard cap for any single payment.</small>
-                    </label>
-                    <label className="flex flex-col gap-1 text-xs text-[var(--muted)]">
-                      Daily running cost
-                      <input
-                        type="number"
-                        min="0"
-                        step="0.01"
-                        value={selectedWallet.dailyComputeBurnUsd}
-                        onChange={(event) => updateWallet(selectedAgent.id, { dailyComputeBurnUsd: normalizeMoney(event.target.value, selectedWallet.dailyComputeBurnUsd) })}
-                        className="rounded-md border border-[rgba(148,163,184,0.18)] bg-[rgba(10,14,21,0.7)] px-2 py-1 text-[var(--foreground)]"
-                      />
-                      <small>Used only for the runway estimate.</small>
-                    </label>
-                  </div>
-                )}
-                advancedSetup={(
-                  <div className="grid gap-3">
-                    <div className="rounded-md border border-[rgba(94,234,212,0.2)] bg-[rgba(45,212,191,0.08)] p-3 text-xs text-[var(--foreground)]/85">
-                      <strong className="block text-[#99f6e4]">Real wallet controls</strong>
-                      <p className="mt-1">
-                        Create a local throwaway wallet, fund it with a tiny USDC test amount, then refresh the on-chain balance.
-                      </p>
-                      <div className="mt-3 flex flex-wrap gap-2">
-                        <Button
-                          type="button"
-                          size="sm"
-                          variant="secondary"
-                          disabled={walletAction.busy}
-                          onClick={() => createLocalWallet(selectedAgent.id, selectedWallet.network)}
-                        >
-                          <WalletCards aria-hidden="true" />
-                          Create wallet
-                        </Button>
-                        <Button
-                          type="button"
-                          size="sm"
-                          variant="secondary"
-                          disabled={walletAction.busy}
-                          onClick={() => refreshWalletBalance(selectedAgent.id)}
-                        >
-                          <RefreshCcw aria-hidden="true" />
-                          Refresh balance
-                        </Button>
-                      </div>
-                      {selectedWallet.walletAddress ? (
-                        <p className="mt-2 break-all text-[0.72rem] text-[var(--muted)]">
-                          Deposit address: {selectedWallet.walletAddress}
-                        </p>
-                      ) : null}
-                      {selectedWallet.lastOnchainSyncAt ? (
-                        <p className="mt-1 text-[0.72rem] text-[var(--muted)]">
-                          Last on-chain check: {formatRelativeTime(selectedWallet.lastOnchainSyncAt)}
-                          {selectedWallet.nativeBalance != null ? ` · gas balance ${selectedWallet.nativeBalance.toFixed(6)}` : ""}
-                        </p>
-                      ) : null}
-                      {walletAction.message ? <p className="mt-2 text-[#99f6e4]">{walletAction.message}</p> : null}
-                      {walletAction.error ? <p className="mt-2 text-[#fecdd3]">{walletAction.error}</p> : null}
-                    </div>
-                    <label className="flex flex-col gap-1 text-xs text-[var(--muted)]">
-                      Payment method
-                      <select
-                        value={selectedWallet.provider}
-                        onChange={(event) => updateWallet(selectedAgent.id, { provider: event.target.value as AgentPaymentProvider })}
-                        className="rounded-md border border-[rgba(148,163,184,0.18)] bg-[rgba(10,14,21,0.7)] px-2 py-1 text-[var(--foreground)]"
-                      >
-                        {Object.entries(AGENT_PAYMENT_PROVIDER_COPY).map(([provider, copy]) => (
-                          <option value={provider} key={provider}>{copy.label}</option>
-                        ))}
-                      </select>
-                      <small>{AGENT_PAYMENT_PROVIDER_COPY[selectedWallet.provider].summary}</small>
-                    </label>
-                    <label className="flex flex-col gap-1 text-xs text-[var(--muted)]">
-                      Wallet address
-                      <input
-                        value={selectedWallet.walletAddress}
-                        onChange={(event) => updateWallet(selectedAgent.id, { walletAddress: event.target.value })}
-                        placeholder="0x... or Solana address"
-                        className="rounded-md border border-[rgba(148,163,184,0.18)] bg-[rgba(10,14,21,0.7)] px-2 py-1 text-[var(--foreground)]"
-                      />
-                    </label>
-                    <div className="grid gap-3 sm:grid-cols-2">
-                      <label className="flex flex-col gap-1 text-xs text-[var(--muted)]">
-                        Starting balance
-                        <input
-                          type="number"
-                          min="0"
-                          step="0.01"
-                          value={selectedWallet.seedBalanceUsd}
-                          onChange={(event) => updateWallet(selectedAgent.id, { seedBalanceUsd: normalizeMoney(event.target.value, selectedWallet.seedBalanceUsd) })}
-                          className="rounded-md border border-[rgba(148,163,184,0.18)] bg-[rgba(10,14,21,0.7)] px-2 py-1 text-[var(--foreground)]"
-                        />
-                      </label>
-                      <label className="flex flex-col gap-1 text-xs text-[var(--muted)]">
-                        Network
-                        <select
-                          value={selectedWallet.network}
-                          onChange={(event) => updateWallet(selectedAgent.id, { network: event.target.value })}
-                          className="rounded-md border border-[rgba(148,163,184,0.18)] bg-[rgba(10,14,21,0.7)] px-2 py-1 text-[var(--foreground)]"
-                        >
-                          <option value="eip155:8453">Base mainnet</option>
-                          <option value="eip155:84532">Base Sepolia</option>
-                          <option value="solana:mainnet">Solana mainnet</option>
-                          <option value="solana:devnet">Solana devnet</option>
-                        </select>
-                      </label>
-                      <label className="flex flex-col gap-1 text-xs text-[var(--muted)]">
-                        Token
-                        <input
-                          value={selectedWallet.tokenSymbol}
-                          onChange={(event) => updateWallet(selectedAgent.id, { tokenSymbol: event.target.value.toUpperCase() })}
-                          className="rounded-md border border-[rgba(148,163,184,0.18)] bg-[rgba(10,14,21,0.7)] px-2 py-1 text-[var(--foreground)]"
-                        />
-                      </label>
-                      <label className="flex flex-col gap-1 text-xs text-[var(--muted)]">
-                        ClawCard env name
-                        <input
-                          value={selectedWallet.clawCardEnvName}
-                          onChange={(event) => updateWallet(selectedAgent.id, { clawCardEnvName: event.target.value })}
-                          className="rounded-md border border-[rgba(148,163,184,0.18)] bg-[rgba(10,14,21,0.7)] px-2 py-1 text-[var(--foreground)]"
-                        />
-                      </label>
-                    </div>
-                    <label className="flex flex-col gap-1 text-xs text-[var(--muted)]">
-                      x402 base URL
-                      <input
-                        value={selectedWallet.x402BaseUrl}
-                        onChange={(event) => updateWallet(selectedAgent.id, { x402BaseUrl: event.target.value })}
-                        placeholder="https://paid-api.example.com"
-                        className="rounded-md border border-[rgba(148,163,184,0.18)] bg-[rgba(10,14,21,0.7)] px-2 py-1 text-[var(--foreground)]"
-                      />
-                    </label>
-                    <label className="flex flex-col gap-1 text-xs text-[var(--muted)]">
-                      Private setup notes
-                      <textarea
-                        value={selectedWallet.notes}
-                        onChange={(event) => updateWallet(selectedAgent.id, { notes: event.target.value })}
-                        placeholder="Provider dashboard URL, deposit memo, funding policy..."
-                        className="min-h-[64px] rounded-md border border-[rgba(148,163,184,0.18)] bg-[rgba(10,14,21,0.7)] px-2 py-1 text-[var(--foreground)]"
-                      />
-                    </label>
-                  </div>
-                )}
-                moneyMovingControls={(
-                  <>
-                    <label className="inline-flex items-center gap-2 text-xs font-semibold text-[#fecdd3]">
-                      <input
-                        type="checkbox"
-                        checked={selectedWallet.enabled}
-                        onChange={(event) => updateWallet(selectedAgent.id, { enabled: event.target.checked })}
-                      />
-                      {selectedWallet.enabled ? "Wallet on" : "Wallet off"}
-                    </label>
-                    <label className="inline-flex items-center gap-2 text-xs font-semibold text-[#fecdd3]">
-                      <input
-                        type="checkbox"
-                        checked={selectedWallet.autoPayEnabled}
-                        onChange={(event) => updateWallet(selectedAgent.id, { autoPayEnabled: event.target.checked })}
-                      />
-                      Allow autopay within caps
-                    </label>
-                    <Button type="button" size="sm" variant="secondary" onClick={() => resetWalletBurnClock(selectedAgent.id)}>
-                      <RefreshCcw aria-hidden="true" />
-                      Reset runway clock
-                    </Button>
-                    <Button type="button" size="sm" variant="danger" onClick={() => copyPaymentPrompt(selectedWallet)}>
-                      <CreditCard aria-hidden="true" />
-                      Copy agent prompt
-                    </Button>
-                    <details className="w-full rounded-md border border-[rgba(251,113,133,0.28)] bg-[rgba(127,29,29,0.12)] p-3">
-                      <summary className="cursor-pointer text-xs font-semibold text-[#fecdd3]">Send USDC</summary>
-                      <div className="mt-3 grid gap-2">
-                        <input
-                          value={walletAction.sendTo ?? ""}
-                          onChange={(event) => updateWalletAction(selectedAgent.id, { sendTo: event.target.value })}
-                          placeholder="Recipient address"
-                          className="rounded-md border border-[rgba(148,163,184,0.18)] bg-[rgba(10,14,21,0.7)] px-2 py-1 text-xs text-[var(--foreground)]"
-                        />
-                        <input
-                          value={walletAction.sendAmount ?? ""}
-                          onChange={(event) => updateWalletAction(selectedAgent.id, { sendAmount: event.target.value })}
-                          placeholder={`Amount, max $${selectedWallet.maxPaymentUsd.toFixed(2)}`}
-                          className="rounded-md border border-[rgba(148,163,184,0.18)] bg-[rgba(10,14,21,0.7)] px-2 py-1 text-xs text-[var(--foreground)]"
-                        />
-                        <input
-                          value={walletAction.confirmation ?? ""}
-                          onChange={(event) => updateWalletAction(selectedAgent.id, { confirmation: event.target.value })}
-                          placeholder="Type SEND_USDC"
-                          className="rounded-md border border-[rgba(148,163,184,0.18)] bg-[rgba(10,14,21,0.7)] px-2 py-1 text-xs text-[var(--foreground)]"
-                        />
-                        <Button type="button" size="sm" variant="danger" disabled={walletAction.busy} onClick={() => sendWalletUsdc(selectedAgent.id)}>
-                          <Send aria-hidden="true" />
-                          Send USDC
-                        </Button>
-                      </div>
-                    </details>
-                    <details className="w-full rounded-md border border-[rgba(251,113,133,0.28)] bg-[rgba(127,29,29,0.12)] p-3">
-                      <summary className="cursor-pointer text-xs font-semibold text-[#fecdd3]">Call x402 API</summary>
-                      <div className="mt-3 grid gap-2">
-                        <input
-                          value={walletAction.x402Url ?? ""}
-                          onChange={(event) => updateWalletAction(selectedAgent.id, { x402Url: event.target.value })}
-                          placeholder="Paid endpoint URL"
-                          className="rounded-md border border-[rgba(148,163,184,0.18)] bg-[rgba(10,14,21,0.7)] px-2 py-1 text-xs text-[var(--foreground)]"
-                        />
-                        <select
-                          value={walletAction.x402Method ?? "GET"}
-                          onChange={(event) => updateWalletAction(selectedAgent.id, { x402Method: event.target.value })}
-                          className="rounded-md border border-[rgba(148,163,184,0.18)] bg-[rgba(10,14,21,0.7)] px-2 py-1 text-xs text-[var(--foreground)]"
-                        >
-                          <option value="GET">GET</option>
-                          <option value="POST">POST</option>
-                        </select>
-                        <input
-                          value={walletAction.x402Confirmation ?? ""}
-                          onChange={(event) => updateWalletAction(selectedAgent.id, { x402Confirmation: event.target.value })}
-                          placeholder="Type PAY_X402 when approval is needed"
-                          className="rounded-md border border-[rgba(148,163,184,0.18)] bg-[rgba(10,14,21,0.7)] px-2 py-1 text-xs text-[var(--foreground)]"
-                        />
-                        <Button type="button" size="sm" variant="danger" disabled={walletAction.busy} onClick={() => testX402Fetch(selectedAgent.id)}>
-                          <CreditCard aria-hidden="true" />
-                          Call x402
-                        </Button>
-                      </div>
-                    </details>
-                  </>
-                )}
+                honeyReward={selectedHoneyReward}
+                honeyLedgerEnabled={honeyLedgerEnabled}
+                providerCopy={AGENT_PAYMENT_PROVIDER_COPY[selectedWallet.provider]}
+                providerOptions={Object.entries(AGENT_PAYMENT_PROVIDER_COPY) as Array<[AgentPaymentProvider, typeof AGENT_PAYMENT_PROVIDER_COPY[AgentPaymentProvider]]>}
+                walletAction={walletAction}
+                onUpdateWallet={(patch) => updateWallet(selectedAgent.id, patch)}
+                onUpdateAction={(patch) => updateWalletAction(selectedAgent.id, patch)}
+                onResetRunway={() => resetWalletBurnClock(selectedAgent.id)}
+                onCopyPaymentPrompt={() => copyPaymentPrompt(selectedWallet)}
+                onCreateLocalWallet={() => createLocalWallet(selectedAgent.id, selectedWallet.network)}
+                onRefreshBalance={() => refreshWalletBalance(selectedAgent.id)}
+                onSendUsdc={() => sendWalletUsdc(selectedAgent.id)}
+                onCallX402={() => testX402Fetch(selectedAgent.id)}
+                onExchangeHoney={() => exchangeHoneyForHive(selectedAgent.id)}
               />
-
-              <Cell
-                glyph="NXT"
-                eyebrow="Next safe steps"
-                title="Activate one cell at a time"
-                subtitle="Set up, fund, verify, then assign work."
-                status="memory-synced"
-                tone="info"
-              >
-                <ol className="m-0 grid gap-2 p-0 [list-style:none] text-xs">
-                  {SOVEREIGN_AGENT_LAUNCH_STEPS.slice(0, 4).map((step, index) => (
-                    <li key={step} className="flex items-start gap-3">
-                      <span aria-hidden="true" className="mt-[2px] inline-flex h-5 w-5 items-center justify-center rounded-full bg-[rgba(45,212,191,0.15)] text-[0.65rem] font-semibold text-[#99f6e4]">
-                        {index + 1}
-                      </span>
-                      <span>{step}</span>
-                    </li>
-                  ))}
-                </ol>
-                <details
-                  className="mt-3 rounded-md border border-[rgba(148,163,184,0.16)] bg-[rgba(15,23,42,0.55)] px-3 py-2"
-                  onClick={(event) => event.stopPropagation()}
-                >
-                  <summary className="cursor-pointer text-[0.72rem] font-semibold uppercase tracking-[0.14em] text-[var(--muted)]">
-                    Safety rules
-                  </summary>
-                  <ul className="m-0 mt-2 grid gap-1 p-0 [list-style:none] text-[0.78rem]">
-                    {PAYMENT_SAFETY_RULES.map((rule) => (
-                      <li key={rule} className="flex items-start gap-2">
-                        <span aria-hidden="true" className="mt-[2px] text-[#fde68a]">!</span>
-                        <span>{rule}</span>
-                      </li>
-                    ))}
-                  </ul>
-                </details>
-                <details
-                  className="mt-2 rounded-md border border-[rgba(148,163,184,0.16)] bg-[rgba(15,23,42,0.55)] px-3 py-2"
-                  onClick={(event) => event.stopPropagation()}
-                >
-                  <summary className="cursor-pointer text-[0.72rem] font-semibold uppercase tracking-[0.14em] text-[var(--muted)]">
-                    Provider notes
-                  </summary>
-                  <p className="mt-2 text-[0.78rem] text-[var(--foreground)]/85">
-                    {AGENT_PAYMENT_PROVIDER_COPY[selectedWallet.provider].setup}
-                  </p>
-                </details>
-              </Cell>
             </div>
               );
             })()
+          ) : displayAgents.length > 0 ? (
+            <div className={walletClass("walletGridList")} role="list" aria-label="Agent wallets">
+              {displayAgents.map((agent) => {
+                const wallet = walletsByAgent[agent.id] ?? createDefaultAgentWallet(agent.id);
+                const snapshot = getSurvivalSnapshot(wallet);
+                return (
+                  <div role="listitem" key={agent.id}>
+                    <AgentWalletCardCompact
+                      agentName={agent.name}
+                      wallet={wallet}
+                      survival={snapshot}
+                      onOpen={() => {
+                        setSelectedAgentId(agent.id);
+                        setWalletExpanded(true);
+                      }}
+                    />
+                  </div>
+                );
+              })}
+            </div>
           ) : (
             <div className={walletClass("walletEmpty")}>
-              <strong>No agent selected</strong>
+              <strong>No agents yet</strong>
               <p>Connect an agent first, then configure its spending limits and survival rails.</p>
             </div>
           )}
+
+          <aside className={walletClass("hiveRail", !honeyLedgerEnabled && "hiveRailDormant")} aria-label="Hive ledger">
+            <header className={walletClass("hiveRailHeader")}>
+              <p className="eyebrow">Hive ledger</p>
+              <h3>{honeyLedgerEnabled ? "Honey rewards" : "Honey rewards off"}</h3>
+            </header>
+
+            {honeyLedgerEnabled ? (
+              <>
+                <dl className={walletClass("hiveRailStats")}>
+                  <div>
+                    <dt>Total Honey</dt>
+                    <dd>{formatHiveAmount(honeyStats.totalHoney)}</dd>
+                  </div>
+                  <div>
+                    <dt>Available</dt>
+                    <dd>{formatHiveAmount(honeyStats.availableHoney)}</dd>
+                  </div>
+                  <div>
+                    <dt>HIVE held</dt>
+                    <dd>{formatHiveAmount(honeyStats.hiveBalance)}</dd>
+                  </div>
+                </dl>
+
+                <Button
+                  type="button"
+                  size="sm"
+                  className={walletClass("hiveRailConvert")}
+                  disabled={honeyStats.availableHoney <= 0}
+                  onClick={exchangeAllHoneyForHive}
+                >
+                  <HandCoins aria-hidden="true" />
+                  Convert {formatHiveAmount(honeyStats.availableHoney)} Honey
+                  → {formatHiveAmount(honeyStats.hiveQuote)} HIVE
+                </Button>
+
+                <details className={walletClass("hiveRailDetails")}>
+                  <summary>Reward pool</summary>
+                  <dl>
+                    <div>
+                      <dt>Pool size</dt>
+                      <dd>
+                        {formatHiveAmount(honeyStats.rewardPoolHive)} HIVE
+                        <small>{formatHiveAmount(honeyStats.rewardPoolRemainingHive)} unissued</small>
+                      </dd>
+                    </div>
+                    <div>
+                      <dt>Pool source</dt>
+                      <dd>
+                        {honeyStats.rewardPoolSharePercent.toFixed(4)}%
+                        <small>of HIVE volume</small>
+                      </dd>
+                    </div>
+                    <div>
+                      <dt>Rate</dt>
+                      <dd>
+                        {formatHiveAmount(honeyStats.hivePerMillionTokens)}
+                        <small>HIVE per 1M tokens</small>
+                      </dd>
+                    </div>
+                  </dl>
+                </details>
+              </>
+            ) : (
+              <>
+                <p className={walletClass("hiveRailBlurb")}>
+                  Watch supported local runtimes for real token usage, earn Honey, then convert to HIVE.
+                </p>
+                <Button type="button" size="sm" onClick={enableHoneyLedger}>
+                  <HandCoins aria-hidden="true" />
+                  Enable Honey ledger
+                </Button>
+                <details className={walletClass("hiveRailDetails")}>
+                  <summary>What gets sent?</summary>
+                  <p>
+                    Agent id, workspace id, token count, model label, source, event id, and timestamp.
+                    Prompts, responses, files, wallet keys, and machine details are not sent.
+                    Hermes CLI usage is read from Hermes' own token counters while the dashboard is running.
+                  </p>
+                </details>
+              </>
+            )}
+
+          </aside>
         </div>
       </section>
       ) : null}
@@ -10124,8 +11562,8 @@ export default function Home() {
             <h2>One memory, many agents</h2>
             <p>Connect an Obsidian vault to give your agents a common place for memory, handoffs, and shared project context.</p>
           </div>
-          <Button type="button" size="sm" variant="secondary" onClick={refreshBrainGraph} disabled={brainGraphLoading}>
-            <RefreshCcw aria-hidden="true" />
+          <Button type="button" size="sm" variant="secondary" onClick={() => refreshBrainGraph(true)} disabled={brainGraphLoading}>
+            {brainGraphLoading ? <LoaderCircle aria-hidden="true" className={vaultClass("spinIcon")} /> : <RefreshCcw aria-hidden="true" />}
             {brainGraphLoading ? "Reading graph" : "Refresh graph"}
           </Button>
         </div>
@@ -10155,89 +11593,94 @@ export default function Home() {
 
             <div className={vaultClass("brainGraphCanvas")}>
               {visibleBrainNodes.length ? (
-                <svg
-                  viewBox={`${brainPan.x} ${brainPan.y} ${brainLayout.width} ${brainLayout.height}`}
-                  role="img"
-                  aria-label="Hive shaped Obsidian graph"
-                  onPointerDown={startBrainPan}
-                  onPointerMove={moveBrainPan}
-                  onPointerUp={endBrainPan}
-                  onPointerCancel={endBrainPan}
-                  className={vaultClass("draggable")}
-                >
-                  <defs>
-                    <filter id="brainNodeGlow" x="-40%" y="-40%" width="180%" height="180%">
-                      <feGaussianBlur stdDeviation="5" result="blur" />
-                      <feMerge>
-                        <feMergeNode in="blur" />
-                        <feMergeNode in="SourceGraphic" />
-                      </feMerge>
-                    </filter>
-                  </defs>
-                  {visibleBrainNodes.map((node) => {
-                    const position = brainLayout.positions.get(node.id);
-                    if (!position) return null;
-                    const selected = selectedBrainNode?.id === node.id;
-                    const target = !selected && selectedBrainTargetIds.has(node.id);
-                    const unresolved = node.id.startsWith("unresolved:");
-                    const labelLines = splitBrainLabel(node.label);
-                    return (
-                      <g
-                        key={node.id}
-                        role="button"
-                        tabIndex={0}
-                        data-brain-node-id={node.id}
-                        aria-label={selected ? `Open ${node.label} in Obsidian` : `Inspect ${node.label}`}
-                        className={vaultClass("brainNode", selected && "selected", target && "target", unresolved && "unresolved")}
-                        onKeyDown={(event) => {
-                          if (event.key === "Enter" || event.key === " ") void inspectBrainNode(node);
-                        }}
-                      >
-                        <polygon
-                          points={brainNodePoints(position.x, position.y, brainLayout.radius)}
-                          filter={selected ? "url(#brainNodeGlow)" : undefined}
-                        />
-                        <text x={position.x} y={position.y - (labelLines.length > 1 ? 11 : 4)} textAnchor="middle">
-                          {labelLines.map((line, index) => (
-                            <tspan key={`${line}-${index}`} x={position.x} dy={index === 0 ? 0 : 15}>{line}</tspan>
-                          ))}
-                        </text>
-                        <text x={position.x} y={position.y + 31} textAnchor="middle" className={vaultClass("brainNodeMeta")}>
-                          {node.accessCount ? `${node.accessCount} reads` : `${node.incoming + node.outgoing} links`}
-                        </text>
-                      </g>
-                    );
-                  })}
-                  {brainGraph?.links
-                    .filter((link) => (
-                      selectedBrainNode
-                      && (link.source === selectedBrainNode.id || link.target === selectedBrainNode.id)
-                      && brainLayout.positions.has(link.source)
-                      && brainLayout.positions.has(link.target)
-                    ))
-                    .filter((link, index, links) => {
-                      const selectedId = selectedBrainNode!.id;
-                      const otherId = link.source === selectedId ? link.target : link.source;
-                      return links.findIndex((candidate) => (
-                        (candidate.source === selectedId ? candidate.target : candidate.source) === otherId
-                      )) === index;
-                    })
-                    .slice(0, 24)
-                    .map((link, index) => {
-                      const selectedId = selectedBrainNode!.id;
-                      const otherId = link.source === selectedId ? link.target : link.source;
-                      const source = brainLayout.coordsByNode.get(selectedId)!;
-                      const target = brainLayout.coordsByNode.get(otherId)!;
+                <>
+                  <svg
+                    viewBox={`${brainPan.x} ${brainPan.y} ${brainLayout.width} ${brainLayout.height}`}
+                    role="img"
+                    aria-label="Hive shaped Obsidian graph"
+                    onPointerDown={startBrainPan}
+                    onPointerMove={moveBrainPan}
+                    onPointerUp={endBrainPan}
+                    onPointerCancel={endBrainPan}
+                    className={vaultClass("draggable", brainGraphLoading && "dimmed")}
+                  >
+                    <defs>
+                      <filter id="brainNodeGlow" x="-40%" y="-40%" width="180%" height="180%">
+                        <feGaussianBlur stdDeviation="5" result="blur" />
+                        <feMerge>
+                          <feMergeNode in="blur" />
+                          <feMergeNode in="SourceGraphic" />
+                        </feMerge>
+                      </filter>
+                    </defs>
+                    {visibleBrainNodes.map((node) => {
+                      const position = brainLayout.positions.get(node.id);
+                      if (!position) return null;
+                      const selected = selectedBrainNode?.id === node.id;
+                      const target = !selected && selectedBrainTargetIds.has(node.id);
+                      const unresolved = node.id.startsWith("unresolved:");
+                      const labelLines = splitBrainLabel(node.label);
                       return (
-                        <path
-                          key={`${selectedId}-${otherId}-${index}`}
-                          data-brain-route={`${selectedId}->${otherId}`}
-                          d={brainGraphEdgePath(source, target, brainLayout.positionsByCoord, brainLayout.radius)}
-                          className={vaultClass("brainEdgeActive")}
-                        />
+                        <g
+                          key={node.id}
+                          role="button"
+                          tabIndex={0}
+                          data-brain-node-id={node.id}
+                          aria-label={selected ? `Open ${node.label} in Obsidian` : `Inspect ${node.label}`}
+                          className={vaultClass("brainNode", selected && "selected", target && "target", unresolved && "unresolved")}
+                          onKeyDown={(event) => {
+                            if (event.key === "Enter" || event.key === " ") void inspectBrainNode(node);
+                          }}
+                        >
+                          <polygon
+                            points={brainNodePoints(position.x, position.y, brainLayout.radius)}
+                            filter={selected ? "url(#brainNodeGlow)" : undefined}
+                          />
+                          <text x={position.x} y={position.y - (labelLines.length > 1 ? 11 : 4)} textAnchor="middle">
+                            {labelLines.map((line, index) => (
+                              <tspan key={`${line}-${index}`} x={position.x} dy={index === 0 ? 0 : 15}>{line}</tspan>
+                            ))}
+                          </text>
+                          <text x={position.x} y={position.y + 31} textAnchor="middle" className={vaultClass("brainNodeMeta")}>
+                            {node.accessCount ? `${node.accessCount} reads` : `${node.incoming + node.outgoing} links`}
+                          </text>
+                        </g>
                       );
                     })}
-                </svg>
+                    {brainGraph?.links
+                      .filter((link) => (
+                        selectedBrainNode
+                        && (link.source === selectedBrainNode.id || link.target === selectedBrainNode.id)
+                        && brainLayout.positions.has(link.source)
+                        && brainLayout.positions.has(link.target)
+                      ))
+                      .filter((link, index, links) => {
+                        const selectedId = selectedBrainNode!.id;
+                        const otherId = link.source === selectedId ? link.target : link.source;
+                        return links.findIndex((candidate) => (
+                          (candidate.source === selectedId ? candidate.target : candidate.source) === otherId
+                        )) === index;
+                      })
+                      .slice(0, 24)
+                      .map((link, index) => {
+                        const selectedId = selectedBrainNode!.id;
+                        const otherId = link.source === selectedId ? link.target : link.source;
+                        const source = brainLayout.coordsByNode.get(selectedId)!;
+                        const target = brainLayout.coordsByNode.get(otherId)!;
+                        return (
+                          <path
+                            key={`${selectedId}-${otherId}-${index}`}
+                            data-brain-route={`${selectedId}->${otherId}`}
+                            d={brainGraphEdgePath(source, target, brainLayout.positionsByCoord, brainLayout.radius)}
+                            className={vaultClass("brainEdgeActive")}
+                          />
+                        );
+                      })}
+                  </svg>
+                  {brainGraphLoading ? <BrainGraphLoader compact /> : null}
+                </>
+              ) : brainGraphLoading ? (
+                <BrainGraphLoader />
               ) : (
                 <div className={vaultClass("brainEmpty")}>
                   <Hexagon aria-hidden="true" />
@@ -10323,7 +11766,7 @@ export default function Home() {
           {brainSkills?.shared.length ? (
             <div className={vaultClass("sharedSkillGrid")}>
               <button type="button" className={vaultClass("sharedSkillAddCard")} onClick={openSkillBrowser}>
-                <Image src="/icons/worker-bee-general-v2.png" alt="" width={34} height={34} />
+                <Image src="/icons/worker-bee-general-v2.png" alt="" width={34} height={34} unoptimized />
                 <strong>Add skill</strong>
                 <p>Browse featured and community skills, then mirror the ones you trust into the shared brain.</p>
               </button>
@@ -10342,7 +11785,7 @@ export default function Home() {
           ) : (
             <div className={vaultClass("brainSkillsEmpty")}>
               <button type="button" className={vaultClass("sharedSkillAddCard", "emptyAddCard")} onClick={openSkillBrowser}>
-                <Image src="/icons/queen-bee-v2.png" alt="" width={36} height={36} />
+                <Image src="/icons/queen-bee-v2.png" alt="" width={36} height={36} unoptimized />
                 <strong>Browse skills</strong>
                 <p>Add the first shared skill to the brain.</p>
               </button>
@@ -11274,7 +12717,7 @@ export default function Home() {
           <section className={fleetClass("setupModal", "skillBrowserModal")} role="dialog" aria-modal="true" aria-labelledby="skill-browser-title">
             <div className={fleetClass("setupModalHeader")}>
               <div className={fleetClass("skillBrowserTitle")}>
-                <Image src="/icons/queen-bee-v2.png" alt="" width={46} height={46} />
+                <Image src="/icons/queen-bee-v2.png" alt="" width={46} height={46} unoptimized />
                 <div>
                   <p className="eyebrow">Shared brain</p>
                   <h2 id="skill-browser-title">Skill Browser</h2>
@@ -11293,11 +12736,34 @@ export default function Home() {
                 placeholder="Search skills, tools, runtimes, workflows..."
                 autoFocus
               />
+              <Button
+                type="button"
+                variant="secondary"
+                onClick={() => setSkillBrowserGithubOpen((open) => !open)}
+                disabled={skillBrowserGithubInstalling}
+              >
+                <GitBranch aria-hidden="true" />
+                Install From Github
+              </Button>
               <Button type="button" variant="secondary" onClick={openSkillBrowser} disabled={skillBrowserLoading}>
                 {skillBrowserLoading ? <LoaderCircle aria-hidden="true" className={vaultClass("spinIcon")} /> : <RefreshCcw aria-hidden="true" />}
                 Refresh
               </Button>
             </div>
+            {skillBrowserGithubOpen ? (
+              <form className={fleetClass("skillBrowserGithubForm")} onSubmit={(event) => void installGithubSkillToBrain(event)}>
+                <input
+                  value={skillBrowserGithubUrl}
+                  onChange={(event) => setSkillBrowserGithubUrl(event.target.value)}
+                  placeholder="https://github.com/owner/repo/tree/main/skills/example"
+                  aria-label="GitHub skill URL"
+                />
+                <Button type="submit" disabled={skillBrowserGithubInstalling || !skillBrowserGithubUrl.trim()}>
+                  {skillBrowserGithubInstalling ? <LoaderCircle aria-hidden="true" className={vaultClass("spinIcon")} /> : <Download aria-hidden="true" />}
+                  {skillBrowserGithubInstalling ? "Installing" : "Install"}
+                </Button>
+              </form>
+            ) : null}
             {skillBrowserStatus ? <p className={fleetClass("skillBrowserStatus")}>{skillBrowserStatus}</p> : null}
             <div className={fleetClass("skillBrowserGrid")}>
               {skillBrowserLoading ? (
@@ -11305,7 +12771,7 @@ export default function Home() {
               ) : filteredSkillBrowserSkills.length ? filteredSkillBrowserSkills.map((skill) => (
                 <article key={`${skill.source}-${skill.id}`} className={fleetClass("skillBrowserCard")}>
                   <div>
-                    <Image src="/icons/worker-bee-general-v2.png" alt="" width={24} height={24} />
+                    <Image src="/icons/worker-bee-general-v2.png" alt="" width={24} height={24} unoptimized />
                     <span>{skill.source}{skill.category ? ` · ${skill.category}` : ""}</span>
                   </div>
                   <strong>{skill.name}</strong>
@@ -11500,7 +12966,7 @@ export default function Home() {
                               onClick={() => selectAgentWorkerClass(preset.id)}
                               aria-pressed={selectedClass}
                             >
-                              <Image src={beeRoleIconPath("worker", preset.id)} alt="" width={54} height={54} />
+                              <Image src={beeRoleIconPath("worker", preset.id)} alt="" width={54} height={54} unoptimized />
                               <strong>{preset.label}</strong>
                             </button>
                           );
@@ -11582,7 +13048,7 @@ export default function Home() {
                                 onClick={() => setCustomWorkerDraft((current) => ({ ...current, imageSrc }))}
                                 aria-label={`Use ${preset.label} bee image`}
                               >
-                                <Image src={imageSrc} alt="" width={42} height={42} />
+                                <Image src={imageSrc} alt="" width={42} height={42} unoptimized />
                               </button>
                             );
                           })}
