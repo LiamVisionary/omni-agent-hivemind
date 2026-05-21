@@ -5,7 +5,7 @@ be added here first, then marked `Committed` or `Pushed` after the git action.
 
 ## 2026-05-21 20:11 WITA - Compact Work Board Summary
 
-- Status: Uncommitted
+- Status: Pushed
 - Areas changed: Work board summary header, Work board stats labels, changelog
 - Summary: Replace the oversized hardcoded Work board slogan with a compact task-board header and rename the misleading `in flight` count to `total` so only the Working stat implies active execution.
 - Verification: Pending.
@@ -13,7 +13,7 @@ be added here first, then marked `Committed` or `Pushed` after the git action.
 
 ## 2026-05-21 20:05 WITA - Raise Work Board Scroll Buttons
 
-- Status: Uncommitted
+- Status: Pushed
 - Areas changed: Work board horizontal scroll FAB positioning, changelog
 - Summary: Anchor the Work board left/right scroll buttons to a viewport-based lane height instead of the full scrollable board stage so they appear in the visible portion of the Kanban board.
 - Verification: `pnpm exec tsc --noEmit --pretty false`; `git diff --check -- src/app/kanban-board.module.css CHANGELOG.md`; source check confirmed the scroll FAB offset now uses `clamp(132px, 24vh, 220px)` instead of `top: 50%`.
@@ -21,7 +21,7 @@ be added here first, then marked `Committed` or `Pushed` after the git action.
 
 ## 2026-05-21 19:58 WITA - Add Trusted Honey Compute Gateway
 
-- Status: Uncommitted
+- Status: Pushed
 - Areas changed: Cloudflare Worker/D1 compute gateway, Bankr LLM gateway routing, official Honey receipt signing, setup defaults, chat reward path, worker documentation, assimilation manifest
 - Summary: Add an official `hivemindos-compute-gateway` Worker that routes opt-in reward-eligible agent calls through trusted server-side compute, observes/estimates token usage, enforces a per-workspace daily cap, signs Honey receipts with Cloudflare-held secrets, and submits them to the official Honey ledger so cloned repos do not need private ledger/admin secrets.
 - Verification: `pnpm typecheck`; `pnpm typecheck` in `workers/compute-gateway`; created D1 database `hivemindos_compute_gateway`; applied remote schema; uploaded Bankr and Honey signing secrets to Cloudflare; deployed to `https://hivemindos-compute-gateway.hivemindos.workers.dev`; live `/health` smoke returned OK; live `/chat` smoke reached Bankr and was blocked only by insufficient LLM Gateway credits; updated official ledger exchange to convert backend-stored Honey without requiring clone users to hold an admin token.
@@ -29,7 +29,7 @@ be added here first, then marked `Committed` or `Pushed` after the git action.
 
 ## 2026-05-21 19:41 WITA - Add Machine Initializer Cell
 
-- Status: Uncommitted
+- Status: Pushed
 - Areas changed: Fleet graph add-machine cell, machine initializer modal, Hetzner/HivemindOS provisioning scaffold API, changelog, assimilation manifest
 - Summary: Add a dotted plus cell to the Fleet hive graph that opens a new-machine initializer, generate a local Hetzner project under `~/.hivemindos/machines/<project>` with token-safe `.env`, idempotent provision/destroy scripts, a mandatory HivemindOS bootstrap script, and dropdowns for machine runtime, server type, location, and supported Debian/Ubuntu image.
 - Verification: `pnpm typecheck --pretty false`; `pnpm exec eslint src/components/fleet/network-graph.tsx src/components/fleet/FleetView.tsx src/app/api/fleet/machines/init/route.ts src/lib/services/machine-provisioning/hetzner-control-room.ts src/app/page.tsx` (0 errors, existing dashboard warnings only); `POST /api/fleet/machines/init` on `localhost:5020` created a runtime-selected smoke project with `.env`, `scripts/provision.sh`, `scripts/bootstrap-hivemindos.sh`, and `scripts/destroy.sh`; generated `.env` kept `HCLOUD_TOKEN` blank and local-only; Browser smoke confirmed the modal has runtime-agent copy, no Hermes control-room checkbox, a machine-name field, and working Runtime agent, Server type, Location, and Image selectors.
@@ -37,7 +37,7 @@ be added here first, then marked `Committed` or `Pushed` after the git action.
 
 ## 2026-05-21 19:31 WITA - Remove Work Task Side Drawer
 
-- Status: Uncommitted
+- Status: Pushed
 - Areas changed: Work board task layout, task card headers, changelog
 - Summary: Remove the selected-task side drawer from the Kanban/Work board and rely on the per-card context menu and action buttons instead, while hiding raw internal task ids from task cards.
 - Verification: `pnpm exec tsc --noEmit --pretty false`; `git diff --check -- src/app/page.tsx src/app/kanban-board.module.css CHANGELOG.md`; static scan confirmed the drawer markup and card-id header render are gone; Playwright smoke on `http://localhost:5020` confirmed the Work board stays in `noDrawer`, shows 8 per-card action menus, and no raw task ids render in the board text.
@@ -45,7 +45,7 @@ be added here first, then marked `Committed` or `Pushed` after the git action.
 
 ## 2026-05-21 19:18 WITA - Add Custom Worker Class Builder
 
-- Status: Uncommitted
+- Status: Pushed
 - Areas changed: Agent settings modal, agent profile types, fleet styling, changelog
 - Summary: Show worker capabilities as badges, add a dotted Custom worker card that opens an in-modal class builder, let users name a custom worker, choose or upload a bee image, write its suited-for prompt, select shared-brain skills with searchable toggle badges, and render saved custom classes as selectable worker-class cards.
 - Verification: `pnpm exec tsc --noEmit --pretty false`; `pnpm exec eslint src/app/page.tsx src/lib/types/agent-runtime.ts` (0 errors, existing warnings only); `git diff --check -- src/app/page.tsx src/app/fleet.module.css src/lib/types/agent-runtime.ts CHANGELOG.md`; Playwright smoke with a seeded local agent confirmed worker capability badges render, the dotted Custom card opens the class builder, role name/image/prompt/search controls exist, a skill badge can be selected, applying the custom class adds it as a selectable worker-class card, switching to Engineer keeps the custom card visible, and reselecting the custom card restores its detail.
@@ -53,7 +53,7 @@ be added here first, then marked `Committed` or `Pushed` after the git action.
 
 ## 2026-05-21 19:13 WITA - Fix Swarm Archive Selection
 
-- Status: Uncommitted
+- Status: Pushed
 - Areas changed: Swarm archive selection, MiroShark archived-run display, live polling guards, changelog
 - Summary: Keep saved simulation cards titled from their archived scenario instead of rewriting them as `Simulation sim_*`, mark the clicked archive immediately while its data loads, and prevent archived runs from being treated as live runs by polling/autosave effects.
 - Verification: `pnpm typecheck`; `pnpm exec eslint src/app/page.tsx src/components/swarm` (0 errors, existing dashboard warnings only); `git diff --check -- src/app/page.tsx CHANGELOG.md src/components/swarm`; refreshed the six E2E template archives so their saved post counts match the backend; in-app browser smoke opened Swarm, clicked Historical What-If and Political Debate saved runs, and confirmed both switched content without showing `Simulation sim_*` titles.
@@ -61,7 +61,7 @@ be added here first, then marked `Committed` or `Pushed` after the git action.
 
 ## 2026-05-21 19:06 WITA - Make Honey Ledger Opt-In
 
-- Status: Uncommitted
+- Status: Pushed
 - Areas changed: Wallets Honey ledger UI, agent-runtime Honey receipt gating, setup defaults, assimilation manifest
 - Summary: Keep the official Honey ledger URL configured for clones but disable receipt submission by default, add a Wallets opt-in panel that explains the metadata sent, persist the user's ledger enablement in localStorage, and send Honey usage receipts only when the user enables the ledger.
 - Verification: `pnpm typecheck`; `pnpm typecheck` in `workers/honey-ledger`; `pnpm exec eslint src/app/page.tsx src/app/api/chat/agent-runtime/route.ts src/lib/services/wallet/honey-ledger.ts src/app/wallets.module.css` (0 errors, existing warnings); `git diff --check`; attempted Playwright Wallets-tab smoke, but the dirty worktree's current header tab click did not switch views in that headless session.
@@ -69,7 +69,7 @@ be added here first, then marked `Committed` or `Pushed` after the git action.
 
 ## 2026-05-21 19:02 WITA - Simplify Agent Role Form
 
-- Status: Uncommitted
+- Status: Pushed
 - Areas changed: Agent settings modal, fleet styling, changelog
 - Summary: Tone down the add/edit agent name field typography, remove the colony role selector from Role settings, and default newly created agents to Worker Bee while queen/orchestrator agents remain automatic.
 - Verification: `pnpm exec tsc --noEmit --pretty false`; `pnpm exec eslint src/app/page.tsx` (0 errors, existing warnings only); `git diff --check -- src/app/page.tsx src/app/fleet.module.css CHANGELOG.md`; source scan confirmed `Colony role`, `Observer`, `Human-operated`, and add-agent draft bee-role wiring are gone from the settings modal.
@@ -77,7 +77,7 @@ be added here first, then marked `Committed` or `Pushed` after the git action.
 
 ## 2026-05-21 18:58 WITA - Collapse Roster Task Preview
 
-- Status: Uncommitted
+- Status: Pushed
 - Areas changed: Fleet roster selected-agent task preview, fleet token styling, changelog
 - Summary: Collapse the selected roster agent's recent task message to a short preview with a caret toggle for expanding and hiding the full text.
 - Verification: `pnpm exec eslint src/components/fleet/roster.tsx`; `git diff --check -- src/components/fleet/roster.tsx src/components/fleet/fleet-tokens.module.css CHANGELOG.md`; Browser smoke at `http://localhost:5020` expanded the roster, selected Hermes, confirmed the recent-task control starts collapsed with `aria-expanded="false"`, and toggles open/closed.
@@ -85,7 +85,7 @@ be added here first, then marked `Committed` or `Pushed` after the git action.
 
 ## 2026-05-21 18:59 WITA - Route Dashboard Masthead Copy
 
-- Status: Uncommitted
+- Status: Pushed
 - Areas changed: Dashboard topbar masthead, changelog
 - Summary: Replace the hard-coded Work Board masthead copy with active-view copy so Fleet, Work, Brain, Scheduler, Swarm, Wallets, Alerts, and Chat each show their own title and live detail text.
 - Verification: `pnpm exec tsc --noEmit --pretty false`; `git diff --check -- src/app/page.tsx CHANGELOG.md`; Playwright smoke at `http://localhost:5020` confirmed Fleet, Work, Brain, and Wallets each show different masthead copy.
@@ -93,7 +93,7 @@ be added here first, then marked `Committed` or `Pushed` after the git action.
 
 ## 2026-05-21 18:57 WITA - E2E Test MiroShark Templates
 
-- Status: Uncommitted
+- Status: Pushed
 - Areas changed: MiroShark template execution, app run history archive, changelog
 - Summary: Started Docker/MiroShark, launched every real MiroShark template through the HivemindOS app swarm API, archived each resulting simulation through the app runs API, and verified the new template-test runs appear in the Swarm history shelf.
 - Verification: `GET /api/miroshark/status` reported the local MiroShark backend connected after Docker start; launched and archived `campus_controversy` (`sim_54cf9211e5b4`, 13 posts), `corporate_crisis` (`sim_d15b0b71cc3a`, 13 posts), `crypto_launch` (`sim_5656eb5004e9`, 18 posts), `historical_whatif` (`sim_1046965ed379`, 13 posts), `political_debate` (`sim_03c53193c530`, 17 posts), and `product_announcement` (`sim_2e4545f1c455`, 23 posts) through `localhost:5020` app APIs; `GET /api/miroshark/runs` returned all six archive folders under `runs/2026/2026-05-21`; in-app browser smoke on the Swarm tab showed the template-test runs in the Past Simulations shelf and rendered the Product Announcement run's real X posts.
@@ -101,7 +101,7 @@ be added here first, then marked `Committed` or `Pushed` after the git action.
 
 ## 2026-05-21 18:46 WITA - Stack Agent Security Rows
 
-- Status: Uncommitted
+- Status: Pushed
 - Areas changed: Agent settings modal, fleet styling, changelog
 - Summary: Change the agent Security view from narrow columns to stacked rows with icon/title/explanation alignment for more readable safety copy.
 - Verification: `pnpm exec tsc --noEmit --pretty false`; `pnpm exec eslint src/app/page.tsx` (0 errors, existing warnings only); `git diff --check -- src/app/page.tsx src/app/fleet.module.css CHANGELOG.md`; source check confirmed security articles now wrap title/body in row content containers and CSS uses one-column stacked rows instead of auto-fit columns.
@@ -109,7 +109,7 @@ be added here first, then marked `Committed` or `Pushed` after the git action.
 
 ## 2026-05-21 18:45 WITA - Unclip Work Add Attachment Menu
 
-- Status: Uncommitted
+- Status: Pushed
 - Areas changed: Work board inline add composer overflow, attachment menu layering, changelog
 - Summary: Let the active Work board add-task composer and its lane escape the column scroller while the attachment menu is open, then raise the active cards stack/menu above the lane header so the Images/Files/Directory menu is not chopped or painted over.
 - Verification: `pnpm exec tsc --noEmit --pretty false`; `git diff --check -- src/app/kanban-board.module.css src/app/chat.module.css CHANGELOG.md`; Playwright smoke on `http://localhost:5020` clicked Work, opened the new-task composer, opened Add attachment, and confirmed the Images/Files/Directory menu renders fully instead of clipping behind the lane.
@@ -117,7 +117,7 @@ be added here first, then marked `Committed` or `Pushed` after the git action.
 
 ## 2026-05-21 18:35 WITA - Load Real Swarm Data
 
-- Status: Uncommitted
+- Status: Pushed
 - Areas changed: Swarm theater data wiring, MiroShark dashboard mapping, swarm output views, placeholder data removal, changelog
 - Summary: Remove the downloaded Swarm placeholder constants and canned composer/output samples, then drive the Swarm theater from live MiroShark status, saved run summaries, templates, profiles, posts, timeline/actions, markets, and observability payloads already loaded by the dashboard.
 - Verification: `pnpm typecheck`; `pnpm eslint src/components/swarm src/app/swarm/page.tsx`; `pnpm eslint src/app/page.tsx src/components/swarm src/app/swarm/page.tsx` (passes with existing dashboard warnings only); `rg` confirmed the old sample run names, market symbols, and canned social scenarios are no longer present in rendered Swarm code; in-app browser smoke on the dashboard Swarm tab confirmed no horizontal overflow, no placeholder sample strings, and real MiroShark offline/empty-state data is shown.
@@ -125,7 +125,7 @@ be added here first, then marked `Committed` or `Pushed` after the git action.
 
 ## 2026-05-21 18:34 WITA - Stabilize Work Card Hover
 
-- Status: Uncommitted
+- Status: Pushed
 - Areas changed: Work board task-card hover and active styling, changelog
 - Summary: Remove the upward hover translation from Kanban task cards and replace the active/working/stale inset left stripe with even border/glow styling so the first card no longer clips at the top or shows a thicker left edge.
 - Verification: `pnpm exec tsc --noEmit --pretty false`; `git diff --check -- src/app/kanban-board.module.css CHANGELOG.md`; static scan confirmed the old `translateY(-1px)` hover transform and `inset 3px 0 0` card stripe are gone; Playwright hover geometry check on a Done card confirmed `movedY: 0` and `transform: none`.
@@ -133,7 +133,7 @@ be added here first, then marked `Committed` or `Pushed` after the git action.
 
 ## 2026-05-21 18:32 WITA - Add Roster Add-Agent Hover
 
-- Status: Uncommitted
+- Status: Pushed
 - Areas changed: Fleet roster add-agent row, fleet token styling, changelog
 - Summary: Add a hover treatment to the dotted roster add-agent row so the dashed border, teal fill, plus tile, and row elevation respond visibly before opening the agent creation modal.
 - Verification: `pnpm exec eslint src/components/fleet/roster.tsx`; `git diff --check -- src/components/fleet/roster.tsx src/components/fleet/fleet-tokens.module.css`.
@@ -141,7 +141,7 @@ be added here first, then marked `Committed` or `Pushed` after the git action.
 
 ## 2026-05-21 18:16 WITA - Hide Advanced Runtime Plumbing
 
-- Status: Uncommitted
+- Status: Pushed
 - Areas changed: Agent settings modal, fleet styling, changelog
 - Summary: Remove the redundant Runtime tab, keep runtime selection inside Role for both new and existing agents, and tuck raw gateway/session/collector fields behind an Advanced toggle within Role for existing agents only.
 - Verification: `pnpm exec tsc --noEmit --pretty false`; `pnpm exec eslint src/app/page.tsx` (0 errors, existing warnings only); `git diff --check -- src/app/page.tsx src/app/fleet.module.css CHANGELOG.md`; Browser smoke at `http://localhost:5020` confirmed add-agent settings show only Role, Memory, and Security tabs with runtime selection in Role, and existing-agent Role hides gateway/session/collector until the Advanced toggle is opened.
@@ -149,7 +149,7 @@ be added here first, then marked `Committed` or `Pushed` after the git action.
 
 ## 2026-05-21 18:16 WITA - Replace Swarm View With Orbital Theater
 
-- Status: Uncommitted
+- Status: Pushed
 - Areas changed: Swarm dashboard tab, standalone `/swarm` route, swarm component bundle, assimilation manifest
 - Summary: Replace the embedded MiroShark Swarm workbench surface with the downloaded `nextjs-swarm` orbital swarm theater, including the left run rail, center arena/output views, right template composers, scoped Swarm tokens, and a direct `/swarm` route.
 - Verification: Audited `/Users/liam/Downloads/nextjs-swarm`; `pnpm typecheck`; `pnpm eslint src/app/page.tsx src/components/swarm src/app/swarm/page.tsx` (passes with existing dashboard warnings after the SwarmView effect fix); `pnpm eslint src/components/swarm src/app/swarm/page.tsx`; in-app browser smoke at `http://localhost:5020/swarm` confirmed the redesigned theater renders with no horizontal document overflow.
@@ -157,7 +157,7 @@ be added here first, then marked `Committed` or `Pushed` after the git action.
 
 ## 2026-05-21 18:14 WITA - Move Fleet Agent Controls Into Roster
 
-- Status: Uncommitted
+- Status: Pushed
 - Areas changed: Fleet roster, fleet view layout, changelog
 - Summary: Add a dotted add-agent row inside each expanded roster machine card, expand selected agent rows to show task context and chat/wallet/settings/duplicate/remove controls, and remove the center-stage fleet footer entirely.
 - Verification: `pnpm exec eslint src/components/fleet/FleetView.tsx src/components/fleet/roster.tsx`; `pnpm exec tsc --noEmit --pretty false --skipLibCheck`; `git diff --check -- src/components/fleet/FleetView.tsx src/components/fleet/roster.tsx CHANGELOG.md`.
@@ -165,7 +165,7 @@ be added here first, then marked `Committed` or `Pushed` after the git action.
 
 ## 2026-05-21 18:11 WITA - Migrate Legacy Kanban Folder
 
-- Status: Uncommitted
+- Status: Pushed
 - Areas changed: Shared vault settings migration, Kanban storage resolution, Work board loading, Swarm CSS module build fix, changelog
 - Summary: Migrate persisted shared-vault Kanban folders named `kanban` or `Kanban` to the current `Projects/HivemindOS/Kanban` folder on both the client and server, fall back from any empty non-default Obsidian Kanban folder to the populated project board, and fix an invalid Swarm CSS Modules selector that could make the dev server return a Next error page.
 - Verification: `pnpm exec tsc --noEmit --pretty false`; `git diff --check -- src/app/page.tsx src/lib/services/kanban/local-kanban-store.ts src/components/swarm/swarm-tokens.module.css CHANGELOG.md`; API requests with legacy/empty `kanbanFolder` values and non-default board slugs now resolve to the populated default project board; Playwright smoke with legacy localStorage confirmed the Work board shows `2` Needs human cards and `6` Done cards and rewrites the stored Kanban folder to `Projects/HivemindOS/Kanban`; live Chrome reload showed the Work nav returning to `Work: 8 tasks`.
@@ -173,7 +173,7 @@ be added here first, then marked `Committed` or `Pushed` after the git action.
 
 ## 2026-05-21 18:08 WITA - Add Cloudflare Honey Ledger Worker
 
-- Status: Uncommitted
+- Status: Pushed
 - Areas changed: Cloudflare Worker/D1 ledger package, remote Honey receipt signing, public clone-safe ledger config, local ledger fallback, assimilation manifest, TypeScript config, local environment setup
 - Summary: Deploy the `hivemindos-honey-ledger` Cloudflare Worker on the free Workers/D1 stack, make the official ledger URL the clone/setup default, require trusted signed receipts for official Honey, allow self-service Honey-to-HIVE exchange from backend-stored balances, and keep the backend D1 balance as the source of truth.
 - Verification: `pnpm typecheck`; `pnpm typecheck` in `workers/honey-ledger`; `pnpm d1:migrate:local`; `pnpm d1:migrate:remote`; deployed to `https://hivemindos-honey-ledger.hivemindos.workers.dev`; live Cloudflare smoke confirmed unsigned `/receipts` is rejected, unauthenticated signed-receipt-free minting is rejected, signed `/receipts` credits Honey, and `/exchange` converts only backend-stored Honey; `pnpm exec eslint src/lib/services/wallet/honey-ledger.ts src/app/api/chat/agent-runtime/route.ts workers/honey-ledger/src/index.ts`; root `pnpm lint` is blocked by unrelated dirty-worktree warnings/errors.
@@ -181,7 +181,7 @@ be added here first, then marked `Committed` or `Pushed` after the git action.
 
 ## 2026-05-21 18:08 WITA - Simplify Agent Memory Settings
 
-- Status: Uncommitted
+- Status: Pushed
 - Areas changed: Agent settings modal, runtime folder picker API, fleet styling, changelog
 - Summary: Simplify the agent Memory tab so shared Obsidian brain context is the primary surface, keep the shared-brain checkbox editable during agent creation, hide runtime-folder configuration in add-agent mode, and move existing-agent runtime-folder configuration into compact browse/edit icon controls.
 - Verification: `pnpm exec tsc --noEmit --pretty false`; `pnpm exec eslint src/app/page.tsx src/app/api/agents/browse-folder/route.ts` (0 errors, existing warnings only); `git diff --check -- src/app/page.tsx src/app/fleet.module.css src/app/api/agents/browse-folder/route.ts CHANGELOG.md`; Browser smoke at `http://localhost:5020` confirmed the add-agent Memory tab has a toggleable shared-brain checkbox, hides the shared-brain copy when unticked, and does not show the runtime-folder section in create mode; existing-agent Memory still keeps compact runtime-folder browse/edit controls.
@@ -189,7 +189,7 @@ be added here first, then marked `Committed` or `Pushed` after the git action.
 
 ## 2026-05-21 18:01 WITA - Raise Fleet Hive Agent Labels
 
-- Status: Uncommitted
+- Status: Pushed
 - Areas changed: Fleet hive machine cluster agent cells, changelog
 - Summary: Enlarge bee icons inside graph hive cells and shift the bee/name stack upward so agent labels have more breathing room from the lower hex edge.
 - Verification: `pnpm typecheck`; `pnpm lint`; `git diff --check`.
@@ -197,7 +197,7 @@ be added here first, then marked `Committed` or `Pushed` after the git action.
 
 ## 2026-05-21 18:02 WITA - Count All Done Work
 
-- Status: Uncommitted
+- Status: Pushed
 - Areas changed: Work board summary stats, changelog
 - Summary: Change the Work board completed-work summary from a timestamp-sensitive `done today` count to the actual number of Done tasks on the board, so previously completed tasks are reflected in the visible stat.
 - Verification: `pnpm exec tsc --noEmit --pretty false`; `git diff --check -- src/app/page.tsx CHANGELOG.md`; Playwright smoke at `http://localhost:5020` confirmed the Work summary shows `6 done`, the Done column count is `6`, Done has 6 cards, and the board still starts at scroll-left 0.
@@ -205,7 +205,7 @@ be added here first, then marked `Committed` or `Pushed` after the git action.
 
 ## 2026-05-21 17:54 WITA - Fix Work Board Hover Transparency
 
-- Status: Uncommitted
+- Status: Pushed
 - Areas changed: Work board hover styling, changelog
 - Summary: Add opaque base layers under Work board lane and task-card hover gradients so colored hover treatments no longer expose a transparent-looking band at the top.
 - Verification: `pnpm exec tsc --noEmit --pretty false`; `git diff --check -- src/app/kanban-board.module.css CHANGELOG.md`; Playwright hover smoke confirmed Work board lane hover backgrounds include an opaque base layer and no document-level horizontal overflow.
@@ -213,7 +213,7 @@ be added here first, then marked `Committed` or `Pushed` after the git action.
 
 ## 2026-05-21 17:50 WITA - Add Bee Class Settings Grid
 
-- Status: Uncommitted
+- Status: Pushed
 - Areas changed: Agent settings modal, worker bee presets, bee icon asset paths, agent profile data model, fleet styling, changelog
 - Summary: Restore the general worker bee to the clean original-style icon, version corrected class bee variants to cache-busting `*-v2.png` paths, replace the worker class dropdown with an icon grid, and add a selected-class detail panel with an editable suited-for prompt plus seeded shared-brain skill slugs based on the user's vault skill index.
 - Verification: `pnpm typecheck`; `pnpm lint`; `git diff --check`; inspected the v2 bee class contact sheet.
@@ -221,7 +221,7 @@ be added here first, then marked `Committed` or `Pushed` after the git action.
 
 ## 2026-05-21 17:44 WITA - Refine Fleet List Cell Spacing
 
-- Status: Uncommitted
+- Status: Pushed
 - Areas changed: Fleet list row spacing, shared hex tile content centering, changelog
 - Summary: Add more breathing room between fleet list hive cells and their labels, enlarge the agent list hive cells slightly, and center hex tile content with a flex-based content layer so bee icons sit cleanly inside their containers.
 - Verification: `pnpm exec eslint src/components/fleet/list-view.tsx src/components/fleet/hex-tile.tsx`; `git diff --check -- src/components/fleet/list-view.tsx src/components/fleet/hex-tile.tsx src/components/fleet/fleet-tokens.module.css CHANGELOG.md`; Playwright geometry check on `http://localhost:5020` confirmed 14-16px label gaps and bee image centers aligned with their hex centers.
@@ -229,7 +229,7 @@ be added here first, then marked `Committed` or `Pushed` after the git action.
 
 ## 2026-05-21 17:21 WITA - Add Worker Bee Class Variants
 
-- Status: Uncommitted
+- Status: Pushed
 - Areas changed: Worker bee class icons, bee icon selection config, fleet agent data, agent cells, changelog
 - Summary: Replace the badge-style worker class icons with reference-edited full-bee variants for general, engineer, artist, writer, researcher, ops, QA, planner, and vision workers, then wire bee rendering to use each agent's `workerClass`.
 - Verification: `pnpm typecheck`; `pnpm lint`; `git diff --check`; inspected the generated class icon contact sheet.
@@ -237,7 +237,7 @@ be added here first, then marked `Committed` or `Pushed` after the git action.
 
 ## 2026-05-21 17:12 WITA - Match Ami Scheduler Builder
 
-- Status: Uncommitted
+- Status: Pushed
 - Areas changed: Scheduler builder, per-step schedule data model, Scheduler styles, schedule card actions, changelog
 - Summary: Replace the Scheduler's textarea-style step mode with an Ami-style selected-step builder: Enter adds steps, empty Backspace removes them, every step has its own `+` attachment menu for skills/folders/files/paths, every step has its own model picker, attached step context is included when a schedule runs, and saved schedules can be edited in the same builder instead of removed/recreated.
 - Verification: `pnpm typecheck --pretty false`; `pnpm eslint src/app/page.tsx` (0 errors, existing warnings only); `git diff --check -- src/app/page.tsx src/app/fleet.module.css CHANGELOG.md`; Playwright smoke on `http://localhost:5020` verified step mode, per-step attachment menu, 147 skill choices, model menu, edit affordance, no console errors, and no horizontal overflow.
@@ -245,7 +245,7 @@ be added here first, then marked `Committed` or `Pushed` after the git action.
 
 ## 2026-05-21 17:02 WITA - Replace Work View With Dispatch Board
 
-- Status: Uncommitted
+- Status: Pushed
 - Areas changed: Work board view, Kanban board styling, changelog
 - Summary: Replace the existing Work/Kanban view with the dark Hivemind Dispatch board from `/Users/liam/Downloads/Work board-3.html`, including the honey/teal/pink stat coloring, status-tinted lane gradients, fixed-width scrolling lanes, conditional yellow board-scroll FABs, per-card left/right move controls, selected-task Comment/Link/Reassign action rail, drawer move controls, and existing board storage, filters, drag/drop, quick-add composer, chat, notes, events, and stale-worker controls.
 - Verification: `pnpm exec tsc --noEmit --pretty false`; `pnpm exec eslint src/app/page.tsx` (0 errors, existing warnings only); `git diff --check -- src/app/page.tsx src/app/kanban-board.module.css CHANGELOG.md`; Playwright smoke at `http://localhost:5020` confirmed honey italic hero text, status-tinted lane gradients, gold drawer styling, right scroll FAB visible at the left edge, left scroll FAB hidden until horizontal scroll, and no document-level horizontal overflow.
@@ -253,7 +253,7 @@ be added here first, then marked `Committed` or `Pushed` after the git action.
 
 ## 2026-05-21 16:41 WITA - Replace Sidebar With Work Board Header
 
-- Status: Uncommitted
+- Status: Pushed
 - Areas changed: Dashboard shell, top navigation header, global dashboard styling, changelog
 - Summary: Replace the left dashboard sidebar with the compact Work Board header strip copied from `/Users/liam/Downloads/Work board.html`, including the dispatch brand block, centered brain sync line, and right-aligned top navigation.
 - Verification: `pnpm typecheck --pretty false`; `pnpm eslint src/app/page.tsx src/app/globals.css` (passes with existing warnings); `git diff --check -- src/app/page.tsx src/app/globals.css`; in-app browser geometry/text check at `http://localhost:5020`.
@@ -261,7 +261,7 @@ be added here first, then marked `Committed` or `Pushed` after the git action.
 
 ## 2026-05-21 16:09 WITA - Version Bee Role Icon Assets
 
-- Status: Uncommitted
+- Status: Pushed
 - Areas changed: Bee role icon asset paths, fleet role icon references, dashboard role icon references, changelog
 - Summary: Copy the regenerated worker and queen bee icons to versioned `*-v2.png` filenames and update app references so Next/Image and browser caches fetch the new artwork instead of stale same-path assets.
 - Verification: `pnpm typecheck`; `pnpm lint`; `git diff --check`.
@@ -269,7 +269,7 @@ be added here first, then marked `Committed` or `Pushed` after the git action.
 
 ## 2026-05-21 16:04 WITA - Regenerate Distinct Bee Role Icons
 
-- Status: Uncommitted
+- Status: Pushed
 - Areas changed: Bee role icons, fleet bee icon sizing, agent cell avatars, changelog
 - Summary: Regenerate the worker and queen bee icons as simpler, more distinct 256px transparent PNG assets, enlarge their render sizes across fleet hive/list/roster/footer surfaces, and make standard agent cells use the larger role avatar size.
 - Verification: `pnpm typecheck`; `pnpm lint`; `git diff --check`; inspected regenerated worker and queen icons at original size with transparent corners.
@@ -277,7 +277,7 @@ be added here first, then marked `Committed` or `Pushed` after the git action.
 
 ## 2026-05-21 16:03 WITA - Center Fleet Machine Hive Icon
 
-- Status: Uncommitted
+- Status: Pushed
 - Areas changed: Fleet hive machine cell alignment, changelog
 - Summary: Center the monitor-shaped computer icon in machine hive cells by giving the icon a fixed centered flex box and removing the extra machine-cell padding that nudged the visual off the hex center.
 - Verification: `pnpm eslint src/components/fleet/machine-cluster.tsx`; `git diff --check -- src/components/fleet/machine-cluster.tsx CHANGELOG.md`; Playwright geometry check on `http://localhost:5020` confirmed the `This Mac` monitor icon center is aligned with the hive cell center.
@@ -285,7 +285,7 @@ be added here first, then marked `Committed` or `Pushed` after the git action.
 
 ## 2026-05-21 16:02 WITA - Add Bankr Honey Treasury
 
-- Status: Uncommitted
+- Status: Pushed
 - Areas changed: Wallet provider config, server-side Honey/HIVE reward ledger, chat usage crediting, Wallets tab reward UI, Bankr LLM payment prompt, assimilation manifest
 - Summary: Add a server-backed reward ledger where completed agent chat work credits Honey from server-observed token usage, available Honey can be exchanged for HIVE through the ledger API, and the Wallets view shows a compact spoof-resistant Hive ledger without manual reward inputs.
 - Verification: `pnpm typecheck`; `pnpm lint` (passes with existing warnings); `git diff --check`; `verify_assimilation_manifest.py`; browser check confirmed the compact Hive ledger reads from the server ledger; `GET /api/honey-ledger` and `POST /api/honey-ledger` return server ledger state.
@@ -293,7 +293,7 @@ be added here first, then marked `Committed` or `Pushed` after the git action.
 
 ## 2026-05-21 15:52 WITA - Use Real Fleet Alert Headline
 
-- Status: Uncommitted
+- Status: Pushed
 - Areas changed: Fleet masthead alerts, fleet headline card, machine hive cell icon alignment, changelog
 - Summary: Replace the placeholder OpenClaw-x headline with unread high/urgent notification alerts when present, include high-priority alerts in the urgent stat, and center the enlarged machine monitor icon inside hive cells.
 - Verification: `pnpm typecheck`; `pnpm lint`; `git diff --check`.
@@ -301,7 +301,7 @@ be added here first, then marked `Committed` or `Pushed` after the git action.
 
 ## 2026-05-21 15:48 WITA - Enlarge Machine Computer Cells
 
-- Status: Uncommitted
+- Status: Pushed
 - Areas changed: Fleet hive machine cells, changelog
 - Summary: Replace the compact machine glyph inside hive cells with a larger monitor-shaped icon that fills the hex and renders the machine name directly on the computer screen.
 - Verification: `pnpm typecheck`; `pnpm lint`; `git diff --check`.
@@ -309,7 +309,7 @@ be added here first, then marked `Committed` or `Pushed` after the git action.
 
 ## 2026-05-21 15:45 WITA - Restore Fleet Hive Cell Clicks
 
-- Status: Uncommitted
+- Status: Pushed
 - Areas changed: Fleet graph panning, hive cell interaction, changelog
 - Summary: Prevent the graph pan layer from capturing pointer gestures that start on machine, agent, or add-agent hive cells so selecting cells and adding agents work again while empty-canvas drag-to-pan remains available.
 - Verification: `pnpm typecheck`; `pnpm lint`; `git diff --check`.
@@ -317,7 +317,7 @@ be added here first, then marked `Committed` or `Pushed` after the git action.
 
 ## 2026-05-21 15:42 WITA - Reorder Fleet Masthead Metrics
 
-- Status: Uncommitted
+- Status: Pushed
 - Areas changed: Fleet masthead metrics, changelog
 - Summary: Reorder the fleet summary stats to show machines, agents, working, and urgent.
 - Verification: `pnpm typecheck`; `pnpm lint`; `git diff --check`.
@@ -325,7 +325,7 @@ be added here first, then marked `Committed` or `Pushed` after the git action.
 
 ## 2026-05-21 15:41 WITA - Refine Fleet Roster Icons And Rows
 
-- Status: Uncommitted
+- Status: Pushed
 - Areas changed: Fleet roster, changelog
 - Summary: Replace the roster machine initial tile with a computer icon, expand the open agent rows across the machine card width, and use each agent's bee role icon in place of the status dot with disabled/offline states visually dimmed.
 - Verification: `pnpm typecheck`; `pnpm lint`; `git diff --check`.
@@ -333,7 +333,7 @@ be added here first, then marked `Committed` or `Pushed` after the git action.
 
 ## 2026-05-21 15:37 WITA - Enlarge Fleet Graph Stage And Add Bounded Pan
 
-- Status: Uncommitted
+- Status: Pushed
 - Areas changed: Fleet constellation layout, graph viewport, fleet styling, changelog
 - Summary: Slim the roster and dispatch rails, make the center graph/map/list stage a dominant square viewport, recenter machine clusters in the visible graph, and add drag-to-pan with bounds derived from the machine and agent cell extents plus padding.
 - Verification: `pnpm typecheck`; `pnpm lint`; Playwright geometry check confirmed a square 646px graph frame with side rails at 240px and 260px; seeded four-machine Playwright check confirmed the cached fleet shows 4 machines and graph dragging changes the canvas position within bounds.
@@ -341,7 +341,7 @@ be added here first, then marked `Committed` or `Pushed` after the git action.
 
 ## 2026-05-21 15:29 WITA - Preserve Fleet Machines And Correct Icons
 
-- Status: Uncommitted
+- Status: Pushed
 - Areas changed: Fleet discovery merge, Tailscale device fallback, fleet data cache, constellation/list/map/footer icons, changelog
 - Summary: Preserve last-known discovered machines when Tailscale discovery temporarily falls back to local-only mode, cache discovered machines locally, return the local device from the Tailscale API on CLI parse failure, render machine cells with computer icons, and render queen agents with the queen bee icon.
 - Verification: `pnpm typecheck`; `pnpm lint`.
@@ -349,7 +349,7 @@ be added here first, then marked `Committed` or `Pushed` after the git action.
 
 ## 2026-05-21 15:23 WITA - Add Compact Sidebar Tooltips
 
-- Status: Uncommitted
+- Status: Pushed
 - Areas changed: Left navigation sidebar, changelog
 - Summary: Use the shared tooltip component for compact sidebar icons, including view navigation, compact/expand, theme, and Tailnet status controls, while keeping tooltips disabled in expanded mode.
 - Verification: `pnpm typecheck`; `pnpm lint`; Playwright hover check confirmed compact mode shows shared tooltip content for the Fleet icon.
@@ -357,7 +357,7 @@ be added here first, then marked `Committed` or `Pushed` after the git action.
 
 ## 2026-05-21 15:17 WITA - Add Compact Sidebar Mode
 
-- Status: Uncommitted
+- Status: Pushed
 - Areas changed: Dashboard shell, left navigation sidebar, global dashboard styling, changelog
 - Summary: Add a persisted compact mode for the left navigation sidebar so the dashboard can reclaim horizontal workspace while keeping icon navigation, theme toggle, and Tailnet status available.
 - Verification: `pnpm typecheck`; `pnpm lint`; Playwright layout check confirmed sidebar width changes from 280px to 88px and main workspace grows from 958px to 1150px at 1280px viewport.
@@ -365,7 +365,7 @@ be added here first, then marked `Committed` or `Pushed` after the git action.
 
 ## 2026-05-21 15:10 WITA - Replace Fleet View With Swarm Constellation
 
-- Status: Uncommitted
+- Status: Pushed
 - Areas changed: Fleet dashboard view, fleet component set, fleet styling, assimilation manifest
 - Summary: Replace the rendered Fleet/Agents machine board with the downloaded `nextjs-fleet` swarm constellation interface, adapt it to live machine, agent, task, wallet, and alert data, and keep the existing chat, wallet, settings, duplicate, remove, and add-agent actions wired through the new UI.
 - Verification: `pnpm typecheck`; `pnpm lint` (passes with existing warnings); in-app browser render check at `http://localhost:5020`.
@@ -373,7 +373,7 @@ be added here first, then marked `Committed` or `Pushed` after the git action.
 
 ## 2026-05-21 14:28 WITA - Refine README Logo Wordmark
 
-- Status: Uncommitted
+- Status: Pushed
 - Areas changed: README logo image
 - Summary: Re-render the `HivemindOS` wordmark in the README logo with a sharper DIN-based display treatment while leaving the README hero and sharing-model images unchanged.
 - Verification: Visual inspection of `public/hivemindos-logo.png`; PNG metadata check; `git diff --check`.
@@ -381,7 +381,7 @@ be added here first, then marked `Committed` or `Pushed` after the git action.
 
 ## 2026-05-21 02:58 WITA - Audit HivemindOS Vault References
 
-- Status: Uncommitted
+- Status: Pushed
 - Areas changed: Project agent instructions, Codex global agent instructions, Obsidian active vault metadata, renamed backup vault metadata, ambient suggestion cache, changelog
 - Summary: Remove stale references to the old shared vault path and old shared-skill block from active agent instructions and Obsidian metadata, add explicit HivemindOS shared vault paths to the project rules, and distinguish active config cleanup from historical Codex session transcripts.
 - Verification: Scoped scans over the repo, Obsidian vaults, `/Users/liam/.codex/AGENTS.md`, and Codex ambient suggestions found no remaining old shared-vault/project-name references; confirmed `/Users/liam/.codex/AGENTS.md`, project `AGENTS.md`, and the active vault `AGENTS.md` point to `/Users/liam/Documents/Obsidian/hivemindos-vault`; `git diff --check -- AGENTS.md CHANGELOG.md ROADMAP.md`.
@@ -389,7 +389,7 @@ be added here first, then marked `Committed` or `Pushed` after the git action.
 
 ## 2026-05-21 02:49 WITA - Refresh HivemindOS Roadmap
 
-- Status: Uncommitted
+- Status: Pushed
 - Areas changed: Roadmap, changelog
 - Summary: Rewrite the stale roadmap around the current HivemindOS surface, move shipped Aeon, MiroShark, Brain sync, Work board, Scheduler, env sync, wallet, Remotion, and repo-rename work into Current Surface, and restate near-term work around onboarding, migration, collector hardening, runtime depth, shared Brain, security, and productization.
 - Verification: Old project-name scan over `ROADMAP.md` and `CHANGELOG.md`; `git diff --check -- ROADMAP.md CHANGELOG.md`.
