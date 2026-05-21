@@ -17,6 +17,14 @@ export interface RuntimeCapabilities {
 export type BeeAgentRole = "queen" | "worker" | "observer" | "human";
 export type BeeWorkerClass = "general" | "planner" | "code" | "vision" | "writer" | "research" | "artist" | "ops" | "qa";
 
+export interface CustomWorkerClassProfile {
+  id: string;
+  label: string;
+  imageSrc?: string;
+  skillProfilePrompt: string;
+  preferredSkillSlugs: string[];
+}
+
 export interface AgentProfile {
   id: string;
   name: string;
@@ -46,6 +54,11 @@ export interface AgentProfile {
   aeonMode?: "github" | "a2a" | "local";
   beeRole?: BeeAgentRole;
   workerClass?: BeeWorkerClass;
+  customWorkerClass?: CustomWorkerClassProfile;
+  customWorkerClasses?: CustomWorkerClassProfile[];
+  selectedCustomWorkerClassId?: string;
+  skillProfilePrompt?: string;
+  preferredSkillSlugs?: string[];
 }
 
 export interface SharedVaultConfig {

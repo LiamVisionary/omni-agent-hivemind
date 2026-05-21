@@ -21,6 +21,18 @@ type TailscaleStatus = {
   Peer?: Record<string, TailscalePeer>;
 };
 
+function localDevice() {
+  return {
+    self: true,
+    name: "This machine",
+    dnsName: "",
+    os: process.platform,
+    online: true,
+    ip: "127.0.0.1",
+    collectorUrl: "http://127.0.0.1:8787",
+  };
+}
+
 function simplifyDevice(peer: TailscalePeer, self = false) {
   const ip = peer.TailscaleIPs?.find((value) => /^\d+\.\d+\.\d+\.\d+$/.test(value)) ?? peer.TailscaleIPs?.[0] ?? "";
   const dnsName = peer.DNSName?.replace(/\.$/, "") ?? "";
@@ -44,7 +56,7 @@ export async function GET() {
 
   try {
     const status = JSON.parse(stdout) as TailscaleStatus & { error?: string };
-    if (status.error) return Response.json({ ok: false, error: status.error });
+    if (status.error) return Response.json({ ok: false, error: status.error, devices: [localDevice()] });
     const devices = [
       ...(status.Self ? [simplifyDevice(status.Self, true)] : []),
       ...Object.values(status.Peer ?? {}).map((peer) => simplifyDevice(peer)),
@@ -56,6 +68,6 @@ export async function GET() {
       devices,
     });
   } catch {
-    return Response.json({ ok: false, error: "Could not parse tailscale status" });
+    return Response.json({ ok: false, error: "Could not parse tailscale status", devices: [localDevice()] });
   }
 }

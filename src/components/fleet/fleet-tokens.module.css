@@ -1,0 +1,265 @@
+/* src/components/fleet/fleet-tokens.module.css
+   Hex-cell + edge color tokens for the Fleet view. Scoped to `.root` so they
+   don't leak. The whole FleetView is wrapped in this class. */
+
+.root {
+  --f-display: "Space Grotesk", "Inter", system-ui, sans-serif;
+  --f-mono: ui-monospace, "JetBrains Mono", SFMono-Regular, Menlo, monospace;
+
+  /* Hex-cell tones — dark mode defaults. Translucent enough that dashed
+     Tailscale edges show through, opaque enough (with backdrop-blur) that
+     label text stays legible. */
+  --hex-default-bg: linear-gradient(180deg, rgba(22, 28, 42, 0.62), rgba(16, 21, 31, 0.52));
+  --hex-default-border: rgba(148, 163, 184, 0.38);
+  --hex-default-glow: transparent;
+
+  --hex-active-bg: linear-gradient(180deg, rgba(45,212,191,0.32), rgba(45,212,191,0.10));
+  --hex-active-border: rgba(94, 234, 212, 0.72);
+  --hex-active-glow: rgba(45, 212, 191, 0.45);
+
+  --hex-honey-bg: linear-gradient(180deg, rgba(255,212,90,0.32), rgba(242,183,5,0.10));
+  --hex-honey-border: rgba(255, 212, 90, 0.70);
+  --hex-honey-glow: rgba(255, 212, 90, 0.45);
+
+  --hex-danger-bg: linear-gradient(180deg, rgba(251,113,133,0.30), rgba(251,113,133,0.08));
+  --hex-danger-border: rgba(251, 113, 133, 0.66);
+  --hex-danger-glow: rgba(251, 113, 133, 0.36);
+
+  --hex-ghost-bg: rgba(16, 21, 31, 0.32);
+  --hex-ghost-border: rgba(148, 163, 184, 0.34);
+  --hex-ghost-glow: transparent;
+
+  --hex-add-stroke: rgba(94, 234, 212, 0.55);
+  --hex-hover-stroke: rgba(94, 234, 212, 0.95);
+
+  --edge-stroke-start: rgba(94, 234, 212, 0.50);
+  --edge-stroke-end: rgba(255, 212, 90, 0.55);
+}
+
+/* Hive-light overrides. Apply by toggling [data-theme="hive-light"] on
+   <html> or any ancestor (matches the repo's existing theme switch). */
+:global([data-theme="hive-light"]) .root {
+  --hex-default-bg: linear-gradient(180deg, rgba(217, 200, 158, 0.78), rgba(195, 174, 128, 0.62));
+  --hex-default-border: rgba(92, 75, 45, 0.55);
+
+  --hex-active-bg: linear-gradient(180deg, rgba(13, 142, 126, 0.36), rgba(13, 142, 126, 0.14));
+  --hex-active-border: rgba(13, 90, 78, 0.78);
+  --hex-active-glow: rgba(13, 142, 126, 0.32);
+
+  --hex-honey-bg: linear-gradient(180deg, rgba(184, 130, 22, 0.50), rgba(140, 94, 10, 0.22));
+  --hex-honey-border: rgba(106, 69, 5, 0.78);
+  --hex-honey-glow: rgba(184, 130, 22, 0.35);
+
+  --hex-danger-bg: linear-gradient(180deg, rgba(180, 35, 66, 0.36), rgba(180, 35, 66, 0.12));
+  --hex-danger-border: rgba(143, 29, 44, 0.72);
+  --hex-danger-glow: rgba(180, 35, 66, 0.26);
+
+  --hex-ghost-bg: rgba(232, 220, 188, 0.36);
+  --hex-ghost-border: rgba(92, 75, 45, 0.45);
+
+  --hex-add-stroke: rgba(13, 90, 78, 0.78);
+  --hex-hover-stroke: rgba(13, 90, 78, 1);
+
+  --edge-stroke-start: rgba(13, 90, 78, 0.78);
+  --edge-stroke-end: rgba(106, 69, 5, 0.78);
+}
+
+/* Hover affordance for any interactive hex cell */
+.hexInteractive { cursor: pointer; }
+.hexInteractive:hover {
+  transform: scale(1.05);
+  z-index: 4;
+  filter: drop-shadow(0 0 18px var(--hex-honey-glow));
+}
+.hexInteractive:hover .hexStroke {
+  stroke: var(--hex-hover-stroke);
+  stroke-width: 1.5;
+}
+.hexInteractive:active { transform: scale(0.98); }
+
+.hexAdd {
+  cursor: pointer;
+  background: transparent;
+  border: 0;
+  padding: 0;
+  transition: transform 180ms ease, filter 180ms ease;
+}
+.hexAdd:hover {
+  transform: scale(1.05);
+  filter: drop-shadow(0 0 14px var(--hex-add-stroke));
+}
+
+.rosterAddAgentRow {
+  transition:
+    border-color 160ms ease,
+    background 160ms ease,
+    color 160ms ease,
+    filter 160ms ease,
+    transform 160ms ease;
+}
+
+.rosterAddAgentRow:hover {
+  border-color: rgba(94, 234, 212, 0.74) !important;
+  background: rgba(45, 212, 191, 0.14) !important;
+  color: var(--foreground) !important;
+  transform: translateY(-1px);
+  filter: drop-shadow(0 0 12px rgba(45, 212, 191, 0.18));
+}
+
+.rosterAddAgentRow:hover > span:first-child {
+  border-color: rgba(94, 234, 212, 0.82) !important;
+  background: rgba(45, 212, 191, 0.22) !important;
+}
+
+.rosterTaskPreview {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: start;
+  gap: 8px;
+  width: 100%;
+  padding: 7px 8px;
+  border: 1px solid rgba(148, 163, 184, 0.14);
+  border-radius: 7px;
+  background: rgba(15, 23, 42, 0.42);
+  color: var(--muted);
+  cursor: pointer;
+  text-align: left;
+  transition:
+    border-color 160ms ease,
+    background 160ms ease,
+    color 160ms ease;
+}
+
+.rosterTaskPreview:hover {
+  border-color: rgba(94, 234, 212, 0.32);
+  background: rgba(15, 23, 42, 0.58);
+  color: var(--foreground);
+}
+
+.rosterTaskPreview svg {
+  margin-top: 2px;
+  color: var(--accent-strong);
+  transition: transform 160ms ease;
+}
+
+.rosterTaskPreviewExpanded svg {
+  transform: rotate(180deg);
+}
+
+.rosterTaskPreviewText {
+  min-width: 0;
+  overflow: hidden;
+  font-family: var(--f-mono);
+  font-size: 10px;
+  line-height: 1.45;
+}
+
+.rosterTaskPreviewTextCollapsed {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.hexContent {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 0;
+}
+
+.listEntity {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.listAgentEntity {
+  gap: 16px;
+}
+
+.listAvatarHex {
+  flex: 0 0 auto;
+}
+
+.listEntityText {
+  min-width: 0;
+}
+
+.listBeeIcon {
+  object-position: center;
+}
+
+/* Status dot */
+.dot {
+  display: inline-block;
+  width: 6px; height: 6px;
+  border-radius: 9999px;
+  background: currentColor;
+  box-shadow: 0 0 0 3px color-mix(in srgb, currentColor 18%, transparent);
+}
+@keyframes fleet-pulse {
+  0%, 100% { box-shadow: 0 0 0 3px color-mix(in srgb, currentColor 18%, transparent); }
+  50%      { box-shadow: 0 0 0 6px color-mix(in srgb, currentColor 6%, transparent); }
+}
+.dotLive { animation: fleet-pulse 1.6s ease-in-out infinite; }
+
+.monoCap {
+  font-family: var(--f-mono);
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.topbar {
+  grid-template-columns: auto 1fr auto;
+  gap: 24px;
+}
+
+.heroRow {
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 24px;
+}
+
+.layout {
+  grid-template-columns: minmax(190px, 240px) minmax(560px, 1fr) minmax(200px, 260px);
+}
+
+.sideRail {
+  padding: 16px 14px;
+}
+
+.stageColumn {
+  padding: 18px 20px;
+}
+
+.stageFrame {
+  width: 100%;
+  max-width: min(100%, calc(100dvh - 220px));
+  aspect-ratio: 1 / 1;
+  min-height: 520px;
+  margin: 0 auto;
+}
+
+.dispatchRail {
+  padding: 16px 14px;
+}
+
+@media (max-width: 1100px) {
+  .topbar,
+  .heroRow,
+  .layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .heroRow {
+    align-items: start;
+  }
+
+  .stageFrame {
+    max-width: 100%;
+    min-height: min(560px, 80vw);
+  }
+}

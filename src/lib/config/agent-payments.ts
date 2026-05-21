@@ -1,4 +1,9 @@
 export const AGENT_PAYMENT_PROVIDER_COPY = {
+  bankr: {
+    label: "Bankr LLM",
+    summary: "Bankr wallet and LLM Gateway access for agents that need paid model calls.",
+    setup: "Store the Bankr API or LLM Gateway key in the agent environment, set spending caps, and keep Honey/HIVE rewards in the app ledger until redemption is wired.",
+  },
   clawcard: {
     label: "ClawCard",
     summary: "Agent identity, inbox, phone number, virtual cards, Base wallet, and budgets.",

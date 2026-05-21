@@ -422,7 +422,7 @@
   text-align: left;
   touch-action: manipulation;
   cursor: pointer;
-  transition: border-color 160ms ease, background 160ms ease, box-shadow 160ms ease, transform 160ms ease;
+  transition: border-color 160ms ease, background 160ms ease, box-shadow 160ms ease;
 }
 
 .kanbanCard:hover,
@@ -431,7 +431,6 @@
   background: rgba(18, 28, 39, 0.94);
   box-shadow: 0 12px 28px rgba(0, 0, 0, 0.18);
   outline: none;
-  transform: translateY(-1px);
 }
 
 .kanbanCard.working {
@@ -448,7 +447,7 @@
 .kanbanCard.active {
   border-color: rgba(45, 212, 191, 0.76);
   background: rgba(16, 34, 31, 0.92);
-  box-shadow: inset 3px 0 0 rgba(45, 212, 191, 0.84), 0 14px 32px rgba(0, 0, 0, 0.18);
+  box-shadow: 0 14px 32px rgba(0, 0, 0, 0.18);
 }
 
 .kanbanCardHeader,
@@ -461,6 +460,7 @@
 
 .kanbanCardHeader {
   align-items: flex-start;
+  justify-content: flex-end;
 }
 
 .kanbanCardHeader strong {
@@ -608,6 +608,796 @@
   padding: 0;
 }
 
+.workBoardPanel {
+  --kb-bg-0: #06080d;
+  --kb-bg-1: #0a0e16;
+  --kb-bg-2: #10151f;
+  --kb-bg-3: #161c2a;
+  --kb-line: rgba(148, 163, 184, 0.14);
+  --kb-line-strong: rgba(94, 234, 212, 0.24);
+  --kb-fg: #f4f7fb;
+  --kb-muted: #8e9bb1;
+  --kb-cyan: #2dd4bf;
+  --kb-cyan-2: #5eead4;
+  --kb-cyan-3: #99f6e4;
+  --kb-danger: #fb7185;
+  --kb-danger-2: #fecdd3;
+  --kb-honey: #f2b705;
+  --kb-honey-2: #ffd45a;
+  --kb-honey-3: #fff6cf;
+  min-height: min(1040px, calc(100vh - 86px));
+  border: 1px solid rgba(94, 234, 212, 0.12);
+  border-radius: 2px;
+  background:
+    radial-gradient(circle at 12% 8%, rgba(45, 212, 191, 0.18), transparent 26%),
+    radial-gradient(circle at 82% 16%, rgba(242, 183, 5, 0.12), transparent 24%),
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='96' height='55.426' viewBox='0 0 96 55.426'%3E%3Cg fill='none' stroke='%235eead4' stroke-opacity='.045' stroke-width='1'%3E%3Cpath d='M16 0h32l16 27.713-16 27.713H16L0 27.713z'/%3E%3Cpath d='M64-27.713h32L112 0 96 27.713H64L48 0z'/%3E%3Cpath d='M64 27.713h32l16 27.713-16 27.713H64L48 55.426z'/%3E%3C/g%3E%3C/svg%3E"),
+    linear-gradient(180deg, var(--kb-bg-0), var(--kb-bg-1) 45%, #070a10);
+  background-size: auto, auto, 96px 55.426px, auto;
+  box-shadow: 0 28px 90px rgba(0, 0, 0, 0.32);
+  color: var(--kb-fg);
+  overflow: hidden;
+}
+
+.workBoardShell {
+  display: grid;
+  grid-template-rows: auto auto minmax(0, 1fr);
+  gap: 18px;
+  min-height: min(1040px, calc(100vh - 86px));
+  padding: 0 20px 26px;
+}
+
+.workBoardHeader {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 18px;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.1);
+  padding-bottom: 16px;
+}
+
+.workBoardTitleBlock {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+
+.monoCap,
+.workBoardControls label > span,
+.kanbanCardId {
+  color: var(--kb-muted);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.workBoardTitleBlock h2 {
+  margin: 0;
+  color: var(--kb-fg);
+  font-size: clamp(28px, 3.7vw, 58px);
+  font-weight: 900;
+  letter-spacing: 0;
+  line-height: 0.94;
+}
+
+.workBoardSyncLine {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  color: var(--kb-muted);
+  font-size: 12px;
+}
+
+.workBoardSyncLine span {
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
+  border: 1px solid rgba(148, 163, 184, 0.14);
+  border-radius: 999px;
+  background: rgba(16, 21, 31, 0.72);
+  padding: 0 10px;
+}
+
+.workBoardTopActions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+.workBoardPrimaryAction {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  width: 102px;
+  height: 30px;
+  border: 1px solid rgba(255, 212, 90, 0.48);
+  border-radius: 7px;
+  background: rgba(255, 212, 90, 0.16);
+  color: var(--kb-honey-2);
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 900;
+  justify-content: center;
+  padding: 0;
+}
+
+.workBoardPrimaryAction svg {
+  width: 15px;
+  height: 15px;
+}
+
+.liveDot {
+  width: 7px;
+  height: 7px;
+  border-radius: 999px;
+  background: var(--kb-cyan-2);
+  box-shadow: 0 0 0 4px rgba(45, 212, 191, 0.12);
+}
+
+.workBoardHero {
+  display: grid;
+  grid-template-columns: minmax(180px, 1fr) auto;
+  gap: 18px;
+  align-items: center;
+  min-height: 72px;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.1);
+  padding: 8px 0 14px;
+}
+
+.workBoardHeroCopy {
+  display: grid;
+  align-content: center;
+  gap: 4px;
+  min-height: 48px;
+  border: 0;
+  background: transparent;
+  padding: 0 0 0 16px;
+}
+
+.workBoardHeroCopy strong {
+  color: var(--kb-fg);
+  font-size: clamp(24px, 2.4vw, 34px);
+  font-weight: 900;
+  letter-spacing: 0;
+  line-height: 1;
+}
+
+.workBoardHeroCopy > span {
+  color: var(--kb-muted);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.workBoardStats {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(74px, 1fr));
+  gap: 8px;
+  align-content: center;
+  width: min(460px, 48vw);
+  padding: 0 16px 0 0;
+}
+
+.workBoardStats span {
+  display: grid;
+  align-content: center;
+  min-height: 48px;
+  border: 0;
+  background: transparent;
+  color: var(--kb-muted);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.18em;
+  padding: 0;
+  text-transform: uppercase;
+}
+
+.workBoardStats strong {
+  font-family: var(--f-body, inherit);
+  font-size: clamp(24px, 2.6vw, 34px);
+  font-weight: 950;
+  line-height: 0.92;
+  letter-spacing: 0;
+}
+
+.workBoardStats .working strong {
+  color: var(--kb-honey-2);
+}
+
+.workBoardStats .needs-human strong {
+  color: var(--kb-danger);
+}
+
+.workBoardStats .done strong {
+  color: var(--kb-cyan-2);
+}
+
+.workBoardStats .total strong {
+  color: var(--kb-fg);
+}
+
+.ideas,
+.ready,
+.working,
+.needs-human,
+.done,
+.archived,
+.total {
+  --work-board-status-token: currentColor;
+}
+
+.workBoardControls {
+  display: grid;
+  grid-template-columns: 180px 180px minmax(260px, 340px) minmax(0, 1fr) auto auto;
+  gap: 14px;
+  align-items: end;
+  border: 0;
+  background: transparent;
+  padding: 0 16px;
+}
+
+.workBoardControls label {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+
+.workBoardControls select,
+.workBoardControls input,
+.workBoardOptions > summary {
+  min-height: 38px;
+  border: 1px solid rgba(148, 163, 184, 0.16);
+  border-radius: 7px;
+  background: rgba(16, 21, 31, 0.84);
+  color: var(--kb-fg);
+  font-size: 13px;
+  font-weight: 700;
+  outline: none;
+}
+
+.workBoardControls select,
+.workBoardControls input {
+  width: 100%;
+  padding: 0 10px;
+}
+
+.workBoardSearch div {
+  position: relative;
+  display: grid;
+}
+
+.workBoardSearch svg {
+  position: absolute;
+  top: 50%;
+  left: 10px;
+  width: 14px;
+  height: 14px;
+  color: var(--kb-cyan-2);
+  transform: translateY(-50%);
+}
+
+.workBoardSearch input {
+  padding-left: 32px;
+}
+
+.workBoardToggle {
+  display: inline-flex !important;
+  grid-template-columns: auto 1fr;
+  align-items: center;
+  min-height: 38px;
+  border: 1px solid rgba(148, 163, 184, 0.16);
+  border-radius: 7px;
+  background: rgba(16, 21, 31, 0.84);
+  padding: 0 10px;
+}
+
+.workBoardToggle input {
+  width: 16px;
+  height: 16px;
+}
+
+.workBoardOptions > summary {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 11px;
+}
+
+.workBoardOptions > summary svg {
+  width: 15px;
+  height: 15px;
+}
+
+.workBoardPanel .kanbanWorkspace {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(420px, 476px);
+  align-items: stretch;
+  min-height: 0;
+  margin-top: 0;
+  overflow: hidden;
+}
+
+.workBoardPanel .kanbanWorkspace.noDrawer {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.kanbanBoardStage {
+  position: relative;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.workBoardPanel .kanbanBoard {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: 350px;
+  grid-template-columns: none;
+  gap: 18px;
+  min-height: 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding-bottom: 8px;
+  scroll-behavior: smooth;
+  scrollbar-width: none;
+}
+
+.workBoardPanel .kanbanBoard::-webkit-scrollbar {
+  display: none;
+}
+
+.kanbanBoardScrollFab {
+  position: absolute;
+  top: clamp(132px, 24vh, 220px);
+  z-index: 10;
+  display: grid;
+  width: 40px;
+  height: 40px;
+  place-items: center;
+  border: 1px solid rgba(255, 212, 90, 0.34);
+  border-radius: 999px;
+  background: rgba(16, 21, 31, 0.92);
+  color: var(--kb-honey-2);
+  cursor: pointer;
+  box-shadow: rgba(0, 0, 0, 0.32) 0 10px 28px, rgba(255, 212, 90, 0.06) 0 0 0 4px;
+  transform: translateY(-50%);
+}
+
+.kanbanBoardScrollFab.left {
+  left: 12px;
+}
+
+.kanbanBoardScrollFab.left svg {
+  transform: rotate(180deg);
+}
+
+.kanbanBoardScrollFab.right {
+  right: 12px;
+}
+
+.kanbanBoardScrollFab:hover,
+.kanbanBoardScrollFab:focus-visible {
+  border-color: rgba(255, 212, 90, 0.68);
+  outline: none;
+}
+
+.workBoardPanel .kanbanColumn {
+  --lane-accent: var(--kb-cyan-2);
+  --lane-accent-rgb: 94, 234, 212;
+  --lane-title: var(--kb-fg);
+  --lane-soft: rgba(var(--lane-accent-rgb), 0.08);
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  gap: 10px;
+  min-height: 670px;
+  border: 1px solid rgba(var(--lane-accent-rgb), 0.2);
+  border-radius: 8px;
+  background:
+    linear-gradient(90deg, rgba(var(--lane-accent-rgb), 0.15), transparent 42%),
+    linear-gradient(180deg, rgba(var(--lane-accent-rgb), 0.08), rgba(8, 13, 20, 0.68) 35%),
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='72' height='41.569' viewBox='0 0 72 41.569'%3E%3Cg fill='none' stroke='%235eead4' stroke-opacity='.045' stroke-width='1'%3E%3Cpath d='M12 0h24l12 20.784-12 20.785H12L0 20.784z'/%3E%3Cpath d='M48-20.784h24L84 0 72 20.784H48L36 0z'/%3E%3Cpath d='M48 20.784h24l12 20.785-12 20.784H48L36 41.569z'/%3E%3C/g%3E%3C/svg%3E"),
+    linear-gradient(180deg, rgba(13, 18, 28, 0.98), rgba(8, 13, 20, 0.96));
+  background-size: auto, auto, 72px 41.569px, auto;
+  padding: 16px;
+}
+
+.workBoardPanel .kanbanColumn.ideas {
+  --lane-accent: #a78bfa;
+  --lane-accent-rgb: 167, 139, 250;
+  --lane-title: #c4b5fd;
+}
+
+.workBoardPanel .kanbanColumn.ready {
+  --lane-accent: var(--kb-cyan-2);
+  --lane-accent-rgb: 94, 234, 212;
+  --lane-title: var(--kb-cyan-3);
+}
+
+.workBoardPanel .kanbanColumn.working {
+  --lane-accent: var(--kb-honey-2);
+  --lane-accent-rgb: 255, 212, 90;
+  --lane-title: var(--kb-honey-2);
+}
+
+.workBoardPanel .kanbanColumn.needs-human {
+  --lane-accent: var(--kb-danger);
+  --lane-accent-rgb: 251, 113, 133;
+  --lane-title: var(--kb-danger-2);
+}
+
+.workBoardPanel .kanbanColumn.done {
+  --lane-accent: #86efac;
+  --lane-accent-rgb: 134, 239, 172;
+  --lane-title: #bbf7d0;
+}
+
+.workBoardPanel .kanbanColumn.archived {
+  --lane-accent: var(--kb-muted);
+  --lane-accent-rgb: 142, 155, 177;
+  --lane-title: #c6d1df;
+}
+
+.workBoardPanel .kanbanColumn:hover {
+  border-color: rgba(var(--lane-accent-rgb), 0.38);
+  background-position: 0 0, 0 0, 18px 10px, 0 0;
+}
+
+.workBoardPanel .kanbanColumnHeader {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto auto;
+  align-items: start;
+  gap: 8px;
+  min-height: 92px;
+  border: 0;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.11);
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  padding: 0 0 10px;
+}
+
+.workBoardPanel .kanbanColumnHeader h3 {
+  color: var(--lane-title);
+  font-size: 18px;
+  font-weight: 900;
+}
+
+.workBoardPanel .kanbanColumnHeader p {
+  grid-column: auto;
+  margin: 6px 0 0;
+  color: var(--kb-muted);
+  font-size: 12px;
+}
+
+.kanbanColumnDot {
+  width: 14px;
+  height: 14px;
+  margin-top: 7px;
+  border: 3px solid rgba(var(--lane-accent-rgb), 0.2);
+  border-radius: 999px;
+  background: var(--lane-accent);
+  box-shadow: 0 0 20px rgba(var(--lane-accent-rgb), 0.3);
+}
+
+.kanbanColumnCount {
+  display: inline-grid;
+  min-width: 28px;
+  height: 28px;
+  place-items: center;
+  border: 1px solid rgba(var(--lane-accent-rgb), 0.32);
+  border-radius: 999px;
+  background: rgba(var(--lane-accent-rgb), 0.12);
+  color: var(--lane-title);
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.workBoardPanel .kanbanAddColumnTask {
+  width: 28px;
+  height: 28px;
+  border-color: rgba(var(--lane-accent-rgb), 0.24);
+  background: rgba(16, 21, 31, 0.78);
+  color: var(--lane-title);
+}
+
+.workBoardPanel .kanbanCards {
+  display: grid;
+  align-content: start;
+  gap: 9px;
+  min-height: 0;
+  overflow-y: auto;
+  padding-right: 2px;
+}
+
+.workBoardPanel .kanbanColumn:has(.kanbanInlineAdd [aria-expanded="true"]) {
+  z-index: 20;
+}
+
+.workBoardPanel .kanbanCards:has(.kanbanInlineAdd [aria-expanded="true"]) {
+  position: relative;
+  z-index: 25;
+  overflow: visible;
+}
+
+.workBoardPanel .kanbanCard {
+  gap: 10px;
+  border: 1px solid rgba(var(--lane-accent-rgb), 0.26);
+  border-radius: 8px;
+  background:
+    linear-gradient(180deg, rgba(var(--lane-accent-rgb), 0.11), rgba(10, 15, 23, 0.26) 38%),
+    linear-gradient(180deg, rgba(22, 28, 42, 0.98), rgba(10, 15, 23, 0.98));
+  box-shadow: 0 10px 26px rgba(0, 0, 0, 0.16);
+  padding: 12px;
+}
+
+.workBoardPanel .kanbanCard:hover,
+.workBoardPanel .kanbanCard:focus-visible {
+  border-color: rgba(var(--lane-accent-rgb), 0.48);
+  background:
+    linear-gradient(180deg, rgba(var(--lane-accent-rgb), 0.16), rgba(12, 18, 27, 0.3) 42%),
+    linear-gradient(180deg, rgba(25, 34, 50, 0.98), rgba(12, 18, 27, 0.98));
+}
+
+.workBoardPanel .kanbanCard.working {
+  border-color: rgba(255, 212, 90, 0.44);
+  background:
+    linear-gradient(180deg, rgba(255, 212, 90, 0.18), rgba(10, 15, 23, 0.28) 44%),
+    linear-gradient(180deg, rgba(25, 28, 32, 0.98), rgba(10, 15, 23, 0.98));
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.18), 0 0 0 1px rgba(255, 212, 90, 0.08);
+}
+
+.workBoardPanel .kanbanCard.stale {
+  border-color: rgba(251, 113, 133, 0.6);
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.18);
+}
+
+.workBoardPanel .kanbanCard.active {
+  border-color: rgba(255, 212, 90, 0.7);
+  box-shadow: 0 16px 34px rgba(0, 0, 0, 0.22), 0 0 24px rgba(255, 212, 90, 0.12);
+}
+
+.workBoardPanel .kanbanCardHeader {
+  align-items: center;
+  min-height: 20px;
+}
+
+.kanbanCardMoveFabs {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.kanbanCardMoveFabs button {
+  display: grid;
+  width: 22px;
+  height: 22px;
+  place-items: center;
+  border: 1px solid rgba(148, 163, 184, 0.14);
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.03);
+  color: var(--kb-muted);
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 800;
+  line-height: 1;
+}
+
+.kanbanCardMoveFabs button:hover:not(:disabled),
+.kanbanCardMoveFabs button:focus-visible {
+  border-color: rgba(94, 234, 212, 0.42);
+  color: var(--kb-cyan-2);
+  outline: none;
+}
+
+.kanbanCardMoveFabs button:disabled {
+  cursor: not-allowed;
+  opacity: 0.34;
+}
+
+.workBoardPanel .kanbanCardTitle {
+  color: var(--kb-fg);
+  font-size: 15px !important;
+  line-height: 1.28 !important;
+}
+
+.workBoardPanel .kanbanMessageRow {
+  grid-template-columns: minmax(0, 1fr) auto;
+  border-top: 1px solid rgba(148, 163, 184, 0.1);
+  padding-top: 8px;
+}
+
+.workBoardPanel .kanbanCardMarkdown {
+  color: #b7c2d2;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.workBoardPanel .kanbanCardFooter {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 8px;
+  justify-content: flex-start;
+  color: var(--kb-muted);
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.workBoardPanel .kanbanCardFooter time {
+  color: var(--kb-muted);
+  font-size: 10px;
+}
+
+.workBoardPanel .kanbanCardActions {
+  margin-left: auto;
+}
+
+.workBoardPanel .kanbanIconAction {
+  width: 26px;
+  height: 26px;
+}
+
+.workBoardPanel .kanbanEmptyAction {
+  min-height: 40px;
+  border: 1px dashed rgba(153, 246, 228, 0.45);
+  border-radius: 8px;
+  background: rgba(45, 212, 191, 0.03);
+  color: var(--kb-cyan-3);
+  font-weight: 900;
+}
+
+.workBoardPanel .kanbanDrawer {
+  position: sticky;
+  top: 16px;
+  align-self: start;
+  max-height: calc(100vh - 128px);
+  overflow: auto;
+  border: 1px solid rgba(255, 212, 90, 0.48);
+  border-radius: 8px;
+  background: linear-gradient(180deg, rgba(255, 212, 90, 0.14), rgba(16, 21, 31, 0.94) 26%, rgba(8, 13, 20, 0.96));
+  box-shadow: 0 18px 60px rgba(0, 0, 0, 0.26), 0 0 0 1px rgba(255, 212, 90, 0.08);
+}
+
+.workBoardPanel .kanbanDrawerHeader {
+  border-bottom-color: rgba(148, 163, 184, 0.12);
+  background: transparent;
+}
+
+.workBoardPanel .kanbanDrawerHeader h3 {
+  color: var(--kb-fg);
+}
+
+.workBoardPanel .kanbanTaskSummary,
+.workBoardPanel .kanbanMetaGrid,
+.workBoardPanel .kanbanDrawerQuickActions {
+  border-color: rgba(148, 163, 184, 0.12);
+}
+
+.workBoardPanel .kanbanDrawerQuickActions {
+  position: sticky;
+  bottom: 0;
+  z-index: 2;
+  grid-template-columns: repeat(3, minmax(0, 110px));
+  justify-content: center;
+  border-top: 1px solid rgba(148, 163, 184, 0.12);
+  background: linear-gradient(180deg, rgba(16, 21, 31, 0.72), rgba(8, 13, 20, 0.98));
+  backdrop-filter: blur(12px);
+  padding: 12px;
+}
+
+.workBoardPanel .kanbanDrawerQuickActions button {
+  width: 110px;
+  min-height: 34px;
+  justify-content: center;
+  border-color: rgba(148, 163, 184, 0.14);
+  background: rgba(255, 255, 255, 0.03);
+  color: #c6d1df;
+  font-size: 11px;
+}
+
+.kanbanDrawerMovePanel {
+  display: grid;
+  gap: 8px;
+  border-top: 1px solid rgba(148, 163, 184, 0.12);
+  padding: 12px;
+}
+
+.kanbanDrawerMovePanel > div:last-child {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.kanbanDrawerMovePanel button {
+  min-height: 30px;
+  border: 1px solid rgba(148, 163, 184, 0.14);
+  border-radius: 7px;
+  background: rgba(255, 255, 255, 0.03);
+  color: #c6d1df;
+  cursor: pointer;
+  font-size: 11px;
+  font-weight: 800;
+  padding: 0 10px;
+}
+
+.kanbanDrawerMovePanel button:hover:not(:disabled),
+.kanbanDrawerMovePanel button:focus-visible {
+  border-color: rgba(94, 234, 212, 0.42);
+  color: var(--kb-cyan-2);
+  outline: none;
+}
+
+.kanbanDrawerMovePanel button.active,
+.kanbanDrawerMovePanel button:disabled {
+  cursor: default;
+  border-color: rgba(255, 212, 90, 0.32);
+  background: rgba(255, 212, 90, 0.1);
+  color: #fff6cf;
+}
+
+.workBoardPanel .kanbanInlineAdd {
+  position: relative;
+  border-color: rgba(94, 234, 212, 0.22);
+  background: rgba(20, 184, 166, 0.08);
+}
+
+.workBoardPanel .kanbanInlineAdd:has([aria-expanded="true"]) {
+  z-index: 30;
+}
+
+.workBoardPanel .kanbanError {
+  margin: 0;
+}
+
+@media (max-width: 1180px) {
+  .workBoardHero,
+  .workBoardPanel .kanbanWorkspace {
+    grid-template-columns: 1fr;
+  }
+
+  .workBoardStats {
+    width: 100%;
+    grid-template-columns: repeat(4, minmax(68px, 1fr));
+  }
+}
+
+@media (max-width: 760px) {
+  .workBoardShell {
+    padding: 14px;
+  }
+
+  .workBoardHeader,
+  .workBoardTopActions {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .workBoardControls {
+    grid-template-columns: 1fr;
+  }
+
+  .workBoardStats {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .workBoardStats span,
+  .workBoardHeroCopy {
+    min-height: 48px;
+  }
+
+  .workBoardPanel .kanbanBoard {
+    grid-auto-columns: minmax(260px, 88vw);
+  }
+}
+
 .kanbanCardMarkdown a,
 .kanbanAgentMessageMarkdown a {
   color: var(--accent-strong);
@@ -635,11 +1425,11 @@
   max-height: 82px;
   min-width: 0;
   overflow: hidden;
-  border: 1px solid rgba(148, 163, 184, 0.16);
+  border: 1px solid rgba(94, 234, 212, 0.14);
   border-radius: 7px;
   background:
-    linear-gradient(180deg, rgba(2, 6, 23, 0.72), rgba(2, 6, 23, 0.5));
-  color: #cbd5e1;
+    linear-gradient(180deg, rgba(2, 6, 23, 0.94), rgba(2, 6, 23, 0.72));
+  color: #99f6e4;
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
   font-size: 11px;
   line-height: 1.55;
@@ -941,10 +1731,10 @@
 }
 
 .kanbanMetaGrid span {
-  border: 1px solid rgba(148, 163, 184, 0.12);
+  border: 1px solid rgba(148, 163, 184, 0.16);
   border-radius: 6px;
-  background: rgba(17, 23, 34, 0.72);
-  color: #c6d1df;
+  background: linear-gradient(180deg, rgba(17, 23, 34, 0.84), rgba(10, 15, 23, 0.78));
+  color: #f4f7fb;
   font-size: 12px;
   padding: 8px;
 }
@@ -1745,4 +2535,41 @@
   border-color: var(--line);
   background: var(--field);
   color: var(--foreground);
+}
+
+:global(:root[data-theme="hive-light"]) .workBoardPanel {
+  background:
+    radial-gradient(circle at 12% 8%, rgba(45, 212, 191, 0.18), transparent 26%),
+    radial-gradient(circle at 82% 16%, rgba(242, 183, 5, 0.12), transparent 24%),
+    linear-gradient(180deg, var(--kb-bg-0), var(--kb-bg-1) 45%, #070a10);
+  color: var(--kb-fg);
+}
+
+:global(:root[data-theme="hive-light"]) .workBoardPanel .kanbanColumn {
+  background:
+    linear-gradient(180deg, rgba(13, 18, 28, 0.92), rgba(8, 13, 20, 0.68)),
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='72' height='41.569' viewBox='0 0 72 41.569'%3E%3Cg fill='none' stroke='%235eead4' stroke-opacity='.045' stroke-width='1'%3E%3Cpath d='M12 0h24l12 20.784-12 20.785H12L0 20.784z'/%3E%3Cpath d='M48-20.784h24L84 0 72 20.784H48L36 0z'/%3E%3Cpath d='M48 20.784h24l12 20.785-12 20.784H48L36 41.569z'/%3E%3C/g%3E%3C/svg%3E");
+  background-size: auto, 72px 41.569px;
+}
+
+:global(:root[data-theme="hive-light"]) .workBoardPanel .kanbanCard {
+  background: linear-gradient(180deg, rgba(22, 28, 42, 0.94), rgba(10, 15, 23, 0.92));
+}
+
+:global(:root[data-theme="hive-light"]) .workBoardPanel .kanbanCardTitle,
+:global(:root[data-theme="hive-light"]) .workBoardPanel .kanbanColumnHeader h3,
+:global(:root[data-theme="hive-light"]) .workBoardPanel .workBoardTitleBlock h2,
+:global(:root[data-theme="hive-light"]) .workBoardPanel .workBoardHeroCopy strong {
+  color: var(--kb-fg);
+}
+
+:global(:root[data-theme="hive-light"]) .workBoardPanel .kanbanCardMarkdown,
+:global(:root[data-theme="hive-light"]) .workBoardPanel .kanbanColumnHeader p,
+:global(:root[data-theme="hive-light"]) .workBoardPanel .workBoardHeroCopy span,
+:global(:root[data-theme="hive-light"]) .workBoardPanel .workBoardSyncLine,
+:global(:root[data-theme="hive-light"]) .workBoardPanel .workBoardStats span,
+:global(:root[data-theme="hive-light"]) .workBoardPanel .monoCap,
+:global(:root[data-theme="hive-light"]) .workBoardPanel .workBoardControls label > span,
+:global(:root[data-theme="hive-light"]) .workBoardPanel .kanbanCardId {
+  color: var(--kb-muted);
 }

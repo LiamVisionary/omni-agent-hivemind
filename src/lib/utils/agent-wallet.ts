@@ -1,4 +1,6 @@
 import type {
+  HoneyAgentReward,
+  HoneyTreasuryConfig,
   AgentSurvivalSnapshot,
   AgentSurvivalTier,
   AgentWalletConfig,
@@ -7,7 +9,7 @@ import type {
 
 export const DEFAULT_AGENT_WALLET: Omit<AgentWalletConfig, "agentId"> = {
   enabled: false,
-  provider: "clawcard",
+  provider: "bankr",
   walletAddress: "",
   network: "eip155:8453",
   tokenSymbol: "USDC",
@@ -28,6 +30,14 @@ export const DEFAULT_AGENT_WALLET: Omit<AgentWalletConfig, "agentId"> = {
   onchainBalanceUsd: 0,
   nativeBalance: 0,
   lastOnchainSyncAt: 0,
+};
+
+export const DEFAULT_HONEY_TREASURY_CONFIG: HoneyTreasuryConfig = {
+  honeyPerThousandTokens: 1,
+  tokenPerHoney: 1,
+  agentTokenUsage: {},
+  agentHoneyExchanged: {},
+  agentHiveBalances: {},
 };
 
 // Adapted from Conway-Research/automaton: src/types.ts and src/conway/credits.ts.
@@ -122,6 +132,41 @@ export function getSurvivalSnapshot(config: AgentWalletConfig, now = Date.now())
   };
 }
 
+export function createDefaultHoneyTreasuryConfig(): HoneyTreasuryConfig {
+  return {
+    ...DEFAULT_HONEY_TREASURY_CONFIG,
+    agentTokenUsage: {},
+    agentHoneyExchanged: {},
+    agentHiveBalances: {},
+  };
+}
+
+// Adapted from TarunGoyalDev/rewards-calculation-dashboard reward helpers.
+// The original maps purchase amounts to points; this maps agent token usage to Honey.
+export function calculateHoneyForTokens(tokensUsed: number, honeyPerThousandTokens: number): number {
+  if (!Number.isFinite(tokensUsed) || tokensUsed <= 0) return 0;
+  if (!Number.isFinite(honeyPerThousandTokens) || honeyPerThousandTokens <= 0) return 0;
+  return Math.round((tokensUsed / 1_000) * honeyPerThousandTokens * 100) / 100;
+}
+
+export function getHoneyAgentRewards(agentIds: string[], config: HoneyTreasuryConfig): HoneyAgentReward[] {
+  return agentIds.map((agentId) => {
+    const tokensUsed = Math.max(0, Math.round(Number(config.agentTokenUsage[agentId] ?? 0)));
+    const honeyEarned = calculateHoneyForTokens(tokensUsed, config.honeyPerThousandTokens);
+    const honeyExchanged = Math.min(honeyEarned, Math.max(0, Number(config.agentHoneyExchanged[agentId] ?? 0)));
+    const honeyAvailable = Math.max(0, Math.round((honeyEarned - honeyExchanged) * 100) / 100);
+    return {
+      agentId,
+      tokensUsed,
+      honeyEarned,
+      honeyAvailable,
+      honeyExchanged,
+      tokenReward: Math.round(honeyAvailable * config.tokenPerHoney * 100) / 100,
+      hiveBalance: Math.round(Number(config.agentHiveBalances[agentId] ?? 0) * 100) / 100,
+    };
+  });
+}
+
 // Adapted from qntx/x402-openai-typescript: src/policies.ts.
 // The original policies operate on @x402/fetch PaymentRequirements; these local versions keep
 // the same filter semantics without importing wallet/payment packages into the dashboard.
@@ -157,7 +202,9 @@ export function maxAmount(maxBaseUnits: bigint | number): X402Policy {
 }
 
 export function buildAgentPaymentPrompt(config: AgentWalletConfig, snapshot = getSurvivalSnapshot(config)): string {
-  const provider = config.provider === "clawcard"
+  const provider = config.provider === "bankr"
+    ? "Bankr LLM Gateway with dashboard spending caps"
+    : config.provider === "clawcard"
     ? `ClawCard via ${config.clawCardEnvName}`
     : config.provider === "moneyclaw"
       ? `MoneyClaw via ${config.moneyClawEnvName}`

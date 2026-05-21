@@ -5,7 +5,8 @@ import type { ReactNode } from "react";
 
 import { cn } from "@/lib/utils/cn";
 
-import type { AgentRuntime } from "@/lib/types/agent-runtime";
+import { beeRoleIconPath } from "@/lib/config/bee-role-icons";
+import type { AgentRuntime, BeeWorkerClass } from "@/lib/types/agent-runtime";
 import { RUNTIME_LABELS } from "@/lib/types/agent-runtime";
 import { LottiePlayer } from "@/components/ui/lottie-player";
 
@@ -37,6 +38,7 @@ type AgentCellProps = {
   name: string;
   roleLabel?: string;
   runtime: AgentRuntime;
+  workerClass?: BeeWorkerClass;
   hasTelemetryUrl: boolean;
   activeCount: number;
   snapshotOk?: boolean;
@@ -76,6 +78,7 @@ export function AgentCell({
   name,
   roleLabel,
   runtime,
+  workerClass = "general",
   hasTelemetryUrl,
   activeCount,
   snapshotOk,
@@ -93,7 +96,7 @@ export function AgentCell({
   const showExpanded = Boolean(selected && expandedContent);
   const workSummary = primaryWork?.title || emptyTitle || state.body;
   const queen = isOrchestrator(name, runtime);
-  const beeIcon = queen ? "/icons/queen-bee.png" : "/icons/worker-bee.png";
+  const beeIcon = beeRoleIconPath(queen ? "queen" : "worker", workerClass);
   const beeLabel = queen ? "Queen bee (orchestrator)" : "Worker bee";
   const visibleRoleLabel = roleLabel ?? (queen ? "Queen Bee" : "Worker Bee");
   const isBusy = state.kind === "running";
@@ -118,7 +121,7 @@ export function AgentCell({
       <div className="flex items-start gap-2 px-2 py-2">
         <span
           className={cn(
-            "relative mt-0.5 inline-flex size-6 shrink-0 items-center justify-center",
+            "relative mt-0.5 inline-flex size-8 shrink-0 items-center justify-center",
             queen ? "agentAvatar--queen" : "agentAvatar--worker",
           )}
           title={`${beeLabel} · ${state.body}`}
@@ -127,16 +130,16 @@ export function AgentCell({
           {isBusy ? (
             <LottiePlayer
               src="/animations/Honey%20bee.lottie"
-              size={24}
+              size={32}
               ariaLabel={`${beeLabel}, active`}
             />
           ) : (
             <Image
               src={beeIcon}
               alt=""
-              width={24}
-              height={24}
-              className="size-6 object-contain"
+              width={32}
+              height={32}
+              className="size-8 object-contain"
               aria-hidden="true"
             />
           )}

@@ -29,5 +29,7 @@
 ## Shared Skills
 
 - The shared skill shelf lives at `Skills/` inside the configured shared notes vault/folder.
+- Current HivemindOS shared vault: `/Users/liam/Documents/Obsidian/hivemindos-vault`.
+- Current HivemindOS shared skill index: `/Users/liam/Documents/Obsidian/hivemindos-vault/Skills/README.md`.
 - Read `Skills/README.md` for the index, then read the relevant `Skills/<slug>/SKILL.md` before using a shared skill.
 - Setup seeds `karpathy-guidelines` from `multica-ai/andrej-karpathy-skills` into the shared shelf and can mirror/import skills through common local runtime skill folders for Codex, Claude, Hermes, Gemini, OpenClaw, and Aeon.

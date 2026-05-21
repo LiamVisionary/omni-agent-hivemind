@@ -1,0 +1,126 @@
+/* src/components/swarm/swarm-tokens.module.css
+   Surface + hex tokens for the Swarm view. Scoped to `.root`.
+   The whole SwarmView wraps its tree in this class. */
+
+.root {
+  --f-display: "Space Grotesk", "Inter", system-ui, sans-serif;
+  --f-mono: ui-monospace, "JetBrains Mono", SFMono-Regular, Menlo, monospace;
+
+  /* Hex cell tones — dark defaults */
+  --hex-default-bg: linear-gradient(180deg, rgba(22, 28, 42, 0.62), rgba(16, 21, 31, 0.52));
+  --hex-default-border: rgba(148, 163, 184, 0.38);
+  --hex-default-glow: transparent;
+
+  --hex-active-bg: linear-gradient(180deg, rgba(45,212,191,0.32), rgba(45,212,191,0.10));
+  --hex-active-border: rgba(94, 234, 212, 0.72);
+  --hex-active-glow: rgba(45, 212, 191, 0.45);
+
+  --hex-honey-bg: linear-gradient(180deg, rgba(255,212,90,0.32), rgba(242,183,5,0.10));
+  --hex-honey-border: rgba(255, 212, 90, 0.70);
+  --hex-honey-glow: rgba(255, 212, 90, 0.45);
+
+  --hex-danger-bg: linear-gradient(180deg, rgba(251,113,133,0.30), rgba(251,113,133,0.08));
+  --hex-danger-border: rgba(251, 113, 133, 0.66);
+  --hex-danger-glow: rgba(251, 113, 133, 0.36);
+
+  --hex-ghost-bg: rgba(16, 21, 31, 0.32);
+  --hex-ghost-border: rgba(148, 163, 184, 0.34);
+  --hex-ghost-glow: transparent;
+
+  --hex-add-stroke: rgba(94, 234, 212, 0.55);
+  --hex-hover-stroke: rgba(94, 234, 212, 0.95);
+
+  /* Surfaces consumed by swarm panels — theme-aware */
+  --panel-bg: rgba(16, 20, 29, 0.78);
+  --panel-bg-soft: rgba(8, 12, 19, 0.55);
+  --panel-bg-deep: rgba(2, 6, 12, 0.62);
+  --panel-grad: linear-gradient(180deg, rgba(16,20,29,0.78), rgba(6,8,13,0.60));
+  --panel-card-grad: linear-gradient(180deg, rgba(22,28,42,0.72), rgba(16,21,31,0.62));
+  --code-bg: rgba(2, 6, 12, 0.50);
+
+  --edge-stroke-start: rgba(94, 234, 212, 0.50);
+  --edge-stroke-end: rgba(255, 212, 90, 0.55);
+}
+
+:global([data-theme="hive-light"]) .root {
+  --hex-default-bg: linear-gradient(180deg, rgba(217, 200, 158, 0.78), rgba(195, 174, 128, 0.62));
+  --hex-default-border: rgba(92, 75, 45, 0.55);
+
+  --hex-active-bg: linear-gradient(180deg, rgba(13, 142, 126, 0.36), rgba(13, 142, 126, 0.14));
+  --hex-active-border: rgba(13, 90, 78, 0.78);
+  --hex-active-glow: rgba(13, 142, 126, 0.32);
+
+  --hex-honey-bg: linear-gradient(180deg, rgba(184, 130, 22, 0.50), rgba(140, 94, 10, 0.22));
+  --hex-honey-border: rgba(106, 69, 5, 0.78);
+  --hex-honey-glow: rgba(184, 130, 22, 0.35);
+
+  --hex-danger-bg: linear-gradient(180deg, rgba(180, 35, 66, 0.36), rgba(180, 35, 66, 0.12));
+  --hex-danger-border: rgba(143, 29, 44, 0.72);
+
+  --panel-bg: rgba(240, 232, 216, 0.94);
+  --panel-bg-soft: rgba(232, 223, 203, 0.82);
+  --panel-bg-deep: rgba(223, 212, 190, 0.92);
+  --panel-grad: linear-gradient(180deg, rgba(240,232,216,0.94), rgba(223,212,190,0.86));
+  --panel-card-grad: linear-gradient(180deg, rgba(245,238,222,0.92), rgba(232,223,203,0.78));
+  --code-bg: rgba(232, 223, 203, 0.78);
+
+  --hex-add-stroke: rgba(13, 90, 78, 0.78);
+  --hex-hover-stroke: rgba(13, 90, 78, 1);
+  --edge-stroke-start: rgba(13, 90, 78, 0.78);
+  --edge-stroke-end: rgba(106, 69, 5, 0.78);
+}
+
+.hexInteractive { cursor: pointer; }
+.hexInteractive:hover {
+  transform: scale(1.05);
+  z-index: 4;
+  filter: drop-shadow(0 0 18px var(--hex-honey-glow));
+}
+.hexInteractive:hover .hexStroke {
+  stroke: var(--hex-hover-stroke);
+  stroke-width: 1.5;
+}
+.hexInteractive:active { transform: scale(0.98); }
+
+.dot {
+  display: inline-block;
+  width: 6px; height: 6px;
+  border-radius: 9999px;
+  background: currentColor;
+  box-shadow: 0 0 0 3px color-mix(in srgb, currentColor 18%, transparent);
+}
+@keyframes swarm-pulse {
+  0%, 100% { box-shadow: 0 0 0 3px color-mix(in srgb, currentColor 18%, transparent); }
+  50%      { box-shadow: 0 0 0 6px color-mix(in srgb, currentColor 6%, transparent); }
+}
+.dotLive { animation: swarm-pulse 1.6s ease-in-out infinite; }
+
+.monoCap {
+  font-family: var(--f-mono);
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.arenaFrame {
+  display: grid;
+  width: min(100%, 620px);
+  gap: 14px;
+  justify-items: center;
+}
+
+.arenaOrb {
+  position: relative;
+  width: min(100%, 540px);
+  aspect-ratio: 1 / 1;
+}
+
+.decisionRail {
+  display: grid;
+  width: 100%;
+  max-height: 168px;
+  gap: 6px;
+  align-content: start;
+  overflow: auto;
+}

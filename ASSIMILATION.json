@@ -253,6 +253,139 @@
       "target_path": "scripts/capture-remotion-showcase.mjs",
       "reuse_type": "adapted_code",
       "note": "Playwright capture workflow adapted from static screenshots to a scripted browser recording of the real dashboard UI"
+    },
+    {
+      "source_repo": "TarunGoyalDev/rewards-calculation-dashboard",
+      "source_path": "src/utils/rewards.js",
+      "target_path": "src/lib/utils/agent-wallet.ts",
+      "reuse_type": "adapted_code",
+      "note": "points-from-amount helper translated into Honey-from-token-usage calculation"
+    },
+    {
+      "source_repo": "TarunGoyalDev/rewards-calculation-dashboard",
+      "source_path": "src/utils/dashboard.js",
+      "target_path": "src/lib/utils/agent-wallet.ts",
+      "reuse_type": "adapted_code",
+      "note": "aggregate reward reducers adapted for per-agent Honey and HIVE reward rows"
+    },
+    {
+      "source_repo": "kszongic/cloudflare-d1-starter",
+      "source_path": "src/index.ts",
+      "target_path": "workers/honey-ledger/src/index.ts",
+      "reuse_type": "adapted_code",
+      "note": "Cloudflare Worker route dispatch, JSON health response, not-found handler, and D1 binding structure adapted into the Honey receipt ledger API"
+    },
+    {
+      "source_repo": "kszongic/cloudflare-d1-starter",
+      "source_path": "migrations/0001_initial.sql",
+      "target_path": "workers/honey-ledger/schema.sql",
+      "reuse_type": "adapted_code",
+      "note": "D1 migration layout with primary keys, defaults, checks, and indexes adapted into usage receipt, balance, and exchange ledger tables"
+    },
+    {
+      "source_repo": "ajzbc/workers-typesafe-db-example",
+      "source_path": "wrangler.toml",
+      "target_path": "workers/honey-ledger/wrangler.toml",
+      "reuse_type": "config_adapted",
+      "note": "Worker entrypoint and D1 database binding configuration adapted for the HivemindOS Honey ledger deployment"
+    },
+    {
+      "source_repo": "ajzbc/workers-typesafe-db-example",
+      "source_path": "src/index.ts",
+      "target_path": "workers/honey-ledger/src/index.ts",
+      "reuse_type": "adapted_code",
+      "note": "Typed Env DB binding and request-context database access pattern adapted into direct D1 prepared statements"
+    },
+    {
+      "source_repo": "local-handoff:/Users/liam/Downloads/nextjs-swarm",
+      "source_path": "src/components/swarm/SwarmView.tsx",
+      "target_path": "src/components/swarm/SwarmView.tsx",
+      "reuse_type": "adapted_code",
+      "note": "Orbital swarm theater shell adapted as the dashboard Swarm tab root and rewired to accept real MiroShark data props."
+    },
+    {
+      "source_repo": "local-handoff:/Users/liam/Downloads/nextjs-swarm",
+      "source_path": "src/components/swarm/{arena,feeds,runs,composer,output-views}.tsx",
+      "target_path": "src/components/swarm/",
+      "reuse_type": "adapted_code",
+      "note": "Run rail, arena, feed panels, composer shell, and output views copied then adapted for local lint, text wrapping rules, and real MiroShark data."
+    },
+    {
+      "source_repo": "local-handoff:/Users/liam/Downloads/nextjs-swarm",
+      "source_path": "src/components/swarm/swarm-tokens.module.css",
+      "target_path": "src/components/swarm/swarm-tokens.module.css",
+      "reuse_type": "style_adapted",
+      "note": "Scoped dark and hive-light Swarm surface tokens copied for the redesigned view."
+    },
+    {
+      "source_repo": "local-handoff:/Users/liam/Downloads/nextjs-swarm",
+      "source_path": "src/app/swarm/page.tsx",
+      "target_path": "src/app/swarm/page.tsx",
+      "reuse_type": "copied_code",
+      "note": "Standalone Swarm route mounted from the handoff bundle."
+    },
+    {
+      "source_repo": "faraasat/react-consent-management-banner",
+      "source_path": "src/index.tsx",
+      "target_path": "src/app/page.tsx",
+      "reuse_type": "adapted_code",
+      "note": "localStorage-backed opt-in consent state adapted for enabling official Honey ledger usage receipts"
+    },
+    {
+      "source_repo": "faraasat/react-consent-management-banner",
+      "source_path": "src/index.tsx",
+      "target_path": "src/app/wallets.module.css",
+      "reuse_type": "style_adapted",
+      "note": "consent banner call-to-action layout adapted into the compact Wallets Honey ledger initialization panel"
+    },
+    {
+      "source_repo": "shannhk/hermes-agent-control-room",
+      "source_path": "skills/create-vps/assets/provision.sh",
+      "target_path": "src/lib/services/machine-provisioning/hetzner-control-room.ts",
+      "reuse_type": "adapted_code",
+      "note": "Hetzner hcloud SSH key, server creation, SERVER_HOST update, and SSH config block logic adapted into generated provision script"
+    },
+    {
+      "source_repo": "shannhk/hermes-agent-control-room",
+      "source_path": "skills/create-vps/assets/destroy.sh",
+      "target_path": "src/lib/services/machine-provisioning/hetzner-control-room.ts",
+      "reuse_type": "adapted_code",
+      "note": "Confirmation-gated hcloud server deletion adapted into generated destroy script"
+    },
+    {
+      "source_repo": "shannhk/hermes-agent-control-room",
+      "source_path": "skills/setup-control-room/assets/bootstrap.sh",
+      "target_path": "src/lib/services/machine-provisioning/hetzner-control-room.ts",
+      "reuse_type": "adapted_code",
+      "note": "Ubuntu/Debian package and Hermes install checks adapted into the generated mandatory HivemindOS bootstrap script"
+    },
+    {
+      "source_repo": "zxcloli666/AI-Worker-Proxy",
+      "source_path": "src/index.ts",
+      "target_path": "workers/compute-gateway/src/index.ts",
+      "reuse_type": "adapted_code",
+      "note": "Cloudflare Worker chat proxy routing, CORS handling, and upstream OpenAI-compatible request shape adapted for the trusted Bankr compute gateway"
+    },
+    {
+      "source_repo": "zxcloli666/AI-Worker-Proxy",
+      "source_path": "src/providers/openai.ts",
+      "target_path": "workers/compute-gateway/src/index.ts",
+      "reuse_type": "adapted_code",
+      "note": "OpenAI-compatible response and usage-token extraction concepts adapted for Bankr LLM Gateway responses before signing Honey receipts"
+    },
+    {
+      "source_repo": "kszongic/cloudflare-d1-starter",
+      "source_path": "migrations/0001_initial.sql",
+      "target_path": "workers/compute-gateway/schema.sql",
+      "reuse_type": "adapted_code",
+      "note": "D1 schema and indexed table setup pattern adapted for workspace daily caps and trusted compute event audit rows"
+    },
+    {
+      "source_repo": "ajzbc/workers-typesafe-db-example",
+      "source_path": "wrangler.toml",
+      "target_path": "workers/compute-gateway/wrangler.toml",
+      "reuse_type": "config_adapted",
+      "note": "Worker entrypoint, D1 binding, and typed environment-variable configuration adapted for the trusted compute gateway deployment"
     }
   ]
 }

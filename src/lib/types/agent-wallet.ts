@@ -1,4 +1,4 @@
-export type AgentPaymentProvider = "manual" | "clawcard" | "moneyclaw" | "x402";
+export type AgentPaymentProvider = "manual" | "bankr" | "clawcard" | "moneyclaw" | "x402";
 
 export type AgentSurvivalTier = "dead" | "critical" | "low_compute" | "normal" | "high";
 
@@ -63,4 +63,22 @@ export interface AgentWalletVaultInfo {
   network: string;
   custodyMode: "local";
   createdAt: string;
+}
+
+export interface HoneyTreasuryConfig {
+  honeyPerThousandTokens: number;
+  tokenPerHoney: number;
+  agentTokenUsage: Record<string, number>;
+  agentHoneyExchanged: Record<string, number>;
+  agentHiveBalances: Record<string, number>;
+}
+
+export interface HoneyAgentReward {
+  agentId: string;
+  tokensUsed: number;
+  honeyEarned: number;
+  honeyAvailable: number;
+  honeyExchanged: number;
+  tokenReward: number;
+  hiveBalance: number;
 }

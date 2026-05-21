@@ -1,75 +1,79 @@
-# Roadmap
+# HivemindOS Roadmap
 
-## Now
+HivemindOS is a local-first control room for private agent fleets. It connects agents across trusted machines, gives them shared memory and work queues, and keeps secrets, dashboards, and collectors inside the user's private network by default.
 
-- Machine-first dashboard for Tailscale-connected agent nodes.
-- Read-only collector install script for macOS LaunchAgent and Linux systemd user services.
-- Hermes local activity discovery from sessions, logs, runtime files, and process signals.
-- OpenClaw, Hermes, and Aeon runtime profiles.
-- Shared Obsidian vault settings and per-agent opt-in.
-- Shared Obsidian-backed Kanban board for handoffs, blockers, queued work, and completed work.
-- Built-in Syncthing-over-Tailscale vault sync for subscription-free multi-machine sharing.
+## Current Surface
+
+- Machine-first Fleet dashboard for local and Tailscale-connected agent nodes.
+- Setup flow for local dashboard dependencies, collectors, Syncthing, shared skills, and optional Tailscale-based multi-machine support.
+- Lightweight collector install paths for macOS LaunchAgent and Linux systemd user services.
+- Collector health, version, runtime, schedule, chat, session, Syncthing, and snapshot endpoints.
+- Hermes, OpenClaw, Aeon, and MiroShark runtime surfaces through neutral dashboard adapters.
+- Aeon support for `aeon.yml` schedules, GitHub Actions runs, outputs, local skills, shared Brain skill sync, env-secret sync, and optional A2A skill discovery.
+- Shared Obsidian Brain defaults under `hivemindos-vault`, including shared skills, notifications, Brain graph, MiroShark archives, and Work board storage.
+- Built-in Syncthing-over-Tailscale brain sync, with Tailscale SSH and rsync kept as advanced repair paths.
+- `hive-env-add` for local app/runtime env writes, selected runtime compatibility writes, encrypted note backups, and trusted Tailnet peer sync.
+- Work board with vault-backed Kanban state, Queen/worker routing, task edit/delete, same-agent interrupt steering, mobile move controls, stale session recovery, tool-output stall detection, markdown rendering, event history, and regression coverage.
+- Scheduler studio for reusable prompt/step runs, runtime schedule import/actions, skill/path attachments, and runtime-neutral schedule metadata.
+- Alerts inbox for agent notifications, auth failures, task decisions, and markdown-rendered alert bodies.
+- Chat bridge for supported runtimes, including collector-backed Hermes chat and persisted remote session polling.
+- Agent security proxy and OpenClaw security proxy for local prompt guardrails and secret redaction.
+- Controlled agent wallet surfaces for local wallets, x402 mock paid endpoints, and spend logging.
+- Remotion showcase capture/render project and README launch visuals.
+- Public GitHub identity: `LiamVisionary/hivemindos`.
 
 ## Next
 
-- Streamline setup into a single public installer command.
-- Add collector auto-update and health repair.
-- Add friendly first-run onboarding for Tailscale status, missing Node.js, missing pnpm, and collector reachability.
+- Polish first-run onboarding around HivemindOS naming, repo rename redirects, default vault migration, Tailscale status, missing Node.js/pnpm, and collector reachability.
+- Add a clear migration panel for users moving from older local storage keys, old vault folder names, and previous collector service names.
+- Make collector auto-update safer and more visible, including dry-run diff summaries, rollback notes, and post-update health checks.
 - Add collector authentication on top of Tailnet reachability.
-- Add configurable redaction rules for task titles, recent messages, hostnames, and local paths.
-- Improve OpenClaw and Aeon live-task adapters beyond profile-level HTTP/gateway checks.
+- Add configurable redaction rules for task titles, recent messages, hostnames, vault paths, and local paths.
+- Tighten remote mutation/update endpoints with explicit capability checks and operator confirmation copy.
+- Expand integration tests for the renamed `hivemindos` storage namespace and old-key migration.
+- Add CI for typecheck, focused lint, Kanban workflow tests, dashboard nav tests, build, and secret scanning.
 
-## Encrypted Fleet Layer
+## Runtime Depth
 
-- Use Tailscale as the default encrypted transport across all machines.
-- Add Tailnet ACL examples for control-room devices and agent nodes.
-- Add optional machine tags such as `tag:agent-control-room` and `tag:agent-node`.
-- Support collector discovery by Tailscale device list, MagicDNS names, and manually pinned nodes.
-- Add signed collector identity metadata so the dashboard can distinguish trusted agent nodes from unknown machines.
+- Hermes: richer activity extraction from sqlite sessions, logs, cron, Telegram/Discord/Slack adapters, and task-bus files.
+- Hermes: make long-running remote task streams more resilient with resumable transcript polling and clearer auth recovery.
+- OpenClaw: improve live gateway status, active session discovery, skill status, channel health, and recent message history.
+- Aeon: deepen GitHub Actions run controls, workflow diagnostics, schedule editing, and local/A2A fallback behavior.
+- MiroShark: turn saved simulation runs into reusable rehearsal templates and compare runs over time.
+- Add per-agent searchable history across chat, Work board tasks, scheduler runs, alerts, and collector snapshots.
+- Build a cross-machine activity timeline that can answer "what did this agent do today?"
 
-## Shared Obsidian Brain
+## Shared Brain
 
-- Shared memory bank structure for company brain, project brain, agent-specific brain, and user preferences.
-- Tailnet vault sync using managed Syncthing for realtime local vault sharing, with Tailscale SSH and rsync kept as an advanced repair fallback.
-- Shared skills folder with sync status per agent runtime.
-- Vault-safe write APIs with explicit allowlists and append-only defaults.
-- Agent handoff notes that link tasks, source messages, outputs, and follow-up decisions.
+- Make the HivemindOS Brain folder structure explicit: memory, skills, work, alerts, archives, project context, and operator preferences.
+- Add vault-safe write APIs with explicit allowlists, append-only defaults, and dry-run previews.
+- Add agent handoff notes that link tasks, source messages, outputs, decisions, and follow-up owners.
+- Add Brain graph filters for project, agent, runtime, skill, notification, and task edges.
+- Add conflict handling for Syncthing-backed Brain edits and explain conflict copies in the UI.
+- Make shared skill import/sync status visible per target runtime and per managed skill.
 
-## Encrypted Environment Management
+## Fleet And Security
 
-- Shared encrypted env registry with no raw secrets in the control room.
-- Per-agent secret scopes, revocation notes, and rotation reminders.
-- Support for age/SOPS-style encrypted files.
-- Runtime injection helpers for Hermes, OpenClaw, and Aeon.
+- Keep Tailscale as the default encrypted transport for multi-machine fleet operations.
+- Add Tailnet ACL examples for control-room devices, agent nodes, and read-only observers.
+- Add optional machine tags such as `tag:hivemindos-control-room` and `tag:hivemindos-agent-node`.
+- Support collector discovery by Tailscale device list, MagicDNS names, manually pinned nodes, and signed collector metadata.
+- Add signed collector identity so the dashboard can distinguish trusted agent nodes from unknown machines.
+- Add per-agent secret scopes, revocation notes, and rotation reminders.
+- Support age/SOPS-style encrypted files for users who want a file-backed secret registry.
 
-## Runtime Support
+## Productization
 
-- Hermes: richer task extraction from sqlite sessions, logs, cron, Telegram/Discord/Slack adapters, and task-bus files.
-- OpenClaw: live gateway status, active session discovery, skill status, and recent message history.
-- Aeon: runtime-specific adapters once the stable local state and API surfaces are documented.
-- Per-agent history with searchable completed tasks.
-- Cross-machine activity timeline.
-
-## Swarm Behavior
-
-- Add optional MiroShark companion integration for swarm rehearsal and scenario simulation.
-- Keep real swarm coordination owned by OpenClaw: plans, roles, handoffs, voting, synthesis, attribution, and dashboard state.
-- Add swarm plans, agent role assignment, voting/synthesis, and quorum-based handoffs.
-- Add an optional task bus between orchestrators and specialists.
-- Show swarm state in the dashboard without hiding which agent did which work.
-
-## VPS And Hermes Deployment
-
-- Borrow safe control-room patterns from `shannhk/hermes-agent-control-room`.
-- Add one-click VPS setup with explicit dry-run, review, and pinning steps.
-- Support Hermes agent deployment templates for a single personal agent, specialists, and orchestrator plus task bus.
-- Generate control-room docs, runbooks, env maps, backup notes, and port maps.
-- Avoid running live external installers until the user has reviewed the plan.
-
-## Hardening
-
-- Security review for collector endpoints and dashboard APIs.
-- Test fixtures for Hermes, OpenClaw, and Aeon runtime snapshots.
+- Streamline setup into a single public installer command with a readable audit trail.
 - Package signed releases for macOS and Linux.
-- Add CI for typecheck, lint, build, and secret scanning.
-- Add documentation for safe public deployment boundaries.
+- Add documentation for safe public deployment boundaries and why collectors should stay private by default.
+- Add one-click VPS setup with explicit dry-run, review, dependency pinning, backup notes, and port maps.
+- Generate operator runbooks for collector repair, Brain sync repair, env rotation, and runtime auth recovery.
+- Keep the app usable as a single-machine local dashboard even when Tailscale, Syncthing, or remote runtimes are absent.
+
+## Open Questions
+
+- Should the default local dot-directory stay permanently as `~/.hivemindos`, or should setup migrate old data into it automatically and archive old folders?
+- Should HivemindOS remain purely local-first, or offer an optional hosted rendezvous layer for teams that do not use Tailscale?
+- Which runtime should own high-level swarm planning by default: Queen Bee profiles in HivemindOS, OpenClaw, Aeon schedules, or an external orchestrator?
+- How much autonomous remote repair should collectors be allowed to perform without an explicit human confirmation step?

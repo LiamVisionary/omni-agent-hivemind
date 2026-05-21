@@ -360,6 +360,9 @@ set_env_local() {
 set_env_local "NEXT_PUBLIC_TAILNET_SYNC_ENABLED" "$tailnet_sync_enabled"
 set_env_local "HIVE_ENV_TAILNET_SYNC" "$tailnet_sync_enabled"
 set_env_local "HIVE_ENV_TAILNET_USER" "$(id -un 2>/dev/null || printf "%s" "${USER:-}")"
+set_env_local "HONEY_LEDGER_REMOTE_URL" "${HONEY_LEDGER_REMOTE_URL:-https://hivemindos-honey-ledger.hivemindos.workers.dev}"
+set_env_local "HONEY_LEDGER_ISSUER_ID" "${HONEY_LEDGER_ISSUER_ID:-hivemindos}"
+set_env_local "HONEY_COMPUTE_GATEWAY_URL" "${HONEY_COMPUTE_GATEWAY_URL:-https://hivemindos-compute-gateway.hivemindos.workers.dev}"
 
 install_hive_env_add
 

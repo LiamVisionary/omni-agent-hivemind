@@ -99,6 +99,121 @@
   margin-top: 18px;
 }
 
+.hiveLedger {
+  margin-top: 18px;
+  border: 1px solid rgba(245, 158, 11, 0.24);
+  border-radius: 8px;
+  background: rgba(9, 13, 20, 0.5);
+  padding: 14px;
+}
+
+.hiveLedgerDormant {
+  border-color: rgba(148, 163, 184, 0.2);
+  background: linear-gradient(135deg, rgba(15, 23, 42, 0.74), rgba(9, 13, 20, 0.48));
+}
+
+.hiveLedgerOptIn {
+  display: flex;
+  gap: 16px;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.hiveLedgerOptIn h3 {
+  margin: 0;
+}
+
+.hiveLedgerOptIn p {
+  max-width: 880px;
+  margin: 6px 0 0;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.honeyTreasuryHeader,
+.honeyAgentActions {
+  display: flex;
+  gap: 14px;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.honeyTreasuryHeader h3,
+.honeyAgentPanel h3 {
+  margin: 0;
+}
+
+.honeyTreasuryHeader p,
+.honeyAgentPanel p,
+.honeyAgentActions small {
+  margin: 6px 0 0;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.hiveLedgerGrid,
+.honeyAgentGrid {
+  display: grid;
+  gap: 10px;
+}
+
+.hiveLedgerGrid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  margin-top: 12px;
+}
+
+.hiveLedgerStat,
+.hiveLedgerConvert,
+.honeyAgentGrid span {
+  border: 1px solid rgba(245, 158, 11, 0.18);
+  border-radius: 8px;
+  background: rgba(2, 6, 23, 0.34);
+  padding: 12px;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.hiveLedgerStat strong,
+.hiveLedgerConvert strong,
+.honeyAgentGrid strong {
+  display: block;
+  margin-top: 7px;
+  color: #fef3c7;
+  font-size: 18px;
+  line-height: 1.05;
+  text-transform: none;
+}
+
+.hiveLedgerConvert {
+  cursor: pointer;
+  text-align: left;
+  transition: border-color 0.15s ease, background 0.15s ease, transform 0.15s ease;
+}
+
+.hiveLedgerConvert small {
+  display: block;
+  margin-top: 5px;
+  color: #fde68a;
+  font-size: 12px;
+  font-weight: 800;
+  text-transform: none;
+}
+
+.hiveLedgerConvert:not(:disabled):hover {
+  border-color: rgba(245, 158, 11, 0.42);
+  background: rgba(245, 158, 11, 0.08);
+  transform: translateY(-1px);
+}
+
+.hiveLedgerConvert:disabled {
+  cursor: default;
+  opacity: 0.62;
+}
+
 .walletAgentList {
   display: grid;
   align-content: start;
@@ -138,6 +253,28 @@
 
 .walletDetail {
   min-width: 0;
+}
+
+.honeyAgentPanel {
+  margin-bottom: 14px;
+  border: 1px solid rgba(245, 158, 11, 0.22);
+  border-radius: 8px;
+  background: rgba(15, 23, 42, 0.56);
+  padding: 14px;
+}
+
+.honeyAgentGrid {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  margin-top: 12px;
+}
+
+.honeyAgentActions {
+  margin-top: 12px;
+}
+
+.honeyAgentActions small {
+  max-width: 560px;
+  text-align: right;
 }
 
 .survivalStrip {
@@ -332,7 +469,9 @@
 
   .walletWorkspace,
   .walletGrid,
-  .survivalStrip {
+  .survivalStrip,
+  .hiveLedgerGrid,
+  .honeyAgentGrid {
     grid-template-columns: 1fr;
   }
 
@@ -344,6 +483,17 @@
   .walletTwoCol,
   .walletThreeCol {
     grid-template-columns: 1fr;
+  }
+
+  .honeyTreasuryHeader,
+  .hiveLedgerOptIn,
+  .honeyAgentActions {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .honeyAgentActions small {
+    text-align: left;
   }
 }
 
@@ -357,7 +507,12 @@
 :global(:root[data-theme="hive-light"]) .walletForm,
 :global(:root[data-theme="hive-light"]) .walletRunbook,
 :global(:root[data-theme="hive-light"]) .walletEmpty,
+:global(:root[data-theme="hive-light"]) .hiveLedger,
+:global(:root[data-theme="hive-light"]) .honeyAgentPanel,
 :global(:root[data-theme="hive-light"]) .walletTotals span,
+:global(:root[data-theme="hive-light"]) .hiveLedgerStat,
+:global(:root[data-theme="hive-light"]) .hiveLedgerConvert,
+:global(:root[data-theme="hive-light"]) .honeyAgentGrid span,
 :global(:root[data-theme="hive-light"]) .survivalStrip > div,
 :global(:root[data-theme="hive-light"]) .walletAgentButton,
 :global(:root[data-theme="hive-light"]) .walletDisclosure {
@@ -386,6 +541,12 @@
   border-color: var(--line);
   background: var(--field);
   color: var(--foreground);
+}
+
+:global(:root[data-theme="hive-light"]) .hiveLedgerStat strong,
+:global(:root[data-theme="hive-light"]) .hiveLedgerConvert strong,
+:global(:root[data-theme="hive-light"]) .honeyAgentGrid strong {
+  color: var(--accent-strong);
 }
 
 :global(:root[data-theme="hive-light"]) .walletPower {

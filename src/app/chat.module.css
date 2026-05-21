@@ -1188,12 +1188,14 @@ details[open] > summary .treeDisclosure::before {
   position: absolute;
   bottom: 38px;
   left: 0;
+  z-index: 30;
   min-width: 142px;
   border: 1px solid rgba(148, 163, 184, 0.16);
   border-radius: 12px;
   background: rgba(8, 12, 19, 0.98);
   box-shadow: 0 18px 50px rgba(0, 0, 0, 0.36);
   padding: 6px;
+  pointer-events: auto;
 }
 
 .attachmentMenu button,

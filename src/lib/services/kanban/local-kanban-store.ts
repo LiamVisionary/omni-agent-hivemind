@@ -62,7 +62,7 @@ export function resolveKanbanStorage(slugInput?: string | null, options: KanbanS
   const requestedVault: string | undefined = cleanOptional(options.vaultPath ?? undefined)
     ?? cleanOptional(DEFAULT_SHARED_VAULT.vaultPath ?? undefined);
   const explicitVault = Boolean(cleanOptional(options.vaultPath ?? undefined));
-  const folder = safeVaultFolder(options.kanbanFolder) || DEFAULT_VAULT_KANBAN_FOLDER;
+  const folder = normalizeKanbanFolder(options.kanbanFolder) || DEFAULT_VAULT_KANBAN_FOLDER;
 
   if (requestedVault) {
     const vaultRoot = resolveObsidianVaultPath(requestedVault);
@@ -115,6 +115,8 @@ export async function readBoard(slugInput?: string | null, options: KanbanStorag
   const slug = normalizeBoardSlug(slugInput);
   const storage = resolveKanbanStorage(slug, options);
   if (!existsSync(storage.file)) {
+    const defaultVaultBoard = await readDefaultVaultBoardIfPopulated(slug, options, storage);
+    if (defaultVaultBoard) return defaultVaultBoard;
     const localPath = boardPathFor(ROOT_DIR, BOARDS_DIR, slug);
     if (storage.source === "obsidian" && existsSync(localPath)) {
       const migrated = normalizeBoard(await readBoardFile(localPath), slug);
@@ -126,12 +128,30 @@ export async function readBoard(slugInput?: string | null, options: KanbanStorag
     await writeBoard(board, options);
     return board;
   }
-  return normalizeBoard(await readBoardFile(storage.file), slug);
+  const board = normalizeBoard(await readBoardFile(storage.file), slug);
+  if (storage.source === "obsidian" && board.tasks.length === 0) {
+    const defaultVaultBoard = await readDefaultVaultBoardIfPopulated(slug, options, storage);
+    if (defaultVaultBoard) return defaultVaultBoard;
+  }
+  return board;
 }
 
 async function readBoardFile(path: string) {
   const raw = await readFile(path, "utf-8");
   return JSON.parse(raw) as KanbanBoard;
+}
+
+async function readDefaultVaultBoardIfPopulated(slug: string, options: KanbanStorageOptions, currentStorage: KanbanStorageInfo) {
+  if (currentStorage.source !== "obsidian") return null;
+  const requestedFolder = safeVaultFolder(options.kanbanFolder);
+  if (!requestedFolder || requestedFolder === safeVaultFolder(DEFAULT_VAULT_KANBAN_FOLDER)) return null;
+  for (const fallbackSlug of [slug, DEFAULT_BOARD]) {
+    const defaultStorage = resolveKanbanStorage(fallbackSlug, { ...options, kanbanFolder: DEFAULT_VAULT_KANBAN_FOLDER });
+    if (defaultStorage.file === currentStorage.file || !existsSync(defaultStorage.file)) continue;
+    const defaultBoard = normalizeBoard(await readBoardFile(defaultStorage.file), fallbackSlug);
+    if (defaultBoard.tasks.length > 0) return defaultBoard;
+  }
+  return null;
 }
 
 function normalizeBoard(parsed: KanbanBoard, slug: string): KanbanBoard {
@@ -371,6 +391,11 @@ function safeVaultFolder(folder?: string | null) {
     throw new Error("Kanban folder must be a relative path inside the shared vault.");
   }
   return value.split(/[\\/]+/).filter(Boolean).join(sep);
+}
+
+function normalizeKanbanFolder(folder?: string | null) {
+  const value = safeVaultFolder(folder);
+  return /^kanban$/i.test(value) ? DEFAULT_VAULT_KANBAN_FOLDER : value;
 }
 
 function titleize(slug: string) {

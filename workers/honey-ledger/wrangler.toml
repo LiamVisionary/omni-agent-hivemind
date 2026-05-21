@@ -1,0 +1,13 @@
+name = "hivemindos-honey-ledger"
+main = "src/index.ts"
+compatibility_date = "2025-05-23"
+
+[vars]
+HONEY_PER_1000_TOKENS = "1"
+HIVE_PER_HONEY = "1"
+CORS_ORIGIN = "*"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "hivemindos_honey_ledger"
+database_id = "7b8e5013-4f37-4bbd-bc02-65700e5160d1"

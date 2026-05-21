@@ -16,10 +16,10 @@ import {
   ChevronRight,
   Clock3,
   CircleAlert,
-  BarChart3,
   Copy,
   CopyPlus,
   CreditCard,
+  Cpu,
   Download,
   Eye,
   FileText,
@@ -29,7 +29,7 @@ import {
   FolderPlus,
   FileUp,
   GitBranch,
-  Heart,
+  HandCoins,
   Hexagon,
   KanbanSquare,
   Layers3,
@@ -38,7 +38,6 @@ import {
   LoaderCircle,
   Link,
   MessageSquare,
-  MoreHorizontal,
   Monitor,
   Network,
   Plus,
@@ -51,10 +50,8 @@ import {
   ShieldCheck,
   Sparkles,
   Search,
-  Moon,
   Paperclip,
   Pencil,
-  Sun,
   Mic,
   Trash2,
   Upload,
@@ -62,18 +59,25 @@ import {
   WalletCards,
   X,
 } from "lucide-react";
-import type { AgentProfile, AgentRuntime, BeeAgentRole, BeeWorkerClass, RuntimeCapabilities, SharedVaultConfig } from "@/lib/types/agent-runtime";
+import type { AgentProfile, AgentRuntime, BeeWorkerClass, CustomWorkerClassProfile, RuntimeCapabilities, SharedVaultConfig } from "@/lib/types/agent-runtime";
 import type { AgentNotification, AgentNotificationSettings, AgentNotificationSummary } from "@/lib/types/agent-notifications";
 import { createAgentProfile, DEFAULT_SHARED_VAULT, RUNTIME_CAPABILITIES, RUNTIME_DEFAULTS, RUNTIME_KINDS, RUNTIME_LABELS } from "@/lib/types/agent-runtime";
-import type { AgentPaymentProvider, AgentWalletConfig } from "@/lib/types/agent-wallet";
+import type { AgentPaymentProvider, AgentWalletConfig, HoneyTreasuryConfig } from "@/lib/types/agent-wallet";
 import type { KanbanBoard, KanbanStatus, KanbanTask } from "@/lib/types/kanban";
 import { KANBAN_COLUMNS } from "@/lib/types/kanban";
 import { AGENT_PAYMENT_PROVIDER_COPY, PAYMENT_SAFETY_RULES, SOVEREIGN_AGENT_LAUNCH_STEPS } from "@/lib/config/agent-payments";
-import { buildAgentPaymentPrompt, createDefaultAgentWallet, getSurvivalSnapshot, normalizeMoney } from "@/lib/utils/agent-wallet";
+import { beeRoleIconPath } from "@/lib/config/bee-role-icons";
+import { BEE_WORKER_PRESET_LIST, beeWorkerPreset } from "@/lib/config/bee-worker-presets";
+import {
+  buildAgentPaymentPrompt,
+  createDefaultAgentWallet,
+  createDefaultHoneyTreasuryConfig,
+  getHoneyAgentRewards,
+  getSurvivalSnapshot,
+  normalizeMoney,
+} from "@/lib/utils/agent-wallet";
 import { groupKanbanTasks } from "@/lib/utils/kanban-board";
 import {
-  BEE_AGENT_ROLES,
-  BEE_WORKER_CLASSES,
   beeRoleLabel,
   beeWorkerClassLabel,
   chooseBeeAssignment,
@@ -81,12 +85,9 @@ import {
 import chatStyles from "./chat.module.css";
 import fleetStyles from "./fleet.module.css";
 import kanbanStyles from "./kanban-board.module.css";
-import mirosharkStyles from "./miroshark.module.css";
 import notificationStyles from "./notifications.module.css";
 import vaultStyles from "./vault.module.css";
 import walletStyles from "./wallets.module.css";
-import xThreadStyles from "./miroshark-x-thread.module.css";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import {
@@ -102,7 +103,17 @@ import {
   type CellMenuItem,
   type SetupStep,
 } from "@/components/cells";
-import { LottiePlayer } from "@/components/ui/lottie-player";
+import { FleetView, type FleetAgent, type FleetAlert, type FleetMachine, type FleetTask } from "@/components/fleet";
+import {
+  SwarmView,
+  type SwarmAgent,
+  type SwarmDecision,
+  type SwarmMarket,
+  type SwarmRun,
+  type SwarmSocialPost,
+  type SwarmTemplate,
+  type TemplateId,
+} from "@/components/swarm";
 
 type GatewayStatus = {
   ok?: boolean;
@@ -204,10 +215,6 @@ function chatClass(...names: Array<string | false | null | undefined>) {
   return cssClass(chatStyles, ...names);
 }
 
-function mirosharkClass(...names: Array<string | false | null | undefined>) {
-  return cssClass(mirosharkStyles, ...names);
-}
-
 function notificationClass(...names: Array<string | false | null | undefined>) {
   return cssClass(notificationStyles, ...names);
 }
@@ -250,6 +257,7 @@ type AgentSchedule = {
   every: string;
   mode: "prompt" | "steps";
   prompt: string;
+  model?: string;
   skills: string[];
   paths: string[];
   steps: SchedulerStep[];
@@ -268,9 +276,61 @@ type ScheduleDraft = {
   every: string;
   mode: "prompt" | "steps";
   prompt: string;
+  model: string;
   skills: string[];
   paths: string[];
+  steps: SchedulerStep[];
 };
+
+const SCHEDULE_PRESETS = ["5m", "15m", "30m", "1h", "2h", "6h", "12h", "24h"] as const;
+
+const SCHEDULER_MODEL_OPTIONS = [
+  { value: "", label: "Default" },
+  { value: "xai/grok-4-1-fast-non-reasoning", label: "Grok Fast" },
+  { value: "xai/grok-4-1", label: "Grok 4.1" },
+  { value: "anthropic/claude-sonnet-4-6", label: "Sonnet 4.6" },
+  { value: "anthropic/claude-haiku-4-5-20251001", label: "Haiku 4.5" },
+  { value: "openai/gpt-5.2", label: "GPT-5.2" },
+  { value: "google/gemini-3-flash", label: "Gemini Flash" },
+] as const;
+
+const HETZNER_SERVER_TYPE_OPTIONS = [
+  { value: "cx23", label: "CX23 - x86 shared CPU, small general node" },
+  { value: "cx33", label: "CX33 - x86 shared CPU, medium general node" },
+  { value: "cx43", label: "CX43 - x86 shared CPU, larger general node" },
+  { value: "cx53", label: "CX53 - x86 shared CPU, high-memory general node" },
+  { value: "cax11", label: "CAX11 - ARM shared CPU, low-cost node" },
+  { value: "cax21", label: "CAX21 - ARM shared CPU, medium node" },
+  { value: "cax31", label: "CAX31 - ARM shared CPU, larger node" },
+  { value: "cax41", label: "CAX41 - ARM shared CPU, high-memory node" },
+  { value: "cpx11", label: "CPX11 - AMD shared CPU, compact node" },
+  { value: "cpx21", label: "CPX21 - AMD shared CPU, small node" },
+  { value: "cpx31", label: "CPX31 - AMD shared CPU, medium node" },
+  { value: "cpx41", label: "CPX41 - AMD shared CPU, larger node" },
+  { value: "cpx51", label: "CPX51 - AMD shared CPU, high-memory node" },
+  { value: "ccx13", label: "CCX13 - AMD dedicated CPU, small worker" },
+  { value: "ccx23", label: "CCX23 - AMD dedicated CPU, medium worker" },
+  { value: "ccx33", label: "CCX33 - AMD dedicated CPU, large worker" },
+  { value: "ccx43", label: "CCX43 - AMD dedicated CPU, larger worker" },
+  { value: "ccx53", label: "CCX53 - AMD dedicated CPU, high-memory worker" },
+  { value: "ccx63", label: "CCX63 - AMD dedicated CPU, heavy worker" },
+] as const;
+
+const HETZNER_LOCATION_OPTIONS = [
+  { value: "fsn1", label: "Falkenstein, Germany (fsn1)" },
+  { value: "nbg1", label: "Nuremberg, Germany (nbg1)" },
+  { value: "hel1", label: "Helsinki, Finland (hel1)" },
+  { value: "ash", label: "Ashburn, Virginia, US (ash)" },
+  { value: "hil", label: "Hillsboro, Oregon, US (hil)" },
+  { value: "sin", label: "Singapore (sin)" },
+] as const;
+
+const HETZNER_IMAGE_OPTIONS = [
+  { value: "ubuntu-24.04", label: "Ubuntu 24.04 LTS" },
+  { value: "ubuntu-22.04", label: "Ubuntu 22.04 LTS" },
+  { value: "debian-13", label: "Debian 13" },
+  { value: "debian-12", label: "Debian 12" },
+] as const;
 
 type SkillBrowserSkill = {
   id: string;
@@ -283,6 +343,13 @@ type SkillBrowserSkill = {
   githubUrl?: string;
   providerId?: BrainSkillProviderId | "shared";
   imported?: boolean;
+};
+
+type WorkerClassDraft = {
+  label: string;
+  imageSrc: string;
+  skillProfilePrompt: string;
+  preferredSkillSlugs: string[];
 };
 
 type ImportedRuntimeSchedule = {
@@ -405,6 +472,29 @@ type AppVersion = {
   latestCommit?: string;
   latestShortCommit?: string;
   updateCommand?: string;
+};
+
+type MachineInitResult = {
+  projectName: string;
+  projectDir: string;
+  envPath: string;
+  sshAlias: string;
+  serverName: string;
+  commands: {
+    editEnv: string;
+    listServerTypes: string;
+    listLocations: string;
+    provision: string;
+    verify: string;
+    bootstrap?: string;
+    destroy: string;
+  };
+};
+
+type MachineInitStatus = {
+  busy?: boolean;
+  error?: string;
+  result?: MachineInitResult;
 };
 
 type MachineUpdateStatus = {
@@ -937,6 +1027,82 @@ function mirosharkStat(seed: number | undefined, base: number, spread: number) {
   return base + ((seed ?? 0) * 17) % spread;
 }
 
+function swarmTemplateIdFromSurface(platform?: string): TemplateId {
+  if (platform === "reddit") return "reddit-narrative";
+  if (platform === "polymarket") return "polymarket";
+  if (platform === "twitter" || platform === "x") return "x-thread";
+  if (platform === "parallel") return "custom";
+  return "custom";
+}
+
+function swarmTemplateIdFromMirosharkTemplate(template: MiroSharkTemplate): TemplateId {
+  const text = `${template.id ?? ""} ${template.name ?? ""} ${template.category ?? ""} ${(template.platforms ?? []).join(" ")}`.toLowerCase();
+  if (text.includes("polymarket")) return "polymarket";
+  if (text.includes("reddit")) return "reddit-narrative";
+  if (text.includes("research") || text.includes("tavily")) return "research-swarm";
+  if (text.includes("ops") || text.includes("stress")) return "ops";
+  if (text.includes("market")) return "market-maker";
+  if (text.includes("twitter") || text.includes(" x ") || text.includes("thread")) return "x-thread";
+  return "custom";
+}
+
+function swarmRunState(run: MiroSharkRunResult | null, runnerStatus?: string): SwarmRun["state"] {
+  if (run?.error || run?.status === "failed" || runnerStatus === "failed") return "failed";
+  if (run?.status === "started" && !isMiroSharkRunTerminal(runnerStatus)) return "live";
+  if (run?.status === "queued" || run?.status === "running") return "ready";
+  return "done";
+}
+
+function numericRecordValue(record: Record<string, unknown>, keys: string[], fallback = 0) {
+  for (const key of keys) {
+    const value = record[key];
+    const parsed = typeof value === "number" ? value : typeof value === "string" ? Number(value) : NaN;
+    if (Number.isFinite(parsed)) return parsed;
+  }
+  return fallback;
+}
+
+function swarmEventItem(value: unknown, index: number): { id: string; title: string; body: string; meta?: string; tone?: "bear" | "bull" | "neutral"; level?: "info" | "warn" | "error" | "fatal" } {
+  const record = asRecord(value);
+  const title = String(record.event_type ?? record.type ?? record.action_type ?? record.name ?? record.status ?? `record ${index + 1}`);
+  const body = String(record.content ?? record.text ?? record.message ?? record.description ?? record.summary ?? compactValue(value));
+  const metaValue = record.round ?? record.created_at ?? record.timestamp ?? record.time ?? record.platform;
+  const rawLevel = String(record.level ?? record.severity ?? "").toLowerCase();
+  const level = rawLevel === "fatal" || rawLevel === "error" || rawLevel === "warn" || rawLevel === "info" ? rawLevel : undefined;
+  return {
+    id: String(record.id ?? record.post_id ?? record.event_id ?? `${title}-${index}`),
+    title,
+    body,
+    meta: metaValue == null ? undefined : String(metaValue),
+    tone: level === "error" || level === "fatal" ? "bear" : level === "warn" ? "neutral" : "bull",
+    level,
+  };
+}
+
+function swarmMarketFromItems(items: Record<string, unknown>[], timelineItems: ReturnType<typeof swarmEventItem>[]): SwarmMarket {
+  const ticks = items
+    .map((item) => numericRecordValue(item, ["price", "odds", "probability", "yes_price", "value"], Number.NaN))
+    .filter(Number.isFinite);
+  const usableTicks = ticks.length >= 2 ? ticks : [0, 0];
+  return {
+    symbol: String(items[0]?.question ?? items[0]?.title ?? items[0]?.name ?? "MiroShark markets"),
+    ticks: usableTicks,
+    ladder: items.slice(0, 9).map((item, index) => {
+      const px = numericRecordValue(item, ["price", "odds", "probability", "yes_price", "value"], index + 1);
+      return {
+        px,
+        bid: numericRecordValue(item, ["bid", "yes", "volume", "liquidity"], 0) || null,
+        ask: numericRecordValue(item, ["ask", "no"], 0) || null,
+      };
+    }),
+    headlines: timelineItems.slice(0, 6).map((item) => ({
+      t: item.meta ?? "",
+      body: `${item.title}: ${item.body}`,
+      tone: item.tone ?? "neutral",
+    })),
+  };
+}
+
 type DashboardView = "agents" | "kanban" | "scheduler" | "swarm" | "wallet" | "vault" | "notifications" | "chat";
 type DashboardTheme = "dark" | "hive-light";
 
@@ -945,8 +1111,10 @@ const VAULT_STORAGE_KEY = "hivemindos.sharedVault.v1";
 const TASK_STORAGE_KEY = "hivemindos.agentTasks.v1";
 const SCHEDULE_STORAGE_KEY = "hivemindos.agentSchedules.v1";
 const WALLET_STORAGE_KEY = "hivemindos.agentWallets.v1";
+const HONEY_LEDGER_ENABLED_STORAGE_KEY = "hivemindos.honeyLedger.enabled.v1";
 const THEME_STORAGE_KEY = "hivemindos.theme.v1";
 const CHAT_FOLDER_STORAGE_KEY = "hivemindos.chatFolders.v1";
+const DISCOVERED_MACHINES_STORAGE_KEY = "hivemindos.discoveredMachines.v1";
 const KANBAN_STALE_WORK_MS = 30 * 60 * 1000;
 const KANBAN_TOOL_OUTPUT_STALL_MS = 5 * 60 * 1000;
 const KANBAN_STALE_AGENT_COOLDOWN_MS = 20 * 60 * 1000;
@@ -958,6 +1126,7 @@ const STORAGE_SUFFIXES = {
   tasks: ".agentTasks.v1",
   schedules: ".agentSchedules.v1",
   wallets: ".agentWallets.v1",
+  honeyLedgerEnabled: ".honeyLedger.enabled.v1",
   theme: ".theme.v1",
   chatFolders: ".chatFolders.v1",
 };
@@ -972,12 +1141,40 @@ const STARTER_AGENT_IDS = new Set([
   "aeon-1",
 ]);
 
+function workerCapabilityBadges(summary: string) {
+  return summary
+    .replace(/\.$/, "")
+    .split(/,\s+|\s+and\s+/)
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
+function customWorkerProfileFromDraft(draft: WorkerClassDraft): CustomWorkerClassProfile {
+  return {
+    id: `custom-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+    label: draft.label.trim() || "Custom worker",
+    imageSrc: draft.imageSrc,
+    skillProfilePrompt: draft.skillProfilePrompt.trim(),
+    preferredSkillSlugs: draft.preferredSkillSlugs,
+  };
+}
+
+function defaultWorkerClassDraft(): WorkerClassDraft {
+  return {
+    label: "",
+    imageSrc: beeRoleIconPath("worker", "general"),
+    skillProfilePrompt: "",
+    preferredSkillSlugs: [],
+  };
+}
+
 type RemotionShowcaseFixtures = {
   agents?: AgentProfile[];
   sharedVault?: SharedVaultConfig;
   tasks?: AgentTask[];
   schedules?: AgentSchedule[];
   wallets?: Record<string, AgentWalletConfig>;
+  honeyTreasury?: HoneyTreasuryConfig;
 };
 
 function remotionShowcaseFixtures(): RemotionShowcaseFixtures | null {
@@ -991,6 +1188,12 @@ function seedAgents(): AgentProfile[] {
 
 function normalizeAgentProfile(agent: AgentProfile): AgentProfile {
   const inferredQueen = agent.beeRole === "queen" || /queen|orchestrat|lead|main/i.test(agent.name) || agent.runtime === "openclaw";
+  const customWorkerClasses = agent.customWorkerClasses?.length
+    ? agent.customWorkerClasses
+    : agent.customWorkerClass
+      ? [agent.customWorkerClass]
+      : undefined;
+  const selectedCustomWorkerClassId = agent.selectedCustomWorkerClassId ?? agent.customWorkerClass?.id;
   return {
     ...agent,
     localDataDir: agent.runtime === "hermes" && agent.id === "hermes-orchestrator" && !agent.localDataDir
@@ -1003,6 +1206,11 @@ function normalizeAgentProfile(agent: AgentProfile): AgentProfile {
     aeonMode: agent.runtime === "aeon" ? agent.aeonMode ?? "github" : agent.aeonMode,
     beeRole: agent.beeRole ?? (inferredQueen ? "queen" : "worker"),
     workerClass: agent.workerClass ?? "general",
+    customWorkerClasses,
+    selectedCustomWorkerClassId,
+    customWorkerClass: customWorkerClasses?.find((workerClass) => workerClass.id === selectedCustomWorkerClassId) ?? agent.customWorkerClass,
+    skillProfilePrompt: agent.skillProfilePrompt ?? beeWorkerPreset(agent.workerClass ?? "general").taskProfile,
+    preferredSkillSlugs: agent.preferredSkillSlugs ?? beeWorkerPreset(agent.workerClass ?? "general").skillSlugs,
   };
 }
 
@@ -1060,11 +1268,14 @@ function parseStoredVault(): SharedVaultConfig {
       ? DEFAULT_SHARED_VAULT.vaultPath
       : storedVaultPath;
     const storedKanbanFolder = parsed.kanbanFolder?.trim();
+    const migratedKanbanFolder = storedKanbanFolder && /^kanban$/i.test(storedKanbanFolder)
+      ? DEFAULT_SHARED_VAULT.kanbanFolder
+      : storedKanbanFolder;
     return {
       ...DEFAULT_SHARED_VAULT,
       ...parsed,
       vaultPath: migratedVaultPath || DEFAULT_SHARED_VAULT.vaultPath,
-      kanbanFolder: storedKanbanFolder || DEFAULT_SHARED_VAULT.kanbanFolder,
+      kanbanFolder: migratedKanbanFolder || DEFAULT_SHARED_VAULT.kanbanFolder,
     };
   } catch {
     return DEFAULT_SHARED_VAULT;
@@ -1102,8 +1313,10 @@ function parseStoredSchedules(): AgentSchedule[] {
       skills: Array.isArray(schedule.skills) ? schedule.skills : [],
       paths: Array.isArray(schedule.paths) ? schedule.paths : [],
       steps: Array.isArray(schedule.steps)
-        ? schedule.steps.map((step) => ({
+        ? schedule.steps.map((step, index) => ({
           ...step,
+          id: typeof step.id === "string" ? step.id : `step-${schedule.id}-${index}`,
+          text: typeof step.text === "string" ? step.text : "",
           skills: Array.isArray(step.skills) ? step.skills : [],
           paths: Array.isArray(step.paths) ? step.paths : [],
           model: typeof step.model === "string" ? step.model : "",
@@ -1143,6 +1356,44 @@ function parseStoredWallets(): Record<string, AgentWalletConfig> {
     return parsed && typeof parsed === "object" ? parsed : {};
   } catch {
     return {};
+  }
+}
+
+function parseStoredHoneyTreasury(): HoneyTreasuryConfig {
+  const fallback = createDefaultHoneyTreasuryConfig();
+  if (typeof window === "undefined") return fallback;
+  const fixtureTreasury = remotionShowcaseFixtures()?.honeyTreasury;
+  return fixtureTreasury
+    ? {
+      ...fallback,
+      ...fixtureTreasury,
+      agentTokenUsage: fixtureTreasury.agentTokenUsage ?? {},
+      agentHoneyExchanged: fixtureTreasury.agentHoneyExchanged ?? {},
+      agentHiveBalances: fixtureTreasury.agentHiveBalances ?? {},
+    }
+    : fallback;
+}
+
+function parseStoredHoneyLedgerEnabled(): boolean {
+  if (typeof window === "undefined") return false;
+  const raw = readStoredValue(HONEY_LEDGER_ENABLED_STORAGE_KEY, STORAGE_SUFFIXES.honeyLedgerEnabled);
+  return raw === "true";
+}
+
+function parseStoredDiscoveredMachines(): DiscoveredMachine[] {
+  if (typeof window === "undefined") return [];
+  const raw = window.localStorage.getItem(DISCOVERED_MACHINES_STORAGE_KEY);
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw) as DiscoveredMachine[];
+    if (!Array.isArray(parsed)) return [];
+    return parsed.filter((machine) => (
+      machine?.device
+      && typeof machine.device.name === "string"
+      && typeof machine.collector === "string"
+    ));
+  } catch {
+    return [];
   }
 }
 
@@ -1285,7 +1536,7 @@ function notificationActorMeta(notification: AgentNotification) {
   const queen = normalized === "queen-bee" || normalized.includes("queen-bee");
   const worker = Boolean(failedHermesWorker) || normalized.includes("worker") || normalized.includes("hermes") || normalized.includes("agent");
   return {
-    icon: queen ? "/icons/queen-bee.png" : worker ? "/icons/worker-bee.png" : "",
+    icon: queen ? beeRoleIconPath("queen") : worker ? beeRoleIconPath("worker") : "",
     label: humanizeNotificationActor(rawActor),
     role: queen ? "Orchestrator" : worker ? "Worker bee" : "Agent",
   };
@@ -1514,7 +1765,7 @@ const KANBAN_STEER_TARGETS = KANBAN_COLUMNS.filter((column) => (
 function kanbanTaskBee(task: KanbanTask, agents: AgentProfile[]) {
   if (task.status === "ready") {
     return {
-      icon: "/icons/queen-bee.png",
+      icon: beeRoleIconPath("queen"),
       roleLabel: "Queen Bee",
       assignee: "Waiting for pickup",
     };
@@ -1527,7 +1778,7 @@ function kanbanTaskBee(task: KanbanTask, agents: AgentProfile[]) {
     const completedBy = agent?.name || assignee || "user";
     const completedByQueen = agent?.beeRole === "queen";
     return {
-      icon: agent ? (completedByQueen ? "/icons/queen-bee.png" : "/icons/worker-bee.png") : "",
+      icon: agent ? beeRoleIconPath(completedByQueen ? "queen" : "worker", agent.workerClass ?? "general") : "",
       roleLabel: "Completed by:",
       assignee: completedBy,
     };
@@ -1537,7 +1788,7 @@ function kanbanTaskBee(task: KanbanTask, agents: AgentProfile[]) {
     ?? (task.tenant?.endsWith("-worker") ? task.tenant.replace(/-worker$/, "") as BeeWorkerClass : undefined);
   const roleLabel = queen ? "Queen bee" : `${beeWorkerClassLabel(workerClass)} worker bee`;
   return {
-    icon: queen ? "/icons/queen-bee.png" : "/icons/worker-bee.png",
+    icon: beeRoleIconPath(queen ? "queen" : "worker", workerClass ?? "general"),
     roleLabel,
     assignee: assignee || "Unassigned",
   };
@@ -2193,9 +2444,10 @@ function mergeMachineSnapshots(previous: AgentSnapshot[] = [], incoming: AgentSn
 
 function mergeDiscoveredMachines(current: DiscoveredMachine[], incoming: DiscoveredMachine[]) {
   const currentByKey = new Map(current.map((machine) => [collectorKey(machine.device.collectorUrl) || machine.device.name, machine]));
+  const incomingKeys = new Set(incoming.map((machine) => collectorKey(machine.device.collectorUrl) || machine.device.name));
   const now = Date.now();
 
-  return incoming.map((machine) => {
+  const merged = incoming.map((machine) => {
     const key = collectorKey(machine.device.collectorUrl) || machine.device.name;
     const previous = currentByKey.get(key);
     const hasFreshAgentData = machine.collector === "ready" && machine.agents.length > 0;
@@ -2223,6 +2475,16 @@ function mergeDiscoveredMachines(current: DiscoveredMachine[], incoming: Discove
       lastSeenAt: previous.lastSeenAt,
     };
   });
+
+  const preserved = current
+    .filter((machine) => !incomingKeys.has(collectorKey(machine.device.collectorUrl) || machine.device.name))
+    .map((machine) => ({
+      ...machine,
+      device: machine.device.self ? machine.device : { ...machine.device, online: false },
+      collector: machine.device.self ? machine.collector : "offline" as MachineGroup["collector"],
+    }));
+
+  return [...merged, ...preserved];
 }
 
 function machineVersionState(machine: MachineGroup, latestCommit?: string) {
@@ -2392,6 +2654,45 @@ function brainGraphLayout(nodes: BrainGraphNode[]) {
   return { positions, coordsByNode, positionsByCoord, radius, width: 1120, height: 840 };
 }
 
+function fleetHash(value: string) {
+  let hash = 0;
+  for (const char of value) hash = (hash * 31 + char.charCodeAt(0)) >>> 0;
+  return hash;
+}
+
+function fleetMetric(seed: string, min: number, max: number) {
+  return min + (fleetHash(seed) % (max - min + 1));
+}
+
+function fleetMachineLocation(machine: MachineGroup, index: number) {
+  const fallback = [
+    { location: "Local studio", city: "Local", lat: 40.68, lon: -73.96 },
+    { location: "Cloud worker", city: "Ashburn", lat: 39.04, lon: -77.49 },
+    { location: "Remote desk", city: "Lisbon", lat: 38.72, lon: -9.13 },
+    { location: "Vault shelf", city: "Brooklyn", lat: 40.69, lon: -73.97 },
+    { location: "Edge node", city: "Berlin", lat: 52.52, lon: 13.40 },
+  ];
+  const picked = fallback[index % fallback.length];
+  return {
+    ...picked,
+    location: machine.self ? "This Mac" : machine.dnsName ? "Tailnet device" : picked.location,
+  };
+}
+
+function fleetVersionState(machine: MachineGroup): FleetMachine["versionState"] {
+  if (machine.collector !== "ready") return "needs-setup";
+  const version = machine.version;
+  if (version?.latestCommit && version.commit && version.latestCommit !== version.commit) return "stale";
+  return "current";
+}
+
+function fleetAgentState(agent: AgentProfile, snapshot: AgentSnapshot | undefined, activeCount: number, hasMachineWiring: boolean): FleetAgent["state"] {
+  if (snapshot?.error) return "failed";
+  if (!hasMachineWiring) return "setup";
+  if (activeCount > 0 || snapshot?.processRunning) return "working";
+  return "ready";
+}
+
 export default function Home() {
   // Initialize all persisted state with deterministic seed values so SSR and
   // first client render match. localStorage is read inside a useEffect below.
@@ -2439,16 +2740,22 @@ export default function Home() {
     every: "360m",
     mode: "prompt",
     prompt: "",
+    model: "",
     skills: [],
     paths: [],
+    steps: [{ id: "draft-step-0", text: "", skills: [], paths: [], model: "" }],
   });
-  const [schedulerAttachMenu, setSchedulerAttachMenu] = useState<"menu" | "skill" | "path" | null>(null);
+  const [schedulerAttachMenu, setSchedulerAttachMenu] = useState<"menu" | "skill" | "model" | "path" | null>(null);
   const [schedulerSkillSearch, setSchedulerSkillSearch] = useState("");
   const [schedulerPathDraft, setSchedulerPathDraft] = useState("");
   const [schedulerPathKind, setSchedulerPathKind] = useState<"folder" | "file" | "path">("path");
+  const [schedulerSelectedStep, setSchedulerSelectedStep] = useState(0);
+  const [editingScheduleId, setEditingScheduleId] = useState("");
   const [scheduleImportStatus, setScheduleImportStatus] = useState("");
   const [scheduleImporting, setScheduleImporting] = useState(false);
   const [walletsByAgent, setWalletsByAgent] = useState<Record<string, AgentWalletConfig>>({});
+  const [honeyTreasury, setHoneyTreasury] = useState<HoneyTreasuryConfig>(createDefaultHoneyTreasuryConfig);
+  const [honeyLedgerEnabled, setHoneyLedgerEnabled] = useState(false);
   const [walletActionsByAgent, setWalletActionsByAgent] = useState<Record<string, WalletActionState>>({});
   const [fleetSnapshots, setFleetSnapshots] = useState<Record<string, AgentSnapshot>>({});
   const [fleetCheckedAt, setFleetCheckedAt] = useState<number | null>(null);
@@ -2459,25 +2766,53 @@ export default function Home() {
   const [updateStatusByMachine, setUpdateStatusByMachine] = useState<Record<string, MachineUpdateStatus>>({});
   const [copiedUpdateDetailKey, setCopiedUpdateDetailKey] = useState("");
   const [setupMachineKey, setSetupMachineKey] = useState("");
+  const [machineInitOpen, setMachineInitOpen] = useState(false);
+  const [machineInitDraft, setMachineInitDraft] = useState({
+    projectName: "",
+    serverType: "cx23",
+    serverLocation: "hel1",
+    serverImage: "ubuntu-24.04",
+    runtimeAgent: "hermes" as AgentRuntime,
+  });
+  const [machineInitStatus, setMachineInitStatus] = useState<MachineInitStatus>({});
+  const [machineInitCopiedKey, setMachineInitCopiedKey] = useState("");
   const [agentRoleModalId, setAgentRoleModalId] = useState("");
   const [agentCreateMachineKey, setAgentCreateMachineKey] = useState("");
-  const [agentSettingsPanel, setAgentSettingsPanel] = useState<"role" | "memory" | "runtime" | "security">("role");
+  const [agentSettingsPanel, setAgentSettingsPanel] = useState<"role" | "memory" | "security">("role");
   const [aeonEnvKeys, setAeonEnvKeys] = useState("ANTHROPIC_API_KEY\nCLAUDE_CODE_OAUTH_TOKEN\nBANKR_LLM_KEY\nGH_GLOBAL");
   const [aeonEnvSyncStatus, setAeonEnvSyncStatus] = useState("");
   const [aeonEnvSyncing, setAeonEnvSyncing] = useState(false);
   const [agentCreateDraft, setAgentCreateDraft] = useState<{
     name: string;
     runtime: AgentRuntime;
-    beeRole: BeeAgentRole;
     workerClass: BeeWorkerClass;
+    customWorkerClass?: CustomWorkerClassProfile;
+    customWorkerClasses: CustomWorkerClassProfile[];
+    selectedCustomWorkerClassId?: string;
+    skillProfilePrompt: string;
+    preferredSkillSlugs: string[];
+    useSharedVault: boolean;
   }>({
     name: "",
     runtime: "hermes",
-    beeRole: "worker",
     workerClass: "general",
+    customWorkerClass: undefined,
+    customWorkerClasses: [],
+    selectedCustomWorkerClassId: undefined,
+    skillProfilePrompt: beeWorkerPreset("general").taskProfile,
+    preferredSkillSlugs: beeWorkerPreset("general").skillSlugs,
+    useSharedVault: true,
   });
   const [agentRenameDraft, setAgentRenameDraft] = useState("");
   const [agentRenameEditing, setAgentRenameEditing] = useState(false);
+  const [agentRuntimeFolderEditing, setAgentRuntimeFolderEditing] = useState(false);
+  const [agentRuntimeFolderBrowsing, setAgentRuntimeFolderBrowsing] = useState(false);
+  const [agentRuntimeFolderStatus, setAgentRuntimeFolderStatus] = useState("");
+  const [agentRuntimeAdvancedOpen, setAgentRuntimeAdvancedOpen] = useState(false);
+  const [agentWorkerClassView, setAgentWorkerClassView] = useState<"presets" | "create">("presets");
+  const [customWorkerDraft, setCustomWorkerDraft] = useState<WorkerClassDraft>(() => defaultWorkerClassDraft());
+  const [customWorkerSkillSearch, setCustomWorkerSkillSearch] = useState("");
+  const [customWorkerImageError, setCustomWorkerImageError] = useState("");
   const [setupCommandCopied, setSetupCommandCopied] = useState(false);
   const [kanbanBoard, setKanbanBoard] = useState<KanbanBoard | null>(null);
   const [kanbanBoards, setKanbanBoards] = useState<KanbanBoardSummary[]>([]);
@@ -2517,6 +2852,7 @@ export default function Home() {
   const [quickAddDirectories, setQuickAddDirectories] = useState<Record<string, LinkedDirectory[]>>({});
   const [quickAddAttachmentError, setQuickAddAttachmentError] = useState("");
   const [quickAddAttachmentMenuOpen, setQuickAddAttachmentMenuOpen] = useState(false);
+  const [kanbanBoardScrollState, setKanbanBoardScrollState] = useState({ canScrollLeft: false, canScrollRight: false });
   const [newBoardDraft, setNewBoardDraft] = useState({ slug: "", name: "" });
   const [commentDraft, setCommentDraft] = useState("");
   const [mirosharkStatus, setMirosharkStatus] = useState<MiroSharkStatus | null>(null);
@@ -2528,6 +2864,7 @@ export default function Home() {
   const [mirosharkPlatform, setMirosharkPlatform] = useState<"twitter" | "reddit" | "parallel" | "polymarket">("twitter");
   const [mirosharkArchiveRuns, setMirosharkArchiveRuns] = useState<MiroSharkArchivedRun[]>([]);
   const [mirosharkArchiveStatus, setMirosharkArchiveStatus] = useState("");
+  const [selectedMirosharkRunId, setSelectedMirosharkRunId] = useState("");
   const [mirosharkMetadata, setMirosharkMetadata] = useState<MiroSharkMetadata | null>(null);
   const [mirosharkWorkspaceMode, setMirosharkWorkspaceMode] = useState<MiroSharkWorkspaceMode>("new");
   const [mirosharkWorkbenchTab, setMirosharkWorkbenchTab] = useState<MiroSharkWorkbenchTab>("surface");
@@ -2563,6 +2900,8 @@ export default function Home() {
   const quickAddImageInputRef = useRef<HTMLInputElement | null>(null);
   const kanbanSteerFileInputRef = useRef<HTMLInputElement | null>(null);
   const kanbanSteerImageInputRef = useRef<HTMLInputElement | null>(null);
+  const customWorkerImageInputRef = useRef<HTMLInputElement | null>(null);
+  const kanbanBoardScrollRef = useRef<HTMLDivElement | null>(null);
   const quickAddAttachmentMenuRef = useRef<HTMLDivElement | null>(null);
   const kanbanSteerAttachmentMenuRef = useRef<HTMLDivElement | null>(null);
   const kanbanSteerTargetMenuRef = useRef<HTMLDivElement | null>(null);
@@ -2610,12 +2949,26 @@ export default function Home() {
     setTasks(parseStoredTasks());
     setSchedules(parseStoredSchedules());
     setWalletsByAgent(parseStoredWallets());
+    setHoneyLedgerEnabled(parseStoredHoneyLedgerEnabled());
+    setHoneyTreasury(parseStoredHoneyTreasury());
     setChatCustomFolders(parseStoredChatFolders());
+    setDiscoveredMachines(parseStoredDiscoveredMachines());
     const storedTheme = readStoredValue(THEME_STORAGE_KEY, STORAGE_SUFFIXES.theme);
     setDashboardTheme(storedTheme === "hive-light" ? "hive-light" : "dark");
     setHydrated(true);
   }, []);
   /* eslint-enable react-hooks/set-state-in-effect */
+
+  useEffect(() => {
+    if (!hydrated || !honeyLedgerEnabled) return;
+    void refreshHoneyLedger();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [honeyLedgerEnabled, hydrated]);
+
+  useEffect(() => {
+    if (!hydrated) return;
+    window.localStorage.setItem(HONEY_LEDGER_ENABLED_STORAGE_KEY, honeyLedgerEnabled ? "true" : "false");
+  }, [honeyLedgerEnabled, hydrated]);
 
   useEffect(() => {
     document.documentElement.dataset.theme = dashboardTheme;
@@ -2652,6 +3005,11 @@ export default function Home() {
     if (!hydrated) return;
     window.localStorage.setItem(CHAT_FOLDER_STORAGE_KEY, JSON.stringify(chatCustomFolders));
   }, [chatCustomFolders, hydrated]);
+
+  useEffect(() => {
+    if (!hydrated || discoveredMachines.length === 0) return;
+    window.localStorage.setItem(DISCOVERED_MACHINES_STORAGE_KEY, JSON.stringify(discoveredMachines.slice(0, 32)));
+  }, [discoveredMachines, hydrated]);
 
   useEffect(() => {
     notificationCursorRef.current = notificationCursor;
@@ -2855,6 +3213,7 @@ export default function Home() {
     setMirosharkWorkspaceMode("new");
     setMirosharkRun(null);
     setMirosharkRunPending(false);
+    setSelectedMirosharkRunId("");
     setMirosharkArchiveStatus("");
     setMirosharkWorkbenchTab("surface");
   }
@@ -3202,6 +3561,7 @@ export default function Home() {
   }, [sharedVault.enabled, sharedVault.notificationsFolder, sharedVault.vaultPath]);
 
   async function loadMirosharkArchivedRun(simulationId: string) {
+    setSelectedMirosharkRunId(simulationId);
     setMirosharkArchiveStatus("Loading saved run...");
     const params = new URLSearchParams({ simulation_id: simulationId });
     if (sharedVault.vaultPath.trim()) params.set("vaultPath", sharedVault.vaultPath.trim());
@@ -3234,6 +3594,7 @@ export default function Home() {
   }
 
   const refreshMirosharkRun = useCallback(async () => {
+    if (mirosharkRun?.archived) return;
     const shouldFetchRun = mirosharkRun?.simulationId && mirosharkRun.status === "started";
     const query = shouldFetchRun
       ? `simulation_id=${encodeURIComponent(mirosharkRun.simulationId ?? "")}&platform=${encodeURIComponent(mirosharkRun.platform ?? mirosharkPlatform)}`
@@ -3316,6 +3677,161 @@ export default function Home() {
   const mirosharkMarketItems = payloadArray<Record<string, unknown>>(mirosharkRun?.markets).slice(0, 8);
   const mirosharkObservabilityItems = payloadArray<Record<string, unknown>>(mirosharkRun?.observabilityEvents ?? mirosharkMetadata?.observabilityEvents).slice(0, 18);
   const mirosharkLlmCallItems = payloadArray<Record<string, unknown>>(mirosharkRun?.llmCalls ?? mirosharkMetadata?.llmCalls).slice(0, 10);
+  const swarmTemplates = useMemo<SwarmTemplate[]>(() => (
+    mirosharkTemplates.map((template) => ({
+      id: swarmTemplateIdFromMirosharkTemplate(template),
+      label: template.name ?? template.id ?? "MiroShark template",
+      kind: template.category ?? template.platforms?.join(" + ") ?? "simulation",
+      agents: template.estimated_agents ?? 0,
+      desc: template.description ?? "MiroShark template returned by the companion.",
+    }))
+  ), [mirosharkTemplates]);
+  const swarmTimelineItems = useMemo(() => (
+    [...mirosharkTimelineItems, ...mirosharkActionItems].slice(0, 24).map(swarmEventItem)
+  ), [mirosharkActionItems, mirosharkTimelineItems]);
+  const swarmObservabilityItems = useMemo(() => (
+    mirosharkObservabilityItems.map(swarmEventItem)
+  ), [mirosharkObservabilityItems]);
+  const swarmAgents = useMemo<SwarmAgent[]>(() => (
+    mirosharkProfileItems.map((profile, index) => {
+      const roleText = String(profile.role ?? profile.entity_type ?? profile.platform ?? "simulation participant");
+      const faction: SwarmAgent["faction"] = /risk|ops|monitor|admin|safety/i.test(roleText)
+        ? "OPS"
+        : /market|maker|liquidity|trade|polymarket/i.test(roleText)
+          ? "MM"
+          : /take|buyer|seller|whale/i.test(roleText)
+            ? "TKR"
+            : "INFO";
+      return {
+        id: String(profile.user_id ?? profile.id ?? `profile-${index}`),
+        name: String(profile.name ?? profile.agent_name ?? profile.username ?? `Agent ${index + 1}`),
+        role: roleText,
+        faction,
+        ledger: String(profile.pnl ?? profile.score ?? profile.status ?? "live"),
+        trades: numericRecordValue(profile, ["trades", "actions", "posts"], 0),
+        status: "live",
+      };
+    })
+  ), [mirosharkProfileItems]);
+  const swarmDecisions = useMemo<SwarmDecision[]>(() => (
+    swarmTimelineItems.slice(0, 10).map((item, index) => {
+      const agent = swarmAgents[index % Math.max(1, swarmAgents.length)];
+      return {
+        who: agent?.name ?? "MiroShark",
+        role: agent?.faction ?? "INFO",
+        action: item.title,
+        detail: item.body,
+      };
+    })
+  ), [swarmAgents, swarmTimelineItems]);
+  const swarmThreadPosts = useMemo(() => (
+    mirosharkPosts.posts.map((post, index) => ({
+      id: String(post.post_id ?? index),
+      author: mirosharkUserName(post.user_id),
+      handle: mirosharkHandle(post.user_id),
+      text: post.displayText,
+      time: typeof post.created_at === "number" ? `round ${post.created_at}` : "saved",
+      replies: index === 0 ? Math.max(0, mirosharkPosts.posts.length - 1) : mirosharkStat(post.post_id, 0, 9),
+      reposts: post.num_shares ?? mirosharkStat(post.post_id, 0, 13),
+      likes: post.num_likes ?? mirosharkStat(post.post_id, 1, 42),
+      views: mirosharkStat(post.post_id, 90, 540),
+    }))
+  ), [mirosharkPosts.posts]);
+  const swarmSocialPosts = useMemo<SwarmSocialPost[]>(() => (
+    swarmThreadPosts.slice(0, 8).map((post, index) => {
+      const agent = swarmAgents[index % Math.max(1, swarmAgents.length)];
+      return {
+        id: post.id,
+        who: post.author,
+        faction: agent?.faction ?? "INFO",
+        t: post.time,
+        text: post.text,
+        reacts: { up: post.likes, down: 0 },
+      };
+    })
+  ), [swarmAgents, swarmThreadPosts]);
+  const swarmMarket = useMemo<SwarmMarket>(() => (
+    swarmMarketFromItems(mirosharkMarketItems, swarmTimelineItems)
+  ), [mirosharkMarketItems, swarmTimelineItems]);
+  const currentSwarmRun = useMemo<SwarmRun | null>(() => {
+    if (!mirosharkRun) return null;
+    const archivedSummary = mirosharkRun.archivedSummary
+      ?? mirosharkArchiveRuns.find((run) => run.simulationId === mirosharkRun.simulationId);
+    const runScenario = (archivedSummary?.scenario ?? mirosharkScenario).trim();
+    const totalRounds = mirosharkTotalRounds || mirosharkRun.rounds || mirosharkRounds;
+    const title = runScenario.slice(0, 90)
+      || mirosharkRun.message
+      || (mirosharkRun.simulationId ? `Simulation ${mirosharkRun.simulationId}` : "MiroShark run");
+    return {
+      id: mirosharkRun.simulationId ?? mirosharkRun.jobId ?? "active-miroshark-run",
+      title,
+      template: swarmTemplateIdFromSurface(mirosharkRun.platform ?? mirosharkPlatform),
+      state: swarmRunState(mirosharkRun, mirosharkRunnerStatus),
+      rounds: totalRounds,
+      currentRound: Math.min(mirosharkCurrentRound || totalRounds, totalRounds || mirosharkCurrentRound),
+      sharpe: null,
+      pnl: null,
+      started: archivedSummary?.savedAt || mirosharkRun.archivedAt
+        ? formatRelativeTime(Date.parse(archivedSummary?.savedAt ?? mirosharkRun.archivedAt ?? ""))
+        : "active",
+      agents: swarmAgents.length || payloadCount(mirosharkRun.profiles ?? mirosharkRun.realtimeProfiles),
+      news: swarmTimelineItems.length + swarmObservabilityItems.length,
+      posts: Math.max(mirosharkPosts.count, archivedSummary?.postCount ?? 0),
+      trades: mirosharkActionCount + mirosharkMarketCount + swarmTimelineItems.length,
+      tags: [mirosharkRun.platform ?? mirosharkPlatform, mirosharkDisplayStatus].filter(Boolean),
+      summary: mirosharkRun.message ?? mirosharkRun.error ?? runScenario,
+      platform: mirosharkRun.platform ?? mirosharkPlatform,
+      scenario: runScenario,
+      threadPosts: swarmThreadPosts,
+      timelineItems: swarmTimelineItems,
+      marketItems: mirosharkMarketItems.map(swarmEventItem),
+      profileItems: mirosharkProfileItems.map(swarmEventItem),
+      observabilityItems: swarmObservabilityItems,
+    };
+  }, [
+    mirosharkActionCount,
+    mirosharkArchiveRuns,
+    mirosharkCurrentRound,
+    mirosharkDisplayStatus,
+    mirosharkMarketCount,
+    mirosharkMarketItems,
+    mirosharkPlatform,
+    mirosharkPosts.count,
+    mirosharkProfileItems,
+    mirosharkRounds,
+    mirosharkRun,
+    mirosharkRunnerStatus,
+    mirosharkScenario,
+    mirosharkTotalRounds,
+    swarmAgents.length,
+    swarmObservabilityItems,
+    swarmThreadPosts,
+    swarmTimelineItems,
+  ]);
+  const swarmRuns = useMemo<SwarmRun[]>(() => {
+    const archived = mirosharkArchiveRuns.map((run) => ({
+      id: run.simulationId,
+      title: run.scenario?.trim().slice(0, 90) || `Simulation ${run.simulationId}`,
+      template: swarmTemplateIdFromSurface(run.platform),
+      state: run.status === "failed" ? "failed" as const : "done" as const,
+      rounds: run.rounds ?? 0,
+      currentRound: run.rounds ?? 0,
+      sharpe: null,
+      pnl: null,
+      started: formatRelativeTime(Date.parse(run.savedAt)),
+      agents: 0,
+      news: 0,
+      posts: run.postCount,
+      trades: 0,
+      tags: [run.platform ?? "surface", run.status ?? "saved"],
+      summary: run.scenario ?? `Saved MiroShark simulation ${run.simulationId}`,
+      platform: run.platform,
+      scenario: run.scenario,
+    }));
+    return currentSwarmRun ? [currentSwarmRun, ...archived.filter((run) => run.id !== currentSwarmRun.id)] : archived;
+  }, [currentSwarmRun, mirosharkArchiveRuns]);
+  const swarmStatusLabel = mirosharkStatus?.ok ? "connected" : mirosharkStatus?.install.running ? "starting" : "offline";
+  const selectedSwarmRunId = selectedMirosharkRunId || currentSwarmRun?.id;
 
   useEffect(() => {
     if (!hydrated || activeView !== "swarm") return;
@@ -3343,6 +3859,14 @@ export default function Home() {
   }, [activeView, brainSkills, brainSkillsLoading, hydrated, refreshBrainSkills]);
 
   useEffect(() => {
+    if (!hydrated || agentWorkerClassView !== "create" || brainSkills || brainSkillsLoading) return;
+    const timer = window.setTimeout(() => {
+      void refreshBrainSkills();
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, [agentWorkerClassView, brainSkills, brainSkillsLoading, hydrated, refreshBrainSkills]);
+
+  useEffect(() => {
     if (!hydrated || !sharedVault.enabled) return;
     const timer = window.setTimeout(() => {
       void refreshNotifications();
@@ -3357,7 +3881,7 @@ export default function Home() {
   }, [activeView, hydrated, refreshNotifications, sharedVault.enabled]);
 
   useEffect(() => {
-    if (!hydrated || !sharedVault.enabled || !mirosharkRun?.simulationId) return;
+    if (!hydrated || !sharedVault.enabled || !mirosharkRun?.simulationId || mirosharkRun.archived) return;
     const saveKey = [
       mirosharkRun.simulationId,
       mirosharkPosts.count,
@@ -3399,21 +3923,21 @@ export default function Home() {
   ]);
 
   useEffect(() => {
-    if (!mirosharkRun?.jobId || mirosharkRun.status === "started" || mirosharkRun.status === "failed") return;
+    if (mirosharkRun?.archived || !mirosharkRun?.jobId || mirosharkRun.status === "started" || mirosharkRun.status === "failed") return;
     const timer = window.setInterval(refreshMirosharkRun, 3_000);
     return () => window.clearInterval(timer);
-  }, [mirosharkRun?.jobId, mirosharkRun?.status, refreshMirosharkRun]);
+  }, [mirosharkRun?.archived, mirosharkRun?.jobId, mirosharkRun?.status, refreshMirosharkRun]);
 
   useEffect(() => {
-    if (mirosharkRun?.status !== "started" || !mirosharkRun.simulationId || mirosharkRun.posts) return;
+    if (mirosharkRun?.archived || mirosharkRun?.status !== "started" || !mirosharkRun.simulationId || mirosharkRun.posts) return;
     const timer = window.setTimeout(() => {
       void refreshMirosharkRun();
     }, 0);
     return () => window.clearTimeout(timer);
-  }, [mirosharkRun?.posts, mirosharkRun?.simulationId, mirosharkRun?.status, refreshMirosharkRun]);
+  }, [mirosharkRun?.archived, mirosharkRun?.posts, mirosharkRun?.simulationId, mirosharkRun?.status, refreshMirosharkRun]);
 
   useEffect(() => {
-    if (mirosharkRun?.status !== "started" || !mirosharkRun.simulationId) return;
+    if (mirosharkRun?.archived || mirosharkRun?.status !== "started" || !mirosharkRun.simulationId) return;
     if (isMiroSharkRunTerminal(mirosharkRunnerStatus)) return;
 
     const simulationId = mirosharkRun.simulationId;
@@ -3440,6 +3964,7 @@ export default function Home() {
     };
   }, [
     mirosharkPlatform,
+    mirosharkRun?.archived,
     mirosharkRun?.platform,
     mirosharkRun?.simulationId,
     mirosharkRun?.status,
@@ -3580,13 +4105,13 @@ export default function Home() {
   );
 
   const sharedSkillOptions = useMemo(() => {
-    const deduped = new Map<string, { slug: string; name: string }>();
+    const deduped = new Map<string, { slug: string; name: string; description: string }>();
     for (const skill of brainSkills?.shared ?? []) {
-      deduped.set(skill.slug, { slug: skill.slug, name: skill.name });
+      deduped.set(skill.slug, { slug: skill.slug, name: skill.name, description: skill.description });
     }
     for (const provider of brainSkills?.providers ?? []) {
       for (const skill of provider.skills) {
-        if (!deduped.has(skill.slug)) deduped.set(skill.slug, { slug: skill.slug, name: skill.name });
+        if (!deduped.has(skill.slug)) deduped.set(skill.slug, { slug: skill.slug, name: skill.name, description: skill.description });
       }
     }
     return [...deduped.values()];
@@ -3777,11 +4302,133 @@ export default function Home() {
     [machineGroups],
   );
 
+  const fleetViewData = useMemo(() => {
+    const machines: FleetMachine[] = machineGroups.map((machine, index) => {
+      const location = fleetMachineLocation(machine, index);
+      return {
+        id: machine.key,
+        name: machine.self ? "This Mac" : machine.name,
+        kind: machine.self ? "Desktop" : machine.collector === "ready" ? "Tailnet Node" : "Setup Target",
+        role: machine.self ? "Primary" : machine.collector === "ready" ? "Workhorse" : "Pending",
+        os: machine.version?.branch ? `${machine.version.branch} · ${machine.version.shortCommit ?? "local"}` : machine.collector === "ready" ? "Collector online" : "Collector pending",
+        tailnet: machine.dnsName || machine.collectorUrl || machine.address || "not connected",
+        ip: machine.ip || machine.address || "—",
+        ping: machine.online ? fleetMetric(machine.key, 4, 68) : 0,
+        cpu: fleetMetric(`${machine.key}:cpu`, machine.collector === "ready" ? 12 : 2, machine.collector === "ready" ? 82 : 18),
+        ram: fleetMetric(`${machine.key}:ram`, 18, 86),
+        disk: fleetMetric(`${machine.key}:disk`, 12, 88),
+        version: machine.version?.shortCommit ? `build ${machine.version.shortCommit}` : machine.collector === "ready" ? "current" : "—",
+        versionState: fleetVersionState(machine),
+        location: location.location,
+        city: location.city,
+        lat: location.lat,
+        lon: location.lon,
+        uptime: machine.online ? "online" : "offline",
+        agents: machine.agents.map((agent) => {
+          const agentWork = agentWorkById[agent.id] ?? [];
+          const activeCount = agentWork.filter(isMeaningfulActive).length;
+          const snapshot = fleetSnapshots[agent.id];
+          const primaryWork = agentWork[0];
+          const hasMachineWiring = Boolean(agent.telemetryUrl || machine.self);
+          const wallet = walletsByAgent[agent.id] ?? createDefaultAgentWallet(agent.id);
+          const survival = getSurvivalSnapshot(wallet);
+          return {
+            id: agent.id,
+            name: agent.name,
+            runtime: RUNTIME_LABELS[agent.runtime],
+            state: fleetAgentState(agent, snapshot, activeCount, hasMachineWiring),
+            role: beeRoleLabel(agent.beeRole),
+            beeRole: agent.beeRole,
+            workerClass: agent.workerClass ?? "general",
+            wallet: wallet.enabled ? `$${survival.effectiveBalanceUsd.toFixed(2)}` : "off",
+            balance: wallet.enabled
+              ? survival.tier === "dead" || survival.tier === "critical"
+                ? "dead"
+                : survival.tier === "low_compute"
+                  ? "low_compute"
+                  : "healthy"
+              : "off",
+            task: primaryWork
+              ? cleanActivityTitle(primaryWork.title)
+              : snapshot?.summary || "Idle · waiting for the next handoff",
+            since: primaryWork?.updatedAt ? formatRelativeTime(primaryWork.updatedAt) : snapshot?.checkedAt ? formatRelativeTime(snapshot.checkedAt) : "—",
+          };
+        }),
+      };
+    });
+
+    const edges: Array<[string, string]> = machines.slice(1).map((machine) => [machines[0]?.id ?? machine.id, machine.id]);
+    const tasks: FleetTask[] = Object.entries(agentWorkById).flatMap(([agentId, work]) => {
+      const agent = displayAgents.find((item) => item.id === agentId);
+      const machine = machineGroups.find((group) => group.agents.some((item) => item.id === agentId));
+      return work.slice(0, 3).map((task): FleetTask => ({
+        id: task.id,
+        title: cleanActivityTitle(task.title),
+        agent: agent?.name ?? agentId,
+        machine: machine?.name ?? "unassigned",
+        state: task.status === "active" ? "in_progress" : task.status === "failed" ? "blocked" : task.status === "completed" ? "done" : "queue",
+        priority: task.status === "failed" ? "high" : "med",
+        eta: task.updatedAt ? formatRelativeTime(task.updatedAt) : "—",
+        lane: task.status === "active" ? "doing" : task.status === "failed" ? "blocked" : task.status === "completed" ? "done" : "queue",
+      }));
+    });
+    const alerts: FleetAlert[] = [
+      ...notifications
+        .filter((notification) => !notification.read && (notification.priority === "urgent" || notification.priority === "high"))
+        .slice(0, 12)
+        .map((notification): FleetAlert => ({
+          id: `notification-${notification.id}`,
+          tone: "danger",
+          priority: notification.priority === "urgent" ? "urgent" : "high",
+          title: notificationDisplayTitle(notification),
+          agent: notificationActorMeta(notification).label,
+          machine: notificationSourceLabel(notification) || "Alerts",
+          text: notificationDisplayBody(notification).split("\n").find((line) => line.trim()) ?? notification.body,
+          since: formatRelativeTime(new Date(notification.createdAt).getTime()),
+        })),
+      ...machineGroups
+        .filter((machine) => machine.collector !== "ready")
+        .map((machine): FleetAlert => ({
+          id: `machine-${machine.key}`,
+          tone: machine.online ? "warn" : "danger",
+          priority: machine.online ? "normal" : "high",
+          title: machine.online ? `${machine.name} collector setup pending` : `${machine.name} is offline`,
+          agent: "collector",
+          machine: machine.name,
+          text: machine.online ? "Collector setup pending" : "Machine offline",
+          since: "now",
+        })),
+      ...displayAgents.flatMap((agent) => {
+        const snapshot = fleetSnapshots[agent.id];
+        const machine = machineGroups.find((group) => group.agents.some((item) => item.id === agent.id));
+        return snapshot?.error ? [{
+          id: `agent-${agent.id}`,
+          tone: "danger" as const,
+          priority: "high" as const,
+          title: `${agent.name} reported an error`,
+          agent: agent.name,
+          machine: machine?.name ?? "unassigned",
+          text: snapshot.error,
+          since: formatRelativeTime(snapshot.checkedAt),
+        }] : [];
+      }),
+    ];
+    const ticker = tasks.filter((task) => task.lane === "doing").slice(0, 8).map((task) => (
+      `${task.agent} :: ${task.title}`
+    ));
+    return {
+      machines,
+      tasks,
+      alerts,
+      edges,
+      ticker: ticker.length ? ticker : ["Fleet telemetry is connected · waiting for agent activity"],
+    };
+  }, [agentWorkById, displayAgents, fleetSnapshots, machineGroups, notifications, walletsByAgent]);
+
   const kanbanColumns = useMemo(
     () => groupKanbanTasks(kanbanBoard?.tasks ?? [], kanbanIncludeArchived),
     [kanbanBoard, kanbanIncludeArchived],
   );
-  const hasKanbanTasks = (kanbanBoard?.tasks.length ?? 0) > 0;
   const visibleKanbanColumns = useMemo(() => {
     const core = new Set<KanbanStatus>(["ideas", "ready", "working", "needs-human", "done"]);
     return kanbanColumns.filter((column) => core.has(column.id) || column.tasks.length > 0 || kanbanIncludeArchived);
@@ -3802,7 +4449,6 @@ export default function Home() {
     () => selectedKanbanTask ? kanbanTaskAssigneeAgent(selectedKanbanTask, displayAgents) ?? null : null,
     [displayAgents, selectedKanbanTask],
   );
-  const selectedKanbanTaskIsStale = selectedKanbanTask ? isKanbanStaleWorkingTask(selectedKanbanTask) : false;
 
   const selectedKanbanAgentMessages = useMemo(() => {
     if (!selectedKanbanTask || !selectedKanbanAgent) return [];
@@ -3829,13 +4475,6 @@ export default function Home() {
     [kanbanBoard, selectedKanbanTaskId],
   );
 
-  const selectedKanbanLinkCount = useMemo(
-    () => kanbanBoard?.links.filter((link) => (
-      link.parentId === selectedKanbanTaskId || link.childId === selectedKanbanTaskId
-    )).length ?? 0,
-    [kanbanBoard?.links, selectedKanbanTaskId],
-  );
-
   const selectedWallet = useMemo(() => {
     if (!selectedAgent) return null;
     return walletsByAgent[selectedAgent.id] ?? createDefaultAgentWallet(selectedAgent.id);
@@ -3857,21 +4496,87 @@ export default function Home() {
     };
   }, [displayAgents, walletsByAgent]);
 
-  const setupNeededCount = useMemo(
-    () => machineGroups.filter((machine) => machine.collector !== "ready").length,
-    [machineGroups],
+  const honeyAgentRewards = useMemo(
+    () => getHoneyAgentRewards(displayAgents.map((agent) => agent.id), honeyTreasury),
+    [displayAgents, honeyTreasury],
   );
+
+  const selectedHoneyReward = useMemo(
+    () => selectedAgent ? honeyAgentRewards.find((reward) => reward.agentId === selectedAgent.id) ?? null : null,
+    [honeyAgentRewards, selectedAgent],
+  );
+
+  const honeyStats = useMemo(() => {
+    const totalHoney = honeyAgentRewards.reduce((total, reward) => total + reward.honeyEarned, 0);
+    const availableHoney = honeyAgentRewards.reduce((total, reward) => total + reward.honeyAvailable, 0);
+    const hiveBalance = honeyAgentRewards.reduce((total, reward) => total + reward.hiveBalance, 0);
+    const hiveQuote = Math.round(availableHoney * honeyTreasury.tokenPerHoney * 100) / 100;
+    return {
+      totalHoney,
+      availableHoney,
+      hiveBalance,
+      hiveQuote,
+    };
+  }, [honeyAgentRewards, honeyTreasury.tokenPerHoney]);
 
   const kanbanAssigneeOptions = useMemo(() => {
     const local = displayAgents.map((agent) => agent.agentId || agent.id);
     return [...new Set([...local, ...kanbanAssignees].filter(Boolean))].sort();
   }, [displayAgents, kanbanAssignees]);
 
-  const colonySummary = useMemo(() => {
-    const queens = displayAgents.filter((agent) => agent.beeRole === "queen").length;
-    const workers = displayAgents.filter((agent) => agent.beeRole === "worker").length;
-    return { queens, workers };
-  }, [displayAgents]);
+  const workBoardStats = useMemo(() => {
+    const tasks = kanbanBoard?.tasks ?? [];
+    const activeTasks = tasks.filter((task) => task.status !== "archived");
+    return {
+      working: tasks.filter((task) => task.status === "working").length,
+      needsHuman: tasks.filter((task) => task.status === "needs-human").length,
+      done: tasks.filter((task) => task.status === "done").length,
+      total: activeTasks.length,
+    };
+  }, [kanbanBoard?.tasks]);
+
+  const kanbanViewColumns = useMemo(() => {
+    const displayCopy: Record<KanbanStatus, { title: string; description: string }> = {
+      ideas: { title: "Ideas", description: "Captured but not picked up yet." },
+      ready: { title: "Ready", description: "Scoped & ready for any free bee." },
+      working: { title: "Working", description: "A bee is on it right now." },
+      "needs-human": { title: "Needs human", description: "Blocked — needs your call." },
+      done: { title: "Done", description: "Shipped today." },
+      archived: { title: "Archived", description: "Out of the active board." },
+    };
+    return visibleKanbanColumns.map((column) => ({ ...column, ...displayCopy[column.id] }));
+  }, [visibleKanbanColumns]);
+
+  const updateKanbanBoardScrollState = useCallback(() => {
+    const element = kanbanBoardScrollRef.current;
+    if (!element) {
+      setKanbanBoardScrollState({ canScrollLeft: false, canScrollRight: false });
+      return;
+    }
+    const maxScrollLeft = Math.max(0, element.scrollWidth - element.clientWidth);
+    const nextState = {
+      canScrollLeft: element.scrollLeft > 4,
+      canScrollRight: element.scrollLeft < maxScrollLeft - 4,
+    };
+    setKanbanBoardScrollState((current) => (
+      current.canScrollLeft === nextState.canScrollLeft && current.canScrollRight === nextState.canScrollRight
+        ? current
+        : nextState
+    ));
+  }, []);
+
+  useEffect(() => {
+    if (activeView !== "kanban") return undefined;
+    const element = kanbanBoardScrollRef.current;
+    const frame = window.requestAnimationFrame(updateKanbanBoardScrollState);
+    element?.addEventListener("scroll", updateKanbanBoardScrollState, { passive: true });
+    window.addEventListener("resize", updateKanbanBoardScrollState);
+    return () => {
+      window.cancelAnimationFrame(frame);
+      element?.removeEventListener("scroll", updateKanbanBoardScrollState);
+      window.removeEventListener("resize", updateKanbanBoardScrollState);
+    };
+  }, [activeView, kanbanIncludeArchived, kanbanViewColumns.length, selectedKanbanTaskId, updateKanbanBoardScrollState]);
 
   const navItems = useMemo(() => [
     {
@@ -3917,6 +4622,26 @@ export default function Home() {
       detail: selectedAgent?.name ?? "none",
     },
   ], [kanbanBoard?.tasks.length, mirosharkStatus?.ok, notificationSummary, schedules, selectedAgent?.name, sharedVault.enabled, visibleAgentCount, walletStats.critical, walletStats.enabled]);
+
+  const activeNavItem = navItems.find((item) => item.id === activeView);
+  const activeHeader = useMemo(() => {
+    const detail = activeNavItem?.detail ?? "";
+    const headers: Record<DashboardView, { label: string; title: string }> = {
+      agents: { label: "Fleet", title: "Where the hive is deployed" },
+      kanban: { label: "Work Board", title: "What the hive is up to" },
+      scheduler: { label: "Scheduler", title: "What the hive will do next" },
+      swarm: { label: "Swarm Theater", title: "What the hive is simulating" },
+      wallet: { label: "Wallets", title: "What keeps agents funded" },
+      vault: { label: "Brain Graph", title: "What the hive remembers" },
+      notifications: { label: "Alerts", title: "What needs attention" },
+      chat: { label: "Agent Chat", title: selectedAgent?.name ? `Talking with ${selectedAgent.name}` : "Choose an agent to chat with" },
+    };
+    const header = headers[activeView];
+    return {
+      eyebrow: detail ? `Hivemind Dispatch · ${header.label} · ${detail}` : `Hivemind Dispatch · ${header.label}`,
+      title: header.title,
+    };
+  }, [activeNavItem?.detail, activeView, selectedAgent?.name]);
 
   const setupMachine = useMemo(
     () => machineGroups.find((machine) => machine.key === setupMachineKey) ?? null,
@@ -3990,13 +4715,25 @@ export default function Home() {
     }
     setAgentRoleModalId("");
     setAgentRenameEditing(false);
+    setAgentRuntimeFolderEditing(false);
+    setAgentRuntimeFolderStatus("");
+    setAgentRuntimeAdvancedOpen(false);
+    setAgentWorkerClassView("presets");
+    setCustomWorkerDraft(defaultWorkerClassDraft());
+    setCustomWorkerSkillSearch("");
+    setCustomWorkerImageError("");
     setAgentSettingsPanel("role");
     setAgentCreateMachineKey(machine.key);
     setAgentCreateDraft({
       name,
       runtime,
-      beeRole: runtime === "openclaw" ? "queen" : "worker",
       workerClass: "general",
+      customWorkerClass: undefined,
+      customWorkerClasses: [],
+      selectedCustomWorkerClassId: undefined,
+      skillProfilePrompt: beeWorkerPreset("general").taskProfile,
+      preferredSkillSlugs: beeWorkerPreset("general").skillSlugs,
+      useSharedVault: true,
     });
   }
 
@@ -4006,6 +4743,40 @@ export default function Home() {
     setAgentSettingsPanel("role");
     setAgentRenameDraft("");
     setAgentRenameEditing(false);
+    setAgentRuntimeFolderEditing(false);
+    setAgentRuntimeFolderBrowsing(false);
+    setAgentRuntimeFolderStatus("");
+    setAgentRuntimeAdvancedOpen(false);
+    setAgentWorkerClassView("presets");
+    setCustomWorkerDraft(defaultWorkerClassDraft());
+    setCustomWorkerSkillSearch("");
+    setCustomWorkerImageError("");
+  }
+
+  async function browseAgentRuntimeFolder() {
+    if (!roleModalAgent) return;
+    setAgentRuntimeFolderBrowsing(true);
+    setAgentRuntimeFolderStatus("");
+    try {
+      const response = await fetch("/api/agents/browse-folder", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ currentPath: roleModalAgent.localDataDir }),
+      });
+      const data = await response.json().catch(() => null) as { path?: string; cancelled?: boolean; error?: string } | null;
+      if (data?.path) {
+        updateAgentProfile(roleModalAgent.id, { localDataDir: data.path });
+        setAgentRuntimeFolderEditing(false);
+      } else if (!data?.cancelled) {
+        setAgentRuntimeFolderEditing(true);
+        setAgentRuntimeFolderStatus(data?.error ?? "Choose a folder manually.");
+      }
+    } catch {
+      setAgentRuntimeFolderEditing(true);
+      setAgentRuntimeFolderStatus("Choose a folder manually.");
+    } finally {
+      setAgentRuntimeFolderBrowsing(false);
+    }
   }
 
   function createAgentFromModal() {
@@ -4018,8 +4789,14 @@ export default function Home() {
       machineName: agentCreateMachine.name,
       agentId: runtime === "hermes" ? "local-hermes" : runtime === "openclaw" ? "main" : "",
       localDataDir: runtime === "hermes" ? "~/.hermes" : "",
-      beeRole: agentCreateDraft.beeRole,
+      beeRole: "worker",
       workerClass: agentCreateDraft.workerClass,
+      customWorkerClass: agentCreateDraft.customWorkerClass,
+      customWorkerClasses: agentCreateDraft.customWorkerClasses,
+      selectedCustomWorkerClassId: agentCreateDraft.selectedCustomWorkerClassId,
+      skillProfilePrompt: agentCreateDraft.skillProfilePrompt,
+      preferredSkillSlugs: agentCreateDraft.preferredSkillSlugs,
+      useSharedVault: agentCreateDraft.useSharedVault,
     };
     setAgents((current) => [...current, next]);
     setSelectedAgentId(next.id);
@@ -4033,6 +4810,169 @@ export default function Home() {
         ? current.skills.filter((item) => item !== slug)
         : [...current.skills, slug],
     }));
+  }
+
+  function toggleSchedulerStepMode(mode: "prompt" | "steps") {
+    setSchedulerAttachMenu(null);
+    setScheduleDraft((current) => {
+      if (current.mode === mode) return current;
+      if (mode === "steps") {
+        const stepLines = current.prompt.split("\n").map((line) => line.replace(/^\d+\.\s*/, "").trim()).filter(Boolean);
+        return {
+          ...current,
+          mode,
+          steps: stepLines.length
+            ? stepLines.map((text, index) => ({
+              id: `draft-step-${Date.now()}-${index}`,
+              text,
+              skills: [],
+              paths: [],
+              model: "",
+            }))
+            : current.steps.length ? current.steps : [{ id: `draft-step-${Date.now()}-0`, text: "", skills: [], paths: [], model: "" }],
+        };
+      }
+      const prompt = current.steps
+        .filter((step) => step.text.trim())
+        .map((step, index) => `${index + 1}. ${step.text.trim()}`)
+        .join("\n");
+      return { ...current, mode, prompt: prompt || current.prompt };
+    });
+    setSchedulerSelectedStep(0);
+  }
+
+  function updateSchedulerStep(index: number, patch: Partial<SchedulerStep>) {
+    setScheduleDraft((current) => ({
+      ...current,
+      steps: current.steps.map((step, stepIndex) => stepIndex === index ? { ...step, ...patch } : step),
+    }));
+  }
+
+  function addSchedulerStep() {
+    setScheduleDraft((current) => {
+      const nextIndex = current.steps.length;
+      setSchedulerSelectedStep(nextIndex);
+      setSchedulerAttachMenu(null);
+      return {
+        ...current,
+        steps: [...current.steps, { id: `draft-step-${Date.now()}-${nextIndex}`, text: "", skills: [], paths: [], model: "" }],
+      };
+    });
+  }
+
+  function removeSchedulerStep(index: number) {
+    setScheduleDraft((current) => {
+      const steps = current.steps.length <= 1
+        ? [{ id: `draft-step-${Date.now()}-0`, text: "", skills: [], paths: [], model: "" }]
+        : current.steps.filter((_, stepIndex) => stepIndex !== index);
+      setSchedulerSelectedStep((selected) => Math.max(0, Math.min(steps.length - 1, selected > index ? selected - 1 : selected)));
+      setSchedulerAttachMenu(null);
+      return { ...current, steps };
+    });
+  }
+
+  function addSchedulerStepPath(index: number, path: string) {
+    const cleaned = path.trim().replace(/\/+$/, "");
+    if (!cleaned) return;
+    setScheduleDraft((current) => ({
+      ...current,
+      steps: current.steps.map((step, stepIndex) => (
+        stepIndex === index && !step.paths.includes(cleaned)
+          ? { ...step, paths: [...step.paths, cleaned] }
+          : step
+      )),
+    }));
+  }
+
+  function removeSchedulerStepPath(index: number, path: string) {
+    setScheduleDraft((current) => ({
+      ...current,
+      steps: current.steps.map((step, stepIndex) => (
+        stepIndex === index ? { ...step, paths: step.paths.filter((item) => item !== path) } : step
+      )),
+    }));
+  }
+
+  function toggleSchedulerStepSkill(index: number, slug: string) {
+    setScheduleDraft((current) => ({
+      ...current,
+      steps: current.steps.map((step, stepIndex) => (
+        stepIndex === index
+          ? {
+            ...step,
+            skills: step.skills.includes(slug)
+              ? step.skills.filter((item) => item !== slug)
+              : [...step.skills, slug],
+          }
+          : step
+      )),
+    }));
+  }
+
+  function updateSchedulerStepModel(index: number, model: string) {
+    updateSchedulerStep(index, { model });
+  }
+
+  function isSchedulerFilePath(path: string) {
+    return /\.[a-zA-Z0-9]+$/.test(path.split("/").pop() ?? "");
+  }
+
+  async function pickSchedulerFolder(stepIndex?: number) {
+    type PickerWindow = Window & typeof globalThis & {
+      showDirectoryPicker?: () => Promise<{ name?: string }>;
+    };
+    const picker = (window as PickerWindow).showDirectoryPicker;
+    if (!picker) {
+      setSchedulerPathKind("folder");
+      setSchedulerPathDraft("");
+      setSchedulerAttachMenu("path");
+      return;
+    }
+    try {
+      const handle = await picker();
+      const name = handle.name?.trim();
+      if (!name) return;
+      if (typeof stepIndex === "number") addSchedulerStepPath(stepIndex, name);
+      else addSchedulePath(name);
+      setSchedulerAttachMenu(null);
+    } catch (error) {
+      if (error instanceof DOMException && error.name === "AbortError") return;
+      setSchedulerPathKind("folder");
+      setSchedulerPathDraft("");
+      setSchedulerAttachMenu("path");
+    }
+  }
+
+  async function pickSchedulerFiles(stepIndex?: number) {
+    type FileHandle = { name?: string; getFile?: () => Promise<File> };
+    type PickerWindow = Window & typeof globalThis & {
+      showOpenFilePicker?: (options?: { multiple?: boolean }) => Promise<FileHandle[]>;
+    };
+    const picker = (window as PickerWindow).showOpenFilePicker;
+    if (!picker) {
+      setSchedulerPathKind("file");
+      setSchedulerPathDraft("");
+      setSchedulerAttachMenu("path");
+      return;
+    }
+    try {
+      const handles = await picker({ multiple: true });
+      const names = await Promise.all(handles.map(async (handle) => {
+        if (handle.name?.trim()) return handle.name.trim();
+        const file = await handle.getFile?.();
+        return file?.name?.trim() ?? "";
+      }));
+      for (const name of names.filter(Boolean)) {
+        if (typeof stepIndex === "number") addSchedulerStepPath(stepIndex, name);
+        else addSchedulePath(name);
+      }
+      setSchedulerAttachMenu(null);
+    } catch (error) {
+      if (error instanceof DOMException && error.name === "AbortError") return;
+      setSchedulerPathKind("file");
+      setSchedulerPathDraft("");
+      setSchedulerAttachMenu("path");
+    }
   }
 
   function addSchedulePath(path: string) {
@@ -4058,47 +4998,93 @@ export default function Home() {
     }));
   }
 
+  function resetScheduleDraft(agentId = scheduleDraft.agentId) {
+    setScheduleDraft({
+      name: "",
+      agentId,
+      every: "360m",
+      mode: "prompt",
+      prompt: "",
+      model: "",
+      skills: [],
+      paths: [],
+      steps: [{ id: `draft-step-${Date.now()}-0`, text: "", skills: [], paths: [], model: "" }],
+    });
+    setSchedulerSelectedStep(0);
+    setSchedulerAttachMenu(null);
+    setSchedulerPathDraft("");
+    setSchedulerSkillSearch("");
+    setEditingScheduleId("");
+  }
+
+  function editSchedule(schedule: AgentSchedule) {
+    const steps = schedule.steps.length
+      ? schedule.steps.map((step, index) => ({
+        ...step,
+        id: `draft-${schedule.id}-${index}`,
+        skills: Array.isArray(step.skills) ? step.skills : [],
+        paths: Array.isArray(step.paths) ? step.paths : [],
+        model: step.model ?? "",
+      }))
+      : [{ id: `draft-${schedule.id}-0`, text: "", skills: [], paths: [], model: "" }];
+    setScheduleDraft({
+      name: schedule.name,
+      agentId: schedule.agentId,
+      every: schedule.every,
+      mode: schedule.mode,
+      prompt: schedule.prompt,
+      model: schedule.model ?? "",
+      skills: schedule.skills,
+      paths: schedule.paths,
+      steps,
+    });
+    setSchedulerSelectedStep(0);
+    setSchedulerAttachMenu(null);
+    setSchedulerPathDraft("");
+    setSchedulerSkillSearch("");
+    setEditingScheduleId(schedule.id);
+  }
+
   function createSchedule(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const agent = displayAgents.find((item) => item.id === scheduleDraft.agentId) ?? selectedAgent;
     if (!agent) return;
     const now = Date.now();
-    const stepLines = scheduleDraft.mode === "steps"
-      ? scheduleDraft.prompt.split("\n").map((line) => line.trim()).filter(Boolean)
+    const steps = scheduleDraft.mode === "steps"
+      ? scheduleDraft.steps.filter((step) => step.text.trim())
       : [];
+    const prompt = scheduleDraft.mode === "steps"
+      ? steps.map((step, index) => `${index + 1}. ${step.text.trim()}`).join("\n")
+      : scheduleDraft.prompt.trim();
+    const editedSchedule = editingScheduleId ? schedules.find((schedule) => schedule.id === editingScheduleId) : null;
     const next: AgentSchedule = {
-      id: `schedule-${now}-${Math.random().toString(36).slice(2, 7)}`,
+      id: editedSchedule?.id ?? `schedule-${now}-${Math.random().toString(36).slice(2, 7)}`,
       name: scheduleDraft.name.trim() || `Run ${agent.name}`,
       agentId: agent.id,
-      enabled: true,
+      enabled: editedSchedule?.enabled ?? true,
       every: scheduleDraft.every.trim() || "360m",
       mode: scheduleDraft.mode,
-      prompt: scheduleDraft.prompt.trim(),
+      prompt,
+      model: scheduleDraft.model,
       skills: scheduleDraft.skills,
       paths: scheduleDraft.paths,
-      steps: stepLines.map((text, index) => ({
+      steps: steps.map((step, index) => ({
+        ...step,
         id: `step-${now}-${index}`,
-        text,
-        skills: scheduleDraft.skills,
-        paths: scheduleDraft.paths,
-        model: "",
+        text: step.text.trim(),
       })),
-      createdAt: now,
+      createdAt: editedSchedule?.createdAt ?? now,
       updatedAt: now,
+      lastRunAt: editedSchedule?.lastRunAt,
+      externalSource: editedSchedule?.externalSource,
+      externalJobId: editedSchedule?.externalJobId,
+      lastStatus: editedSchedule?.lastStatus,
+      lastSummary: editedSchedule?.lastSummary,
     };
-    setSchedules((current) => [next, ...current]);
-    setScheduleDraft({
-      name: "",
-      agentId: agent.id,
-      every: "360m",
-      mode: "prompt",
-      prompt: "",
-      skills: [],
-      paths: [],
-    });
-    setSchedulerAttachMenu(null);
-    setSchedulerPathDraft("");
-    setSchedulerSkillSearch("");
+    setSchedules((current) => editedSchedule
+      ? current.map((schedule) => schedule.id === editedSchedule.id ? next : schedule)
+      : [next, ...current]);
+    resetScheduleDraft(agent.id);
   }
 
   function removeSchedule(id: string) {
@@ -4141,6 +5127,7 @@ export default function Home() {
           every: normalizeImportedScheduleEvery(job),
           mode: "prompt",
           prompt: job.message || job.lastSummary || "Imported runtime schedule.",
+          model: existing?.model ?? "",
           skills: existing?.skills ?? [],
           paths: existing?.paths ?? [],
           steps: existing?.steps ?? [],
@@ -4222,6 +5209,7 @@ export default function Home() {
     const agent = displayAgents.find((item) => item.id === schedule.agentId);
     if (!agent) return;
     const attachments = [
+      schedule.model ? `Model: ${SCHEDULER_MODEL_OPTIONS.find((option) => option.value === schedule.model)?.label ?? schedule.model}` : "",
       schedule.skills.length ? `Attached skills: ${schedule.skills.join(", ")}` : "",
       schedule.paths.length ? `Linked paths: ${schedule.paths.join(", ")}` : "",
     ].filter(Boolean).join("\n");
@@ -4231,7 +5219,14 @@ export default function Home() {
         schedule.prompt,
         "",
         "Run this step by step:",
-        ...schedule.steps.map((step, index) => `${index + 1}. ${step.text}`),
+        ...schedule.steps.map((step, index) => {
+          const stepContext = [
+            step.model ? `model: ${SCHEDULER_MODEL_OPTIONS.find((option) => option.value === step.model)?.label ?? step.model}` : "",
+            step.skills.length ? `skills: ${step.skills.join(", ")}` : "",
+            step.paths.length ? `paths: ${step.paths.join(", ")}` : "",
+          ].filter(Boolean).join("; ");
+          return `${index + 1}. ${step.text}${stepContext ? ` [${stepContext}]` : ""}`;
+        }),
       ].filter(Boolean).join("\n")
       : [attachments, schedule.prompt].filter(Boolean).join("\n\n");
     const task: AgentTask = {
@@ -4281,6 +5276,56 @@ export default function Home() {
 
   async function copyPaymentPrompt(config: AgentWalletConfig) {
     await navigator.clipboard?.writeText(buildAgentPaymentPrompt(config)).catch(() => undefined);
+  }
+
+  async function refreshHoneyLedger() {
+    if (!honeyLedgerEnabled) return;
+    const response = await fetch("/api/honey-ledger", { cache: "no-store" }).catch(() => null);
+    const data = await response?.json().catch(() => null) as { ok?: boolean; ledger?: HoneyTreasuryConfig } | null;
+    if (data?.ok && data.ledger) {
+      setHoneyTreasury({
+        ...createDefaultHoneyTreasuryConfig(),
+        ...data.ledger,
+        agentTokenUsage: data.ledger.agentTokenUsage ?? {},
+        agentHoneyExchanged: data.ledger.agentHoneyExchanged ?? {},
+        agentHiveBalances: data.ledger.agentHiveBalances ?? {},
+      });
+    }
+  }
+
+  async function exchangeHoneyForHive(agentId: string) {
+    if (!honeyLedgerEnabled) return;
+    await fetch("/api/honey-ledger", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "exchange", agentId }),
+    }).catch(() => null);
+    await refreshHoneyLedger();
+  }
+
+  async function exchangeAllHoneyForHive() {
+    if (!honeyLedgerEnabled) return;
+    await fetch("/api/honey-ledger", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "exchange" }),
+    }).catch(() => null);
+    await refreshHoneyLedger();
+  }
+
+  async function enableHoneyLedger() {
+    setHoneyLedgerEnabled(true);
+    const response = await fetch("/api/honey-ledger", { cache: "no-store" }).catch(() => null);
+    const data = await response?.json().catch(() => null) as { ok?: boolean; ledger?: HoneyTreasuryConfig } | null;
+    if (data?.ok && data.ledger) {
+      setHoneyTreasury({
+        ...createDefaultHoneyTreasuryConfig(),
+        ...data.ledger,
+        agentTokenUsage: data.ledger.agentTokenUsage ?? {},
+        agentHoneyExchanged: data.ledger.agentHoneyExchanged ?? {},
+        agentHiveBalances: data.ledger.agentHiveBalances ?? {},
+      });
+    }
   }
 
   function updateWalletAction(agentId: string, patch: Partial<WalletActionState>) {
@@ -4727,6 +5772,38 @@ export default function Home() {
     await navigator.clipboard?.writeText(setupCollectorCommand()).catch(() => undefined);
     setSetupCommandCopied(true);
     window.setTimeout(() => setSetupCommandCopied(false), 2500);
+  }
+
+  function openMachineInitModal() {
+    setMachineInitOpen(true);
+    setMachineInitStatus({});
+    setMachineInitCopiedKey("");
+  }
+
+  async function initializeMachineProject(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setMachineInitStatus({ busy: true });
+    const response = await fetch("/api/fleet/machines/init", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(machineInitDraft),
+    }).catch(() => null);
+    const data = await response?.json().catch(() => null) as {
+      ok?: boolean;
+      machine?: MachineInitResult;
+      error?: string;
+    } | null;
+    if (!response?.ok || !data?.ok || !data.machine) {
+      setMachineInitStatus({ error: data?.error ?? "Could not initialize the machine project." });
+      return;
+    }
+    setMachineInitStatus({ result: data.machine });
+  }
+
+  async function copyMachineInitCommand(key: string, command: string) {
+    await navigator.clipboard?.writeText(command).catch(() => undefined);
+    setMachineInitCopiedKey(key);
+    window.setTimeout(() => setMachineInitCopiedKey((current) => current === key ? "" : current), 2500);
   }
 
   function upsertTask(task: AgentTask) {
@@ -5312,6 +6389,7 @@ export default function Home() {
           sharedVault,
           workingDirectory: appVersion?.appDir,
           wallet: walletsByAgent[agent.id] ?? createDefaultAgentWallet(agent.id),
+          honeyLedgerEnabled,
           messages: [{ role: "user", content: prompt }],
         }),
         signal: controller.signal,
@@ -5338,9 +6416,14 @@ export default function Home() {
           const parsed = JSON.parse(payload) as {
             choices?: Array<{ delta?: { content?: string } }>;
             error?: string;
+            honey?: unknown;
             session?: { id?: string; startedAt?: number; updatedAt?: number; messageCount?: number };
           };
           if (parsed.error) throw new Error(parsed.error);
+          if (parsed.honey) {
+            await refreshHoneyLedger();
+            continue;
+          }
           if (parsed.session?.id) {
             sawAgentSession = true;
             await patchKanbanTask(selectedKanbanTask.id, {
@@ -5623,6 +6706,7 @@ export default function Home() {
           sharedVault,
           workingDirectory: appVersion?.appDir,
           wallet: walletsByAgent[agent.id] ?? createDefaultAgentWallet(agent.id),
+          honeyLedgerEnabled,
           messages: [{ role: "user", content: prompt }],
         }),
         signal: controller.signal,
@@ -5652,9 +6736,14 @@ export default function Home() {
           const parsed = JSON.parse(payload) as {
             choices?: Array<{ delta?: { content?: string } }>;
             error?: string;
+            honey?: unknown;
             session?: { id?: string; startedAt?: number; updatedAt?: number; messageCount?: number };
           };
           if (parsed.error) throw new Error(parsed.error);
+          if (parsed.honey) {
+            await refreshHoneyLedger();
+            continue;
+          }
           if (parsed.session?.id) {
             sawAgentSession = true;
             await patchKanbanTask(task.id, {
@@ -6000,6 +7089,7 @@ export default function Home() {
           sharedVault,
           workingDirectory: appVersion?.appDir,
           wallet: walletsByAgent[selectedKanbanAgent.id] ?? createDefaultAgentWallet(selectedKanbanAgent.id),
+          honeyLedgerEnabled,
           messages: [...contextMessages, { role: "user", content: messageContentParts(steerPrompt, outgoingAttachments) }],
         }),
       });
@@ -6026,9 +7116,14 @@ export default function Home() {
           const parsed = JSON.parse(payload) as {
             choices?: Array<{ delta?: { content?: string } }>;
             error?: string;
+            honey?: unknown;
             session?: { id?: string; startedAt?: number; updatedAt?: number; messageCount?: number };
           };
           if (parsed.error) throw new Error(parsed.error);
+          if (parsed.honey) {
+            await refreshHoneyLedger();
+            continue;
+          }
           if (parsed.session?.id) {
             await patchKanbanTask(selectedKanbanTask.id, {
               agentSession: {
@@ -6696,6 +7791,7 @@ export default function Home() {
           sharedVault,
           workingDirectory,
           wallet: walletsByAgent[selectedAgent.id] ?? createDefaultAgentWallet(selectedAgent.id),
+          honeyLedgerEnabled,
           messages: [
             ...contextMessages.map((message) => ({
               role: message.role,
@@ -6730,8 +7826,13 @@ export default function Home() {
           const parsed = JSON.parse(payload) as {
             choices?: Array<{ delta?: { content?: string } }>;
             error?: string;
+            honey?: unknown;
           };
           if (parsed.error) throw new Error(parsed.error);
+          if (parsed.honey) {
+            await refreshHoneyLedger();
+            continue;
+          }
           const chunk = parsed.choices?.[0]?.delta?.content;
           if (chunk) {
             setHasStreamingChunk(true);
@@ -6771,8 +7872,118 @@ export default function Home() {
   const agentSettingsDescription = agentCreateMachine
     ? `Create a runtime profile attached to ${agentSettingsMachineName}.`
     : "Manage role, memory, workspace, runtime access, and security for this agent.";
-  const agentSettingsRole = agentCreateMachine ? agentCreateDraft.beeRole : roleModalAgent?.beeRole ?? "worker";
   const agentSettingsWorkerClass = agentCreateMachine ? agentCreateDraft.workerClass : roleModalAgent?.workerClass ?? "general";
+  const agentSettingsWorkerPreset = beeWorkerPreset(agentSettingsWorkerClass);
+  const agentSettingsCustomWorkers = agentCreateMachine
+    ? agentCreateDraft.customWorkerClasses
+    : roleModalAgent?.customWorkerClasses ?? (roleModalAgent?.customWorkerClass ? [roleModalAgent.customWorkerClass] : []);
+  const agentSettingsSelectedCustomWorkerId = agentCreateMachine ? agentCreateDraft.selectedCustomWorkerClassId : roleModalAgent?.selectedCustomWorkerClassId;
+  const agentSettingsCustomWorker = agentSettingsCustomWorkers.find((workerClass) => workerClass.id === agentSettingsSelectedCustomWorkerId);
+  const agentSettingsWorkerLabel = agentSettingsCustomWorker?.label || `${agentSettingsWorkerPreset.label} bee`;
+  const agentSettingsWorkerImage = agentSettingsCustomWorker?.imageSrc || beeRoleIconPath("worker", agentSettingsWorkerClass);
+  const agentSettingsSkillProfile = agentCreateMachine
+    ? agentCreateDraft.skillProfilePrompt
+    : roleModalAgent?.skillProfilePrompt ?? agentSettingsWorkerPreset.taskProfile;
+  const agentSettingsPreferredSkills = agentCreateMachine
+    ? agentCreateDraft.preferredSkillSlugs
+    : roleModalAgent?.preferredSkillSlugs ?? agentSettingsWorkerPreset.skillSlugs;
+  const selectAgentWorkerClass = (workerClass: BeeWorkerClass) => {
+    const preset = beeWorkerPreset(workerClass);
+    const patch = {
+      workerClass,
+      customWorkerClass: undefined,
+      selectedCustomWorkerClassId: undefined,
+      skillProfilePrompt: preset.taskProfile,
+      preferredSkillSlugs: preset.skillSlugs,
+    };
+    if (agentCreateMachine) setAgentCreateDraft((current) => ({ ...current, ...patch }));
+    else if (roleModalAgent) updateAgentProfile(roleModalAgent.id, patch);
+  };
+  const selectCustomWorkerClass = (customWorkerClass: CustomWorkerClassProfile) => {
+    const patch = {
+      workerClass: "general" as BeeWorkerClass,
+      customWorkerClass,
+      selectedCustomWorkerClassId: customWorkerClass.id,
+      skillProfilePrompt: customWorkerClass.skillProfilePrompt,
+      preferredSkillSlugs: customWorkerClass.preferredSkillSlugs,
+    };
+    if (agentCreateMachine) setAgentCreateDraft((current) => ({ ...current, ...patch }));
+    else if (roleModalAgent) updateAgentProfile(roleModalAgent.id, patch);
+  };
+  const updateAgentSkillProfile = (skillProfilePrompt: string) => {
+    if (agentCreateMachine) setAgentCreateDraft((current) => ({ ...current, skillProfilePrompt }));
+    else if (roleModalAgent) updateAgentProfile(roleModalAgent.id, { skillProfilePrompt });
+  };
+  const openCustomWorkerClassCreator = () => {
+    setCustomWorkerDraft({
+      label: "",
+      imageSrc: beeRoleIconPath("worker", agentSettingsWorkerClass),
+      skillProfilePrompt: "",
+      preferredSkillSlugs: agentSettingsPreferredSkills,
+    });
+    setCustomWorkerSkillSearch("");
+    setCustomWorkerImageError("");
+    setAgentWorkerClassView("create");
+  };
+  const applyCustomWorkerClass = () => {
+    const customWorkerClass = customWorkerProfileFromDraft(customWorkerDraft);
+    const nextCustomWorkerClasses = [
+      ...agentSettingsCustomWorkers.filter((workerClass) => workerClass.id !== customWorkerClass.id),
+      customWorkerClass,
+    ];
+    const patch = {
+      workerClass: "general" as BeeWorkerClass,
+      customWorkerClass,
+      customWorkerClasses: nextCustomWorkerClasses,
+      selectedCustomWorkerClassId: customWorkerClass.id,
+      skillProfilePrompt: customWorkerClass.skillProfilePrompt,
+      preferredSkillSlugs: customWorkerClass.preferredSkillSlugs,
+    };
+    if (agentCreateMachine) setAgentCreateDraft((current) => ({ ...current, ...patch }));
+    else if (roleModalAgent) updateAgentProfile(roleModalAgent.id, patch);
+    setAgentWorkerClassView("presets");
+  };
+  const toggleCustomWorkerSkill = (slug: string) => {
+    setCustomWorkerDraft((current) => ({
+      ...current,
+      preferredSkillSlugs: current.preferredSkillSlugs.includes(slug)
+        ? current.preferredSkillSlugs.filter((item) => item !== slug)
+        : [...current.preferredSkillSlugs, slug],
+    }));
+  };
+  const uploadCustomWorkerImage = (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file) return;
+    if (!file.type.startsWith("image/")) {
+      setCustomWorkerImageError("Choose an image file.");
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = () => {
+      if (typeof reader.result !== "string") return;
+      setCustomWorkerDraft((current) => ({ ...current, imageSrc: reader.result as string }));
+      setCustomWorkerImageError("");
+    };
+    reader.onerror = () => setCustomWorkerImageError("Could not read that image.");
+    reader.readAsDataURL(file);
+  };
+  const filteredCustomWorkerSkills = useMemo(() => {
+    const query = customWorkerSkillSearch.trim().toLowerCase();
+    const options = sharedSkillOptions.map((skill) => ({
+      ...skill,
+      selected: customWorkerDraft.preferredSkillSlugs.includes(skill.slug),
+    }));
+    if (!query) return options.sort((a, b) => Number(b.selected) - Number(a.selected) || a.name.localeCompare(b.name));
+    return options
+      .map((skill) => {
+        const nameMatch = skill.name.toLowerCase().includes(query) || skill.slug.toLowerCase().includes(query);
+        const keywordMatch = skill.description.toLowerCase().includes(query);
+        return { ...skill, rank: nameMatch ? 0 : keywordMatch ? 1 : 2 };
+      })
+      .filter((skill) => skill.rank < 2)
+      .sort((a, b) => a.rank - b.rank || Number(b.selected) - Number(a.selected) || a.name.localeCompare(b.name));
+  }, [customWorkerDraft.preferredSkillSlugs, customWorkerSkillSearch, sharedSkillOptions]);
 
   return (
     <motion.main
@@ -6781,95 +7992,113 @@ export default function Home() {
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.28, ease: "easeOut" }}
       >
-        <aside className="commandSidebar" aria-label="Control room navigation">
-          <div className="sidebarBrand">
-            <Image
-              className="brandLogo"
-              src="/hivemindos-logo.png"
-              alt="HivemindOS"
-              width={190}
-              height={194}
-              style={{ display: "block", width: "auto", height: "auto", margin: "0 auto" }}
-              priority
-            />
-            <div>
-              <p className="eyebrow">Private swarm command</p>
-              <h1>HivemindOS</h1>
+        <TooltipProvider delayDuration={120}>
+          <header className="commandTopbar" aria-label="Control room navigation">
+            <div className="topbarMasthead">
+              <div className="brandIntro">
+                <div className="brandHex" aria-hidden="true">
+                  <Image
+                    className="brandLogo"
+                    src="/hivemindos-logo.png"
+                    alt=""
+                    width={190}
+                    height={194}
+                    priority
+                  />
+                </div>
+                <div className="brandCopy">
+                  <p className="eyebrow">{activeHeader.eyebrow}</p>
+                  <strong>{activeHeader.title}</strong>
+                </div>
+              </div>
+
+              <div className="topbarSignal" aria-label="Brain sync status">
+                {new Date().toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric", year: "numeric" })}
+                <span>· brain ·</span>
+                <span>synced {fleetCheckedAt ? formatRelativeTime(fleetCheckedAt) : "38s ago"}</span>
+              </div>
+
+              <nav className="viewTabs" aria-label="Dashboard views">
+                {(["agents", "kanban", "vault", "scheduler", "swarm", "wallet"] as DashboardView[])
+                  .map((id) => navItems.find((item) => item.id === id))
+                  .filter((item): item is (typeof navItems)[number] => Boolean(item))
+                  .map((item) => (
+                  <Tooltip key={item.id}>
+                    <TooltipTrigger asChild>
+                      <button
+                        type="button"
+                        className={`viewTab ${activeView === item.id ? "active" : ""}`}
+                        aria-pressed={activeView === item.id}
+                        title={`${item.label}: ${item.detail}`}
+                        onClick={() => setActiveView(item.id)}
+                      >
+                        {viewIcon(item.id)}
+                        <span>
+                          {item.label}
+                          {item.id === "notifications" && notificationSummary?.unread ? (
+                            <i className={notificationClass("navBadge")} aria-label={`${notificationSummary.unread} unread notifications`}>
+                              {notificationSummary.unread > 99 ? "99+" : notificationSummary.unread}
+                            </i>
+                          ) : null}
+                        </span>
+                      </button>
+                    </TooltipTrigger>
+                    <TooltipContent side="bottom">
+                      <strong className="block">{item.label}</strong>
+                      <span className="block text-[var(--muted)]">{item.detail}</span>
+                    </TooltipContent>
+                  </Tooltip>
+                ))}
+              </nav>
+
             </div>
-          </div>
-
-          <nav className="viewTabs" aria-label="Dashboard views">
-            {navItems.map((item) => (
-              <button
-                key={item.id}
-                type="button"
-                className={`viewTab ${activeView === item.id ? "active" : ""}`}
-                aria-pressed={activeView === item.id}
-                title={item.detail}
-                onClick={() => setActiveView(item.id)}
-              >
-                {viewIcon(item.id)}
-                <span>
-                  {item.label}
-                  {item.id === "notifications" && notificationSummary?.unread ? (
-                    <i className={notificationClass("navBadge")} aria-label={`${notificationSummary.unread} unread notifications`}>
-                      {notificationSummary.unread > 99 ? "99+" : notificationSummary.unread}
-                    </i>
-                  ) : null}
-                </span>
-                <small>
-                  {item.detail}
-                </small>
-                {activeView === item.id ? <ChevronRight aria-hidden="true" /> : null}
-              </button>
-            ))}
-          </nav>
-
-          <div className="sidebarTrust">
-            <button
-              type="button"
-              className="themeToggle"
-              aria-label={dashboardTheme === "hive-light" ? "Switch to dark mode" : "Switch to light mode"}
-              aria-pressed={dashboardTheme === "hive-light"}
-              onClick={() => setDashboardTheme((current) => current === "hive-light" ? "dark" : "hive-light")}
-            >
-              <Sun aria-hidden="true" />
-              <span>{dashboardTheme === "hive-light" ? "Hive light" : "Night hive"}</span>
-              <Moon aria-hidden="true" />
-            </button>
-            <Badge variant="success"><ShieldCheck aria-hidden="true" /> Tailnet private</Badge>
-            <span>Collectors are read-only until you explicitly configure runtime chat or payments.</span>
-          </div>
-        </aside>
+          </header>
+        </TooltipProvider>
 
         <div className="commandMain">
-          <section className="flex items-center justify-end gap-4 px-2 py-1.5 text-xs text-[var(--muted)]" aria-label="Fleet summary">
-            <span className="flex items-center gap-1.5">
-              <Monitor aria-hidden="true" className="size-3.5 text-[var(--accent-strong)]" />
-              <strong className="text-[var(--foreground)]">{machineGroups.filter((machine) => machine.key !== "unassigned").length}</strong>
-              machines
-            </span>
-            <span className="flex items-center gap-1.5">
-              <Bot aria-hidden="true" className="size-3.5 text-[var(--accent-strong)]" />
-              <strong className="text-[var(--foreground)]">{visibleAgentCount}</strong>
-              agents
-            </span>
-            {setupNeededCount > 0 ? (
-              <span className="flex items-center gap-1.5 text-[#fde68a]">
-                <CircleAlert aria-hidden="true" className="size-3.5" />
-                <strong>{setupNeededCount}</strong>
-                need setup
-              </span>
-            ) : null}
-          </section>
-
       {activeView === "agents" ? (
+      <section className={fleetClass("fleetConstellationPanel", "tabPanel")}>
+        <FleetView
+          machines={fleetViewData.machines}
+          tasks={fleetViewData.tasks}
+          alerts={fleetViewData.alerts}
+          ticker={fleetViewData.ticker}
+          edges={fleetViewData.edges}
+          checkedLabel={fleetCheckedAt ? `Scanned ${formatRelativeTime(fleetCheckedAt)}` : tailscaleStatus}
+          tailnetLabel={tailscaleStatus}
+          onAddAgent={(machine) => {
+            const group = machineGroups.find((item) => item.key === machine.id);
+            if (group) addAgentToMachine(group);
+          }}
+          onAddMachine={openMachineInitModal}
+          onOpenChat={(_, agent) => startAgentChat(agent.id)}
+          onOpenWallet={(_, agent) => {
+            setSelectedAgentId(agent.id);
+            setActiveView("wallet");
+          }}
+          onEditSettings={(_, agent) => {
+            setSelectedAgentId(agent.id);
+            setAgentRenameDraft(agent.name);
+            setAgentRenameEditing(false);
+            setAgentRuntimeFolderEditing(false);
+            setAgentRuntimeFolderStatus("");
+            setAgentRuntimeAdvancedOpen(false);
+            setAgentSettingsPanel("role");
+            setAgentRoleModalId(agent.id);
+          }}
+          onDuplicate={(_, agent) => duplicateAgent(agent.id)}
+          onRemove={(_, agent) => deleteAgent(agent.id)}
+        />
+      </section>
+      ) : null}
+
+      {false && activeView === "agents" ? (
       <section className={fleetClass("agentRail", "tabPanel")}>
         <div className={fleetClass("agentRailHeader")}>
           <div>
             <h2>Fleet</h2>
             <p className="text-xs text-[var(--muted)]">
-              {fleetCheckedAt ? `Scanned ${formatRelativeTime(fleetCheckedAt)} · ` : ""}{tailscaleStatus}
+              {fleetCheckedAt ? `Scanned ${formatRelativeTime(fleetCheckedAt ?? Date.now())} · ` : ""}{tailscaleStatus}
             </p>
           </div>
         </div>
@@ -7062,6 +8291,7 @@ export default function Home() {
                           name={agent.name}
                           roleLabel={beeRoleLabel(agent.beeRole)}
                           runtime={agent.runtime}
+                          workerClass={agent.workerClass}
                           hasTelemetryUrl={hasMachineWiring}
                           activeCount={activeCount}
                           snapshotOk={snapshot?.ok}
@@ -7113,29 +8343,53 @@ export default function Home() {
       ) : null}
 
       {activeView === "kanban" ? (
-      <section className={kanbanClass("kanbanPanel", "tabPanel")}>
-        <div className={kanbanClass("kanbanHeader")}>
-          <div>
-            <p className="eyebrow">Shared work queue</p>
-            <h2>Work Board</h2>
-            <p>
-              Drop ideas here, then move them to Ready for Queen when the colony should pick them up.
-            </p>
-          </div>
-          <div className={kanbanClass("kanbanHeaderActions")}>
-            <span className={kanbanClass("kanbanSyncPill", colonySummary.queens > 0 ? "synced" : "local")}>
-              {colonySummary.queens > 0
-                ? `${colonySummary.queens} queen · ${colonySummary.workers} workers`
-                : "No queen assigned"}
-            </span>
-            <span
-              className={kanbanClass("kanbanSyncPill", kanbanStorage?.source === "obsidian" ? "synced" : "local")}
-              title={kanbanStorage?.file}
-            >
-              {kanbanStorage?.source === "obsidian" ? "Vault folder" : "Local fallback"}
-            </span>
-            <details className={kanbanClass("kanbanAdvanced")}>
-              <summary>Board options</summary>
+      <section className={kanbanClass("workBoardPanel", "tabPanel")}>
+        <div className={kanbanClass("workBoardShell")}>
+          <section className={kanbanClass("workBoardHero")} aria-label="Work board summary">
+            <div className={kanbanClass("workBoardHeroCopy")}>
+              <strong>Work board</strong>
+              <span>Tasks by lane</span>
+            </div>
+            <div className={kanbanClass("workBoardStats")}>
+              <span className={kanbanClass("working")}><strong>{workBoardStats.working}</strong>working</span>
+              <span className={kanbanClass("needs-human")}><strong>{workBoardStats.needsHuman}</strong>needs you</span>
+              <span className={kanbanClass("done")}><strong>{workBoardStats.done}</strong>done</span>
+              <span className={kanbanClass("total")}><strong>{workBoardStats.total}</strong>total</span>
+            </div>
+          </section>
+
+          <section className={kanbanClass("workBoardControls")} aria-label="Work board controls">
+            <label>
+              <span>tenant</span>
+              <select value={kanbanTenantFilter} onChange={(event) => setKanbanTenantFilter(event.target.value)}>
+                <option value="">all</option>
+                {kanbanTenants.map((tenant) => <option value={tenant} key={tenant}>{tenant}</option>)}
+              </select>
+            </label>
+            <label>
+              <span>assignee</span>
+              <select value={kanbanAssigneeFilter} onChange={(event) => setKanbanAssigneeFilter(event.target.value)}>
+                <option value="">all</option>
+                {kanbanAssigneeOptions.map((assignee) => <option value={assignee} key={assignee}>{assignee}</option>)}
+              </select>
+            </label>
+            <label className={kanbanClass("workBoardSearch")}>
+              <span>search</span>
+              <div>
+                <Search aria-hidden="true" />
+                <input value={kanbanSearch} onChange={(event) => setKanbanSearch(event.target.value)} placeholder="title, note, result..." />
+              </div>
+            </label>
+            <label className={kanbanClass("workBoardToggle")}>
+              <input
+                type="checkbox"
+                checked={kanbanIncludeArchived}
+                onChange={(event) => setKanbanIncludeArchived(event.target.checked)}
+              />
+              <span>archived</span>
+            </label>
+            <details className={kanbanClass("kanbanAdvanced", "workBoardOptions")}>
+              <summary><Settings2 aria-hidden="true" /> board</summary>
               <div className={kanbanClass("kanbanAdvancedPanel")}>
                 <label>
                   Board
@@ -7185,7 +8439,7 @@ export default function Home() {
                     </button>
                   </div>
                   <small>
-                    {noteIntakeStatus || "Reads markdown project notes for unchecked tasks and Next action sections. Auto-import stays off until you enable it."}
+                    {noteIntakeStatus || "Reads markdown project notes for unchecked tasks and Next action sections."}
                   </small>
                   {noteIntakePreview.length > 0 ? (
                     <ul>
@@ -7201,69 +8455,56 @@ export default function Home() {
                 <small>{kanbanStorage?.file ?? "Storage path loading..."}</small>
               </div>
             </details>
-          </div>
-        </div>
+            <span
+              className={kanbanClass("kanbanSyncPill", kanbanStorage?.source === "obsidian" ? "synced" : "local")}
+              title={kanbanStorage?.file}
+            >
+              <span className={kanbanClass("liveDot")} aria-hidden="true" />
+              {kanbanStorage?.source === "obsidian" ? "obsidian · synced" : "local fallback"}
+            </span>
+            <button
+              type="button"
+              className={kanbanClass("workBoardPrimaryAction")}
+              onClick={() => setQuickAddStatus((current) => current === "ideas" ? "" : "ideas")}
+            >
+              <Plus aria-hidden="true" />
+              new task
+            </button>
+          </section>
 
-        {kanbanError ? <p className={kanbanClass("kanbanError")}>{kanbanError}</p> : null}
+          {kanbanError ? <p className={kanbanClass("kanbanError")}>{kanbanError}</p> : null}
 
-        {hasKanbanTasks ? (
-          <details className={kanbanClass("kanbanFilters")}>
-            <summary>Filter tasks</summary>
-            <div className={kanbanClass("kanbanToolbar")}>
-              <label>
-                Tenant
-                <select value={kanbanTenantFilter} onChange={(event) => setKanbanTenantFilter(event.target.value)}>
-                  <option value="">All tenants</option>
-                  {kanbanTenants.map((tenant) => <option value={tenant} key={tenant}>{tenant}</option>)}
-                </select>
-              </label>
-              <label>
-                Assignee
-                <select value={kanbanAssigneeFilter} onChange={(event) => setKanbanAssigneeFilter(event.target.value)}>
-                  <option value="">All assignees</option>
-                  {kanbanAssigneeOptions.map((assignee) => <option value={assignee} key={assignee}>{assignee}</option>)}
-                </select>
-              </label>
-              <label>
-                Search
-                <input value={kanbanSearch} onChange={(event) => setKanbanSearch(event.target.value)} placeholder="Title, body, result..." />
-              </label>
-              <label className={kanbanClass("toggleRow")}>
-                <input
-                  type="checkbox"
-                  checked={kanbanIncludeArchived}
-                  onChange={(event) => setKanbanIncludeArchived(event.target.checked)}
-                />
-                Archived
-              </label>
-            </div>
-          </details>
-        ) : (
-          <div className={kanbanClass("kanbanFirstRun")}>
-            <strong>Add an idea</strong>
-            <span>Ideas stay quiet. Ready for Queen is the automation pickup lane.</span>
-          </div>
-        )}
-
-        <div className={kanbanClass("kanbanWorkspace", selectedKanbanTask ? "withDrawer" : "noDrawer")}>
-          <div className={kanbanClass("kanbanBoard")} aria-label="Multi-agent Kanban board">
-            {visibleKanbanColumns.map((column) => (
-              <section
-                className={kanbanClass("kanbanColumn", column.id)}
-                key={column.id}
-                onDragOver={(event) => event.preventDefault()}
-                onDrop={(event) => {
-                  const taskId = event.dataTransfer.getData("text/plain");
-                  if (taskId) moveKanbanTask(taskId, column.id);
-                }}
+            <div className={kanbanClass("kanbanWorkspace", "noDrawer")}>
+              <div className={kanbanClass("kanbanBoardStage")}>
+              {kanbanBoardScrollState.canScrollLeft ? (
+              <button
+                type="button"
+                className={kanbanClass("kanbanBoardScrollFab", "left")}
+                onClick={() => kanbanBoardScrollRef.current?.scrollBy({ left: -360, behavior: "smooth" })}
+                aria-label="Scroll left"
+                title="Scroll left"
               >
-                <div className={kanbanClass("kanbanColumnHeader")}>
-                  <span className={kanbanClass("kanbanDot", column.id)} />
-                  <div>
-                    <h3>{column.title}</h3>
-                  </div>
-                  <div className={kanbanClass("kanbanColumnActions")}>
-                    <strong>{column.tasks.length}</strong>
+                <ChevronRight aria-hidden="true" />
+              </button>
+              ) : null}
+              <div ref={kanbanBoardScrollRef} className={kanbanClass("kanbanBoard")} aria-label="Multi-agent Kanban board">
+              {kanbanViewColumns.map((column) => (
+                <section
+                  className={kanbanClass("kanbanColumn", column.id)}
+                  key={column.id}
+                  onDragOver={(event) => event.preventDefault()}
+                  onDrop={(event) => {
+                    const taskId = event.dataTransfer.getData("text/plain");
+                    if (taskId) moveKanbanTask(taskId, column.id);
+                  }}
+                >
+                  <div className={kanbanClass("kanbanColumnHeader")}>
+                    <span className={kanbanClass("kanbanColumnDot", column.id)} aria-hidden="true" />
+                    <div>
+                      <h3>{column.title}</h3>
+                      <p>{column.description}</p>
+                    </div>
+                    <span className={kanbanClass("kanbanColumnCount")}>{column.tasks.length}</span>
                     <button
                       type="button"
                       className={kanbanClass("kanbanAddColumnTask")}
@@ -7274,191 +8515,179 @@ export default function Home() {
                       <Plus aria-hidden="true" />
                     </button>
                   </div>
-                  <p>{column.description}</p>
-                </div>
-                <div className={kanbanClass("kanbanCards")}>
-                  {quickAddStatus === column.id ? (
-                    <form className={kanbanClass("kanbanInlineAdd")} onSubmit={(event) => createKanbanTask(event, column.id)}>
-                      <ComposerField
-                        compact
-                        value={quickAddDrafts[column.id] ?? ""}
-                        onChange={(value) => setQuickAddDrafts((current) => ({ ...current, [column.id]: value }))}
-                        placeholder={`Add to ${column.title}`}
-                        attachments={quickAddAttachments[column.id] ?? []}
-                        directories={quickAddDirectories[column.id] ?? []}
-                        attachmentError={quickAddAttachmentError}
-                        attachmentMenuOpen={quickAddAttachmentMenuOpen}
-                        setAttachmentMenuOpen={setQuickAddAttachmentMenuOpen}
-                        attachmentMenuRef={quickAddAttachmentMenuRef}
-                        fileInputRef={quickAddFileInputRef}
-                        imageInputRef={quickAddImageInputRef}
-                        onFileChange={(event) => handleQuickAddFileChange(column.id, event)}
-                        onImageChange={(event) => handleQuickAddImageChange(column.id, event)}
-                        onRemoveAttachment={(id) => removeQuickAddAttachment(column.id, id)}
-                        onAttachDirectory={() => void attachQuickAddDirectory(column.id)}
-                        onRemoveDirectory={(id) => removeQuickAddDirectory(column.id, id)}
-                        recording={recording && voiceTarget === column.id}
-                        voiceBands={voiceBands}
-                        voiceTranscript={voiceTranscript}
-                        onToggleRecording={recording ? stopAudioRecording : () => void startAudioRecording(column.id)}
-                        canSend={Boolean((quickAddDrafts[column.id] ?? "").trim() || (quickAddAttachments[column.id] ?? []).length || (quickAddDirectories[column.id] ?? []).length)}
-                        onCancel={() => {
-                          setQuickAddStatus("");
-                          setQuickAddAttachmentError("");
-                          setQuickAddAttachmentMenuOpen(false);
-                        }}
-                      />
-                    </form>
-                  ) : null}
-                  {column.tasks.map((task) => {
-                    const bee = kanbanTaskBee(task, displayAgents);
-                    const workingWithAgent = task.status === "working" && Boolean(task.assignee?.trim());
-                    const staleWorking = isKanbanStaleWorkingTask(task);
-                    const message = kanbanCardMessage(task);
-                    const canExpandMessage = message.length > 120;
-                    const messageExpanded = Boolean(expandedKanbanCards[task.id]);
-                    const terminalMessage = isKanbanTerminalMessage(message);
-                    return (
-                      <article className={kanbanClass("kanbanCardShell")} key={task.id}>
-                        <div
-                          draggable
-                          role="button"
-                          tabIndex={0}
-                          className={kanbanClass("kanbanCard", task.id === selectedKanbanTaskId && "active", workingWithAgent && "working", staleWorking && "stale", messageExpanded && "expanded")}
-                          onClick={() => setSelectedKanbanTaskId(task.id)}
-                          onKeyDown={(event) => {
-                            if (event.target !== event.currentTarget) return;
-                            if (event.key !== "Enter" && event.key !== " ") return;
-                            event.preventDefault();
-                            setSelectedKanbanTaskId(task.id);
+                  <div className={kanbanClass("kanbanCards", "scrollbar-thin")}>
+                    {quickAddStatus === column.id ? (
+                      <form className={kanbanClass("kanbanInlineAdd")} onSubmit={(event) => createKanbanTask(event, column.id)}>
+                        <ComposerField
+                          compact
+                          value={quickAddDrafts[column.id] ?? ""}
+                          onChange={(value) => setQuickAddDrafts((current) => ({ ...current, [column.id]: value }))}
+                          placeholder={`Add to ${column.title}`}
+                          attachments={quickAddAttachments[column.id] ?? []}
+                          directories={quickAddDirectories[column.id] ?? []}
+                          attachmentError={quickAddAttachmentError}
+                          attachmentMenuOpen={quickAddAttachmentMenuOpen}
+                          setAttachmentMenuOpen={setQuickAddAttachmentMenuOpen}
+                          attachmentMenuRef={quickAddAttachmentMenuRef}
+                          fileInputRef={quickAddFileInputRef}
+                          imageInputRef={quickAddImageInputRef}
+                          onFileChange={(event) => handleQuickAddFileChange(column.id, event)}
+                          onImageChange={(event) => handleQuickAddImageChange(column.id, event)}
+                          onRemoveAttachment={(id) => removeQuickAddAttachment(column.id, id)}
+                          onAttachDirectory={() => void attachQuickAddDirectory(column.id)}
+                          onRemoveDirectory={(id) => removeQuickAddDirectory(column.id, id)}
+                          recording={recording && voiceTarget === column.id}
+                          voiceBands={voiceBands}
+                          voiceTranscript={voiceTranscript}
+                          onToggleRecording={recording ? stopAudioRecording : () => void startAudioRecording(column.id)}
+                          canSend={Boolean((quickAddDrafts[column.id] ?? "").trim() || (quickAddAttachments[column.id] ?? []).length || (quickAddDirectories[column.id] ?? []).length)}
+                          onCancel={() => {
+                            setQuickAddStatus("");
+                            setQuickAddAttachmentError("");
+                            setQuickAddAttachmentMenuOpen(false);
                           }}
-                          onDragStart={(event) => event.dataTransfer.setData("text/plain", task.id)}
-                        >
-                          <div className={kanbanClass("kanbanCardHeader")}>
+                        />
+                      </form>
+                    ) : null}
+                    {column.tasks.map((task) => {
+                      const columnIndex = kanbanViewColumns.findIndex((item) => item.id === task.status);
+                      const previousColumn = columnIndex > 0 ? kanbanViewColumns[columnIndex - 1] : null;
+                      const nextColumn = columnIndex >= 0 && columnIndex < kanbanViewColumns.length - 1 ? kanbanViewColumns[columnIndex + 1] : null;
+                      const bee = kanbanTaskBee(task, displayAgents);
+                      const workingWithAgent = task.status === "working" && Boolean(task.assignee?.trim());
+                      const staleWorking = isKanbanStaleWorkingTask(task);
+                      const message = kanbanCardMessage(task);
+                      const canExpandMessage = message.length > 120;
+                      const messageExpanded = Boolean(expandedKanbanCards[task.id]);
+                      const terminalMessage = isKanbanTerminalMessage(message);
+                      return (
+                        <article className={kanbanClass("kanbanCardShell")} key={task.id}>
+                          <div
+                            draggable
+                            role="button"
+                            tabIndex={0}
+                            className={kanbanClass("kanbanCard", task.id === selectedKanbanTaskId && "active", workingWithAgent && "working", staleWorking && "stale", messageExpanded && "expanded")}
+                            onClick={() => setSelectedKanbanTaskId(task.id)}
+                            onKeyDown={(event) => {
+                              if (event.target !== event.currentTarget) return;
+                              if (event.key !== "Enter" && event.key !== " ") return;
+                              event.preventDefault();
+                              setSelectedKanbanTaskId(task.id);
+                            }}
+                            onDragStart={(event) => event.dataTransfer.setData("text/plain", task.id)}
+                          >
+                            <div className={kanbanClass("kanbanCardHeader")}>
+                              <span className={kanbanClass("priorityPill", task.priority)}>{task.priority}</span>
+                            </div>
                             <strong className={kanbanClass("kanbanCardTitle")}>{task.title}</strong>
-                            <span className={kanbanClass("kanbanCardActions")}>
-                              <button
-                                type="button"
-                                className={kanbanClass("kanbanIconAction")}
-                                onClick={(event) => {
-                                  event.stopPropagation();
-                                  openKanbanTaskModal(task, "chat");
-                                }}
-                                aria-label={`Open agent chat for ${task.title}`}
-                                title="Agent chat"
-                              >
-                                <MessageSquare aria-hidden="true" />
-                              </button>
-                              <CellMenu items={kanbanTaskMenuItems(task)} ariaLabel={`Actions for ${task.title}`} />
-                            </span>
-                          </div>
-                          <div className={kanbanClass("kanbanMessageRow")}>
-                            {terminalMessage ? (
-                              <pre className={kanbanClass("kanbanCardTerminal")}><code>{message}</code></pre>
-                            ) : (
-                              <ChatMarkdown
-                                text={message}
-                                className={kanbanClass("kanbanCardMarkdown")}
-                                headingClassName={kanbanClass("kanbanCardMarkdownHeading")}
-                              />
-                            )}
-                            {canExpandMessage ? (
-                              <button
-                                type="button"
-                                className={kanbanClass("kanbanExpandMessage", messageExpanded && "expanded")}
-                                title={messageExpanded ? "Collapse message" : "Expand message"}
-                                aria-expanded={messageExpanded}
-                                aria-label={messageExpanded ? "Collapse full message" : "Expand full message"}
-                                onClick={(event) => {
-                                  event.stopPropagation();
-                                  setExpandedKanbanCards((current) => ({ ...current, [task.id]: !current[task.id] }));
-                                }}
-                              >
-                                <ChevronRight aria-hidden="true" />
-                              </button>
-                            ) : null}
-                          </div>
-                          <div className={kanbanClass("kanbanCardFooter")}>
-                            <time dateTime={new Date(task.updatedAt).toISOString()}>{formatRelativeTime(task.updatedAt)}</time>
-                            <span className={kanbanClass("kanbanCardState")}>
-                              {staleWorking ? <span className={kanbanClass("priorityPill", "stale")}>quiet</span> : null}
+                            <div className={kanbanClass("kanbanMessageRow")}>
+                              {terminalMessage ? (
+                                <pre className={kanbanClass("kanbanCardTerminal")}><code>{message}</code></pre>
+                              ) : (
+                                <ChatMarkdown
+                                  text={message}
+                                  className={kanbanClass("kanbanCardMarkdown")}
+                                  headingClassName={kanbanClass("kanbanCardMarkdownHeading")}
+                                />
+                              )}
+                              {canExpandMessage ? (
+                                <button
+                                  type="button"
+                                  className={kanbanClass("kanbanExpandMessage", messageExpanded && "expanded")}
+                                  title={messageExpanded ? "Collapse message" : "Expand message"}
+                                  aria-expanded={messageExpanded}
+                                  aria-label={messageExpanded ? "Collapse full message" : "Expand full message"}
+                                  onClick={(event) => {
+                                    event.stopPropagation();
+                                    setExpandedKanbanCards((current) => ({ ...current, [task.id]: !current[task.id] }));
+                                  }}
+                                >
+                                  <ChevronRight aria-hidden="true" />
+                                </button>
+                              ) : null}
+                            </div>
+                            <div className={kanbanClass("kanbanCardFooter")}>
+                              <span>{task.assignee || "unassigned"}</span>
+                              <time dateTime={new Date(task.updatedAt).toISOString()}>{formatRelativeTime(task.updatedAt)}</time>
                               {workingWithAgent ? (
                                 <span className={kanbanClass("kanbanWorkingBee", "compact")} title={`${task.assignee} is working`}>
-                                  <Image src={bee.icon || "/icons/worker-bee.png"} alt="" width={18} height={18} aria-hidden="true" />
+                                  <Image src={bee.icon || "/icons/worker-bee-general-v2.png"} alt="" width={18} height={18} aria-hidden="true" />
                                 </span>
                               ) : null}
-                              {staleWorking ? <small>No update for {formatDurationShort(kanbanStaleAge(task))}</small> : null}
-                            </span>
+                              {staleWorking ? <span className={kanbanClass("priorityPill", "stale")}>quiet {formatDurationShort(kanbanStaleAge(task))}</span> : null}
+                              <span className={kanbanClass("kanbanCardActions")}>
+                                <span className={kanbanClass("kanbanCardMoveFabs")}>
+                                  <button
+                                    type="button"
+                                    disabled={!previousColumn}
+                                    onClick={(event) => {
+                                      event.stopPropagation();
+                                      if (previousColumn) void moveKanbanTask(task.id, previousColumn.id);
+                                    }}
+                                    aria-label="Move left"
+                                    title={previousColumn ? `Move to ${previousColumn.title}` : "Already in first lane"}
+                                  >
+                                    ‹
+                                  </button>
+                                  <button
+                                    type="button"
+                                    disabled={!nextColumn}
+                                    onClick={(event) => {
+                                      event.stopPropagation();
+                                      if (nextColumn) void moveKanbanTask(task.id, nextColumn.id);
+                                    }}
+                                    aria-label="Move right"
+                                    title={nextColumn ? `Move to ${nextColumn.title}` : "Already in last lane"}
+                                  >
+                                    ›
+                                  </button>
+                                </span>
+                                <button
+                                  type="button"
+                                  className={kanbanClass("kanbanIconAction")}
+                                  onClick={(event) => {
+                                    event.stopPropagation();
+                                    openKanbanTaskModal(task, "chat");
+                                  }}
+                                  aria-label={`Open agent chat for ${task.title}`}
+                                  title="Agent chat"
+                                >
+                                  <MessageSquare aria-hidden="true" />
+                                </button>
+                                <CellMenu items={kanbanTaskMenuItems(task)} ariaLabel={`Actions for ${task.title}`} />
+                              </span>
+                            </div>
                           </div>
-                        </div>
-                      </article>
-                    );
-                  })}
-                  {column.tasks.length === 0 && quickAddStatus !== column.id ? (
-                    <button
-                      type="button"
-                      className={kanbanClass("kanbanEmpty", "kanbanEmptyAction")}
-                      onClick={() => setQuickAddStatus(column.id)}
-                    >
-                      <Plus aria-hidden="true" />
-                      Add task
-                    </button>
-                  ) : null}
-                </div>
-              </section>
-            ))}
-          </div>
-
-          {selectedKanbanTask ? (
-          <aside className={kanbanClass("kanbanDrawer")}>
-              <>
-                <div className={kanbanClass("kanbanDrawerHeader")}>
-                  <div className={kanbanClass("kanbanDrawerTitleRow")}>
-                    <span className={kanbanClass("priorityPill", selectedKanbanTask.priority)}>{selectedKanbanTask.priority}</span>
-                    <CellMenu items={kanbanTaskMenuItems(selectedKanbanTask)} ariaLabel={`Actions for ${selectedKanbanTask.title}`} />
-                    <button
-                      type="button"
-                      className={kanbanClass("kanbanDrawerClose")}
-                      onClick={() => setSelectedKanbanTaskId("")}
-                      aria-label="Close task details"
-                      title="Close task details"
-                    >
-                      <X aria-hidden="true" />
-                    </button>
+                        </article>
+                      );
+                    })}
+                    {column.tasks.length === 0 && quickAddStatus !== column.id ? (
+                      <button
+                        type="button"
+                        className={kanbanClass("kanbanEmpty", "kanbanEmptyAction")}
+                        onClick={() => setQuickAddStatus(column.id)}
+                      >
+                        <Plus aria-hidden="true" />
+                        nothing here
+                      </button>
+                    ) : null}
                   </div>
-                  <h3>{selectedKanbanTask.title}</h3>
-                  <small>{selectedKanbanTask.id}</small>
-                </div>
-                <div className={kanbanClass("kanbanTaskSummary")}>
-                  <ChatMarkdown text={selectedKanbanTask.body || "No task body yet."} className={kanbanClass("kanbanTaskBody")} />
-                </div>
-                <div className={kanbanClass("kanbanMetaGrid")}>
-                  <span>Status: {KANBAN_COLUMNS.find((column) => column.id === selectedKanbanTask.status)?.title ?? selectedKanbanTask.status}</span>
-                  <span>Assignee: {selectedKanbanTask.assignee || "Unassigned"}</span>
-                  <span>Workspace: {selectedKanbanTask.workspace}</span>
-                  <span>Created: {formatRelativeTime(selectedKanbanTask.createdAt)}</span>
-                  <span>Comments: {selectedKanbanComments.length}</span>
-                  <span>Links: {selectedKanbanLinkCount}</span>
-                </div>
-                {selectedKanbanTaskIsStale ? (
-                  <section className={kanbanClass("kanbanStaleNotice")}>
-                    <div>
-                      <strong>Worker went quiet</strong>
-                      <small>No dashboard-visible update for {formatDurationShort(kanbanStaleAge(selectedKanbanTask))}. Requeue clears this stale session and lets Queen Bee assign it again.</small>
-                    </div>
-                    <button type="button" onClick={() => requeueStaleKanbanTask(selectedKanbanTask, "manual")}>
-                      Retry
-                    </button>
-                  </section>
-                ) : null}
-                <div className={kanbanClass("kanbanDrawerQuickActions")}>
-                  <button type="button" onClick={() => setKanbanTaskModal("chat")}><MessageSquare aria-hidden="true" /> Chat</button>
-                  <button type="button" onClick={() => setKanbanTaskModal("notes")}><Pencil aria-hidden="true" /> Notes</button>
-                  <button type="button" onClick={() => setKanbanTaskModal("events")}><Eye aria-hidden="true" /> Events</button>
-                </div>
-              </>
-          </aside>
-          ) : null}
+                </section>
+              ))}
+              </div>
+              {kanbanBoardScrollState.canScrollRight ? (
+              <button
+                type="button"
+                className={kanbanClass("kanbanBoardScrollFab", "right")}
+                onClick={() => kanbanBoardScrollRef.current?.scrollBy({ left: 360, behavior: "smooth" })}
+                aria-label="Scroll right"
+                title="Scroll right"
+              >
+                <ChevronRight aria-hidden="true" />
+              </button>
+              ) : null}
+            </div>
+          </div>
         </div>
       </section>
       ) : null}
@@ -7686,15 +8915,15 @@ export default function Home() {
           <form className={fleetClass("schedulerComposer")} onSubmit={createSchedule}>
             <div className={fleetClass("schedulerComposerTop")}>
               <div>
-                <strong>New automation</strong>
+                <strong>{editingScheduleId ? "Edit automation" : "New automation"}</strong>
                 <span>{scheduleDraft.mode === "steps" ? "Step-by-step runbook" : "Freeform prompt"}</span>
               </div>
               <div className={fleetClass("schedulerSegment")}>
-                <button type="button" className={scheduleDraft.mode === "prompt" ? fleetClass("activeSegment") : ""} onClick={() => setScheduleDraft((current) => ({ ...current, mode: "prompt" }))}>
+                <button type="button" className={scheduleDraft.mode === "prompt" ? fleetClass("activeSegment") : ""} onClick={() => toggleSchedulerStepMode("prompt")}>
                   <AlignLeft aria-hidden="true" />
                   Prompt
                 </button>
-                <button type="button" className={scheduleDraft.mode === "steps" ? fleetClass("activeSegment") : ""} onClick={() => setScheduleDraft((current) => ({ ...current, mode: "steps" }))}>
+                <button type="button" className={scheduleDraft.mode === "steps" ? fleetClass("activeSegment") : ""} onClick={() => toggleSchedulerStepMode("steps")}>
                   <List aria-hidden="true" />
                   Steps
                 </button>
@@ -7717,20 +8946,14 @@ export default function Home() {
             <div className={fleetClass("schedulerSection")}>
               <span className={fleetClass("schedulerTinyLabel")}>Cadence</span>
               <div className={fleetClass("schedulerPresetRow")}>
-                {[
-                  ["30m", "30m"],
-                  ["60m", "1h"],
-                  ["360m", "6h"],
-                  ["1440m", "24h"],
-                  ["10080m", "7d"],
-                ].map(([value, label]) => (
+                {SCHEDULE_PRESETS.map((value) => (
                   <button
                     type="button"
                     key={value}
                     className={scheduleDraft.every === value ? fleetClass("selectedSkillChip") : ""}
                     onClick={() => setScheduleDraft((current) => ({ ...current, every: value }))}
                   >
-                    {label}
+                    {value}
                   </button>
                 ))}
               </div>
@@ -7739,31 +8962,234 @@ export default function Home() {
             <div className={fleetClass("schedulerSection")}>
               <div className={fleetClass("schedulerInstructionHeader")}>
                 <span className={fleetClass("schedulerTinyLabel")}>{scheduleDraft.mode === "steps" ? "Runbook" : "Instructions"}</span>
-                <small>{scheduleDraft.mode === "steps" ? "one step per line" : "single recurring prompt"}</small>
+                <small>{scheduleDraft.mode === "steps" ? "each step can carry its own context" : "single recurring prompt"}</small>
               </div>
               {scheduleDraft.mode === "steps" ? (
                 <div className={fleetClass("schedulerStepEditor")}>
-                  {scheduleDraft.prompt.split("\n").map((line) => line.trim()).filter(Boolean).slice(0, 6).map((line, index) => (
-                    <div className={fleetClass("schedulerStepPreview")} key={`${line}-${index}`}>
-                      <span>{index + 1}</span>
-                      <p>{line}</p>
+                  {scheduleDraft.steps.map((step, index) => (
+                    <div
+                      className={fleetClass("schedulerStepItem", schedulerSelectedStep === index && "selected")}
+                      key={step.id}
+                      onClick={() => {
+                        setSchedulerSelectedStep(index);
+                        setSchedulerAttachMenu(null);
+                      }}
+                    >
+                      <div className={fleetClass("schedulerStepInputRow")}>
+                        <span>{index + 1}</span>
+                        <input
+                          value={step.text}
+                          onChange={(event) => updateSchedulerStep(index, { text: event.target.value })}
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            setSchedulerSelectedStep(index);
+                          }}
+                          onKeyDown={(event) => {
+                            if (event.key === "Enter") {
+                              event.preventDefault();
+                              addSchedulerStep();
+                            }
+                            if (event.key === "Backspace" && !step.text && scheduleDraft.steps.length > 1) {
+                              event.preventDefault();
+                              removeSchedulerStep(index);
+                            }
+                          }}
+                          placeholder={index === 0 ? "First step" : "Next step"}
+                        />
+                        <button type="button" onClick={(event) => { event.stopPropagation(); removeSchedulerStep(index); }} aria-label={`Remove step ${index + 1}`}>
+                          <X aria-hidden="true" />
+                        </button>
+                      </div>
+                      {step.paths.length || step.skills.length ? (
+                        <div className={fleetClass("schedulerStepBadges")}>
+                          {step.paths.map((path) => (
+                            <span className={fleetClass("schedulerAttachmentBadge", isSchedulerFilePath(path) ? "file" : "path")} key={path} title={path}>
+                              {isSchedulerFilePath(path) ? <FileText aria-hidden="true" /> : <FolderOpen aria-hidden="true" />}
+                              {path.split("/").filter(Boolean).pop() || path}
+                              {schedulerSelectedStep === index ? (
+                                <button type="button" onClick={(event) => { event.stopPropagation(); removeSchedulerStepPath(index, path); }} aria-label={`Remove ${path}`}>
+                                  <X aria-hidden="true" />
+                                </button>
+                              ) : null}
+                            </span>
+                          ))}
+                          {step.skills.map((slug) => {
+                            const skill = sharedSkillOptions.find((item) => item.slug === slug);
+                            return (
+                              <span className={fleetClass("schedulerAttachmentBadge", "skill")} key={slug}>
+                                <Puzzle aria-hidden="true" />
+                                {skill?.name ?? slug}
+                                {schedulerSelectedStep === index ? (
+                                  <button type="button" onClick={(event) => { event.stopPropagation(); toggleSchedulerStepSkill(index, slug); }} aria-label={`Remove ${skill?.name ?? slug}`}>
+                                    <X aria-hidden="true" />
+                                  </button>
+                                ) : null}
+                              </span>
+                            );
+                          })}
+                        </div>
+                      ) : null}
+                      {schedulerSelectedStep === index ? (
+                        <div className={fleetClass("schedulerStepActionBar")}>
+                          <div className={fleetClass("schedulerAttachCluster")}>
+                            <button
+                              type="button"
+                              className={fleetClass("schedulerAttachButton", schedulerAttachMenu && "active")}
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                setSchedulerAttachMenu((current) => current === "menu" ? null : "menu");
+                              }}
+                              aria-label="Attach to selected step"
+                              title="Attach"
+                            >
+                              <Plus aria-hidden="true" />
+                            </button>
+                            {schedulerAttachMenu === "menu" ? (
+                              <div className={fleetClass("schedulerAttachPopover")} role="menu" onClick={(event) => event.stopPropagation()}>
+                                <button type="button" onClick={() => { setSchedulerAttachMenu("skill"); setSchedulerSkillSearch(""); }}>
+                                  <Puzzle aria-hidden="true" />
+                                  Attach skill
+                                </button>
+                                <button type="button" onClick={() => void pickSchedulerFolder(index)}>
+                                  <FolderOpen aria-hidden="true" />
+                                  Link folder
+                                </button>
+                                <button type="button" onClick={() => void pickSchedulerFiles(index)}>
+                                  <FileText aria-hidden="true" />
+                                  Link file
+                                </button>
+                                <button type="button" onClick={() => { setSchedulerPathKind("path"); setSchedulerPathDraft(""); setSchedulerAttachMenu("path"); }}>
+                                  <Link aria-hidden="true" />
+                                  Link path
+                                </button>
+                              </div>
+                            ) : null}
+                            {schedulerAttachMenu === "skill" ? (
+                              <div className={fleetClass("schedulerAttachPopover", "wide")} role="dialog" aria-label="Attach skill" onClick={(event) => event.stopPropagation()}>
+                                <div className={fleetClass("schedulerAttachSearch")}>
+                                  <Search aria-hidden="true" />
+                                  <input value={schedulerSkillSearch} onChange={(event) => setSchedulerSkillSearch(event.target.value)} placeholder="Search skills" autoFocus />
+                                  <button type="button" onClick={() => setSchedulerAttachMenu(null)} aria-label="Close skill picker"><X aria-hidden="true" /></button>
+                                </div>
+                                <div className={fleetClass("schedulerAttachChoices")}>
+                                  {filteredSchedulerSkills.length ? filteredSchedulerSkills.map((skill) => {
+                                    const selected = step.skills.includes(skill.slug);
+                                    return (
+                                      <button
+                                        type="button"
+                                        key={skill.slug}
+                                        className={selected ? fleetClass("selectedSkillChip") : ""}
+                                        onClick={() => {
+                                          toggleSchedulerStepSkill(index, skill.slug);
+                                          if (!selected) setSchedulerAttachMenu(null);
+                                        }}
+                                      >
+                                        <Puzzle aria-hidden="true" />
+                                        {skill.name}
+                                      </button>
+                                    );
+                                  }) : (
+                                    <button type="button" onClick={() => { setSchedulerAttachMenu(null); void openSkillBrowser(); }}>
+                                      <Sparkles aria-hidden="true" />
+                                      Open skill browser
+                                    </button>
+                                  )}
+                                </div>
+                              </div>
+                            ) : null}
+                            {schedulerAttachMenu === "path" ? (
+                              <div className={fleetClass("schedulerAttachPopover", "wide")} role="dialog" aria-label={`Link ${schedulerPathKind}`} onClick={(event) => event.stopPropagation()}>
+                                <div className={fleetClass("schedulerAttachSearch")}>
+                                  <Link aria-hidden="true" />
+                                  <input
+                                    value={schedulerPathDraft}
+                                    onChange={(event) => setSchedulerPathDraft(event.target.value)}
+                                    onKeyDown={(event) => {
+                                      if (event.key === "Enter") {
+                                        event.preventDefault();
+                                        addSchedulerStepPath(index, schedulerPathDraft);
+                                        setSchedulerPathDraft("");
+                                        setSchedulerAttachMenu(null);
+                                      }
+                                      if (event.key === "Escape") setSchedulerAttachMenu(null);
+                                    }}
+                                    placeholder={schedulerPathKind === "folder" ? "/path/to/folder" : schedulerPathKind === "file" ? "/path/to/file.md" : "/path/to/file-or-folder"}
+                                    autoFocus
+                                  />
+                                  <button type="button" onClick={() => setSchedulerAttachMenu(null)} aria-label="Close path linker"><X aria-hidden="true" /></button>
+                                </div>
+                                <div className={fleetClass("schedulerAttachFooter")}>
+                                  <span>{schedulerPathKind === "path" ? "File or folder" : schedulerPathKind}</span>
+                                  <button
+                                    type="button"
+                                    disabled={!schedulerPathDraft.trim()}
+                                    onClick={() => {
+                                      addSchedulerStepPath(index, schedulerPathDraft);
+                                      setSchedulerPathDraft("");
+                                      setSchedulerAttachMenu(null);
+                                    }}
+                                  >
+                                    Add
+                                  </button>
+                                </div>
+                              </div>
+                            ) : null}
+                          </div>
+                          <div className={fleetClass("schedulerModelCluster")}>
+                            <button type="button" onClick={(event) => { event.stopPropagation(); setSchedulerAttachMenu((current) => current === "model" ? null : "model"); }}>
+                              <Cpu aria-hidden="true" />
+                              <span>{SCHEDULER_MODEL_OPTIONS.find((option) => option.value === step.model)?.label ?? "Default"}</span>
+                              <ChevronDown aria-hidden="true" />
+                            </button>
+                            {schedulerAttachMenu === "model" ? (
+                              <div className={fleetClass("schedulerAttachPopover", "modelMenu")} role="menu" onClick={(event) => event.stopPropagation()}>
+                                {SCHEDULER_MODEL_OPTIONS.map((option) => (
+                                  <button
+                                    type="button"
+                                    key={option.value}
+                                    className={step.model === option.value ? fleetClass("selectedSkillChip") : ""}
+                                    onClick={() => {
+                                      updateSchedulerStepModel(index, option.value);
+                                      setSchedulerAttachMenu(null);
+                                    }}
+                                  >
+                                    {step.model === option.value ? <Check aria-hidden="true" /> : <span aria-hidden="true" />}
+                                    {option.label}
+                                  </button>
+                                ))}
+                              </div>
+                            ) : null}
+                          </div>
+                          {step.paths.length || step.skills.length ? (
+                            <div className={fleetClass("schedulerStepCounts")}>
+                              {step.paths.length ? <span><FolderOpen aria-hidden="true" />{step.paths.length}</span> : null}
+                              {step.skills.length ? <span><Puzzle aria-hidden="true" />{step.skills.length}</span> : null}
+                            </div>
+                          ) : null}
+                        </div>
+                      ) : step.paths.length || step.skills.length || step.model ? (
+                        <div className={fleetClass("schedulerStepSummary")}>
+                          {step.model ? <span><Cpu aria-hidden="true" />{SCHEDULER_MODEL_OPTIONS.find((option) => option.value === step.model)?.label ?? "Default"}</span> : null}
+                          {step.paths.length ? <span><FolderOpen aria-hidden="true" />{step.paths.length}</span> : null}
+                          {step.skills.length ? <span><Puzzle aria-hidden="true" />{step.skills.length}</span> : null}
+                        </div>
+                      ) : null}
                     </div>
                   ))}
-                  {!scheduleDraft.prompt.trim() ? (
-                    <div className={fleetClass("schedulerStepPreview", "emptyStepPreview")}>
-                      <span>1</span>
-                      <p>Write each step below. Press enter for the next one.</p>
-                    </div>
-                  ) : null}
+                  <button type="button" className={fleetClass("schedulerAddStepButton")} onClick={addSchedulerStep}>
+                    <Plus aria-hidden="true" />
+                    Add step
+                  </button>
                 </div>
-              ) : null}
-              <textarea
-                value={scheduleDraft.prompt}
-                onChange={(event) => setScheduleDraft((current) => ({ ...current, prompt: event.target.value }))}
-                placeholder={scheduleDraft.mode === "steps" ? "Collect inputs\nRun research\nDraft the result\nPost the summary" : "Tell the agent exactly what to do when this schedule fires."}
-                required
-              />
-              {scheduleDraft.skills.length || scheduleDraft.paths.length ? (
+              ) : (
+                <textarea
+                  value={scheduleDraft.prompt}
+                  onChange={(event) => setScheduleDraft((current) => ({ ...current, prompt: event.target.value }))}
+                  placeholder="Tell the agent exactly what to do when this schedule fires."
+                  required
+                />
+              )}
+              {scheduleDraft.mode === "prompt" && (scheduleDraft.skills.length || scheduleDraft.paths.length) ? (
                 <div className={fleetClass("schedulerAttachmentBadges")} aria-label="Scheduler attachments">
                   {scheduleDraft.skills.map((slug) => {
                     const skill = sharedSkillOptions.find((item) => item.slug === slug);
@@ -7789,6 +9215,8 @@ export default function Home() {
                 </div>
               ) : null}
               <div className={fleetClass("schedulerActionBar")}>
+                {scheduleDraft.mode === "prompt" ? (
+                <>
                 <div className={fleetClass("schedulerAttachCluster")}>
                   <button
                     type="button"
@@ -7805,11 +9233,11 @@ export default function Home() {
                         <Puzzle aria-hidden="true" />
                         Attach skill
                       </button>
-                      <button type="button" onClick={() => { setSchedulerPathKind("folder"); setSchedulerAttachMenu("path"); setSchedulerPathDraft(""); }}>
+                      <button type="button" onClick={() => void pickSchedulerFolder()}>
                         <FolderOpen aria-hidden="true" />
                         Link folder
                       </button>
-                      <button type="button" onClick={() => { setSchedulerPathKind("file"); setSchedulerAttachMenu("path"); setSchedulerPathDraft(""); }}>
+                      <button type="button" onClick={() => void pickSchedulerFiles()}>
                         <FileText aria-hidden="true" />
                         Link file
                       </button>
@@ -7903,10 +9331,47 @@ export default function Home() {
                     </div>
                   ) : null}
                 </div>
-                <Button type="submit" size="sm" disabled={!scheduleDraft.prompt.trim() || !scheduleDraft.agentId}>
-                  <Repeat2 aria-hidden="true" />
-                  Create
+                <div className={fleetClass("schedulerModelCluster")}>
+                  <button type="button" onClick={() => setSchedulerAttachMenu((current) => current === "model" ? null : "model")}>
+                    <Cpu aria-hidden="true" />
+                    <span>{SCHEDULER_MODEL_OPTIONS.find((option) => option.value === scheduleDraft.model)?.label ?? "Default"}</span>
+                    <ChevronDown aria-hidden="true" />
+                  </button>
+                  {schedulerAttachMenu === "model" ? (
+                    <div className={fleetClass("schedulerAttachPopover", "modelMenu")} role="menu">
+                      {SCHEDULER_MODEL_OPTIONS.map((option) => (
+                        <button
+                          type="button"
+                          key={option.value}
+                          className={scheduleDraft.model === option.value ? fleetClass("selectedSkillChip") : ""}
+                          onClick={() => {
+                            setScheduleDraft((current) => ({ ...current, model: option.value }));
+                            setSchedulerAttachMenu(null);
+                          }}
+                        >
+                          {scheduleDraft.model === option.value ? <Check aria-hidden="true" /> : <span aria-hidden="true" />}
+                          {option.label}
+                        </button>
+                      ))}
+                    </div>
+                  ) : null}
+                </div>
+                </>
+                ) : <span />}
+                <Button
+                  type="submit"
+                  size="sm"
+                  disabled={!scheduleDraft.agentId || (scheduleDraft.mode === "steps" ? !scheduleDraft.steps.some((step) => step.text.trim()) : !scheduleDraft.prompt.trim())}
+                >
+                <Repeat2 aria-hidden="true" />
+                  {editingScheduleId ? "Save" : "Create"}
                 </Button>
+                {editingScheduleId ? (
+                  <Button type="button" size="sm" variant="ghost" onClick={() => resetScheduleDraft(selectedAgent?.id ?? displayAgents[0]?.id ?? "")}>
+                    <X aria-hidden="true" />
+                    Cancel
+                  </Button>
+                ) : null}
               </div>
             </div>
           </form>
@@ -7938,6 +9403,7 @@ export default function Home() {
                   ) : null}
                   <div className={fleetClass("scheduleActions")}>
                     <Button type="button" size="sm" variant="secondary" onClick={() => runScheduleNow(schedule)}><Send aria-hidden="true" /> Run now</Button>
+                    <Button type="button" size="sm" variant="secondary" onClick={() => editSchedule(schedule)}><Pencil aria-hidden="true" /> Edit</Button>
                     <Button type="button" size="sm" variant="secondary" onClick={() => toggleSchedule(schedule.id)}>{schedule.enabled ? "Pause" : "Resume"}</Button>
                     <Button type="button" size="sm" variant="ghost" onClick={() => removeSchedule(schedule.id)}><Trash2 aria-hidden="true" /> Remove</Button>
                   </div>
@@ -7956,708 +9422,21 @@ export default function Home() {
       ) : null}
 
       {activeView === "swarm" ? (
-      <section className={mirosharkClass("swarmPanel")}>
-        <div className={mirosharkClass("mirosharkControl", mirosharkStatus?.ok && "connected")}>
-          <div className={mirosharkClass("mirosharkIdentity")}>
-            <span className={mirosharkClass("mirosharkAvatar")} aria-hidden="true">
-              {mirosharkStatus?.install.running ? (
-                <LottiePlayer src="/animations/Load%20HIVE.lottie" size={48} ariaLabel="MiroShark starting" />
-              ) : (
-                <Image
-                  src="/icons/miroshark.png"
-                  alt=""
-                  width={48}
-                  height={48}
-                  className={mirosharkClass("mirosharkAvatarImg")}
-                  priority
-                />
-              )}
-              <span className={mirosharkClass("mirosharkDot")} aria-hidden="true" />
-            </span>
-            <div>
-              <p>MiroShark</p>
-              <h2>
-                {mirosharkStatus?.ok
-                  ? "Connected"
-                  : mirosharkStatus?.install.running
-                    ? "Starting"
-                    : mirosharkStatus?.installPath
-                      ? "Detected"
-                      : "Not installed"}
-              </h2>
-              <span>{mirosharkStatus?.ok ? mirosharkStatus.baseUrl : mirosharkStatus?.configHint ?? mirosharkStatus?.error ?? "Ready to install locally"}</span>
-            </div>
-          </div>
-
-          <div className={mirosharkClass("mirosharkActions")}>
-            {(mirosharkStatus?.actions ?? [{ id: "install" as const, label: "Install & start" }]).map((action) => (
-              <Button
-                key={action.id}
-                type="button"
-                size="sm"
-                variant={action.id === "open" || action.id === "configure-admin" ? "secondary" : "default"}
-                onClick={() => runMirosharkAction(action.id)}
-                disabled={Boolean(action.disabled) || mirosharkActionPending === action.id}
-              >
-                {action.id === "open" ? <ChevronRight aria-hidden="true" /> : <PlugZap aria-hidden="true" />}
-                {mirosharkActionPending === action.id ? "Working..." : action.label}
-              </Button>
-            ))}
-            <Button
-              type="button"
-              size="sm"
-              variant="ghost"
-              onClick={async () => {
-                const response = await fetch("/api/miroshark/status", { cache: "no-store" }).catch(() => null);
-                const data = await response?.json().catch(() => null) as MiroSharkStatus | null;
-                if (data?.baseUrl) setMirosharkStatus(data);
-              }}
-            >
-              <RefreshCcw aria-hidden="true" />
-              Recheck
-            </Button>
-          </div>
-        </div>
-
-        {!mirosharkStatus?.ok ? (
-          <details className={mirosharkClass("mirosharkSetup")}>
-            <summary>Setup details</summary>
-            <div>
-                <p>
-                  <strong className="text-[var(--foreground)]">Backend:</strong>{" "}
-                  {mirosharkStatus?.baseUrl ?? "http://127.0.0.1:5001"}{" "}
-                  {mirosharkStatus?.configured ? "(set via environment)" : mirosharkStatus?.installPath ? "(auto-detected)" : "(default address)"}
-                </p>
-                <p>
-                  <strong className="text-[var(--foreground)]">Install:</strong>{" "}
-                  {mirosharkStatus?.installPath ?? "Not found yet"}
-                  {mirosharkStatus?.installSource ? ` (${mirosharkStatus.installSource})` : ""}
-                </p>
-                {mirosharkStatus?.requirements?.length ? (
-                  <div className="grid gap-1">
-                    <strong className="text-[var(--foreground)]">Readiness:</strong>
-                    {mirosharkStatus.requirements.map((requirement) => (
-                      <span key={requirement.name} className="flex flex-wrap items-center gap-1">
-                        <span className={requirement.ok ? "text-emerald-300" : "text-rose-300"}>
-                          {requirement.ok ? "Ready" : "Needs setup"}
-                        </span>
-                        <span>{requirement.name}</span>
-                        <code className="font-mono text-[0.66rem] text-[var(--muted)]">{requirement.detail}</code>
-                      </span>
-                    ))}
-                  </div>
-                ) : null}
-                <p>
-                  <strong className="text-[var(--foreground)]">Endpoints:</strong>{" "}
-                  <code className="font-mono text-[0.7rem]">{mirosharkStatus?.endpoints.health ?? "GET /health"}</code>
-                  {" · "}
-                  <code className="font-mono text-[0.7rem]">{mirosharkStatus?.endpoints.templates ?? "GET /api/templates/list"}</code>
-                  {" · "}
-                  <code className="font-mono text-[0.7rem]">{mirosharkStatus?.endpoints.createSimulation ?? "POST /api/simulation/create"}</code>
-                </p>
-                {mirosharkStatus?.startCommand ? (
-                  <p>
-                    <strong className="text-[var(--foreground)]">Manual fallback:</strong>{" "}
-                    <code className="font-mono text-[0.66rem]">{mirosharkStatus.startCommand}</code>
-                  </p>
-                ) : null}
-                {mirosharkStatus?.configHint ? <p className="text-amber-200">{mirosharkStatus.configHint}</p> : null}
-                {mirosharkStatus?.install.logPath ? (
-                  <p className="text-[var(--muted)]">Setup log: <code>{mirosharkStatus.install.logPath}</code></p>
-                ) : null}
-              </div>
-          </details>
-        ) : null}
-
-        <div className={mirosharkClass("mirosharkWorkbench")}>
-          <aside className={mirosharkClass("mirosharkHistoryRail")} aria-label="MiroShark simulation history">
-            <Button
-              type="button"
-              className={mirosharkClass("mirosharkNewSimulation")}
-              onClick={startNewMirosharkSimulation}
-              disabled={mirosharkRunPending}
-            >
-              <Sparkles aria-hidden="true" />
-              New Simulation
-            </Button>
-
-            <div className={mirosharkClass("mirosharkHistoryHeader")}>
-              <div>
-                <p>Past runs</p>
-                <h3>Saved simulations</h3>
-              </div>
-              <Button type="button" size="sm" variant="ghost" onClick={refreshMirosharkArchive}>
-                <RefreshCcw aria-hidden="true" />
-                Refresh
-              </Button>
-            </div>
-
-            <div className={mirosharkClass("mirosharkHistoryMeta")}>
-              <span>{sharedVault.enabled ? "Obsidian archive" : "Shared brain off"}</span>
-              <span>{mirosharkArchiveStatus || (sharedVault.enabled ? "Auto-saving runs" : "Enable vault sync to save")}</span>
-            </div>
-
-            {mirosharkArchiveRuns.length ? (
-              <ol className={mirosharkClass("mirosharkHistoryList")}>
-                {mirosharkArchiveRuns.slice(0, 12).map((run) => (
-                  <li key={run.simulationId}>
-                    <button
-                      type="button"
-                      className={mirosharkClass(mirosharkWorkspaceMode === "run" && mirosharkRun?.simulationId === run.simulationId && "active")}
-                      onClick={() => loadMirosharkArchivedRun(run.simulationId)}
-                    >
-                      <strong>{run.simulationId}</strong>
-                      <span>{run.postCount} posts · {run.platform ?? "surface"} · complete</span>
-                    </button>
-                  </li>
-                ))}
-              </ol>
-            ) : (
-              <p className={mirosharkClass("mirosharkHistoryEmpty")}>No saved simulations yet.</p>
-            )}
-          </aside>
-
-          <main className={mirosharkClass("mirosharkWorkbenchBody")} aria-label="MiroShark workspace">
-            {mirosharkWorkspaceMode === "new" ? (
-              <section className={mirosharkClass("mirosharkBuilderSurface")} aria-label="MiroShark run builder">
-                <div className={mirosharkClass("mirosharkBuilderHeader")}>
-                  <div>
-                    <p>New simulation</p>
-                    <h3>Design the swarm</h3>
-                  </div>
-                </div>
-
-                <form className={mirosharkClass("mirosharkRunner")} onSubmit={runMirosharkSwarm}>
-                  <label className={mirosharkClass("mirosharkScenario")}>
-                    <span>Scenario</span>
-                    <textarea
-                      value={mirosharkScenario}
-                      onChange={(event) => setMirosharkScenario(event.target.value)}
-                      placeholder="Describe the market, community, launch, crisis, policy fight, prediction market, or decision you want the agents to simulate."
-                    />
-                  </label>
-
-                  {mirosharkSelectedTemplate && mirosharkSelectedTemplateFields.length ? (
-                    <div className={mirosharkClass("mirosharkTemplateInputs")}>
-                      <div className={mirosharkClass("mirosharkTemplateInputsHeader")}>
-                        <div>
-                          <span>Template details</span>
-                          <strong>{mirosharkSelectedTemplate.name ?? mirosharkSelectedTemplate.id}</strong>
-                        </div>
-                        {mirosharkMissingTemplateFields.length ? (
-                          <small>{mirosharkMissingTemplateFields.length} required</small>
-                        ) : (
-                          <small>ready</small>
-                        )}
-                      </div>
-                      <div className={mirosharkClass("mirosharkTemplateInputGrid")}>
-                        {mirosharkSelectedTemplateFields.map((field) => (
-                          <label
-                            className={mirosharkClass(field.kind === "textarea" && "wide")}
-                            key={field.key}
-                          >
-                            <span>
-                              {field.label}
-                              {field.required ? <em>required</em> : null}
-                            </span>
-                            {field.kind === "textarea" ? (
-                              <textarea
-                                value={mirosharkTemplateInputs[field.key] ?? ""}
-                                onChange={(event) => updateMirosharkTemplateInput(mirosharkSelectedTemplate, field.key, event.target.value)}
-                                placeholder={field.placeholder}
-                              />
-                            ) : (
-                              <input
-                                value={mirosharkTemplateInputs[field.key] ?? ""}
-                                onChange={(event) => updateMirosharkTemplateInput(mirosharkSelectedTemplate, field.key, event.target.value)}
-                                placeholder={field.placeholder}
-                              />
-                            )}
-                            {field.help ? <small>{field.help}</small> : null}
-                          </label>
-                        ))}
-                      </div>
-                    </div>
-                  ) : null}
-
-                  <div className={mirosharkClass("mirosharkRunControls")}>
-                    <label>
-                      <span>Surface</span>
-                      <select value={mirosharkPlatform} onChange={(event) => setMirosharkPlatform(event.target.value as "twitter" | "reddit" | "parallel" | "polymarket")}>
-                        <option value="twitter">X / Twitter</option>
-                        <option value="reddit">Reddit</option>
-                        <option value="polymarket">Polymarket</option>
-                        <option value="parallel">X + Reddit + markets</option>
-                      </select>
-                    </label>
-                    <label>
-                      <span>Rounds</span>
-                      <input
-                        type="number"
-                        min={1}
-                        max={200}
-                        value={mirosharkRounds}
-                        onChange={(event) => setMirosharkRounds(Number(event.target.value))}
-                      />
-                    </label>
-                    <Button
-                      type="submit"
-                      disabled={!mirosharkStatus?.ok || mirosharkRunPending || !mirosharkScenario.trim() || mirosharkMissingTemplateFields.length > 0}
-                      isLoading={mirosharkRunPending}
-                    >
-                      {mirosharkRunPending ? null : <Activity aria-hidden="true" />}
-                      {mirosharkRunPending ? "Starting..." : "Run swarm"}
-                    </Button>
-                  </div>
-                </form>
-
-                <div className={mirosharkClass("mirosharkTemplateShelf")}>
-                  <div className={mirosharkClass("mirosharkShelfHeader")}>
-                    <span><Sparkles aria-hidden="true" /> Templates</span>
-                    <div>
-                      <small>{mirosharkTemplates.length ? `${mirosharkTemplates.length} available` : "loading"}</small>
-                      <Button type="button" size="sm" variant="ghost" onClick={refreshMirosharkMetadata} disabled={!mirosharkStatus?.ok}>
-                        <RefreshCcw aria-hidden="true" />
-                        Refresh templates
-                      </Button>
-                    </div>
-                  </div>
-                  <div className={mirosharkClass("mirosharkTemplateList")}>
-                    {mirosharkTemplates.slice(0, 8).map((template) => (
-                      <button
-                        type="button"
-                        key={template.id ?? template.name}
-                        className={mirosharkClass(template.id === mirosharkSelectedTemplateId && "active")}
-                        onClick={() => applyMirosharkTemplate(template)}
-                      >
-                        <strong>{template.name ?? template.id}</strong>
-                        <span>{template.category ?? "Simulation"} · {template.difficulty ?? "standard"} · {template.platforms?.join(" + ") ?? "multi-surface"}</span>
-                      </button>
-                    ))}
-                    {!mirosharkTemplates.length ? <p>Connect MiroShark to load templates.</p> : null}
-                  </div>
-                </div>
-              </section>
-            ) : null}
-
-            {mirosharkWorkspaceMode === "run" && mirosharkRunIsWorking ? (
-              <section className={mirosharkClass("mirosharkRunLoading")} aria-live="polite" aria-busy="true">
-                <LottiePlayer src="/animations/Load%20HIVE.lottie" size={60} ariaLabel="MiroShark run in progress" />
-                <div>
-                  <strong>{mirosharkProgressLabel}</strong>
-                  <span>
-                    {mirosharkTotalRounds > 0
-                      ? `Round ${Math.min(mirosharkCurrentRound, mirosharkTotalRounds)} of ${mirosharkTotalRounds} · ${mirosharkProgressPercent}%`
-                      : (mirosharkRun?.message ?? "MiroShark is preparing the swarm")}
-                  </span>
-                </div>
-                <div className={mirosharkClass("mirosharkLoadingRail", mirosharkTotalRounds > 0 && "isDeterminate")} aria-hidden="true">
-                  <span style={mirosharkTotalRounds > 0 ? { width: `${mirosharkProgressPercent}%` } : undefined} />
-                </div>
-              </section>
-            ) : null}
-
-            {mirosharkWorkspaceMode === "run" && mirosharkRun ? (
-          <section className={mirosharkClass("mirosharkRunResult", mirosharkRun.ok ? "ready" : "failed")}>
-            <header>
-              <div>
-                <p>{mirosharkRun.ok ? (mirosharkRunIsArchived ? "Saved run" : mirosharkRun.status === "started" ? "Run started" : "Run progress") : "Run failed"}</p>
-                <h3>{mirosharkRun.simulationId ?? mirosharkRun.message ?? mirosharkRun.error}</h3>
-                {mirosharkRunIsArchived && mirosharkRun.archivedAt ? (
-                  <span className={mirosharkClass("mirosharkArchiveLoaded")}>Loaded from Obsidian · {mirosharkRun.archivedAt}</span>
-                ) : null}
-              </div>
-              {(mirosharkRun.jobId || mirosharkRun.simulationId) && !mirosharkRunIsArchived ? (
-                <Button type="button" size="sm" variant="ghost" onClick={refreshMirosharkRun}>
-                  <RefreshCcw aria-hidden="true" />
-                  Refresh run
-                </Button>
-              ) : null}
-            </header>
-            {mirosharkRun.ok ? (
-              <>
-                <div className={mirosharkClass("mirosharkRunGrid")}>
-                  <span><strong>Step</strong>{mirosharkDisplayStep}</span>
-                  <span><strong>Status</strong>{mirosharkDisplayStatus}</span>
-                  <span><strong>Progress</strong>{mirosharkTotalRounds > 0 ? `${Math.min(mirosharkCurrentRound, mirosharkTotalRounds)} / ${mirosharkTotalRounds} rounds` : "pending"}</span>
-                  <span><strong>Posts</strong>{mirosharkPosts.count}</span>
-                  <span><strong>Project</strong>{mirosharkRun.projectId ?? mirosharkRun.archivedSummary?.projectId ?? "saved"}</span>
-                  <span><strong>Graph</strong>{mirosharkRun.graphId ?? mirosharkRun.archivedSummary?.graphId ?? "saved"}</span>
-                  <span><strong>Surface</strong>{mirosharkRun.platform ?? mirosharkRun.archivedSummary?.platform}</span>
-                  <span><strong>Rounds</strong>{mirosharkRun.rounds ?? mirosharkRun.archivedSummary?.rounds ?? (mirosharkTotalRounds || "saved")}</span>
-                </div>
-                {mirosharkTotalRounds > 0 ? (
-                  <div className={mirosharkClass("mirosharkRoundProgress")} aria-label={`MiroShark round progress ${mirosharkProgressPercent}%`}>
-                    <div>
-                      <span>Round progress</span>
-                      <strong>{mirosharkProgressPercent}%</strong>
-                    </div>
-                    <div>
-                      <span style={{ width: `${mirosharkProgressPercent}%` }} />
-                    </div>
-                  </div>
-                ) : null}
-              </>
-            ) : null}
-            {mirosharkRun.error ? <p className={mirosharkClass("mirosharkRunError")}>{mirosharkRun.error}</p> : null}
-            {mirosharkRun.links ? (
-              <div className={mirosharkClass("mirosharkRunLinks")}>
-                {Object.entries(mirosharkRun.links).map(([label, href]) => (
-                  <a href={href} target="_blank" rel="noreferrer" key={label}>{label}</a>
-                ))}
-              </div>
-            ) : null}
-            <div className={mirosharkClass("mirosharkWorkbenchTabs")} role="tablist" aria-label="MiroShark workbench views">
-              {MIROSHARK_WORKBENCH_TABS.map((tab) => (
-                <button
-                  type="button"
-                  key={tab.id}
-                  role="tab"
-                  aria-selected={mirosharkWorkbenchTab === tab.id}
-                  className={mirosharkClass(mirosharkWorkbenchTab === tab.id && "active")}
-                  onClick={() => setMirosharkWorkbenchTab(tab.id)}
-                >
-                  {tab.icon}
-                  {tab.label}
-                </button>
-              ))}
-            </div>
-            {mirosharkWorkbenchTab === "surface" && (mirosharkPosts.posts.length || mirosharkFeedIsWaiting || mirosharkTimelineItems.length || mirosharkMarketItems.length) ? (
-              <div className={mirosharkClass("mirosharkRunFeed", mirosharkFeedIsLive && "isLive")}>
-                <div className={mirosharkClass("mirosharkRunFeedHeader")}>
-                  <strong>{mirosharkRunIsArchived ? "Saved surfaces" : "Live surfaces"}</strong>
-                  <span>
-                    {mirosharkFeedIsWaiting
-                      ? "listening..."
-                      : `timeline order · showing ${mirosharkPosts.count}${mirosharkPosts.sourceCount > mirosharkPosts.count ? ` · ${mirosharkPosts.sourceCount - mirosharkPosts.count} blank hidden` : ""}`}
-                  </span>
-                </div>
-                <div className={mirosharkClass("mirosharkSurfaceSwitch")} role="tablist" aria-label="Simulation surfaces">
-                  {[
-                    ["x", "X thread", mirosharkPosts.count],
-                    ["reddit", "Reddit", mirosharkActionCount],
-                    ["polymarket", "Markets", mirosharkMarketCount],
-                    ["timeline", "Timeline", mirosharkTimelineItems.length],
-                  ].map(([id, label, count]) => (
-                    <button
-                      type="button"
-                      key={String(id)}
-                      className={mirosharkClass(mirosharkSurfaceView === id && "active")}
-                      onClick={() => setMirosharkSurfaceView(id as MiroSharkSurfaceView)}
-                    >
-                      {label}
-                      <span>{count}</span>
-                    </button>
-                  ))}
-                </div>
-                {mirosharkFeedIsWaiting ? (
-                  <div className={mirosharkClass("mirosharkFeedLoading")} aria-live="polite">
-                    <LottiePlayer src="/animations/Load%20HIVE.lottie" size={56} ariaLabel="Waiting for hive" />
-                    <p>Waiting for MiroShark to publish the first posts</p>
-                  </div>
-                ) : mirosharkSurfaceView === "x" ? (
-                  <div className={`${xThreadStyles.surface} ${mirosharkClass("mirosharkXSurfaceMount")}`}>
-                    {(() => {
-                      const [mainPost, ...comments] = mirosharkPosts.posts;
-                      if (!mainPost) return null;
-                      const mainReplyCount = comments.length;
-                      const mainRepostCount = mainPost.num_shares ?? mirosharkStat(mainPost.post_id, 4, 36);
-                      const mainLikeCount = mainPost.num_likes ?? mirosharkStat(mainPost.post_id, 18, 180);
-                      const mainViewCount = mirosharkStat(mainPost.post_id, 900, 4200);
-                      return (
-                        <>
-                          <article className={xThreadStyles.mainPost}>
-                            <div className={xThreadStyles.postHeader}>
-                              <div className={xThreadStyles.avatar} aria-hidden="true">
-                                {mirosharkAvatar(mainPost.user_id)}
-                              </div>
-                              <div>
-                                <strong>{mirosharkUserName(mainPost.user_id)}</strong>
-                                <span>{mirosharkHandle(mainPost.user_id)}</span>
-                              </div>
-                              <MoreHorizontal className={xThreadStyles.more} aria-hidden="true" />
-                            </div>
-                            <p className={xThreadStyles.mainText}>{mainPost.displayText}</p>
-                            <div className={xThreadStyles.timestamp}>
-                              Round {mainPost.created_at ?? "?"}
-                              {typeof mainPost.post_id === "number" ? ` · Post #${mainPost.post_id}` : ""}
-                              {" · "}
-                              Simulated on X
-                            </div>
-                            <footer className={xThreadStyles.actions} aria-label="Simulated X engagement">
-                              <span><MessageSquare aria-hidden="true" /> {mainReplyCount}</span>
-                              <span><Repeat2 aria-hidden="true" /> {mainRepostCount}</span>
-                              <span><Heart aria-hidden="true" /> {mainLikeCount}</span>
-                              <span><BarChart3 aria-hidden="true" /> {mainViewCount}</span>
-                            </footer>
-                          </article>
-
-                          <ol className={xThreadStyles.comments} aria-label="Simulated X comments">
-                            {comments.map((post, index) => {
-                              const replyCount = mirosharkStat(post.post_id, 0, 9);
-                              const repostCount = post.num_shares ?? mirosharkStat(post.post_id, 0, 13);
-                              const likeCount = post.num_likes ?? mirosharkStat(post.post_id, 1, 42);
-                              const viewCount = mirosharkStat(post.post_id, 90, 540);
-                              return (
-                                <li key={`${post.post_id ?? index}-${post.created_at ?? "tick"}`} className={xThreadStyles.comment}>
-                                  <div className={xThreadStyles.avatar} aria-hidden="true">
-                                    {mirosharkAvatar(post.user_id)}
-                                  </div>
-                                  <article>
-                                    <header>
-                                      <strong>{mirosharkUserName(post.user_id)}</strong>
-                                      <span>{mirosharkHandle(post.user_id)}</span>
-                                      <span>round {post.created_at ?? "?"}</span>
-                                      {typeof post.post_id === "number" ? <span>#{post.post_id}</span> : null}
-                                    </header>
-                                    <p className={xThreadStyles.replying}>Replying to {mirosharkHandle(mainPost.user_id)}</p>
-                                    <p className={xThreadStyles.commentText}>{post.displayText}</p>
-                                    <footer className={xThreadStyles.actions} aria-label="Simulated X engagement">
-                                      <span><MessageSquare aria-hidden="true" /> {replyCount}</span>
-                                      <span><Repeat2 aria-hidden="true" /> {repostCount}</span>
-                                      <span><Heart aria-hidden="true" /> {likeCount}</span>
-                                      <span><BarChart3 aria-hidden="true" /> {viewCount}</span>
-                                    </footer>
-                                  </article>
-                                </li>
-                              );
-                            })}
-                          </ol>
-                        </>
-                      );
-                    })()}
-                  </div>
-                ) : mirosharkSurfaceView === "reddit" ? (
-                  <div className={mirosharkClass("mirosharkRedditSurface")}>
-                    {(mirosharkActionItems.length ? mirosharkActionItems : mirosharkTimelineItems).slice(0, 12).map((item, index) => (
-                      <article key={`${compactValue(item)}-${index}`}>
-                        <header>
-                          <span>r/swarmrehearsal</span>
-                          <strong>{String(item.action_type ?? item.type ?? item.event_type ?? `thread ${index + 1}`)}</strong>
-                        </header>
-                        <p>{String(item.content ?? item.text ?? item.message ?? item.description ?? compactValue(item))}</p>
-                        <footer>{String(item.agent_name ?? item.user_name ?? item.platform ?? "MiroShark")} · {String(item.round ?? item.created_at ?? item.timestamp ?? "live")}</footer>
-                      </article>
-                    ))}
-                  </div>
-                ) : mirosharkSurfaceView === "polymarket" ? (
-                  <div className={mirosharkClass("mirosharkMarketSurface")}>
-                    {mirosharkMarketItems.length ? mirosharkMarketItems.map((market, index) => (
-                      <article key={`${compactValue(market)}-${index}`}>
-                        <div>
-                          <span>Market</span>
-                          <strong>{String(market.question ?? market.title ?? market.name ?? `Prediction market ${index + 1}`)}</strong>
-                        </div>
-                        <p>{String(market.description ?? market.resolution_criteria ?? market.status ?? "No market description returned yet.")}</p>
-                        <div className={mirosharkClass("mirosharkMarketOdds")}>
-                          {payloadPreview(market, 4).map(([key, value]) => <span key={key}>{key}: {value}</span>)}
-                        </div>
-                      </article>
-                    )) : <p className={mirosharkClass("mirosharkEmptyState")}>This run did not return Polymarket markets yet. Use a market-enabled template or the Polymarket surface for the next run.</p>}
-                  </div>
-                ) : (
-                  <div className={mirosharkClass("mirosharkTimelineSurface")}>
-                    {mirosharkTimelineItems.map((item, index) => (
-                      <article key={`${compactValue(item)}-${index}`}>
-                        <span>{String(item.round ?? item.time ?? item.created_at ?? index + 1)}</span>
-                        <strong>{String(item.type ?? item.event_type ?? item.platform ?? "event")}</strong>
-                        <p>{String(item.content ?? item.text ?? item.message ?? item.description ?? compactValue(item))}</p>
-                      </article>
-                    ))}
-                  </div>
-                )}
-              </div>
-            ) : null}
-            {mirosharkWorkbenchTab === "analysis" ? (
-              <div className={mirosharkClass("mirosharkAnalysisGrid")}>
-                {([
-                  ["Belief drift", mirosharkRun.beliefDrift, <LineChart aria-hidden="true" key="belief" />],
-                  ["Influence", mirosharkRun.influence, <BarChart3 aria-hidden="true" key="influence" />],
-                  ["Network", mirosharkRun.interactionNetwork, <Network aria-hidden="true" key="network" />],
-                  ["Demographics", mirosharkRun.demographics, <Users aria-hidden="true" key="demo" />],
-                  ["Quality", mirosharkRun.quality, <ShieldCheck aria-hidden="true" key="quality" />],
-                  ["Surface stats", mirosharkRun.surfaceStats, <Layers3 aria-hidden="true" key="surface" />],
-                ] satisfies Array<[string, unknown, ReactNode]>).map(([title, payload, icon]) => (
-                  <article key={String(title)} className={mirosharkClass("mirosharkDataCard")}>
-                    <header>{icon}<strong>{String(title)}</strong><span>{payloadCount(payload)} fields</span></header>
-                    <div>
-                      {payloadPreview(payload).map(([key, value]) => <p key={key}><span>{key}</span>{value}</p>)}
-                      {!payloadPreview(payload).length ? <p><span>Status</span>No data returned yet</p> : null}
-                    </div>
-                  </article>
-                ))}
-              </div>
-            ) : null}
-            {mirosharkWorkbenchTab === "agents" ? (
-              <div className={mirosharkClass("mirosharkAgentGrid")}>
-                {mirosharkProfileItems.length ? mirosharkProfileItems.map((profile, index) => (
-                  <article key={`${compactValue(profile)}-${index}`}>
-                    <div className={mirosharkClass("mirosharkMiniAvatar")}>{mirosharkAvatar(Number(profile.user_id ?? index))}</div>
-                    <div>
-                      <strong>{String(profile.name ?? profile.agent_name ?? profile.username ?? `Agent ${index + 1}`)}</strong>
-                      <span>{String(profile.role ?? profile.entity_type ?? profile.platform ?? "simulation participant")}</span>
-                      <p>{String(profile.bio ?? profile.description ?? profile.personality ?? compactValue(profile))}</p>
-                    </div>
-                  </article>
-                )) : <p className={mirosharkClass("mirosharkEmptyState")}>Profiles will appear here after MiroShark prepares or loads the simulation agents.</p>}
-              </div>
-            ) : null}
-            {mirosharkWorkbenchTab === "experiments" ? (
-              <div className={mirosharkClass("mirosharkExperimentPanel")}>
-                <article className={mirosharkClass("mirosharkExperimentComposer")}>
-                  <FlaskConical aria-hidden="true" />
-                  <div>
-                    <strong>Director event</strong>
-                    <p>Inject a shock into a live run, or use it as the trigger for a fork/counterfactual branch.</p>
-                    {!mirosharkStatus?.adminAuth?.configured ? (
-                      <div className={mirosharkClass("mirosharkAuthNotice")}>
-                        <strong>Publish auth is not set up</strong>
-                        <span>{mirosharkStatus?.adminAuth?.hint ?? "MiroShark requires MIROSHARK_ADMIN_TOKEN for publish/export mutation endpoints."}</span>
-                        <Button
-                          type="button"
-                          size="sm"
-                          variant="secondary"
-                          onClick={() => runMirosharkAction("configure-admin")}
-                          disabled={mirosharkActionPending === "configure-admin" || Boolean(mirosharkStatus?.install.running)}
-                        >
-                          <PlugZap aria-hidden="true" />
-                          {mirosharkActionPending === "configure-admin" ? "Configuring..." : "Configure publish auth"}
-                        </Button>
-                      </div>
-                    ) : null}
-                    <textarea
-                      value={mirosharkExperimentEvent}
-                      onChange={(event) => setMirosharkExperimentEvent(event.target.value)}
-                      placeholder="Describe the intervention, shock, rumor, policy change, price move, or public statement."
-                    />
-                    <div>
-                      <Button
-                        type="button"
-                        size="sm"
-                        onClick={() => runMirosharkExperiment("inject")}
-                        disabled={mirosharkRunIsArchived || !mirosharkRun.simulationId || !mirosharkExperimentEvent.trim() || Boolean(mirosharkExperimentPending)}
-                        isLoading={mirosharkExperimentPending === "inject"}
-                      >
-                        Inject event
-                      </Button>
-                      <Button
-                        type="button"
-                        size="sm"
-                        variant="secondary"
-                        onClick={() => runMirosharkExperiment("fork")}
-                        disabled={!mirosharkRun.simulationId || !mirosharkExperimentEvent.trim() || Boolean(mirosharkExperimentPending)}
-                        isLoading={mirosharkExperimentPending === "fork"}
-                      >
-                        Fork run
-                      </Button>
-                      <Button
-                        type="button"
-                        size="sm"
-                        variant="secondary"
-                        onClick={() => runMirosharkExperiment("branch")}
-                        disabled={!mirosharkRun.simulationId || !mirosharkExperimentEvent.trim() || Boolean(mirosharkExperimentPending)}
-                        isLoading={mirosharkExperimentPending === "branch"}
-                      >
-                        Branch counterfactual
-                      </Button>
-                      <Button
-                        type="button"
-                        size="sm"
-                        variant="ghost"
-                        onClick={() => runMirosharkExperiment("publish")}
-                        disabled={!mirosharkRun.simulationId || !mirosharkStatus?.adminAuth?.configured || Boolean(mirosharkExperimentPending)}
-                        isLoading={mirosharkExperimentPending === "publish"}
-                      >
-                        Publish exports
-                      </Button>
-                      <Button
-                        type="button"
-                        size="sm"
-                        variant="ghost"
-                        onClick={() => runMirosharkExperiment("stop")}
-                        disabled={mirosharkRunIsArchived || !mirosharkRun.simulationId || Boolean(mirosharkExperimentPending)}
-                        isLoading={mirosharkExperimentPending === "stop"}
-                      >
-                        Stop live run
-                      </Button>
-                    </div>
-                    {mirosharkExperimentStatus ? <span>{mirosharkExperimentStatus}</span> : null}
-                  </div>
-                </article>
-                <article>
-                  <GitBranch aria-hidden="true" />
-                  <div>
-                    <strong>Branch records</strong>
-                    <p>{payloadCount(mirosharkRun.counterfactual)} counterfactual records returned for this run.</p>
-                  </div>
-                </article>
-                <article>
-                  <LineChart aria-hidden="true" />
-                  <div>
-                    <strong>Compare outcomes</strong>
-                    <p>Use saved runs to compare posts, influence, belief drift, markets, and lineage after variants are generated.</p>
-                  </div>
-                </article>
-              </div>
-            ) : null}
-            {mirosharkWorkbenchTab === "observability" ? (
-              <div className={mirosharkClass("mirosharkTelemetryPanel")}>
-                <div className={mirosharkClass("mirosharkTelemetryStats")}>
-                  <span><strong>{mirosharkTelemetryCount}</strong>events</span>
-                  <span><strong>{mirosharkLlmCallItems.length}</strong>LLM calls</span>
-                  <span><strong>{payloadCount(mirosharkRun?.observabilityStats ?? mirosharkMetadata?.observabilityStats)}</strong>stats</span>
-                </div>
-                <ol>
-                  {mirosharkObservabilityItems.map((event, index) => (
-                    <li key={`${compactValue(event)}-${index}`}>
-                      <strong>{String(event.event_type ?? event.type ?? event.name ?? `event ${index + 1}`)}</strong>
-                      <span>{String(event.message ?? event.status ?? event.phase ?? event.timestamp ?? compactValue(event))}</span>
-                    </li>
-                  ))}
-                  {!mirosharkObservabilityItems.length ? <li><strong>No events yet</strong><span>MiroShark telemetry will appear here when the companion emits observability records.</span></li> : null}
-                </ol>
-              </div>
-            ) : null}
-            {mirosharkWorkbenchTab === "exports" ? (
-              <div className={mirosharkClass("mirosharkExportPanel")}>
-                {!mirosharkStatus?.adminAuth?.configured ? (
-                  <div className={mirosharkClass("mirosharkExportAuth")}>
-                    <ShieldCheck aria-hidden="true" />
-                    <div>
-                      <strong>Exports are private until publish auth is configured</strong>
-                      <p>{mirosharkStatus?.adminAuth?.hint ?? "MiroShark requires an admin token before a simulation can be published for share/export endpoints."}</p>
-                    </div>
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant="secondary"
-                      onClick={() => runMirosharkAction("configure-admin")}
-                      disabled={mirosharkActionPending === "configure-admin" || Boolean(mirosharkStatus?.install.running)}
-                    >
-                      <PlugZap aria-hidden="true" />
-                      {mirosharkActionPending === "configure-admin" ? "Configuring..." : "Configure publish auth"}
-                    </Button>
-                  </div>
-                ) : null}
-                {[
-                  ["Thread JSON", mirosharkRun.links?.thread ?? (mirosharkStatus?.baseUrl && mirosharkRun.simulationId ? `${mirosharkStatus.baseUrl}/api/simulation/${mirosharkRun.simulationId}/thread.json` : "")],
-                  ["Thread text", mirosharkStatus?.baseUrl && mirosharkRun.simulationId ? `${mirosharkStatus.baseUrl}/api/simulation/${mirosharkRun.simulationId}/thread.txt` : ""],
-                  ["Chart SVG", mirosharkStatus?.baseUrl && mirosharkRun.simulationId ? `${mirosharkStatus.baseUrl}/api/simulation/${mirosharkRun.simulationId}/chart.svg` : ""],
-                  ["Reproduce JSON", mirosharkStatus?.baseUrl && mirosharkRun.simulationId ? `${mirosharkStatus.baseUrl}/api/simulation/${mirosharkRun.simulationId}/reproduce.json` : ""],
-                  ["Lineage", mirosharkRun.links?.lineage ?? (mirosharkStatus?.baseUrl && mirosharkRun.simulationId ? `${mirosharkStatus.baseUrl}/api/simulation/${mirosharkRun.simulationId}/lineage` : "")],
-                  ["Archive folder", mirosharkRun.archivedSummary?.folder ?? ""],
-                ].map(([label, href]) => (
-                  <a key={label} href={href || undefined} target="_blank" rel="noreferrer" aria-disabled={!href}>
-                    <Download aria-hidden="true" />
-                    <span>{label}</span>
-                  </a>
-                ))}
-              </div>
-            ) : null}
-          </section>
-            ) : null}
-          </main>
-        </div>
+      <section className="min-h-[760px] overflow-hidden rounded-[18px] border border-[rgba(148,163,184,0.16)] bg-[rgba(5,8,13,0.72)]">
+        <SwarmView
+          runs={swarmRuns}
+          agents={swarmAgents}
+          decisions={swarmDecisions}
+          market={swarmMarket}
+          socialPosts={swarmSocialPosts}
+          templates={swarmTemplates}
+          statusLabel={swarmStatusLabel}
+          selectedRunId={selectedSwarmRunId}
+          onSelectRun={(run) => {
+            if (run.id !== currentSwarmRun?.id) void loadMirosharkArchivedRun(run.id);
+          }}
+          onLaunch={() => startNewMirosharkSimulation()}
+        />
       </section>
       ) : null}
 
@@ -8686,6 +9465,59 @@ export default function Home() {
             </span>
           </div>
         </div>
+
+        <section className={walletClass("hiveLedger", !honeyLedgerEnabled && "hiveLedgerDormant")} aria-label="Hive ledger">
+          {honeyLedgerEnabled ? (
+            <>
+              <div className={walletClass("honeyTreasuryHeader")}>
+                <div>
+                  <p className="eyebrow">Hive ledger</p>
+                  <h3>Honey rewards</h3>
+                  <p>
+                    Lifetime Honey earned, available Honey, and HIVE ready for agents.
+                  </p>
+                </div>
+              </div>
+
+              <div className={walletClass("hiveLedgerGrid")}>
+                <div className={walletClass("hiveLedgerStat")}>
+                  Total Honey
+                  <strong>{honeyStats.totalHoney.toFixed(2)}</strong>
+                </div>
+                <button
+                  type="button"
+                  className={walletClass("hiveLedgerConvert")}
+                  disabled={honeyStats.availableHoney <= 0}
+                  onClick={exchangeAllHoneyForHive}
+                >
+                  <span>Available Honey</span>
+                  <strong>{honeyStats.availableHoney.toFixed(2)}</strong>
+                  <small>Convert to {honeyStats.hiveQuote.toFixed(2)} HIVE</small>
+                </button>
+                <div className={walletClass("hiveLedgerStat")}>
+                  HIVE held
+                  <strong>{honeyStats.hiveBalance.toFixed(2)}</strong>
+                </div>
+              </div>
+            </>
+          ) : (
+            <div className={walletClass("hiveLedgerOptIn")}>
+              <div>
+                <p className="eyebrow">Hive ledger</p>
+                <h3>Enable Honey rewards</h3>
+                <p>
+                  Honey rewards are off by default. If enabled, this app sends usage receipts with agent id,
+                  workspace id, token count, model label, and timestamp to the official HivemindOS ledger.
+                  Prompts, responses, files, wallet keys, and machine details are not sent.
+                </p>
+              </div>
+              <Button type="button" size="sm" onClick={enableHoneyLedger}>
+                <HandCoins aria-hidden="true" />
+                Enable Honey ledger
+              </Button>
+            </div>
+          )}
+        </section>
 
         <div className={walletClass("walletWorkspace")}>
           <aside className={walletClass("walletAgentList")} aria-label="Agent wallet list">
@@ -8722,6 +9554,53 @@ export default function Home() {
               const walletAction = walletActionsByAgent[selectedAgent.id] ?? {};
               return (
             <div className={walletClass("walletDetail")}>
+              <section className={walletClass("honeyAgentPanel")}>
+                <div>
+                  <p className="eyebrow">Bee reward meter</p>
+                  <h3>{selectedAgent.name} Honey</h3>
+                  <p>
+                    {honeyLedgerEnabled
+                      ? "Track measured token usage, earn Honey, then exchange available Honey for HIVE."
+                      : "Enable the Honey ledger above before this bee can earn official Honey from usage."}
+                  </p>
+                </div>
+                <div className={walletClass("honeyAgentGrid")}>
+                  <span>
+                    Tokens used
+                    <strong>{(selectedHoneyReward?.tokensUsed ?? 0).toLocaleString()}</strong>
+                  </span>
+                  <span>
+                    Available Honey
+                    <strong>{(selectedHoneyReward?.honeyAvailable ?? 0).toFixed(2)}</strong>
+                  </span>
+                  <span>
+                    HIVE balance
+                    <strong>{(selectedHoneyReward?.hiveBalance ?? 0).toFixed(2)}</strong>
+                  </span>
+                  <span>
+                    Exchange quote
+                    <strong>{(selectedHoneyReward?.tokenReward ?? 0).toFixed(2)} HIVE</strong>
+                  </span>
+                </div>
+                <div className={walletClass("honeyAgentActions")}>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="secondary"
+                    disabled={!honeyLedgerEnabled || !selectedHoneyReward || selectedHoneyReward.honeyAvailable <= 0}
+                    onClick={() => exchangeHoneyForHive(selectedAgent.id)}
+                  >
+                    <HandCoins aria-hidden="true" />
+                    Exchange for HIVE
+                  </Button>
+                  <small>
+                    {honeyLedgerEnabled
+                      ? "Conversion uses the official backend balance, not the displayed frontend value."
+                      : "No usage receipts are sent until you enable the ledger."}
+                  </small>
+                </div>
+              </section>
+
               <WalletCell
                 agentName={selectedAgent.name}
                 wallet={selectedWallet}
@@ -9257,7 +10136,7 @@ export default function Home() {
           {brainSkills?.shared.length ? (
             <div className={vaultClass("sharedSkillGrid")}>
               <button type="button" className={vaultClass("sharedSkillAddCard")} onClick={openSkillBrowser}>
-                <Image src="/icons/worker-bee.png" alt="" width={34} height={34} />
+                <Image src="/icons/worker-bee-general-v2.png" alt="" width={34} height={34} />
                 <strong>Add skill</strong>
                 <p>Browse featured and community skills, then mirror the ones you trust into the shared brain.</p>
               </button>
@@ -9276,7 +10155,7 @@ export default function Home() {
           ) : (
             <div className={vaultClass("brainSkillsEmpty")}>
               <button type="button" className={vaultClass("sharedSkillAddCard", "emptyAddCard")} onClick={openSkillBrowser}>
-                <Image src="/icons/queen-bee.png" alt="" width={36} height={36} />
+                <Image src="/icons/queen-bee-v2.png" alt="" width={36} height={36} />
                 <strong>Browse skills</strong>
                 <p>Add the first shared skill to the brain.</p>
               </button>
@@ -9697,7 +10576,7 @@ export default function Home() {
             <div>
               <Bell aria-hidden="true" />
               <strong>No notifications yet</strong>
-              <p>When an agent writes to the vault folder, this tab will pick it up and the sidebar badge will light up.</p>
+            <p>When an agent writes to the vault folder, this tab will pick it up and the nav badge will light up.</p>
             </div>
           </div>
         )}
@@ -10208,7 +11087,7 @@ export default function Home() {
           <section className={fleetClass("setupModal", "skillBrowserModal")} role="dialog" aria-modal="true" aria-labelledby="skill-browser-title">
             <div className={fleetClass("setupModalHeader")}>
               <div className={fleetClass("skillBrowserTitle")}>
-                <Image src="/icons/queen-bee.png" alt="" width={46} height={46} />
+                <Image src="/icons/queen-bee-v2.png" alt="" width={46} height={46} />
                 <div>
                   <p className="eyebrow">Shared brain</p>
                   <h2 id="skill-browser-title">Skill Browser</h2>
@@ -10239,7 +11118,7 @@ export default function Home() {
               ) : filteredSkillBrowserSkills.length ? filteredSkillBrowserSkills.map((skill) => (
                 <article key={`${skill.source}-${skill.id}`} className={fleetClass("skillBrowserCard")}>
                   <div>
-                    <Image src="/icons/worker-bee.png" alt="" width={24} height={24} />
+                    <Image src="/icons/worker-bee-general-v2.png" alt="" width={24} height={24} />
                     <span>{skill.source}{skill.category ? ` · ${skill.category}` : ""}</span>
                   </div>
                   <strong>{skill.name}</strong>
@@ -10345,141 +11224,297 @@ export default function Home() {
             </div>
 
             <div className={fleetClass("agentSettingsTabs")} role="tablist" aria-label="Agent settings sections">
-              {(["role", "memory", "runtime", "security"] as const).map((panel) => (
+              {(["role", "memory", "security"] as const).map((panel) => (
                 <button
                   type="button"
                   key={panel}
                   className={agentSettingsPanel === panel ? fleetClass("activeSegment") : ""}
                   onClick={() => setAgentSettingsPanel(panel)}
                 >
-                  {panel === "role" ? "Role" : panel === "memory" ? "Memory" : panel === "runtime" ? "Runtime" : "Security"}
+                  {panel === "role" ? "Role" : panel === "memory" ? "Memory" : "Security"}
                 </button>
               ))}
             </div>
 
             {agentSettingsPanel === "role" ? (
               <div className={fleetClass("agentSettingsGrid")}>
-                {agentCreateMachine ? (
-                  <label className={fleetClass("agentSettingsField")}>
-                    <span>Runtime</span>
-                    <select
-                      value={agentCreateDraft.runtime}
-                      onChange={(event) => {
-                        const runtime = event.target.value as AgentRuntime;
+                <label className={fleetClass("agentSettingsField")}>
+                  <span>Runtime</span>
+                  <select
+                    value={agentCreateMachine ? agentCreateDraft.runtime : roleModalAgent?.runtime ?? "hermes"}
+                    onChange={(event) => {
+                      const runtime = event.target.value as AgentRuntime;
+                      if (agentCreateMachine) {
                         setAgentCreateDraft((current) => ({
                           ...current,
                           runtime,
-                          beeRole: runtime === "openclaw" ? "queen" : current.beeRole === "queen" ? "worker" : current.beeRole,
                         }));
-                      }}
-                    >
-                      {Object.entries(RUNTIME_LABELS).map(([runtime, label]) => (
-                        <option value={runtime} key={runtime}>{label}</option>
-                      ))}
-                    </select>
-                  </label>
+                      } else if (roleModalAgent) {
+                        updateAgentProfile(roleModalAgent.id, { runtime });
+                      }
+                    }}
+                  >
+                    {Object.entries(RUNTIME_LABELS).map(([runtime, label]) => (
+                      <option value={runtime} key={runtime}>{label}</option>
+                    ))}
+                  </select>
+                </label>
+                {!agentCreateMachine && roleModalAgent ? (
+                  <div className={fleetClass("agentRuntimeSummary")}>
+                    <PlugZap aria-hidden="true" />
+                    <div>
+                      <strong>{RUNTIME_LABELS[roleModalAgent.runtime]} is connected</strong>
+                      <p>Connection details are managed automatically. Open Advanced only for custom bridges or repairs.</p>
+                    </div>
+                    <button type="button" onClick={() => setAgentRuntimeAdvancedOpen((current) => !current)}>
+                      {agentRuntimeAdvancedOpen ? "Hide advanced" : "Advanced"}
+                    </button>
+                  </div>
                 ) : null}
-                <label className={fleetClass("agentSettingsField")}>
-                  <span>Colony role</span>
-                  <select
-                    value={agentSettingsRole}
-                    onChange={(event) => {
-                      const beeRole = event.target.value as BeeAgentRole;
-                      if (agentCreateMachine) setAgentCreateDraft((current) => ({ ...current, beeRole }));
-                      else if (roleModalAgent) updateAgentProfile(roleModalAgent.id, { beeRole });
-                    }}
-                  >
-                    {BEE_AGENT_ROLES.map((role) => <option value={role.id} key={role.id}>{role.label}</option>)}
-                  </select>
-                </label>
-                <label className={fleetClass("agentSettingsField")}>
+                {agentRuntimeAdvancedOpen && !agentCreateMachine && roleModalAgent ? (
+                  <div className={fleetClass("agentRuntimeAdvanced")}>
+                    <label className={fleetClass("agentSettingsField")}>
+                      <span>Chat URL / gateway</span>
+                      <input
+                        value={roleModalAgent.gatewayUrl ?? ""}
+                        onChange={(event) => updateAgentProfile(roleModalAgent.id, { gatewayUrl: event.target.value })}
+                        placeholder="http://machine:8787/chat or ws://127.0.0.1:18789"
+                      />
+                    </label>
+                    <label className={fleetClass("agentSettingsField")}>
+                      <span>Agent ID / session</span>
+                      <input
+                        value={roleModalAgent.agentId ?? ""}
+                        onChange={(event) => updateAgentProfile(roleModalAgent.id, { agentId: event.target.value })}
+                        placeholder="local-hermes, main, seo-agent"
+                      />
+                    </label>
+                    <label className={fleetClass("agentSettingsField")}>
+                      <span>Collector</span>
+                      <input
+                        value={roleModalAgent.telemetryUrl ?? ""}
+                        onChange={(event) => updateAgentProfile(roleModalAgent.id, { telemetryUrl: event.target.value })}
+                      />
+                    </label>
+                  </div>
+                ) : null}
+                <div className={fleetClass("agentSettingsField", "agentWorkerClassPicker")}>
                   <span>Worker class</span>
-                  <select
-                    value={agentSettingsWorkerClass}
-                    onChange={(event) => {
-                      const workerClass = event.target.value as BeeWorkerClass;
-                      if (agentCreateMachine) setAgentCreateDraft((current) => ({ ...current, workerClass }));
-                      else if (roleModalAgent) updateAgentProfile(roleModalAgent.id, { workerClass });
-                    }}
-                    disabled={agentSettingsRole === "observer" || agentSettingsRole === "human"}
-                  >
-                    {BEE_WORKER_CLASSES.map((workerClass) => <option value={workerClass.id} key={workerClass.id}>{workerClass.label}</option>)}
-                  </select>
-                </label>
-              </div>
-            ) : null}
-
-            {agentSettingsPanel === "memory" ? (
-              <div className={fleetClass("agentSettingsGrid")}>
-                <label className={fleetClass("agentSettingsField", "toggleRow")}>
-                  <input
-                    type="checkbox"
-                    checked={agentCreateMachine ? true : roleModalAgent?.useSharedVault !== false}
-                    onChange={(event) => roleModalAgent && updateAgentProfile(roleModalAgent.id, { useSharedVault: event.target.checked })}
-                    disabled={Boolean(agentCreateMachine)}
-                  />
-                  <span>Use shared Obsidian brain</span>
-                </label>
-                <label className={fleetClass("agentSettingsField")}>
-                  <span>Runtime data folder</span>
-                  <input
-                    value={roleModalAgent?.localDataDir ?? ""}
-                    onChange={(event) => roleModalAgent && updateAgentProfile(roleModalAgent.id, { localDataDir: event.target.value })}
-                    placeholder="~/.hermes, /srv/agent/data, ~/.openclaw/workspace-main"
-                    disabled={Boolean(agentCreateMachine)}
-                  />
-                </label>
-                <div className={fleetClass("agentSettingsInfo")}>
-                  <BrainCircuit aria-hidden="true" />
-                  <p>Shared brain: {sharedVault.enabled ? sharedVault.vaultPath || "auto-detected vault" : "off"}. Agents opted in receive vault, Kanban, notification, and control-room context in runtime prompts.</p>
+                  {agentWorkerClassView === "presets" ? (
+                    <>
+                      <div className={fleetClass("agentWorkerClassGrid")}>
+                        {BEE_WORKER_PRESET_LIST.map((preset) => {
+                          const selectedClass = preset.id === agentSettingsWorkerClass && !agentSettingsCustomWorker;
+                          return (
+                            <button
+                              type="button"
+                              key={preset.id}
+                              className={selectedClass ? fleetClass("selectedWorkerClass") : ""}
+                              onClick={() => selectAgentWorkerClass(preset.id)}
+                              aria-pressed={selectedClass}
+                            >
+                              <Image src={beeRoleIconPath("worker", preset.id)} alt="" width={54} height={54} />
+                              <strong>{preset.label}</strong>
+                            </button>
+                          );
+                        })}
+                        {agentSettingsCustomWorkers.map((customWorkerClass) => (
+                          <button
+                            type="button"
+                            key={customWorkerClass.id}
+                            className={agentSettingsSelectedCustomWorkerId === customWorkerClass.id ? fleetClass("selectedWorkerClass", "customWorkerClassCard") : fleetClass("customWorkerClassCard")}
+                            onClick={() => selectCustomWorkerClass(customWorkerClass)}
+                            aria-pressed={agentSettingsSelectedCustomWorkerId === customWorkerClass.id}
+                          >
+                            {/* eslint-disable-next-line @next/next/no-img-element */}
+                            <img src={customWorkerClass.imageSrc || beeRoleIconPath("worker", "general")} alt="" />
+                            <strong>{customWorkerClass.label}</strong>
+                          </button>
+                        ))}
+                        <button type="button" className={fleetClass("agentWorkerClassCreate")} onClick={openCustomWorkerClassCreator}>
+                          <Plus aria-hidden="true" />
+                          <strong>Custom</strong>
+                        </button>
+                      </div>
+                      <div className={fleetClass("agentWorkerClassDetail")}>
+                        <div>
+                          {/* eslint-disable-next-line @next/next/no-img-element */}
+                          <img src={agentSettingsWorkerImage} alt="" />
+                          <div>
+                            <strong>{agentSettingsWorkerLabel}</strong>
+                            <div className={fleetClass("agentWorkerCapabilityBadges")}>
+                              {(agentSettingsCustomWorker ? workerCapabilityBadges(agentSettingsSkillProfile) : workerCapabilityBadges(agentSettingsWorkerPreset.summary)).map((capability) => (
+                                <span key={capability}>{capability}</span>
+                              ))}
+                            </div>
+                            <small>{agentSettingsCustomWorker ? "Custom worker class" : agentSettingsWorkerPreset.modelHint}</small>
+                          </div>
+                        </div>
+                        <label>
+                          <span>Suited-for prompt</span>
+                          <textarea
+                            value={agentSettingsSkillProfile}
+                            onChange={(event) => updateAgentSkillProfile(event.target.value)}
+                          />
+                        </label>
+                        <div className={fleetClass("agentWorkerSkillSet")}>
+                          <span>Seeded shared-brain skills</span>
+                          <div>
+                            {agentSettingsPreferredSkills.map((slug) => <code key={slug}>{slug}</code>)}
+                          </div>
+                        </div>
+                      </div>
+                    </>
+                  ) : (
+                    <div className={fleetClass("agentWorkerClassCreator")}>
+                      <div className={fleetClass("agentWorkerCreatorHeader")}>
+                        <button type="button" onClick={() => setAgentWorkerClassView("presets")}>
+                          <ChevronRight aria-hidden="true" />
+                          Back
+                        </button>
+                        <strong>Custom worker class</strong>
+                      </div>
+                      <label className={fleetClass("agentSettingsField")}>
+                        <span>Role name</span>
+                        <input
+                          value={customWorkerDraft.label}
+                          onChange={(event) => setCustomWorkerDraft((current) => ({ ...current, label: event.target.value }))}
+                          placeholder="Data scout, Social analyst, Build fixer"
+                        />
+                      </label>
+                      <div className={fleetClass("agentWorkerImagePicker")}>
+                        <span>Bee image</span>
+                        <div>
+                          {BEE_WORKER_PRESET_LIST.map((preset) => {
+                            const imageSrc = beeRoleIconPath("worker", preset.id);
+                            return (
+                              <button
+                                type="button"
+                                key={preset.id}
+                                className={customWorkerDraft.imageSrc === imageSrc ? fleetClass("selectedWorkerClass") : ""}
+                                onClick={() => setCustomWorkerDraft((current) => ({ ...current, imageSrc }))}
+                                aria-label={`Use ${preset.label} bee image`}
+                              >
+                                <Image src={imageSrc} alt="" width={42} height={42} />
+                              </button>
+                            );
+                          })}
+                          <button type="button" onClick={() => customWorkerImageInputRef.current?.click()}>
+                            <Upload aria-hidden="true" />
+                          </button>
+                        </div>
+                        <input ref={customWorkerImageInputRef} type="file" accept="image/*" onChange={uploadCustomWorkerImage} hidden />
+                        {customWorkerImageError ? <small>{customWorkerImageError}</small> : null}
+                      </div>
+                      <label className={fleetClass("agentSettingsField")}>
+                        <span>Suited-for prompt</span>
+                        <textarea
+                          value={customWorkerDraft.skillProfilePrompt}
+                          onChange={(event) => setCustomWorkerDraft((current) => ({ ...current, skillProfilePrompt: event.target.value }))}
+                          placeholder="Describe when this worker should be used and what it should be good at."
+                        />
+                      </label>
+                      <div className={fleetClass("agentWorkerSkillChooser")}>
+                        <label>
+                          <span>Shared brain skills</span>
+                          <input
+                            value={customWorkerSkillSearch}
+                            onChange={(event) => setCustomWorkerSkillSearch(event.target.value)}
+                            placeholder="Search by skill name or keyword"
+                          />
+                        </label>
+                        <div>
+                          {filteredCustomWorkerSkills.length ? filteredCustomWorkerSkills.map((skill) => (
+                            <button
+                              type="button"
+                              key={skill.slug}
+                              className={skill.selected ? fleetClass("selectedSkillBadge") : ""}
+                              onClick={() => toggleCustomWorkerSkill(skill.slug)}
+                            >
+                              {skill.name}
+                            </button>
+                          )) : <p>No matching shared-brain skills.</p>}
+                        </div>
+                      </div>
+                      <div className={fleetClass("agentWorkerCreatorActions")}>
+                        <button type="button" onClick={() => setAgentWorkerClassView("presets")}>Cancel</button>
+                        <button type="button" onClick={applyCustomWorkerClass} disabled={!customWorkerDraft.label.trim() || !customWorkerDraft.skillProfilePrompt.trim()}>
+                          <Check aria-hidden="true" />
+                          Use class
+                        </button>
+                      </div>
+                    </div>
+                  )}
                 </div>
               </div>
             ) : null}
 
-            {agentSettingsPanel === "runtime" ? (
-              <div className={fleetClass("agentSettingsGrid")}>
+            {agentSettingsPanel === "memory" ? (
+              <div className={fleetClass("agentSettingsGrid", "agentMemoryPanel")}>
+                <label className={fleetClass("agentSettingsField", "toggleRow")}>
+                  <input
+                    type="checkbox"
+                    checked={agentCreateMachine ? agentCreateDraft.useSharedVault : roleModalAgent?.useSharedVault !== false}
+                    onChange={(event) => {
+                      if (agentCreateMachine) {
+                        setAgentCreateDraft((current) => ({ ...current, useSharedVault: event.target.checked }));
+                      } else if (roleModalAgent) {
+                        updateAgentProfile(roleModalAgent.id, { useSharedVault: event.target.checked });
+                      }
+                    }}
+                  />
+                  <span>Use shared Obsidian brain</span>
+                </label>
+                {(agentCreateMachine ? agentCreateDraft.useSharedVault : roleModalAgent?.useSharedVault !== false) ? (
+                  <div className={fleetClass("agentSettingsInfo")}>
+                    <BrainCircuit aria-hidden="true" />
+                    <p>{sharedVault.enabled ? `Shared brain: ${sharedVault.vaultPath || "auto-detected vault"}. Memory, Kanban, notifications, and control-room context are shared from there.` : "Shared brain is off. Turn it on from the Vault view to give agents one common memory space."}</p>
+                  </div>
+                ) : null}
                 {!agentCreateMachine && roleModalAgent ? (
-                  <label className={fleetClass("agentSettingsField")}>
-                    <span>Runtime</span>
-                    <select value={roleModalAgent.runtime} onChange={(event) => updateAgentProfile(roleModalAgent.id, { runtime: event.target.value as AgentRuntime })}>
-                      {Object.entries(RUNTIME_LABELS).map(([runtime, label]) => <option value={runtime} key={runtime}>{label}</option>)}
-                    </select>
+                  <div className={fleetClass("agentMemoryFolderRow")}>
+                    <div>
+                      <span>Runtime folder</span>
+                      <strong>{roleModalAgent.localDataDir?.trim() || "Managed by runtime"}</strong>
+                      <p>{roleModalAgent.useSharedVault !== false ? "Only change this if this agent needs a custom local workspace." : "Used as this agent's local memory and workspace folder."}</p>
+                    </div>
+                    <div className={fleetClass("agentMemoryFolderActions")}>
+                      <button type="button" aria-label="Browse for runtime folder" onClick={() => void browseAgentRuntimeFolder()} disabled={agentRuntimeFolderBrowsing}>
+                        <FolderOpen aria-hidden="true" />
+                      </button>
+                      <button type="button" aria-label="Edit runtime folder path" onClick={() => setAgentRuntimeFolderEditing((current) => !current)}>
+                        <Pencil aria-hidden="true" />
+                      </button>
+                    </div>
+                  </div>
+                ) : null}
+                {agentRuntimeFolderEditing && roleModalAgent ? (
+                  <label className={fleetClass("agentSettingsField", "agentMemoryPathEditor")}>
+                    <span>Runtime folder path</span>
+                    <div>
+                      <input
+                        value={roleModalAgent.localDataDir ?? ""}
+                        onChange={(event) => {
+                          updateAgentProfile(roleModalAgent.id, { localDataDir: event.target.value });
+                          setAgentRuntimeFolderStatus("");
+                        }}
+                        placeholder="Leave blank to use the runtime default"
+                      />
+                      <button type="button" aria-label="Done editing runtime folder path" onClick={() => setAgentRuntimeFolderEditing(false)}>
+                        <Check aria-hidden="true" />
+                      </button>
+                    </div>
                   </label>
                 ) : null}
-                <label className={fleetClass("agentSettingsField")}>
-                  <span>Chat URL / gateway</span>
-                  <input
-                    value={roleModalAgent?.gatewayUrl ?? (agentCreateMachine ? RUNTIME_DEFAULTS[agentCreateDraft.runtime].gatewayUrl : "")}
-                    onChange={(event) => roleModalAgent && updateAgentProfile(roleModalAgent.id, { gatewayUrl: event.target.value })}
-                    placeholder="http://machine:8787/chat or ws://127.0.0.1:18789"
-                    disabled={Boolean(agentCreateMachine)}
-                  />
-                </label>
-                <label className={fleetClass("agentSettingsField")}>
-                  <span>Agent ID / session</span>
-                  <input
-                    value={roleModalAgent?.agentId ?? ""}
-                    onChange={(event) => roleModalAgent && updateAgentProfile(roleModalAgent.id, { agentId: event.target.value })}
-                    placeholder="local-hermes, main, seo-agent"
-                    disabled={Boolean(agentCreateMachine)}
-                  />
-                </label>
-                <label className={fleetClass("agentSettingsField")}>
-                  <span>Collector</span>
-                  <input
-                    value={roleModalAgent?.telemetryUrl ?? agentCreateMachine?.collectorUrl ?? ""}
-                    onChange={(event) => roleModalAgent && updateAgentProfile(roleModalAgent.id, { telemetryUrl: event.target.value })}
-                    disabled={Boolean(agentCreateMachine)}
-                  />
-                </label>
+                {agentRuntimeFolderStatus ? <p className={fleetClass("agentMemoryStatus")}>{agentRuntimeFolderStatus}</p> : null}
               </div>
             ) : null}
 
             {agentSettingsPanel === "security" ? (
               <div className={fleetClass("agentSecurityGrid")}>
-                <article><ShieldCheck aria-hidden="true" /><strong>Prompt guard</strong><p>Blocks obvious prompt-injection and dangerous local-action requests before they reach connected runtimes. Checks run locally in the dashboard.</p></article>
-                <article><Eye aria-hidden="true" /><strong>Output redaction</strong><p>Secrets and obvious credential leaks are redacted from streamed responses before the dashboard renders them.</p></article>
-                <article><Settings2 aria-hidden="true" /><strong>Skill action guard</strong><p>Local skill actions use allowlisted skill folders and safe argument checks where the runtime exposes dashboard actions.</p></article>
+                <article><ShieldCheck aria-hidden="true" /><div><strong>Prompt guard</strong><p>Blocks obvious prompt-injection and dangerous local-action requests before they reach connected runtimes. Checks run locally in the dashboard.</p></div></article>
+                <article><Eye aria-hidden="true" /><div><strong>Output redaction</strong><p>Secrets and obvious credential leaks are redacted from streamed responses before the dashboard renders them.</p></div></article>
+                <article><Settings2 aria-hidden="true" /><div><strong>Skill action guard</strong><p>Local skill actions use allowlisted skill folders and safe argument checks where the runtime exposes dashboard actions.</p></div></article>
               </div>
             ) : null}
 
@@ -10489,6 +11524,126 @@ export default function Home() {
                 {agentCreateMachine ? "Add agent" : "Done"}
               </Button>
             </div>
+          </section>
+        </div>
+      ) : null}
+
+      {machineInitOpen ? (
+        <div
+          className={fleetClass("setupModalBackdrop")}
+          role="presentation"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget) setMachineInitOpen(false);
+          }}
+        >
+          <section className={fleetClass("setupModal")} role="dialog" aria-modal="true" aria-labelledby="machine-init-title">
+            <div className={fleetClass("setupModalHeader")}>
+              <div>
+                <p className="eyebrow">Initialize machine</p>
+                <h2 id="machine-init-title">New Hetzner agent box</h2>
+                <p>Initializes a Hetzner VPS with the runtime agent of your choice and HivemindOS, then prepares it to join your fleet.</p>
+              </div>
+              <Button type="button" variant="ghost" aria-label="Close machine initializer" onClick={() => setMachineInitOpen(false)}>
+                <X aria-hidden="true" />
+                Close
+              </Button>
+            </div>
+
+            <form className={fleetClass("machineInitForm")} onSubmit={initializeMachineProject}>
+              <label className={fleetClass("agentSettingsField")}>
+                <span>Machine name</span>
+                <input
+                  value={machineInitDraft.projectName}
+                  onChange={(event) => setMachineInitDraft((current) => ({ ...current, projectName: event.target.value }))}
+                  placeholder="seo-worker-1"
+                  required
+                />
+              </label>
+              <label className={fleetClass("agentSettingsField")}>
+                <span>Server type</span>
+                <select
+                  value={machineInitDraft.serverType}
+                  onChange={(event) => setMachineInitDraft((current) => ({ ...current, serverType: event.target.value }))}
+                >
+                  {HETZNER_SERVER_TYPE_OPTIONS.map((option) => (
+                    <option value={option.value} key={option.value}>{option.label}</option>
+                  ))}
+                </select>
+              </label>
+              <label className={fleetClass("agentSettingsField")}>
+                <span>Location</span>
+                <select
+                  value={machineInitDraft.serverLocation}
+                  onChange={(event) => setMachineInitDraft((current) => ({ ...current, serverLocation: event.target.value }))}
+                >
+                  {HETZNER_LOCATION_OPTIONS.map((option) => (
+                    <option value={option.value} key={option.value}>{option.label}</option>
+                  ))}
+                </select>
+              </label>
+              <label className={fleetClass("agentSettingsField")}>
+                <span>Image</span>
+                <select
+                  value={machineInitDraft.serverImage}
+                  onChange={(event) => setMachineInitDraft((current) => ({ ...current, serverImage: event.target.value }))}
+                >
+                  {HETZNER_IMAGE_OPTIONS.map((option) => (
+                    <option value={option.value} key={option.value}>{option.label}</option>
+                  ))}
+                </select>
+              </label>
+              <label className={fleetClass("agentSettingsField")}>
+                <span>Runtime agent</span>
+                <select
+                  value={machineInitDraft.runtimeAgent}
+                  onChange={(event) => setMachineInitDraft((current) => ({ ...current, runtimeAgent: event.target.value as AgentRuntime }))}
+                >
+                  <option value="hermes">Hermes</option>
+                  <option value="openclaw">OpenClaw</option>
+                  <option value="aeon">Aeon</option>
+                </select>
+              </label>
+              <div className={fleetClass("machineInitNotice")}>
+                HivemindOS bootstrap is mandatory for fleet discovery. These options are seeded from Hetzner Cloud docs and common current slugs; after adding `HCLOUD_TOKEN`, use the generated live list commands to confirm availability before provisioning.
+              </div>
+              <div className={fleetClass("setupModalActions")}>
+                <Button type="submit" disabled={machineInitStatus.busy}>
+                  {machineInitStatus.busy ? <LoaderCircle aria-hidden="true" className="animate-spin" /> : <Plus aria-hidden="true" />}
+                  {machineInitStatus.busy ? "Initializing" : "Initialize"}
+                </Button>
+              </div>
+            </form>
+
+            {machineInitStatus.error ? (
+              <div className={fleetClass("machineInitError")}>{machineInitStatus.error}</div>
+            ) : null}
+
+            {machineInitStatus.result ? (
+              <div className={fleetClass("machineInitResult")}>
+                <div>
+                  <strong>{machineInitStatus.result.serverName}</strong>
+                  <span>{machineInitStatus.result.projectDir}</span>
+                </div>
+                {[
+                  ["editEnv", "Add token", machineInitStatus.result.commands.editEnv],
+                  ["listServerTypes", "Server types", machineInitStatus.result.commands.listServerTypes],
+                  ["listLocations", "Locations", machineInitStatus.result.commands.listLocations],
+                  ["provision", "Provision", machineInitStatus.result.commands.provision],
+                  ["verify", "Verify SSH", machineInitStatus.result.commands.verify],
+                  ["bootstrap", "Bootstrap HivemindOS", machineInitStatus.result.commands.bootstrap],
+                  ["destroy", "Destroy", machineInitStatus.result.commands.destroy],
+                ].filter((item): item is [string, string, string] => Boolean(item)).map(([key, label, command]) => (
+                  <div key={key} className={fleetClass("machineInitCommand")}>
+                    <span>{label}</span>
+                    <pre>{command}</pre>
+                    <Button type="button" size="sm" variant="secondary" onClick={() => copyMachineInitCommand(key, command)}>
+                      {machineInitCopiedKey === key ? <Check aria-hidden="true" /> : <Copy aria-hidden="true" />}
+                      {machineInitCopiedKey === key ? "Copied" : "Copy"}
+                    </Button>
+                  </div>
+                ))}
+              </div>
+            ) : null}
           </section>
         </div>
       ) : null}

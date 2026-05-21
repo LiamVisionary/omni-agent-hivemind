@@ -7,6 +7,7 @@ import { proxyInput, proxyOutput } from "@/lib/services/agent-security-proxy";
 import type { AgentWalletConfig } from "@/lib/types/agent-wallet";
 import { summarizeX402Policy } from "@/lib/services/wallet/x402-agent-fetch";
 import { getRuntimeAdapter } from "@/lib/services/runtime-adapters/registry";
+import { getHoneyWorkspaceId, recordHoneyUsage } from "@/lib/services/wallet/honey-ledger";
 
 export const runtime = "nodejs";
 export const maxDuration = 120;
@@ -131,6 +132,20 @@ function extractChunk(payload: unknown): string {
   );
 }
 
+async function recordChatHoney(profile: AgentProfile, inputText: string, outputText: string, enabled: boolean, source: "chat" | "kanban-chat" = "chat") {
+  if (!enabled) return null;
+  if (!outputText.trim()) return null;
+  const result = await recordHoneyUsage({
+    agentId: profile.id,
+    agentName: profile.name,
+    source,
+    model: profile.runtime,
+    inputText,
+    outputText,
+  });
+  return result.event;
+}
+
 function validateHttpRuntimeProfile(profile: AgentProfile): string | null {
   const gatewayUrl = profile.gatewayUrl?.trim();
   if (!gatewayUrl) {
@@ -172,6 +187,52 @@ function collectorChatProfile(profile: AgentProfile): AgentProfile | null {
   };
 }
 
+async function streamTrustedComputeGateway(
+  profile: AgentProfile,
+  modelMessages: IncomingMessage[],
+) {
+  const gatewayUrl = process.env.HONEY_COMPUTE_GATEWAY_URL?.trim().replace(/\/+$/, "");
+  if (!gatewayUrl) {
+    return Response.json({
+      error: "Honey rewards need the official HivemindOS compute gateway before this call can earn official Honey.",
+    }, { status: 503 });
+  }
+
+  let upstream: Response;
+  try {
+    upstream = await fetch(`${gatewayUrl}/chat`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        workspaceId: await getHoneyWorkspaceId(),
+        agentId: profile.id,
+        agentName: profile.name,
+        runtime: profile.runtime,
+        messages: modelMessages,
+      }),
+      signal: AbortSignal.timeout(110_000),
+    });
+  } catch (error) {
+    return Response.json({
+      error: runtimeFetchError(profile, gatewayUrl, error),
+    }, { status: 502 });
+  }
+
+  if (!upstream.body) {
+    const data = await upstream.json().catch(() => null) as { error?: string } | null;
+    return Response.json({ error: data?.error ?? "Trusted compute gateway returned an empty response." }, { status: upstream.status || 502 });
+  }
+
+  return new Response(upstream.body, {
+    status: upstream.status,
+    headers: {
+      "Content-Type": upstream.headers.get("content-type") ?? "text/event-stream",
+      "Cache-Control": "no-cache",
+      Connection: "keep-alive",
+    },
+  });
+}
+
 async function streamHttpRuntime(
   profile: AgentProfile,
   messages: IncomingMessage[],
@@ -179,6 +240,7 @@ async function streamHttpRuntime(
   sharedVault: SharedVaultConfig | null,
   workingDirectory?: string,
   wallet?: AgentWalletConfig,
+  honeyLedgerEnabled = false,
 ) {
   const inputCheck = proxyInput(userText);
   if (inputCheck.verdict === "block") {
@@ -249,8 +311,11 @@ async function streamHttpRuntime(
       );
     }
     const chunk = outputCheck.text;
+    const event = await recordChatHoney(profile, userText, chunk, honeyLedgerEnabled);
     return new Response(
-      ssePayload({ choices: [{ delta: { content: chunk || JSON.stringify(json) } }] }) + "data: [DONE]\n\n",
+      ssePayload({ choices: [{ delta: { content: chunk || JSON.stringify(json) } }] })
+      + (event ? ssePayload({ honey: event }) : "")
+      + "data: [DONE]\n\n",
       { headers: { "Content-Type": "text/event-stream", "Cache-Control": "no-cache" } },
     );
   }
@@ -268,6 +333,7 @@ async function streamHttpRuntime(
       }
 
       let buffer = "";
+      let fullText = "";
       while (true) {
         const { value, done } = await reader.read();
         if (done) break;
@@ -287,17 +353,21 @@ async function streamHttpRuntime(
               continue;
             }
             const chunk = outputCheck.text;
+            if (chunk) fullText += chunk;
             controller.enqueue(encoder.encode(chunk
               ? ssePayload({ choices: [{ delta: { content: chunk } }] })
               : ssePayload(parsed)));
           } catch {
             const outputCheck = proxyOutput(raw);
+            if (outputCheck.verdict !== "block") fullText += outputCheck.text;
             controller.enqueue(encoder.encode(outputCheck.verdict === "block"
               ? ssePayload({ error: outputCheck.reason ?? "Response blocked by security policy" })
               : ssePayload({ choices: [{ delta: { content: outputCheck.text } }] })));
           }
         }
       }
+      const event = await recordChatHoney(profile, userText, fullText, honeyLedgerEnabled);
+      if (event) controller.enqueue(encoder.encode(ssePayload({ honey: event })));
       controller.enqueue(encoder.encode("data: [DONE]\n\n"));
       controller.close();
     },
@@ -318,6 +388,7 @@ export async function POST(request: NextRequest) {
   let sharedVault: SharedVaultConfig | undefined;
   let workingDirectory: string | undefined;
   let wallet: AgentWalletConfig | undefined;
+  let honeyLedgerEnabled = false;
   try {
     const body = (await request.json()) as {
       agent?: AgentProfile;
@@ -325,6 +396,7 @@ export async function POST(request: NextRequest) {
       sharedVault?: SharedVaultConfig;
       workingDirectory?: string;
       wallet?: AgentWalletConfig;
+      honeyLedgerEnabled?: boolean;
     };
     if (!body.agent || !Array.isArray(body.messages)) throw new Error("Missing agent or messages");
     profile = body.agent;
@@ -332,6 +404,7 @@ export async function POST(request: NextRequest) {
     sharedVault = body.sharedVault;
     workingDirectory = body.workingDirectory;
     wallet = body.wallet;
+    honeyLedgerEnabled = body.honeyLedgerEnabled === true;
   } catch {
     return Response.json({ error: "Expected { agent, messages }" }, { status: 400 });
   }
@@ -349,6 +422,13 @@ export async function POST(request: NextRequest) {
   const textWithVaultContext = runtimeContexts
     ? `${runtimeContexts}\n\nUser message:\n${userPrompt}`
     : promptCheck.text;
+  const rewardGatewayMessages = runtimeContexts
+    ? [{ role: "system", content: runtimeContexts }, ...messages]
+    : messages;
+
+  if (honeyLedgerEnabled) {
+    return streamTrustedComputeGateway(profile, rewardGatewayMessages);
+  }
 
   if (profile.runtime !== "openclaw") {
     const adapter = getRuntimeAdapter(profile.runtime);
@@ -365,7 +445,7 @@ export async function POST(request: NextRequest) {
     const effectiveProfile = collectorChatProfile(profile) ?? profile;
     const profileError = validateHttpRuntimeProfile(effectiveProfile);
     if (profileError) return Response.json({ error: profileError }, { status: 400 });
-    return streamHttpRuntime(effectiveProfile, messages, promptCheck.text, vault, workingDirectory, wallet);
+    return streamHttpRuntime(effectiveProfile, messages, promptCheck.text, vault, workingDirectory, wallet, honeyLedgerEnabled);
   }
 
   const token = await getGatewayAuthToken(profile.token);
@@ -385,6 +465,7 @@ export async function POST(request: NextRequest) {
       }, 5_000);
 
       try {
+        let fullText = "";
         await sendMessageViaGateway(
           {
             gatewayUrl: profile.gatewayUrl,
@@ -393,11 +474,16 @@ export async function POST(request: NextRequest) {
             agentId: profile.agentId,
             ...(profile.sessionKey ? { sessionKey: profile.sessionKey } : {}),
           },
-          (chunk) => controller.enqueue(encoder.encode(ssePayload({ choices: [{ delta: { content: chunk } }] }))),
+          (chunk) => {
+            fullText += chunk;
+            controller.enqueue(encoder.encode(ssePayload({ choices: [{ delta: { content: chunk } }] })));
+          },
           undefined,
           (toolData) => controller.enqueue(encoder.encode(ssePayload({ tool_call: toolData }))),
           (status) => controller.enqueue(encoder.encode(ssePayload({ status }))),
         );
+        const event = await recordChatHoney(profile, textWithVaultContext, fullText, honeyLedgerEnabled);
+        if (event) controller.enqueue(encoder.encode(ssePayload({ honey: event })));
         controller.enqueue(encoder.encode("data: [DONE]\n\n"));
       } catch (error) {
         const message = error instanceof Error ? error.message : "Agent runtime error";
