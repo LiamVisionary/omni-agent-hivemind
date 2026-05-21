@@ -8393,7 +8393,7 @@ export default function Home() {
         <div className={kanbanClass("workBoardShell")}>
           <section className={kanbanClass("workBoardHero")} aria-label="Work board summary">
             <div className={kanbanClass("workBoardHeroCopy")}>
-              <strong>Work board</strong>
+              <strong>Workboard</strong>
               <span>Tasks by lane</span>
             </div>
             <div className={kanbanClass("workBoardStats")}>

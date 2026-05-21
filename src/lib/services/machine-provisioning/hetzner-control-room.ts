@@ -98,6 +98,7 @@ function envTemplate(values: {
 # Create it in Hetzner Cloud Console -> Security -> API Tokens.
 # Permission: Read & Write.
 # NEVER commit or paste this token into chat.
+# Leave blank here if you saved HCLOUD_TOKEN with hive-env-add.
 HCLOUD_TOKEN=
 
 # Populated automatically by provision.sh once the server is created.
@@ -142,6 +143,12 @@ fi
 set -a
 . ./.env
 set +a
+
+if [ -z "\${HCLOUD_TOKEN:-}" ] && [ -f "$HOME/.hivemindos/.env" ]; then
+  set -a
+  . "$HOME/.hivemindos/.env"
+  set +a
+fi
 
 required_vars="HCLOUD_TOKEN SERVER_NAME SERVER_TYPE SERVER_IMAGE SERVER_LOCATION SSH_KEY_NAME SSH_KEY_FILE SSH_ALIAS"
 for var in $required_vars; do
@@ -229,6 +236,12 @@ fi
 set -a
 . ./.env
 set +a
+
+if [ -z "\${HCLOUD_TOKEN:-}" ] && [ -f "$HOME/.hivemindos/.env" ]; then
+  set -a
+  . "$HOME/.hivemindos/.env"
+  set +a
+fi
 
 if [ -z "\${HCLOUD_TOKEN:-}" ] || [ -z "\${SERVER_NAME:-}" ]; then
   echo "Missing HCLOUD_TOKEN or SERVER_NAME"

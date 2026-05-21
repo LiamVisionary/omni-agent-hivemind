@@ -3,12 +3,20 @@
 This file records user-visible changes before they are committed. New work should
 be added here first, then marked `Committed` or `Pushed` after the git action.
 
+## 2026-05-21 20:18 WITA - Add Hetzner Token Helpers
+
+- Status: Pushed
+- Areas changed: Fleet Hetzner token API helpers, local HivemindOS env opening flow, changelog
+- Summary: Add node runtime API helpers for saving `HCLOUD_TOKEN` through `scripts/hive-env-add` and opening the local `~/.hivemindos/.env` file with safe permissions.
+- Verification: `pnpm typecheck`; `pnpm exec eslint src/app/api/fleet/hetzner/token/route.ts src/app/api/fleet/hetzner/env/open/route.ts`; `git diff --check`.
+- Intended commit message: `Add Hetzner token helpers`
+
 ## 2026-05-21 20:11 WITA - Compact Work Board Summary
 
 - Status: Pushed
 - Areas changed: Work board summary header, Work board stats labels, changelog
-- Summary: Replace the oversized hardcoded Work board slogan with a compact task-board header and rename the misleading `in flight` count to `total` so only the Working stat implies active execution.
-- Verification: `pnpm exec tsc --noEmit --pretty false`; `git diff --check -- src/app/page.tsx src/app/kanban-board.module.css CHANGELOG.md`; static scan confirmed the old `Eight bees`, `one comb`, and `in flight` strings are gone; Playwright smoke on `http://localhost:5020` confirmed the Work summary renders as a 76px compact strip with `Work board`, `Tasks by lane`, `0 working`, `2 needs you`, `6 done`, and `8 total`.
+- Summary: Replace the oversized hardcoded Work board slogan with a compact Workboard task header and rename the misleading `in flight` count to `total` so only the Working stat implies active execution.
+- Verification: `pnpm exec tsc --noEmit --pretty false`; `git diff --check -- src/app/page.tsx src/app/kanban-board.module.css CHANGELOG.md`; static scan confirmed the old `Eight bees`, `one comb`, and `in flight` strings are gone; Playwright smoke on `http://localhost:5020` confirmed the Work summary renders as a 76px compact strip with `Workboard`, `Tasks by lane`, `0 working`, `2 needs you`, `6 done`, and `8 total`.
 - Intended commit message: `Compact work board summary`
 
 ## 2026-05-21 20:05 WITA - Raise Work Board Scroll Buttons
@@ -30,9 +38,9 @@ be added here first, then marked `Committed` or `Pushed` after the git action.
 ## 2026-05-21 19:41 WITA - Add Machine Initializer Cell
 
 - Status: Pushed
-- Areas changed: Fleet graph add-machine cell, machine initializer modal, Hetzner/HivemindOS provisioning scaffold API, changelog, assimilation manifest
-- Summary: Add a dotted plus cell to the Fleet hive graph that opens a new-machine initializer, generate a local Hetzner project under `~/.hivemindos/machines/<project>` with token-safe `.env`, idempotent provision/destroy scripts, a mandatory HivemindOS bootstrap script, and dropdowns for machine runtime, server type, location, and supported Debian/Ubuntu image.
-- Verification: `pnpm typecheck --pretty false`; `pnpm exec eslint src/components/fleet/network-graph.tsx src/components/fleet/FleetView.tsx src/app/api/fleet/machines/init/route.ts src/lib/services/machine-provisioning/hetzner-control-room.ts src/app/page.tsx` (0 errors, existing dashboard warnings only); `POST /api/fleet/machines/init` on `localhost:5020` created a runtime-selected smoke project with `.env`, `scripts/provision.sh`, `scripts/bootstrap-hivemindos.sh`, and `scripts/destroy.sh`; generated `.env` kept `HCLOUD_TOKEN` blank and local-only; Browser smoke confirmed the modal has runtime-agent copy, no Hermes control-room checkbox, a machine-name field, and working Runtime agent, Server type, Location, and Image selectors.
+- Areas changed: Fleet graph add-machine cell, machine initializer modal, Hetzner/HivemindOS provisioning scaffold API, local Hetzner token helper APIs, changelog, assimilation manifest
+- Summary: Add a dotted plus cell to the Fleet hive graph that opens a new-machine initializer, generate a local Hetzner project under `~/.hivemindos/machines/<project>` with token-safe `.env`, idempotent provision/destroy scripts, a mandatory HivemindOS bootstrap script, a Hetzner API key empty state with save/open-env actions, estimated compute cost display, and dropdowns for machine runtime, server type, location, and supported Debian/Ubuntu image.
+- Verification: `pnpm typecheck --pretty false`; `pnpm exec eslint src/components/fleet/network-graph.tsx src/components/fleet/FleetView.tsx src/app/api/fleet/machines/init/route.ts src/app/api/fleet/hetzner/token/route.ts src/app/api/fleet/hetzner/env/open/route.ts src/lib/services/machine-provisioning/hetzner-control-room.ts src/app/page.tsx` (0 errors, existing dashboard warnings only); `POST /api/fleet/machines/init` on `localhost:5020` created a runtime-selected smoke project with `.env`, `scripts/provision.sh`, `scripts/bootstrap-hivemindos.sh`, and `scripts/destroy.sh`; generated `.env` kept `HCLOUD_TOKEN` blank and local-only; Browser smoke confirmed the modal has runtime-agent copy, no Hermes control-room checkbox, a machine-name field, estimated cost, a Hetzner API key empty state, and working Runtime agent, Server type, Location, and Image selectors.
 - Intended commit message: `Add machine initializer cell`
 
 ## 2026-05-21 19:31 WITA - Remove Work Task Side Drawer
