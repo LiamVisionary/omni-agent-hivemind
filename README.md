@@ -1,8 +1,6 @@
 <div align="center">
   <img width="220" height="220" alt="HivemindOS" src="public/hivemindos-logo.png" />
 
-  <h1>HivemindOS</h1>
-
   <p>
     <a href="https://github.com/LiamVisionary/hivemindos/stargazers"><img alt="GitHub stars" src="https://img.shields.io/github/stars/LiamVisionary/hivemindos?style=for-the-badge&amp;logo=github&amp;label=stars&amp;color=0b8bdc&amp;labelColor=555555" /></a>
     <a href="https://github.com/LiamVisionary/hivemindos/network/members"><img alt="GitHub forks" src="https://img.shields.io/github/forks/LiamVisionary/hivemindos?style=for-the-badge&amp;logo=github&amp;label=forks&amp;color=0b8bdc&amp;labelColor=555555" /></a>
