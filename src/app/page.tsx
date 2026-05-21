@@ -8026,6 +8026,10 @@ export default function Home() {
       .filter((skill) => skill.rank < 2)
       .sort((a, b) => a.rank - b.rank || Number(b.selected) - Number(a.selected) || a.name.localeCompare(b.name));
   }, [customWorkerDraft.preferredSkillSlugs, customWorkerSkillSearch, sharedSkillOptions]);
+  const selectedHetznerServerType = useMemo(
+    () => HETZNER_SERVER_TYPE_OPTIONS.find((option) => option.value === machineInitDraft.serverType) ?? HETZNER_SERVER_TYPE_OPTIONS[0],
+    [machineInitDraft.serverType],
+  );
 
   return (
     <motion.main
@@ -11591,6 +11595,43 @@ export default function Home() {
               </Button>
             </div>
 
+            {!machineInitStatus.result ? (
+              <section className={fleetClass("machineInitEmpty")}>
+                <div>
+                  <strong>Connect Hetzner Cloud</strong>
+                  <p>Enter a read/write Hetzner Cloud API token to let HivemindOS create the server. The token is saved locally with `hive-env-add` and is not sent to your fleet.</p>
+                </div>
+                <label className={fleetClass("agentSettingsField")}>
+                  <span>HCLOUD_TOKEN</span>
+                  <input
+                    type="password"
+                    value={machineInitToken}
+                    onChange={(event) => {
+                      setMachineInitToken(event.target.value);
+                      setMachineInitTokenStatus({});
+                    }}
+                    placeholder="Paste token"
+                    autoComplete="off"
+                  />
+                </label>
+                <div className={fleetClass("machineInitTokenActions")}>
+                  <Button type="button" variant="secondary" onClick={saveHetznerToken} disabled={machineInitTokenStatus.busy || !machineInitToken.trim()}>
+                    {machineInitTokenStatus.busy ? <LoaderCircle aria-hidden="true" className="animate-spin" /> : <Check aria-hidden="true" />}
+                    Save key locally
+                  </Button>
+                  <Button type="button" variant="ghost" onClick={openHetznerEnvFile} disabled={machineInitTokenStatus.busy}>
+                    <FileText aria-hidden="true" />
+                    Open env file
+                  </Button>
+                </div>
+                {machineInitTokenStatus.error || machineInitTokenStatus.message ? (
+                  <p className={machineInitTokenStatus.error ? fleetClass("machineInitTokenError") : fleetClass("machineInitTokenOk")}>
+                    {machineInitTokenStatus.error ?? machineInitTokenStatus.message}
+                  </p>
+                ) : null}
+              </section>
+            ) : null}
+
             <form className={fleetClass("machineInitForm")} onSubmit={initializeMachineProject}>
               <label className={fleetClass("agentSettingsField")}>
                 <span>Machine name</span>
@@ -11645,8 +11686,10 @@ export default function Home() {
                   <option value="aeon">Aeon</option>
                 </select>
               </label>
-              <div className={fleetClass("machineInitNotice")}>
-                HivemindOS bootstrap is mandatory for fleet discovery. These options are seeded from Hetzner Cloud docs and common current slugs; after adding `HCLOUD_TOKEN`, use the generated live list commands to confirm availability before provisioning.
+              <div className={fleetClass("machineInitCost")}>
+                <span>Estimated compute</span>
+                <strong>from €{selectedHetznerServerType.monthlyEur.toFixed(2)}/mo</strong>
+                <p>{selectedHetznerServerType.detail}. Public IPv4, VAT, location premiums, and current availability can change; verify with the generated live Hetzner commands before provisioning.</p>
               </div>
               <div className={fleetClass("setupModalActions")}>
                 <Button type="submit" disabled={machineInitStatus.busy}>
