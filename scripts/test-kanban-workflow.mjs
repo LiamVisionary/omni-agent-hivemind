@@ -148,6 +148,12 @@ async function main() {
       /function isKanbanAwaitingAgentUpdate\(task: KanbanTask\) \{\s*return task\.status === "working"\s*&& Boolean\(task\.agentSession\?\.sessionId\);\s*\}/m.test(source),
       "Regression guard failed: unpollable accepted text must not count as an awaiting agent update.",
     );
+    assert(
+      source.includes('logClientTelemetry("kanban.dispatch.no_final_assistant"')
+      && source.includes('logClientTelemetry("kanban.dispatch.completed_from_session"')
+      && source.includes('await patchKanbanTask(task.id, {\n              status: "needs-human",\n              agentSession: null,'),
+      "Regression guard failed: session-backed dispatches must finalize from assistant output or fail closed out of Working.",
+    );
 
     const final = await request("GET", {}, { vaultPath, kanbanFolder, include_archived: "true" });
     const statuses = Object.fromEntries(final.board.tasks.map((task) => [task.title, task.status]));

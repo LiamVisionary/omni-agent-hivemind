@@ -1892,7 +1892,7 @@
   margin-top: 3px;
 }
 
-.agentRuntimeCapabilityBadges span,
+.agentRuntimeCapabilityBadges > span,
 .agentRuntimeCapabilityBadges small {
   display: inline-flex;
   align-items: center;
@@ -1900,19 +1900,67 @@
   text-transform: uppercase;
 }
 
-.agentRuntimeCapabilityBadges span {
+.agentRuntimeCapabilityBadges > span {
   color: #facc15;
   font-size: 11px;
   font-weight: 900;
   letter-spacing: 0.08em;
 }
 
-.agentRuntimeCapabilityBadges span.needsHermesUpdate {
-  border: 1px solid rgba(251, 191, 36, 0.28);
-  border-radius: 999px;
+.agentRuntimeCapabilityBadges > span.needsHermesUpdate {
+  width: fit-content;
+  max-width: 100%;
+  gap: 4px;
+  border: 1px solid rgba(251, 191, 36, 0.22);
+  border-radius: 6px;
+  background: rgba(251, 191, 36, 0.07);
+  color: rgba(253, 230, 138, 0.9);
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.01em;
+  padding: 3px 6px;
+  text-transform: none;
+  white-space: nowrap;
+}
+
+.agentRuntimeCapabilityBadges > span.needsHermesUpdate.confirming {
+  padding: 3px 4px 3px 6px;
+}
+
+.agentRuntimeCapabilityBadges > span.needsHermesUpdate > button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: auto;
+  min-width: 0;
+  height: 18px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  font: inherit;
+  line-height: 1;
+  padding: 0 2px;
+}
+
+.agentRuntimeCapabilityBadges > span.needsHermesUpdate.confirming > button {
+  width: 18px;
   background: rgba(251, 191, 36, 0.1);
-  color: #fde68a;
-  padding: 4px 7px;
+}
+
+.agentRuntimeCapabilityBadges > span.needsHermesUpdate > button:hover:not(:disabled) {
+  background: rgba(251, 191, 36, 0.16);
+}
+
+.agentRuntimeCapabilityBadges > span.needsHermesUpdate > button:disabled {
+  cursor: not-allowed;
+  opacity: 0.65;
+}
+
+.agentRuntimeCapabilityBadges > span.needsHermesUpdate svg {
+  width: 12px;
+  height: 12px;
 }
 
 .agentRuntimeCapabilityBadges small {

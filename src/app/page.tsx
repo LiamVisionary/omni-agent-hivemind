@@ -3420,6 +3420,7 @@ export default function Home() {
   const [runtimeIntegrationStatus, setRuntimeIntegrationStatus] = useState<RuntimeIntegrationStatus | null>(null);
   const [runtimeIntegrationBusy, setRuntimeIntegrationBusy] = useState("");
   const [runtimeIntegrationMessage, setRuntimeIntegrationMessage] = useState("");
+  const [runtimeUpdateConfirmKey, setRuntimeUpdateConfirmKey] = useState<RuntimeIntegrationKey | "">("");
   const [runtimeSessionQuery, setRuntimeSessionQuery] = useState("");
   const [runtimeSessionResults, setRuntimeSessionResults] = useState<RuntimeSessionSearchResult[]>([]);
   const [runtimeBackgroundPrompt, setRuntimeBackgroundPrompt] = useState("");
@@ -5801,6 +5802,9 @@ export default function Home() {
       return;
     }
     setRuntimeIntegrationStatus(data.status);
+    if (data.status.runtime === "hermes") {
+      setHermesUpdateRequiredDetail(hermesUpdateDetail(data.status));
+    }
   }
 
   async function runRuntimeIntegrationAction(action: string, input: Record<string, unknown> = {}) {
@@ -8808,6 +8812,7 @@ export default function Home() {
     const localTaskId = `kanban-${task.id}-${Date.now()}`;
     let fullText = "";
     let sawAgentSession = false;
+    let lastAgentSession: NonNullable<KanbanTask["agentSession"]> | null = null;
     logClientTelemetry("kanban.dispatch.start", {
       taskId: task.id,
       agentId: agent.id,
@@ -8882,6 +8887,15 @@ export default function Home() {
           }
           if (parsed.session?.id) {
             sawAgentSession = true;
+            lastAgentSession = {
+              agentId: agent.id,
+              agentName: agent.name,
+              telemetryUrl: agent.telemetryUrl,
+              sessionId: parsed.session.id,
+              startedAt: parsed.session.startedAt ?? Date.now(),
+              updatedAt: parsed.session.updatedAt ?? Date.now(),
+              lastMessageCount: parsed.session.messageCount ?? 0,
+            };
             logClientTelemetry("kanban.dispatch.session", {
               taskId: task.id,
               agentId: agent.id,
@@ -8889,15 +8903,7 @@ export default function Home() {
               messageCount: parsed.session.messageCount ?? 0,
             });
             await patchKanbanTask(task.id, {
-              agentSession: {
-                agentId: agent.id,
-                agentName: agent.name,
-                telemetryUrl: agent.telemetryUrl,
-                sessionId: parsed.session.id,
-                startedAt: parsed.session.startedAt ?? Date.now(),
-                updatedAt: parsed.session.updatedAt ?? Date.now(),
-                lastMessageCount: parsed.session.messageCount ?? 0,
-              },
+              agentSession: lastAgentSession,
               result: `${agent.name} accepted the task. Waiting for agent update.`,
             });
             continue;
@@ -8918,6 +8924,56 @@ export default function Home() {
       }
 
       if (!fullText.trim() && sawAgentSession) {
+        if (lastAgentSession) {
+          const finalSessionResponse = await fetch("/api/chat/agent-session", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ agent, sessionId: lastAgentSession.sessionId }),
+          }).catch(() => null);
+          const finalSessionData = await finalSessionResponse?.json().catch(() => null) as AgentSessionResponse | null;
+          const finalMessages = finalSessionData?.session?.messages?.filter((message) => (
+            message.content.trim()
+            && !isInternalHermesSessionPrelude(message.content)
+          )) ?? [];
+          const finalAssistant = [...finalMessages].reverse().find((message) => (
+            message.role === "assistant"
+            && message.content.trim()
+          ));
+          const finalRaw = [...finalMessages].reverse().find((message) => message.content.trim());
+          if (finalAssistant) {
+            const result = finalAssistant.content.trim();
+            logClientTelemetry("kanban.dispatch.completed_from_session", {
+              taskId: task.id,
+              agentId: agent.id,
+              sessionId: lastAgentSession.sessionId,
+              resultLength: result.length,
+            });
+            updateTask(localTaskId, { status: "completed", lastMessage: result, completedAt: Date.now() });
+            await patchKanbanTask(task.id, { status: "done", agentSession: null, result });
+            await addKanbanSystemComment(task.id, `${agent.name} completed the delegated work from the Work board.`);
+            return { ok: true, message: result };
+          }
+          if (finalRaw) {
+            const message = kanbanNoAssistantStalledDetail(agent.name, finalMessages.length, finalRaw.role, finalRaw.content);
+            logClientTelemetry("kanban.dispatch.no_final_assistant", {
+              taskId: task.id,
+              agentId: agent.id,
+              sessionId: lastAgentSession.sessionId,
+              latestCount: finalMessages.length,
+              latestRole: finalRaw.role,
+              latestContentLength: finalRaw.content.length,
+              latestToolSummary: finalRaw.role === "tool" ? summarizeKanbanToolOutput(finalRaw.content) : "",
+            });
+            updateTask(localTaskId, { status: "failed", lastMessage: message, completedAt: Date.now() });
+            await patchKanbanTask(task.id, {
+              status: "needs-human",
+              agentSession: null,
+              result: message,
+            });
+            await addKanbanSystemComment(task.id, message);
+            return { ok: true, message };
+          }
+        }
         const message = `${agent.name} accepted the delegated work. Waiting for agent update.`;
         logClientTelemetry("kanban.dispatch.awaiting_agent_update", {
           taskId: task.id,
@@ -13702,13 +13758,57 @@ export default function Home() {
                       : supported
                         ? enabled ? "Ready" : "Needs setup"
                         : "Not exposed";
+                    const updateConfirmOpen = runtimeUpdateConfirmKey === key;
                     return (
                       <article key={key} className={fleetClass("agentRuntimeCapabilityCard", supported ? "supported" : "unsupported")}>
                         <Icon aria-hidden="true" />
                         <div>
                           <strong>{label}</strong>
                           <div className={fleetClass("agentRuntimeCapabilityBadges")}>
-                            <span className={needsHermesUpdate ? fleetClass("needsHermesUpdate") : undefined}>{statusLabel}</span>
+                            {needsHermesUpdate ? (
+                              <span className={fleetClass("needsHermesUpdate", updateConfirmOpen ? "confirming" : "")}>
+                                {updateConfirmOpen ? (
+                                  <>
+                                    <span>Update now?</span>
+                                    <button
+                                      type="button"
+                                      aria-label="Update Hermes now"
+                                      disabled={Boolean(runtimeIntegrationBusy)}
+                                      onClick={(event) => {
+                                        event.stopPropagation();
+                                        void (async () => {
+                                          await runRuntimeIntegrationAction("hermes-update");
+                                          setRuntimeUpdateConfirmKey("");
+                                        })();
+                                      }}
+                                    >
+                                      {runtimeIntegrationBusy === "hermes-update" ? <LoaderCircle aria-hidden="true" className="animate-spin" /> : <Check aria-hidden="true" />}
+                                    </button>
+                                    <button
+                                      type="button"
+                                      aria-label="Cancel Hermes update"
+                                      disabled={runtimeIntegrationBusy === "hermes-update"}
+                                      onClick={(event) => {
+                                        event.stopPropagation();
+                                        setRuntimeUpdateConfirmKey("");
+                                      }}
+                                    >
+                                      <X aria-hidden="true" />
+                                    </button>
+                                  </>
+                                ) : (
+                                  <button
+                                    type="button"
+                                    disabled={Boolean(runtimeIntegrationBusy)}
+                                    onClick={() => setRuntimeUpdateConfirmKey(key)}
+                                  >
+                                    {statusLabel}
+                                  </button>
+                                )}
+                              </span>
+                            ) : (
+                              <span>{statusLabel}</span>
+                            )}
                           </div>
                           <p>{detail}</p>
                         </div>

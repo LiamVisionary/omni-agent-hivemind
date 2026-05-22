@@ -157,6 +157,10 @@ export async function runRuntimeIntegrationAction(runtime: AgentRuntime, action:
     child.unref();
     return { ok: true, message: "Started Hermes xAI OAuth login in a separate process." };
   }
+  if (action === "hermes-update") {
+    const output = await runHermes(["update"], 300_000);
+    return { ok: true, message: "Hermes update completed.", output };
+  }
   if (action === "background") {
     const prompt = String(input.prompt ?? "").trim();
     if (!prompt) return { ok: false, error: "Background prompt is required." };

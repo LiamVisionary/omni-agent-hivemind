@@ -218,7 +218,21 @@
   filter: drop-shadow(0 0 18px rgba(45, 212, 191, 0.16));
 }
 
+.brainGraphCanvas .brainLoaderComb {
+  width: 118px;
+  min-height: 0;
+  height: 92px;
+  cursor: default;
+  touch-action: auto;
+  user-select: auto;
+}
+
 .brainLoader.compact .brainLoaderComb {
+  width: 76px;
+  height: 58px;
+}
+
+.brainGraphCanvas .brainLoader.compact .brainLoaderComb {
   width: 76px;
   height: 58px;
 }
