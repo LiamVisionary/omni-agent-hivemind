@@ -5,7 +5,7 @@ be added here first, then marked `Committed` or `Pushed` after the git action.
 
 ## 2026-05-22 15:16 WITA - Keep Runtime Update Badges In Sync
 
-- Status: Uncommitted
+- Status: Pushed
 - Areas changed: Agent Settings runtime tools, Hermes update detection state
 - Summary: Update the Hermes update-required state whenever the Agent Settings Tools tab refreshes runtime integrations, so cards do not fall back to `Ready` before the skills view has scanned.
 - Verification: `pnpm exec tsc --noEmit --pretty false`; `pnpm exec eslint src/app/page.tsx` (0 errors, existing page warnings only); `git diff --check -- CHANGELOG.md src/app/page.tsx`.
@@ -13,7 +13,7 @@ be added here first, then marked `Committed` or `Pushed` after the git action.
 
 ## 2026-05-22 15:10 WITA - Add Inline Hermes Update Confirmation
 
-- Status: Uncommitted
+- Status: Pushed
 - Areas changed: Agent Settings runtime update badge, Hermes runtime integration action
 - Summary: Let the `Needs Hermes update` badge expand into an inline `Update now?` confirmation with check/cancel controls, and run `hermes update` when the checkmark is confirmed.
 - Verification: `pnpm exec tsc --noEmit --pretty false`; `pnpm exec eslint src/app/page.tsx src/app/fleet.module.css src/lib/services/runtime-integrations.ts` (0 errors, existing page warnings only; CSS module ignored by eslint config); `git diff --check -- CHANGELOG.md src/app/page.tsx src/app/fleet.module.css src/lib/services/runtime-integrations.ts`. Did not execute `hermes update`; it now runs only from the confirmation checkmark.
@@ -21,7 +21,7 @@ be added here first, then marked `Committed` or `Pushed` after the git action.
 
 ## 2026-05-22 15:05 WITA - Refine Hermes Update Badge Styling
 
-- Status: Uncommitted
+- Status: Pushed
 - Areas changed: Agent Settings runtime tool badge styling
 - Summary: Tone down the `Needs Hermes update` runtime badge with smaller type, tighter padding, softer color, and normal casing so it reads as a compact compatibility note instead of a primary card title.
 - Verification: `pnpm exec eslint src/app/fleet.module.css src/app/page.tsx` (0 errors, existing page warnings only; CSS module ignored by eslint config); `git diff --check -- CHANGELOG.md src/app/fleet.module.css`.
@@ -29,7 +29,7 @@ be added here first, then marked `Committed` or `Pushed` after the git action.
 
 ## 2026-05-22 15:03 WITA - Stop Tool-Only Kanban Runs From Sticking
 
-- Status: Uncommitted
+- Status: Pushed
 - Areas changed: Kanban dispatch completion handling, Kanban telemetry
 - Summary: When a delegated Kanban runtime stream closes without response text but has an attached agent session, fetch the final session before deciding status. Complete the card if the session contains a final assistant response; otherwise record `kanban.dispatch.no_final_assistant`, clear the active agent session, and move the card to Needs Human with a summarized latest message instead of leaving it stuck in Working.
 - Verification: Telemetry inspection confirmed the live failed task `t_mpebcduf_obrj4` session `api-b448f5974ef54c76` reached 63 messages with latest role `tool`, latest assistant length `0`, and `kanban.session.tool_output_stalled`; `node scripts/test-kanban-workflow.mjs && node scripts/test-dashboard-nav.mjs`; `pnpm exec tsc --noEmit --pretty false`; `pnpm exec eslint src/app/page.tsx src/lib/services/runtime-integrations.ts scripts/test-kanban-workflow.mjs` (0 errors, existing page warnings only); `git diff --check`. A Playwright UI repro was attempted with a temp board and mocked tool-only session, but the local dashboard tab buttons did not activate in headless Chromium, matching the existing browser-smoke limitation.
