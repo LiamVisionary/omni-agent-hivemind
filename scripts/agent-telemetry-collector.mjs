@@ -29,6 +29,7 @@ const defaultSyncPath = expandHome(
     || process.env.NEXT_PUBLIC_OBSIDIAN_VAULT_PATH
     || "~/Documents/Obsidian/hivemindos-vault",
 );
+const runLogRoot = join(homedir(), ".hivemindos", "runtime-runs");
 let hermesApiProcess = null;
 let hermesApiStartPromise = null;
 
@@ -628,6 +629,23 @@ async function runHermesIntegrationAction(action, input = {}) {
   if (action === "hermes-update") {
     const output = await runHermes(["update"], 300_000);
     return { ok: true, message: "Hermes update completed on this machine.", output };
+  }
+  if (action === "background") {
+    const prompt = String(input.prompt || "").trim();
+    if (!prompt) return { ok: false, error: "Background prompt is required." };
+    const id = `hermes-${Date.now().toString(36)}`;
+    const logPath = join(runLogRoot, `${id}.log`);
+    await mkdir(runLogRoot, { recursive: true });
+    const child = spawn(await resolveHermesBin(), ["-z", prompt], {
+      detached: true,
+      stdio: ["ignore", "pipe", "pipe"],
+      env: { ...process.env },
+    });
+    const write = (chunk) => void writeFile(logPath, chunk.toString(), { flag: "a" }).catch(() => undefined);
+    child.stdout.on("data", write);
+    child.stderr.on("data", write);
+    child.unref();
+    return { ok: true, id, logPath, message: "Started Hermes background task on this machine." };
   }
   if (action === "kanban-decompose") {
     const taskId = String(input.taskId || "").trim();

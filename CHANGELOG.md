@@ -8,7 +8,7 @@ be added here first, then marked `Committed` or `Pushed` after the git action.
 - Status: Pushed
 - Areas changed: Runtime integrations API, telemetry collector runtime endpoint, Hermes update actions
 - Summary: Route runtime integration status/actions through an agent's remote collector when its telemetry URL points at another machine, so Hermes update badges and `hermes update` run against the selected agent machine instead of always checking the dashboard host.
-- Verification: Pending.
+- Verification: `pnpm exec tsc --noEmit --pretty false`; `node --check scripts/agent-telemetry-collector.mjs`; `git diff --check`.
 - Intended commit message: `Check Hermes updates per machine`
 
 ## 2026-05-22 15:51 WITA - Make Card Machine Picker Pressed And Unclipped
@@ -21,11 +21,19 @@ be added here first, then marked `Committed` or `Pushed` after the git action.
 
 ## 2026-05-22 15:50 WITA - Proxy Remote Runtime Integrations Through Collectors
 
-- Status: Uncommitted
+- Status: Pushed
 - Areas changed: runtime integration API route and agent telemetry collector
 - Summary: Route non-local agent runtime integration checks/actions through each machine's telemetry collector, and expose Hermes integration status/actions from the collector so remote machines can report tool setup and run supported integration commands.
 - Verification: `pnpm exec tsc --noEmit --pretty false`; `node --check scripts/agent-telemetry-collector.mjs`; `git diff --check`.
 - Intended commit message: `Proxy remote runtime integrations through collectors`
+
+## 2026-05-22 15:51 WITA - Add Remote Collector Background Runtime Action
+
+- Status: Uncommitted
+- Areas changed: agent telemetry collector runtime integrations
+- Summary: Add the Hermes background runtime action to the telemetry collector so remote machines can start background Hermes work through the same runtime integration panel as local machines.
+- Verification: `node --check scripts/agent-telemetry-collector.mjs`; `git diff --check`.
+- Intended commit message: `Add remote collector background runtime action`
 
 ## 2026-05-22 15:48 WITA - Wrap Workboard Machine Tooltip Provider
 
