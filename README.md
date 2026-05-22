@@ -36,8 +36,8 @@ Optional, but recommended before setup: join your machines to Tailscale first.
 
 - For local-only use, you can skip Tailscale completely.
 - For fleet discovery and shared-brain folder sync, install Tailscale, sign in, and confirm `tailscale status` works on each machine.
-- On macOS, the App Store/sandboxed GUI build can join your Tailnet, but it cannot host the Tailscale SSH server. That is fine for VPN and Syncthing, but `hive-env-add` peer env sync and rsync repair from that Mac need a Tailscale SSH-capable host.
-- To make a macOS machine host Tailscale SSH, use the open-source `tailscale` + `tailscaled` CLI/daemon build:
+- On macOS, the App Store/sandboxed GUI build can join your Tailnet, but it cannot host the Tailscale SSH server. That is fine for VPN and Syncthing, but `hive-env-add` peer env sync and rsync repair from that Mac need a Tailscale SSH-capable host. Tailscale documents the macOS build differences here: [Three ways to run Tailscale on macOS](https://tailscale.com/docs/concepts/macos-variants).
+- To make a macOS machine host Tailscale SSH, install the open-source `tailscale` + `tailscaled` CLI/daemon build from the [Tailscaled on macOS guide](https://github.com/tailscale/tailscale/wiki/Tailscaled-on-macOS), or use Homebrew:
 
 ```bash
 brew install --formula tailscale

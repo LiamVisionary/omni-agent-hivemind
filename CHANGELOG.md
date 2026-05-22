@@ -3,6 +3,14 @@
 This file records user-visible changes before they are committed. New work should
 be added here first, then marked `Committed` or `Pushed` after the git action.
 
+## 2026-05-22 22:01 WITA - Link Tailscale Mac CLI Guide
+
+- Status: Pushed
+- Areas changed: README quick start, macOS/Linux setup, changelog
+- Summary: Add direct links to Tailscale's macOS variants documentation and Tailscaled-on-macOS guide in the preflight instructions, and include the same guide URL in the setup warning for sandboxed macOS GUI builds that cannot host Tailscale SSH.
+- Verification: `bash -n setup.sh`; `git diff --check -- README.md setup.sh CHANGELOG.md`; README and setup warning excerpts reviewed to confirm direct Tailscale guide links are present.
+- Intended commit message: `Link Tailscale Mac CLI guide`
+
 ## 2026-05-22 21:09 WITA - Document Tailscale Preflight
 
 - Status: Pushed

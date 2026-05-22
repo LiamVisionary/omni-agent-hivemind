@@ -366,7 +366,7 @@ warn_tailscale_ssh_unavailable() {
   fi
   if tailscale_ssh_error_is_sandboxed "$tailscale_ssh_error"; then
     warn "This macOS Tailscale build cannot host Tailscale SSH. Shared-brain Syncthing can still work, but Tailscale SSH features from this Mac are disabled."
-    warn "To host Tailscale SSH from this Mac, install the open-source tailscale + tailscaled CLI build instead of the sandboxed GUI build."
+    warn "To host Tailscale SSH from this Mac, install the open-source tailscale + tailscaled CLI build: https://github.com/tailscale/tailscale/wiki/Tailscaled-on-macOS"
   else
     warn "Run this on each sync machine if prompted for admin rights: sudo tailscale set --ssh"
   fi
