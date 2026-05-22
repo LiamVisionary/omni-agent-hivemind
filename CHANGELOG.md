@@ -3,6 +3,14 @@
 This file records user-visible changes before they are committed. New work should
 be added here first, then marked `Committed` or `Pushed` after the git action.
 
+## 2026-05-22 19:49 WITA - Prompt For Setup Tool Installs
+
+- Status: Pushed
+- Areas changed: Setup dependency installer prompts, Homebrew shellenv handling, Syncthing startup, changelog
+- Summary: Add interactive yes/no install prompts for Homebrew, pnpm, Tailscale, rsync, and Syncthing, load Homebrew shellenv from standard Apple Silicon and Intel paths so newly installed tools are immediately visible, ask before adding Homebrew shellenv to `~/.zprofile`, and start/check Syncthing after installation when Tailnet sync is connected. Non-interactive setup no longer installs optional sync tools automatically.
+- Verification: `bash -n setup.sh`; `git diff --check -- setup.sh CHANGELOG.md`; `/opt/homebrew/bin/brew shellenv zsh` smoke confirmed the zsh profile line is valid for `.zprofile`.
+- Intended commit message: `Prompt for setup tool installs`
+
 ## 2026-05-22 16:47 WITA - Route Kanban Undo To Workers
 
 - Status: Pushed

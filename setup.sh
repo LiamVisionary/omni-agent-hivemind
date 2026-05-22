@@ -21,6 +21,80 @@ fail() { printf "\033[1;31m✗\033[0m %s\n" "$*"; }
 
 missing=()
 
+prompt_yes_no() {
+  local prompt="$1"
+  local default="${2:-no}"
+  local suffix="[y/N]"
+  local answer=""
+  if [[ "$default" == "yes" ]]; then suffix="[Y/n]"; fi
+  setup_is_interactive || return 1
+  read -r -p "$prompt $suffix " answer
+  answer="$(printf "%s" "$answer" | tr '[:upper:]' '[:lower:]' | tr -d '[:space:]')"
+  if [[ -z "$answer" ]]; then
+    [[ "$default" == "yes" ]]
+    return
+  fi
+  [[ "$answer" == "y" || "$answer" == "yes" ]]
+}
+
+load_homebrew_shellenv() {
+  local brew_bin=""
+  if command -v brew >/dev/null 2>&1; then
+    brew_bin="$(command -v brew)"
+  elif [[ -x /opt/homebrew/bin/brew ]]; then
+    brew_bin="/opt/homebrew/bin/brew"
+  elif [[ -x /usr/local/bin/brew ]]; then
+    brew_bin="/usr/local/bin/brew"
+  fi
+  if [[ -n "$brew_bin" ]]; then
+    eval "$("$brew_bin" shellenv)"
+    return 0
+  fi
+  return 1
+}
+
+offer_homebrew_profile_update() {
+  [[ "$(uname -s)" == "Darwin" && -n "${HOME:-}" ]] || return 0
+  command -v brew >/dev/null 2>&1 || return 0
+  local brew_bin
+  brew_bin="$(command -v brew)"
+  local profile_file="$HOME/.zprofile"
+  local shellenv_line="eval \"\$($brew_bin shellenv zsh)\""
+  if [[ -f "$profile_file" ]] && grep -Fqx "$shellenv_line" "$profile_file"; then
+    ok "Homebrew shellenv already present in $profile_file"
+    return 0
+  fi
+  if prompt_yes_no "Add Homebrew to your zsh PATH in $profile_file now?" "yes"; then
+    touch "$profile_file"
+    printf "\n%s\n" "$shellenv_line" >> "$profile_file"
+    ok "Homebrew shellenv added to $profile_file"
+  else
+    warn "Homebrew is available for this setup run, but future terminals may need: $shellenv_line"
+  fi
+}
+
+ensure_homebrew() {
+  if [[ "$(uname -s)" != "Darwin" ]]; then
+    return 1
+  fi
+  if load_homebrew_shellenv; then
+    offer_homebrew_profile_update
+    return 0
+  fi
+  if ! prompt_yes_no "Homebrew is missing. Install Homebrew now so setup can install pnpm, Tailscale, and Syncthing?" "yes"; then
+    return 1
+  fi
+  if ! command -v curl >/dev/null 2>&1; then
+    warn "curl is required to install Homebrew automatically"
+    return 1
+  fi
+  info "Installing Homebrew"
+  /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+  load_homebrew_shellenv || return 1
+  offer_homebrew_profile_update
+  ok "Homebrew installed: $(brew --version | head -1)"
+}
+
 usage() {
   cat <<'EOF'
 Usage: ./setup.sh [options]
@@ -129,8 +203,16 @@ install_rsync_if_missing() {
     ok "rsync found: $(rsync --version 2>/dev/null | head -1)"
     return
   fi
+  if ! setup_is_interactive; then
+    warn "rsync is missing; skipping optional Tailnet repair sync install in non-interactive setup"
+    return
+  fi
+  if ! prompt_yes_no "rsync is missing. Install it for Tailnet vault repair sync?" "yes"; then
+    warn "Skipping rsync install; Tailnet rsync repair sync is disabled"
+    return
+  fi
   warn "rsync is missing; trying to install it for Tailnet vault sync"
-  if [[ "$(uname -s)" == "Darwin" ]] && command -v brew >/dev/null 2>&1; then
+  if [[ "$(uname -s)" == "Darwin" ]] && { command -v brew >/dev/null 2>&1 || ensure_homebrew; }; then
     brew install rsync
   elif command -v apt-get >/dev/null 2>&1 && command -v sudo >/dev/null 2>&1; then
     sudo apt-get update
@@ -152,8 +234,16 @@ install_syncthing_if_missing() {
     ok "Syncthing found: $(syncthing --version 2>/dev/null | head -1)"
     return
   fi
+  if ! setup_is_interactive; then
+    warn "Syncthing is missing; skipping optional realtime shared-brain sync install in non-interactive setup"
+    return
+  fi
+  if ! prompt_yes_no "Syncthing is missing. Install it for realtime shared-brain folder sync?" "yes"; then
+    warn "Skipping Syncthing install; realtime shared-brain folder sync is disabled"
+    return
+  fi
   warn "Syncthing is missing; trying to install it for realtime folder sync"
-  if [[ "$(uname -s)" == "Darwin" ]] && command -v brew >/dev/null 2>&1; then
+  if [[ "$(uname -s)" == "Darwin" ]] && { command -v brew >/dev/null 2>&1 || ensure_homebrew; }; then
     brew install syncthing
   elif command -v apt-get >/dev/null 2>&1 && command -v sudo >/dev/null 2>&1; then
     sudo apt-get update
@@ -168,6 +258,20 @@ install_syncthing_if_missing() {
     return
   fi
   command -v syncthing >/dev/null 2>&1 && ok "Syncthing installed"
+}
+
+start_syncthing_if_available() {
+  command -v syncthing >/dev/null 2>&1 || return
+  if [[ "$(uname -s)" == "Darwin" ]]; then
+    if command -v brew >/dev/null 2>&1 && brew services list 2>/dev/null | grep -q '^syncthing '; then
+      brew services start syncthing >/dev/null 2>&1 || true
+    fi
+    if pgrep -f "syncthing.*127.0.0.1:8384" >/dev/null 2>&1 || curl -fsS --max-time 2 http://127.0.0.1:8384/rest/system/ping >/dev/null 2>&1; then
+      ok "Syncthing is running on 127.0.0.1:8384"
+    else
+      warn "Syncthing installed, but it is not responding yet; collector setup will install the HivemindOS LaunchAgent"
+    fi
+  fi
 }
 
 enable_tailscale_ssh() {
@@ -204,7 +308,14 @@ install_tailscale_if_missing() {
     return 0
   fi
 
-  if [[ "$(uname -s)" == "Darwin" ]] && command -v brew >/dev/null 2>&1; then
+  if ! setup_is_interactive; then
+    return 1
+  fi
+  if ! prompt_yes_no "Tailscale is missing. Install it for multi-machine collaboration and shared memory sync?" "yes"; then
+    return 1
+  fi
+
+  if [[ "$(uname -s)" == "Darwin" ]] && { command -v brew >/dev/null 2>&1 || ensure_homebrew; }; then
     warn "Tailscale is not installed; trying to install it for multi-machine sync"
     brew install --cask tailscale || true
     if ! command -v tailscale >/dev/null 2>&1; then
@@ -246,6 +357,44 @@ install_hive_env_add() {
     *":$bin_dir:"*) ;;
     *) warn "Add $bin_dir to PATH to run hive-env-add from any folder" ;;
   esac
+}
+
+install_pnpm_if_missing() {
+  if command -v pnpm >/dev/null 2>&1; then
+    ok "pnpm found: $(pnpm --version)"
+    return 0
+  fi
+  if command -v corepack >/dev/null 2>&1; then
+    if ! setup_is_interactive || prompt_yes_no "pnpm is missing. Enable pnpm through Corepack now?" "yes"; then
+      info "pnpm not found; enabling pnpm through corepack"
+      corepack enable
+      corepack prepare pnpm@8.6.12 --activate
+      hash -r 2>/dev/null || true
+      ok "pnpm enabled: $(pnpm --version)"
+      return 0
+    fi
+  fi
+  if command -v npm >/dev/null 2>&1; then
+    if setup_is_interactive && prompt_yes_no "pnpm is missing. Install pnpm globally with npm now?" "yes"; then
+      info "Installing pnpm with npm"
+      npm install -g pnpm
+      hash -r 2>/dev/null || true
+      ok "pnpm installed: $(pnpm --version)"
+      return 0
+    fi
+  fi
+  if setup_is_interactive && [[ "$(uname -s)" == "Darwin" ]] && { command -v brew >/dev/null 2>&1 || ensure_homebrew; }; then
+    if prompt_yes_no "pnpm is missing. Install pnpm with Homebrew now?" "yes"; then
+      info "Installing pnpm with Homebrew"
+      brew install pnpm
+      hash -r 2>/dev/null || true
+      ok "pnpm installed: $(pnpm --version)"
+      return 0
+    fi
+  fi
+  missing+=("pnpm or corepack")
+  fail "pnpm is missing"
+  return 1
 }
 
 setup_is_interactive() {
@@ -320,17 +469,8 @@ else
   fail "Node is missing"
 fi
 
-if command -v pnpm >/dev/null 2>&1; then
-  ok "pnpm found: $(pnpm --version)"
-elif command -v corepack >/dev/null 2>&1; then
-  info "pnpm not found; enabling pnpm through corepack"
-  corepack enable
-  corepack prepare pnpm@8.6.12 --activate
-  ok "pnpm enabled: $(pnpm --version)"
-else
-  missing+=("pnpm or corepack")
-  fail "pnpm is missing"
-fi
+load_homebrew_shellenv || true
+install_pnpm_if_missing || true
 
 if command -v corepack >/dev/null 2>&1; then
   corepack prepare pnpm@8.6.12 --activate >/dev/null 2>&1 || true
@@ -361,6 +501,7 @@ fi
 if [[ "$tailnet_sync_enabled" == "true" ]]; then
   install_rsync_if_missing
   install_syncthing_if_missing
+  start_syncthing_if_available
 else
   warn "Skipping Tailnet rsync/Syncthing setup because Tailscale is not connected"
 fi
