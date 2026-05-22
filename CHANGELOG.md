@@ -5,7 +5,7 @@ be added here first, then marked `Committed` or `Pushed` after the git action.
 
 ## 2026-05-22 15:48 WITA - Wrap Workboard Machine Tooltip Provider
 
-- Status: Uncommitted
+- Status: Pushed
 - Areas changed: Workboard machine target tooltip
 - Summary: Wrap the Workboard surface in `TooltipProvider` so card machine selectors can render without the Radix tooltip provider runtime error.
 - Verification: `pnpm exec tsc --noEmit --pretty false`; `pnpm exec eslint src/app/page.tsx` (0 errors, existing page warnings only); `node scripts/test-dashboard-nav.mjs && node scripts/test-kanban-workflow.mjs`; `git diff --check src/app/page.tsx`.
