@@ -4,159 +4,158 @@ settings:
   autoInstallPeers: true
   excludeLinksFromLockfile: false
 
-overrides:
-  postcss: ^8.5.14
+importers:
 
-dependencies:
-  '@ai-sdk/anthropic':
-    specifier: ^2.0.77
-    version: 2.0.77(zod@4.3.6)
-  '@ai-sdk/groq':
-    specifier: ^2.0.38
-    version: 2.0.38(zod@4.3.6)
-  '@ai-sdk/openai':
-    specifier: ^2.0.103
-    version: 2.0.103(zod@4.3.6)
-  '@ai-sdk/react':
-    specifier: ^2.0.181
-    version: 2.0.181(react@19.2.3)(zod@4.3.6)
-  '@lottiefiles/dotlottie-react':
-    specifier: ^0.19.3
-    version: 0.19.3(react@19.2.3)
-  '@radix-ui/react-dialog':
-    specifier: ^1.1.15
-    version: 1.1.15(@types/react-dom@19.0.0)(@types/react@19.0.0)(react-dom@19.2.3)(react@19.2.3)
-  '@radix-ui/react-popover':
-    specifier: ^1.1.15
-    version: 1.1.15(@types/react-dom@19.0.0)(@types/react@19.0.0)(react-dom@19.2.3)(react@19.2.3)
-  '@radix-ui/react-select':
-    specifier: ^2.2.6
-    version: 2.2.6(@types/react-dom@19.0.0)(@types/react@19.0.0)(react-dom@19.2.3)(react@19.2.3)
-  '@radix-ui/react-slot':
-    specifier: ^1.2.4
-    version: 1.2.4(@types/react@19.0.0)(react@19.2.3)
-  '@radix-ui/react-tooltip':
-    specifier: ^1.2.8
-    version: 1.2.8(@types/react-dom@19.0.0)(@types/react@19.0.0)(react-dom@19.2.3)(react@19.2.3)
-  '@remotion/cli':
-    specifier: ^4.0.464
-    version: 4.0.464(react-dom@19.2.3)(react@19.2.3)
-  '@remotion/player':
-    specifier: ^4.0.464
-    version: 4.0.464(react-dom@19.2.3)(react@19.2.3)
-  '@scure/base':
-    specifier: ^2.2.0
-    version: 2.2.0
-  '@solana/kit':
-    specifier: ^6.9.0
-    version: 6.9.0(fastestsmallesttextencoderdecoder@1.0.22)(typescript@5.9.3)
-  '@solana/spl-token':
-    specifier: ^0.4.14
-    version: 0.4.14(@solana/web3.js@1.98.4)(fastestsmallesttextencoderdecoder@1.0.22)(typescript@5.9.3)
-  '@solana/web3.js':
-    specifier: ^1.98.4
-    version: 1.98.4(typescript@5.9.3)
-  '@supabase/supabase-js':
-    specifier: ^2.57.4
-    version: 2.57.4
-  '@tailwindcss/postcss':
-    specifier: ^4.3.0
-    version: 4.3.0
-  '@tavily/core':
-    specifier: ^0.7.2
-    version: 0.7.2
-  '@x402/evm':
-    specifier: ^2.12.0
-    version: 2.12.0(typescript@5.9.3)
-  '@x402/fetch':
-    specifier: ^2.12.0
-    version: 2.12.0
-  '@x402/svm':
-    specifier: ^2.12.0
-    version: 2.12.0(@solana/kit@6.9.0)(@solana/sysvars@5.5.1)
-  ai:
-    specifier: ^5.0.179
-    version: 5.0.179(zod@4.3.6)
-  bs58:
-    specifier: ^6.0.0
-    version: 6.0.0
-  class-variance-authority:
-    specifier: ^0.7.1
-    version: 0.7.1
-  clsx:
-    specifier: ^2.1.1
-    version: 2.1.1
-  lucide-react:
-    specifier: ^1.16.0
-    version: 1.16.0(react@19.2.3)
-  motion:
-    specifier: ^12.38.0
-    version: 12.38.0(react-dom@19.2.3)(react@19.2.3)
-  next:
-    specifier: 16.2.6
-    version: 16.2.6(@babel/core@7.29.0)(react-dom@19.2.3)(react@19.2.3)
-  react:
-    specifier: 19.2.3
-    version: 19.2.3
-  react-dom:
-    specifier: 19.2.3
-    version: 19.2.3(react@19.2.3)
-  remotion:
-    specifier: ^4.0.464
-    version: 4.0.464(react-dom@19.2.3)(react@19.2.3)
-  tailwind-merge:
-    specifier: ^3.6.0
-    version: 3.6.0
-  tailwindcss:
-    specifier: ^4.3.0
-    version: 4.3.0
-  tw-animate-css:
-    specifier: ^1.4.0
-    version: 1.4.0
-  viem:
-    specifier: ^2.50.4
-    version: 2.50.4(typescript@5.9.3)(zod@4.3.6)
-  ws:
-    specifier: ^8.20.1
-    version: 8.20.1(bufferutil@4.1.0)(utf-8-validate@6.0.6)
-  zod:
-    specifier: ^4.3.6
-    version: 4.3.6
-  zustand:
-    specifier: ^4.5.2
-    version: 4.5.2(@types/react@19.0.0)(react@19.2.3)
-
-devDependencies:
-  '@eslint/eslintrc':
-    specifier: ^3
-    version: 3.0.0
-  '@types/node':
-    specifier: ^20
-    version: 20.0.0
-  '@types/react':
-    specifier: ^19
-    version: 19.0.0
-  '@types/react-dom':
-    specifier: ^19
-    version: 19.0.0
-  '@types/ws':
-    specifier: ^8.18.1
-    version: 8.18.1
-  eslint:
-    specifier: ^9.39.2
-    version: 9.39.2
-  eslint-config-next:
-    specifier: 16.2.6
-    version: 16.2.6(@typescript-eslint/parser@8.59.4)(eslint@9.39.2)(typescript@5.9.3)
-  playwright:
-    specifier: ^1.60.0
-    version: 1.60.0
-  shadcn:
-    specifier: ^4.7.0
-    version: 4.7.0(@types/node@20.0.0)(typescript@5.9.3)
-  typescript:
-    specifier: ^5.9.3
-    version: 5.9.3
+  .:
+    dependencies:
+      '@ai-sdk/anthropic':
+        specifier: ^2.0.77
+        version: 2.0.77(zod@4.3.6)
+      '@ai-sdk/groq':
+        specifier: ^2.0.38
+        version: 2.0.38(zod@4.3.6)
+      '@ai-sdk/openai':
+        specifier: ^2.0.103
+        version: 2.0.103(zod@4.3.6)
+      '@ai-sdk/react':
+        specifier: ^2.0.181
+        version: 2.0.181(react@19.2.3)(zod@4.3.6)
+      '@lottiefiles/dotlottie-react':
+        specifier: ^0.19.3
+        version: 0.19.3(react@19.2.3)
+      '@radix-ui/react-dialog':
+        specifier: ^1.1.15
+        version: 1.1.15(@types/react-dom@19.0.0)(@types/react@19.0.0)(react-dom@19.2.3)(react@19.2.3)
+      '@radix-ui/react-popover':
+        specifier: ^1.1.15
+        version: 1.1.15(@types/react-dom@19.0.0)(@types/react@19.0.0)(react-dom@19.2.3)(react@19.2.3)
+      '@radix-ui/react-select':
+        specifier: ^2.2.6
+        version: 2.2.6(@types/react-dom@19.0.0)(@types/react@19.0.0)(react-dom@19.2.3)(react@19.2.3)
+      '@radix-ui/react-slot':
+        specifier: ^1.2.4
+        version: 1.2.4(@types/react@19.0.0)(react@19.2.3)
+      '@radix-ui/react-tooltip':
+        specifier: ^1.2.8
+        version: 1.2.8(@types/react-dom@19.0.0)(@types/react@19.0.0)(react-dom@19.2.3)(react@19.2.3)
+      '@remotion/cli':
+        specifier: ^4.0.464
+        version: 4.0.464(react-dom@19.2.3)(react@19.2.3)
+      '@remotion/player':
+        specifier: ^4.0.464
+        version: 4.0.464(react-dom@19.2.3)(react@19.2.3)
+      '@scure/base':
+        specifier: ^2.2.0
+        version: 2.2.0
+      '@solana/kit':
+        specifier: ^6.9.0
+        version: 6.9.0(fastestsmallesttextencoderdecoder@1.0.22)(typescript@5.9.3)
+      '@solana/spl-token':
+        specifier: ^0.4.14
+        version: 0.4.14(@solana/web3.js@1.98.4)(fastestsmallesttextencoderdecoder@1.0.22)(typescript@5.9.3)
+      '@solana/web3.js':
+        specifier: ^1.98.4
+        version: 1.98.4(typescript@5.9.3)
+      '@supabase/supabase-js':
+        specifier: ^2.57.4
+        version: 2.57.4
+      '@tailwindcss/postcss':
+        specifier: ^4.3.0
+        version: 4.3.0
+      '@tavily/core':
+        specifier: ^0.7.2
+        version: 0.7.2
+      '@x402/evm':
+        specifier: ^2.12.0
+        version: 2.12.0(typescript@5.9.3)
+      '@x402/fetch':
+        specifier: ^2.12.0
+        version: 2.12.0
+      '@x402/svm':
+        specifier: ^2.12.0
+        version: 2.12.0(@solana/kit@6.9.0)(@solana/sysvars@5.5.1)
+      ai:
+        specifier: ^5.0.179
+        version: 5.0.179(zod@4.3.6)
+      bs58:
+        specifier: ^6.0.0
+        version: 6.0.0
+      class-variance-authority:
+        specifier: ^0.7.1
+        version: 0.7.1
+      clsx:
+        specifier: ^2.1.1
+        version: 2.1.1
+      lucide-react:
+        specifier: ^1.16.0
+        version: 1.16.0(react@19.2.3)
+      motion:
+        specifier: ^12.38.0
+        version: 12.38.0(react-dom@19.2.3)(react@19.2.3)
+      next:
+        specifier: 16.2.6
+        version: 16.2.6(@babel/core@7.29.0)(react-dom@19.2.3)(react@19.2.3)
+      react:
+        specifier: 19.2.3
+        version: 19.2.3
+      react-dom:
+        specifier: 19.2.3
+        version: 19.2.3(react@19.2.3)
+      remotion:
+        specifier: ^4.0.464
+        version: 4.0.464(react-dom@19.2.3)(react@19.2.3)
+      tailwind-merge:
+        specifier: ^3.6.0
+        version: 3.6.0
+      tailwindcss:
+        specifier: ^4.3.0
+        version: 4.3.0
+      tw-animate-css:
+        specifier: ^1.4.0
+        version: 1.4.0
+      viem:
+        specifier: ^2.50.4
+        version: 2.50.4(typescript@5.9.3)(zod@4.3.6)
+      ws:
+        specifier: ^8.20.1
+        version: 8.20.1(bufferutil@4.1.0)(utf-8-validate@6.0.6)
+      zod:
+        specifier: ^4.3.6
+        version: 4.3.6
+      zustand:
+        specifier: ^4.5.2
+        version: 4.5.2(@types/react@19.0.0)(react@19.2.3)
+    devDependencies:
+      '@eslint/eslintrc':
+        specifier: ^3
+        version: 3.0.0
+      '@types/node':
+        specifier: ^20
+        version: 20.0.0
+      '@types/react':
+        specifier: ^19
+        version: 19.0.0
+      '@types/react-dom':
+        specifier: ^19
+        version: 19.0.0
+      '@types/ws':
+        specifier: ^8.18.1
+        version: 8.18.1
+      eslint:
+        specifier: ^9.39.2
+        version: 9.39.2
+      eslint-config-next:
+        specifier: 16.2.6
+        version: 16.2.6(@typescript-eslint/parser@8.59.4)(eslint@9.39.2)(typescript@5.9.3)
+      playwright:
+        specifier: ^1.60.0
+        version: 1.60.0
+      shadcn:
+        specifier: ^4.7.0
+        version: 4.7.0(@types/node@20.0.0)(typescript@5.9.3)
+      typescript:
+        specifier: ^5.9.3
+        version: 5.9.3
 
 packages:
 
@@ -2169,14 +2168,14 @@ packages:
       '@rspack/plugin-react-refresh': 1.6.1(react-refresh@0.18.0)
       esbuild: 0.28.0
       loader-utils: 2.0.4
-      postcss: 8.5.14
+      postcss: 8.5.10
       postcss-value-parser: 4.2.0
       react: 19.2.3
       react-dom: 19.2.3(react@19.2.3)
       react-refresh: 0.18.0
       remotion: 4.0.464(react-dom@19.2.3)(react@19.2.3)
       style-loader: 4.0.0(webpack@5.105.0)
-      webpack: 5.105.0(esbuild@0.28.0)(postcss@8.5.14)
+      webpack: 5.105.0(esbuild@0.28.0)(postcss@8.5.10)
     transitivePeerDependencies:
       - '@minify-html/node'
       - '@swc/core'
@@ -7666,7 +7665,7 @@ packages:
       '@swc/helpers': 0.5.15
       baseline-browser-mapping: 2.10.31
       caniuse-lite: 1.0.30001793
-      postcss: 8.5.14
+      postcss: 8.4.31
       react: 19.2.3
       react-dom: 19.2.3(react@19.2.3)
       styled-jsx: 5.1.6(@babel/core@7.29.0)(react@19.2.3)
@@ -8065,6 +8064,24 @@ packages:
 
   /postcss-value-parser@4.2.0:
     resolution: {integrity: sha512-1NNCs6uurfkVbeXG4S8JFT9t19m45ICnif8zWLd5oPSZ50QnwMfK+H3jv408d4jw/7Bttv5axS5IiHoLaVNHeQ==}
+    dev: false
+
+  /postcss@8.4.31:
+    resolution: {integrity: sha512-PS08Iboia9mts/2ygV3eLpY5ghnUcfLV/EXTOW1E2qYxJKGGBUtNjN76FYHnMs36RmARn41bC0AZmn+rR0OVpQ==}
+    engines: {node: ^10 || ^12 || >=14}
+    dependencies:
+      nanoid: 3.3.12
+      picocolors: 1.1.1
+      source-map-js: 1.2.1
+    dev: false
+
+  /postcss@8.5.10:
+    resolution: {integrity: sha512-pMMHxBOZKFU6HgAZ4eyGnwXF/EvPGGqUr0MnZ5+99485wwW41kW91A4LOGxSHhgugZmSChL5AlElNdwlNgcnLQ==}
+    engines: {node: ^10 || ^12 || >=14}
+    dependencies:
+      nanoid: 3.3.12
+      picocolors: 1.1.1
+      source-map-js: 1.2.1
     dev: false
 
   /postcss@8.5.14:
@@ -8839,7 +8856,7 @@ packages:
     peerDependencies:
       webpack: ^5.27.0
     dependencies:
-      webpack: 5.105.0(esbuild@0.28.0)(postcss@8.5.14)
+      webpack: 5.105.0(esbuild@0.28.0)(postcss@8.5.10)
     dev: false
 
   /styled-jsx@5.1.6(@babel/core@7.29.0)(react@19.2.3):
@@ -8911,7 +8928,7 @@ packages:
     engines: {node: '>=6'}
     dev: false
 
-  /terser-webpack-plugin@5.6.0(esbuild@0.28.0)(postcss@8.5.14)(webpack@5.105.0):
+  /terser-webpack-plugin@5.6.0(esbuild@0.28.0)(postcss@8.5.10)(webpack@5.105.0):
     resolution: {integrity: sha512-Eum+5ajkaOhf5KbM26osvv21kLD7BaGqQ1UA4Ami4arYwylmGUQTgHFpHDdmJod1q4QXa66p0to/FBKID+J1vA==}
     engines: {node: '>= 10.13.0'}
     peerDependencies:
@@ -8957,10 +8974,10 @@ packages:
       '@jridgewell/trace-mapping': 0.3.31
       esbuild: 0.28.0
       jest-worker: 27.5.1
-      postcss: 8.5.14
+      postcss: 8.5.10
       schema-utils: 4.3.3
       terser: 5.47.1
-      webpack: 5.105.0(esbuild@0.28.0)(postcss@8.5.14)
+      webpack: 5.105.0(esbuild@0.28.0)(postcss@8.5.10)
     dev: false
 
   /terser@5.47.1:
@@ -9404,7 +9421,7 @@ packages:
     engines: {node: '>=10.13.0'}
     dev: false
 
-  /webpack@5.105.0(esbuild@0.28.0)(postcss@8.5.14):
+  /webpack@5.105.0(esbuild@0.28.0)(postcss@8.5.10):
     resolution: {integrity: sha512-gX/dMkRQc7QOMzgTe6KsYFM7DxeIONQSui1s0n/0xht36HvrgbxtM1xBlgx596NbpHuQU8P7QpKwrZYwUX48nw==}
     engines: {node: '>=10.13.0'}
     hasBin: true
@@ -9436,7 +9453,7 @@ packages:
       neo-async: 2.6.2
       schema-utils: 4.3.3
       tapable: 2.3.3
-      terser-webpack-plugin: 5.6.0(esbuild@0.28.0)(postcss@8.5.14)(webpack@5.105.0)
+      terser-webpack-plugin: 5.6.0(esbuild@0.28.0)(postcss@8.5.10)(webpack@5.105.0)
       watchpack: 2.5.1
       webpack-sources: 3.4.1
     transitivePeerDependencies:

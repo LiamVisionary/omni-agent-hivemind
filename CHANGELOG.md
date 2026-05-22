@@ -3,6 +3,14 @@
 This file records user-visible changes before they are committed. New work should
 be added here first, then marked `Committed` or `Pushed` after the git action.
 
+## 2026-05-22 20:41 WITA - Smooth Setup Service Startup
+
+- Status: Pushed
+- Areas changed: macOS/Linux setup, pnpm workspace settings, package metadata, changelog
+- Summary: Move pnpm overrides from `package.json` into `pnpm-workspace.yaml`, silence pnpm version-check warnings, prompt interactively before using sudo for Tailscale SSH advertisement, and actively start/wait for Syncthing before warning that its web UI is unavailable.
+- Verification: `bash -n setup.sh`; `pnpm --version` prints only `8.6.12`; `pnpm install --lockfile-only --ignore-scripts`; `pnpm install --frozen-lockfile --ignore-scripts`; `git diff --check -- setup.sh package.json pnpm-workspace.yaml pnpm-lock.yaml CHANGELOG.md`.
+- Intended commit message: `Smooth setup service startup`
+
 ## 2026-05-22 20:34 WITA - Install Env Encryption Helpers
 
 - Status: Pushed

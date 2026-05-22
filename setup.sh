@@ -113,11 +113,11 @@ refresh_tool_paths() {
 pnpm_version() {
   refresh_tool_paths
   if command -v pnpm >/dev/null 2>&1; then
-    pnpm --version
+    pnpm --version 2>/dev/null
     return
   fi
   if command -v corepack >/dev/null 2>&1; then
-    corepack pnpm --version
+    corepack pnpm --version 2>/dev/null
     return
   fi
   return 1
@@ -309,15 +309,40 @@ install_syncthing_if_missing() {
 
 start_syncthing_if_available() {
   command -v syncthing >/dev/null 2>&1 || return
-  if [[ "$(uname -s)" == "Darwin" ]]; then
-    if command -v brew >/dev/null 2>&1 && brew services list 2>/dev/null | grep -q '^syncthing '; then
-      brew services start syncthing >/dev/null 2>&1 || true
+  syncthing_responds() {
+    curl -fsS --max-time 2 http://127.0.0.1:8384/rest/system/ping >/dev/null 2>&1
+  }
+  wait_for_syncthing() {
+    local attempt
+    for attempt in 1 2 3 4 5 6 7 8 9 10; do
+      syncthing_responds && return 0
+      sleep 1
+    done
+    return 1
+  }
+  if wait_for_syncthing; then
+    ok "Syncthing is running on 127.0.0.1:8384"
+    return
+  fi
+
+  if [[ "$(uname -s)" == "Darwin" ]] && command -v brew >/dev/null 2>&1; then
+    brew services start syncthing >/dev/null 2>&1 || true
+  elif command -v systemctl >/dev/null 2>&1; then
+    systemctl --user enable --now syncthing >/dev/null 2>&1 || true
+  fi
+
+  if ! wait_for_syncthing; then
+    if command -v syncthing >/dev/null 2>&1 && ! pgrep -x syncthing >/dev/null 2>&1; then
+      nohup syncthing --no-browser --gui-address=127.0.0.1:8384 >/dev/null 2>&1 &
     fi
-    if pgrep -f "syncthing.*127.0.0.1:8384" >/dev/null 2>&1 || curl -fsS --max-time 2 http://127.0.0.1:8384/rest/system/ping >/dev/null 2>&1; then
-      ok "Syncthing is running on 127.0.0.1:8384"
-    else
-      warn "Syncthing installed, but it is not responding yet; collector setup will install the HivemindOS LaunchAgent"
-    fi
+    wait_for_syncthing || true
+  fi
+
+  if syncthing_responds; then
+    ok "Syncthing is running on 127.0.0.1:8384"
+  else
+    warn "Syncthing is installed, but its web UI is not responding yet"
+    warn "Setup will continue; open Syncthing later at http://127.0.0.1:8384 if shared-brain sync needs pairing"
   fi
 }
 
@@ -340,6 +365,14 @@ enable_tailscale_ssh() {
     ok "Tailscale SSH advertised by this machine"
   elif command -v sudo >/dev/null 2>&1 && (sudo -n tailscale set --ssh=true >/dev/null 2>&1 || sudo -n tailscale set --ssh >/dev/null 2>&1); then
     ok "Tailscale SSH advertised by this machine"
+  elif command -v sudo >/dev/null 2>&1 && setup_is_interactive && prompt_yes_no "Tailscale SSH needs admin privileges. Run sudo tailscale set --ssh now?" "yes"; then
+    if sudo tailscale set --ssh=true >/dev/null 2>&1 || sudo tailscale set --ssh >/dev/null 2>&1; then
+      ok "Tailscale SSH advertised by this machine"
+    else
+      warn "Could not advertise Tailscale SSH automatically"
+      warn "Run this on each sync machine if prompted for admin rights: sudo tailscale set --ssh"
+      return
+    fi
   else
     warn "Could not advertise Tailscale SSH automatically"
     warn "Run this on each sync machine if prompted for admin rights: sudo tailscale set --ssh"
