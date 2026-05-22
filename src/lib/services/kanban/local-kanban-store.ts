@@ -395,10 +395,9 @@ function cleanOptional(value?: string | null) {
 }
 
 function isUnpollableAcceptedWorking(task: KanbanTask) {
-  if (/may still be working|waiting for telemetry|dashboard timeout/i.test(task.result ?? "")) return false;
   return task.status === "working"
     && !task.agentSession?.sessionId
-    && /produced no output|no pollable session|auth is failing|needs Hermes\/Codex/i.test(task.result ?? "");
+    && /produced no output|no pollable session|auth is failing|needs Hermes\/Codex|accepted the runtime connection|waiting for telemetry|dashboard timeout/i.test(task.result ?? "");
 }
 
 function isRetryBlockerResult(result?: string) {

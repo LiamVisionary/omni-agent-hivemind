@@ -129,7 +129,7 @@ async function main() {
     assert(stale.status === "needs-human", "Unpollable accepted work must fail closed to Needs Human.");
     assert(!stale.completedAt, "Moving out of Done/Working recovery must not retain completedAt.");
 
-    let timeoutAccepted = await createTask("timeout accepted runtime can keep working", "needs-human", {
+    let timeoutAccepted = await createTask("timeout accepted runtime without session fails closed", "needs-human", {
       assignee: "Hermes on Test Machine",
       tenant: "code-worker",
       result: "Previous dashboard timeout.",
@@ -141,12 +141,17 @@ async function main() {
       agentSession: null,
       result: "Hermes on Test Machine accepted the runtime connection and may still be working. Waiting for telemetry or agent output after the dashboard timeout.",
     });
-    assert(timeoutAccepted.status === "working", "Timeout-accepted runtime work should stay Working while telemetry catches up.");
+    assert(timeoutAccepted.status === "needs-human", "Timeout-accepted runtime work without a session should fail closed to Needs Human.");
 
     const source = await readFile(new URL("../src/app/page.tsx", import.meta.url), "utf8");
     assert(
       /function isKanbanAwaitingAgentUpdate\(task: KanbanTask\) \{\s*return task\.status === "working"\s*&& Boolean\(task\.agentSession\?\.sessionId\);\s*\}/m.test(source),
       "Regression guard failed: unpollable accepted text must not count as an awaiting agent update.",
+    );
+    assert(
+      source.includes('logClientTelemetry("kanban.dispatch.no_progress_timeout"')
+      && source.includes("KANBAN_DISPATCH_NO_PROGRESS_MS"),
+      "Regression guard failed: dispatches with no content/session need a bounded no-progress timeout.",
     );
     assert(
       source.includes('logClientTelemetry("kanban.dispatch.no_final_assistant"')

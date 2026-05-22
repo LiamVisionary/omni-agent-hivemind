@@ -3,6 +3,22 @@
 This file records user-visible changes before they are committed. New work should
 be added here first, then marked `Committed` or `Pushed` after the git action.
 
+## 2026-05-22 16:13 WITA - Bound Kanban Dispatches Without Sessions
+
+- Status: Uncommitted
+- Areas changed: Kanban dispatch timeout handling, Hermes collector session discovery, Kanban workflow regression test
+- Summary: Add a 75s no-progress timeout for delegated Kanban runs that produce no text and no fresh pollable session, fail no-session runtime-accepted cards closed to Needs Human instead of leaving them Working, and tag Hermes API requests so the collector cannot attach stale sessions from prior matching prompts.
+- Verification: Telemetry confirmed live task `t_mpebcduf_obrj4` was Working on This Mac with no `agentSession` after `agent_runtime.http.stream.first_chunk`; patched that live card to Needs Human with a no-session diagnostic; restarted `com.agent-control-room.telemetry` and confirmed `/health` advertises `runtimeIntegrations`; `pnpm exec tsc --noEmit --pretty false`; `pnpm exec eslint src/app/page.tsx src/lib/services/kanban/local-kanban-store.ts scripts/test-kanban-workflow.mjs scripts/agent-telemetry-collector.mjs` (0 errors, existing page warnings only); `node --check scripts/agent-telemetry-collector.mjs && node scripts/test-kanban-workflow.mjs && git diff --check`; `node scripts/test-dashboard-nav.mjs && git diff --check`.
+- Intended commit message: `Bound Kanban dispatches without sessions`
+
+## 2026-05-22 16:08:33 WITA - Add New Test Navigation Tab
+
+- Status: Uncommitted
+- Areas changed: Dashboard navigation and nav smoke test
+- Summary: Add a visible `New` dashboard navigation tab with a small placeholder test panel, superseding the previous removed-tab smoke expectation.
+- Verification: `pnpm exec tsc --noEmit --pretty false`; `pnpm exec eslint src/app/page.tsx scripts/test-dashboard-nav.mjs` (0 errors, existing page warnings only); `node scripts/test-dashboard-nav.mjs`; `git diff --check`.
+- Intended commit message: `Add New test navigation tab`
+
 ## 2026-05-22 16:05 WITA - Remove Inline Add Machine Label
 
 - Status: Pushed

@@ -946,9 +946,14 @@ async function ensureHermesApiServer(hermesHome) {
   return hermesApiStartPromise;
 }
 
-function apiServerMessages(body, text) {
+function apiServerMessages(body, text, requestMarker = "") {
+  const markerMessage = requestMarker
+    ? [{ role: "system", content: `HivemindOS request marker: ${requestMarker}` }]
+    : [];
   if (Array.isArray(body.messages) && body.messages.length > 0) {
-    return body.messages
+    return [
+      ...markerMessage,
+      ...body.messages
       .filter((message) => message && typeof message === "object")
       .map((message) => {
         const content = normalizeMessageContent(message.content);
@@ -957,9 +962,10 @@ function apiServerMessages(body, text) {
           content,
         };
       })
-      .filter((message) => Array.isArray(message.content) ? message.content.length > 0 : message.content.trim());
+      .filter((message) => Array.isArray(message.content) ? message.content.length > 0 : message.content.trim()),
+    ];
   }
-  return [{ role: "user", content: text }];
+  return [...markerMessage, { role: "user", content: text }];
 }
 
 function normalizeHermesSessionId(input) {
@@ -1025,16 +1031,21 @@ async function listRecentHermesApiSessions(hermesHome, sinceMs = 0) {
   )))).filter(Boolean);
 }
 
-async function waitForHermesApiSession(hermesHome, sinceMs, text) {
+async function waitForHermesApiSession(hermesHome, sinceMs, text, requestMarker = "") {
   const needle = text.trim().slice(0, 80);
   const deadline = Date.now() + sessionDiscoveryTimeoutMs;
   while (Date.now() < deadline) {
     const sessions = await listRecentHermesApiSessions(hermesHome, sinceMs);
+    if (requestMarker) {
+      const markerMatched = sessions.find((session) => (
+        session.messages.some((message) => message.content.includes(requestMarker))
+      ));
+      if (markerMatched) return markerMatched;
+    }
     const matched = sessions.find((session) => (
       !needle || session.messages.some((message) => message.role === "user" && message.content.includes(needle))
     ));
     if (matched) return matched;
-    if (sessions[0]) return sessions[0];
     await sleep(250);
   }
   return null;
@@ -1042,6 +1053,7 @@ async function waitForHermesApiSession(hermesHome, sinceMs, text) {
 
 async function proxyHermesApiChat(body, response, text, hermesHome) {
   const requestStartedAt = Date.now();
+  const requestMarker = `hivemindos-${requestStartedAt.toString(36)}-${randomBytes(4).toString("hex")}`;
   if (!(await ensureHermesApiServer(hermesHome))) return false;
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), chatTimeoutMs);
@@ -1060,7 +1072,7 @@ async function proxyHermesApiChat(body, response, text, hermesHome) {
 
   async function emitSession() {
     if (emittedSession || response.writableEnded) return;
-    const session = await waitForHermesApiSession(hermesHome, requestStartedAt - 2_000, text);
+    const session = await waitForHermesApiSession(hermesHome, requestStartedAt - 2_000, text, requestMarker);
     if (!session) return;
     ensureHeaders();
     response.write(ssePayload({
@@ -1088,7 +1100,7 @@ async function proxyHermesApiChat(body, response, text, hermesHome) {
       body: JSON.stringify({
         model: "hermes-agent",
         stream: true,
-        messages: apiServerMessages(body, text),
+        messages: apiServerMessages(body, text, requestMarker),
       }),
       signal: controller.signal,
     });

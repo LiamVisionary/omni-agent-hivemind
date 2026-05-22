@@ -1363,7 +1363,7 @@ function swarmMarketFromItems(items: Record<string, unknown>[], timelineItems: R
   };
 }
 
-type DashboardView = "agents" | "kanban" | "scheduler" | "swarm" | "wallet" | "vault" | "notifications" | "chat";
+type DashboardView = "agents" | "new" | "kanban" | "scheduler" | "swarm" | "wallet" | "vault" | "notifications" | "chat";
 type DashboardTheme = "dark" | "hive-light";
 
 const STORAGE_KEY = "hivemindos.agentProfiles.v1";
@@ -1380,6 +1380,7 @@ const KANBAN_STALE_WORK_MS = 30 * 60 * 1000;
 const KANBAN_TOOL_OUTPUT_STALL_MS = 5 * 60 * 1000;
 const KANBAN_NO_ASSISTANT_STALL_MS = 2 * 60 * 1000;
 const KANBAN_NO_ASSISTANT_QUIET_MS = 90 * 1000;
+const KANBAN_DISPATCH_NO_PROGRESS_MS = 75 * 1000;
 const KANBAN_SESSION_POLL_FAILURE_LIMIT = 3;
 const KANBAN_STALE_AGENT_COOLDOWN_MS = 20 * 60 * 1000;
 const KANBAN_PICKUP_PREVIEW_MS = 1_000;
@@ -2378,6 +2379,7 @@ function kanbanTaskAssignmentForAgent(task: KanbanTask, agent: AgentProfile): Re
 
 function viewIcon(view: DashboardView) {
   if (view === "agents") return <Network aria-hidden="true" />;
+  if (view === "new") return <Plus aria-hidden="true" />;
   if (view === "kanban") return <KanbanSquare aria-hidden="true" />;
   if (view === "scheduler") return <Repeat2 aria-hidden="true" />;
   if (view === "swarm") return <Activity aria-hidden="true" />;
@@ -5704,6 +5706,11 @@ export default function Home() {
       detail: `${visibleAgentCount} agents`,
     },
     {
+      id: "new" as const,
+      label: "New",
+      detail: "test tab",
+    },
+    {
       id: "kanban" as const,
       label: "Work",
       detail: `${kanbanBoard?.tasks.length ?? 0} tasks`,
@@ -5747,6 +5754,7 @@ export default function Home() {
     const detail = activeNavItem?.detail ?? "";
     const headers: Record<DashboardView, { label: string; title: string }> = {
       agents: { label: "Fleet", title: "Where the hive is deployed" },
+      new: { label: "New", title: "New test tab" },
       kanban: { label: "Work Board", title: "What the hive is up to" },
       scheduler: { label: "Scheduler", title: "What the hive will do next" },
       swarm: { label: "Swarm Theater", title: "What the hive is simulating" },
@@ -9023,6 +9031,12 @@ export default function Home() {
     });
     kanbanRuntimeAbortRef.current.get(task.id)?.abort();
     const controller = new AbortController();
+    let noProgressTimedOut = false;
+    const noProgressTimer = window.setTimeout(() => {
+      if (fullText.trim() || sawAgentSession) return;
+      noProgressTimedOut = true;
+      controller.abort();
+    }, KANBAN_DISPATCH_NO_PROGRESS_MS);
     kanbanRuntimeAbortRef.current.set(task.id, controller);
 
     upsertTask({
@@ -9087,6 +9101,7 @@ export default function Home() {
           }
           if (parsed.session?.id) {
             sawAgentSession = true;
+            window.clearTimeout(noProgressTimer);
             lastAgentSession = {
               agentId: agent.id,
               agentName: agent.name,
@@ -9111,6 +9126,7 @@ export default function Home() {
           const chunk = parsed.choices?.[0]?.delta?.content;
           if (!chunk) continue;
           fullText += chunk;
+          window.clearTimeout(noProgressTimer);
           setMessagesByAgent((current) => {
             const existing = current[agent.id] ?? [];
             const next = [...existing];
@@ -9211,6 +9227,22 @@ export default function Home() {
       return { ok: true, message: result };
     } catch (error) {
       if (controller.signal.aborted) {
+        if (noProgressTimedOut) {
+          const message = `${agent.name} accepted the runtime connection, but did not produce output or attach a fresh pollable session within ${Math.round(KANBAN_DISPATCH_NO_PROGRESS_MS / 1000)}s. Check the agent runtime session, then move this card back to Ready for Queen.`;
+          logClientTelemetry("kanban.dispatch.no_progress_timeout", {
+            taskId: task.id,
+            agentId: agent.id,
+            timeoutMs: KANBAN_DISPATCH_NO_PROGRESS_MS,
+          });
+          updateTask(localTaskId, { status: "failed", lastMessage: message, completedAt: Date.now() });
+          await patchKanbanTask(task.id, {
+            status: "needs-human",
+            agentSession: null,
+            result: message,
+          });
+          await addKanbanSystemComment(task.id, message);
+          return { ok: true, message };
+        }
         updateTask(localTaskId, { status: "completed", lastMessage: "Interrupted by a newer task instruction.", completedAt: Date.now() });
         return { ok: true, message: "Interrupted by a newer task instruction." };
       }
@@ -9265,6 +9297,7 @@ export default function Home() {
       }
       return { ok: false, message };
     } finally {
+      window.clearTimeout(noProgressTimer);
       if (kanbanRuntimeAbortRef.current.get(task.id) === controller) {
         kanbanRuntimeAbortRef.current.delete(task.id);
       }
@@ -10538,7 +10571,7 @@ export default function Home() {
               </div>
 
               <nav className="viewTabs" aria-label="Dashboard views">
-                {(["agents", "kanban", "vault", "scheduler", "swarm", "wallet"] as DashboardView[])
+                {(["agents", "new", "kanban", "vault", "scheduler", "swarm", "wallet"] as DashboardView[])
                   .map((id) => navItems.find((item) => item.id === id))
                   .filter((item): item is (typeof navItems)[number] => Boolean(item))
                   .map((item) => (
@@ -10578,6 +10611,12 @@ export default function Home() {
         </TooltipProvider>
 
         <div className="commandMain">
+      {activeView === "new" ? (
+      <section className="tabPanel rounded-[28px] border border-white/10 bg-white/[0.03] p-6 text-sm text-[var(--muted)]">
+        New test tab
+      </section>
+      ) : null}
+
       {activeView === "agents" ? (
       <section className={fleetClass("fleetConstellationPanel", "tabPanel")}>
         <FleetView
