@@ -3,6 +3,14 @@
 This file records user-visible changes before they are committed. New work should
 be added here first, then marked `Committed` or `Pushed` after the git action.
 
+## 2026-05-22 19:57 WITA - Add Native Windows Setup
+
+- Status: Pushed
+- Areas changed: Windows PowerShell setup, README quick start, changelog
+- Summary: Add `setup.ps1` for native Windows machines with interactive winget/npm/Corepack prompts for Node.js, pnpm, Tailscale, and Syncthing, shared `.env.local` defaults, dependency/build caching, direct Next build/dev commands that avoid Unix shell wrappers, and README instructions for PowerShell setup.
+- Verification: `bash -n setup.sh`; `git diff --check -- setup.ps1 README.md CHANGELOG.md`; public GitHub assimilation searches for `PowerShell Windows setup script winget pnpm node tailscale syncthing` and `setup.ps1 winget node pnpm` returned no reusable candidates. PowerShell execution/parsing was not run because `pwsh`/`powershell` is not installed in this macOS workspace.
+- Intended commit message: `Add native Windows setup`
+
 ## 2026-05-22 19:49 WITA - Prompt For Setup Tool Installs
 
 - Status: Pushed

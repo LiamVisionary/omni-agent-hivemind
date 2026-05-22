@@ -38,13 +38,21 @@ cd hivemindos
 ./setup.sh
 ```
 
+On native Windows PowerShell, run:
+
+```powershell
+git clone https://github.com/LiamVisionary/hivemindos.git
+cd hivemindos
+powershell -ExecutionPolicy Bypass -File .\setup.ps1
+```
+
 Then open the dashboard printed by setup, usually:
 
 ```txt
 http://localhost:5020
 ```
 
-Setup checks Node.js and pnpm/Corepack, installs dependencies, installs the lightweight machine monitor, builds the dashboard, starts it when possible, and prints local plus Tailscale URLs when available. If Tailscale is installed and logged in, HivemindOS enables cross-machine collaboration. If not, it runs cleanly as a local-only dashboard.
+Setup checks Node.js and pnpm/Corepack, installs dependencies, installs the lightweight machine monitor where supported, builds the dashboard, starts it when possible, and prints local plus Tailscale URLs when available. On macOS/Linux use `setup.sh`; on native Windows use `setup.ps1`, which prompts for winget installs of Node.js, pnpm, Tailscale, and Syncthing. If Tailscale is installed and logged in, HivemindOS enables cross-machine collaboration. If not, it runs cleanly as a local-only dashboard.
 
 ## The First 10 Minutes
 
