@@ -11060,7 +11060,6 @@ export default function Home() {
                     ) : quickAddStatus === column.id ? (
                       <form className={kanbanClass("kanbanInlineAdd")} onSubmit={(event) => createKanbanTask(event, column.id)}>
                         <div className={kanbanClass("kanbanInlineAddMeta")} ref={quickAddMachineMenuRef}>
-                          <span>Machine</span>
                           <div className={kanbanClass("kanbanMachinePicker")}>
                             <button
                               type="button"

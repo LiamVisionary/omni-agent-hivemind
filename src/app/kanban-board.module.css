@@ -1438,7 +1438,7 @@
   position: relative;
   z-index: 4;
   align-items: center;
-  justify-content: space-between;
+  justify-content: flex-end;
   gap: 8px;
   color: rgba(148, 163, 184, 0.82);
   font-size: 11px;
