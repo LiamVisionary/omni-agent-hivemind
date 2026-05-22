@@ -252,6 +252,9 @@ if ask "Remove hive-env-add from ~/.local/bin if it points to this checkout?" "y
   elif [[ -f "$command_path" ]] && cmp -s "$command_path" "$ROOT/scripts/hive-env-add"; then
     rm -f "$command_path"
     ok "Removed copied $command_path"
+  elif [[ -f "$command_path" ]] && grep -q "run_helper \"$ROOT\"" "$command_path" 2>/dev/null; then
+    rm -f "$command_path"
+    ok "Removed wrapper $command_path"
   else
     warn "Skipped $command_path because it is not managed by this checkout"
   fi

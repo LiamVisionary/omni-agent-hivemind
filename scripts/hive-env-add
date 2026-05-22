@@ -21,7 +21,7 @@ import urllib.request
 from typing import Iterable
 
 SCRIPT_PATH = pathlib.Path(__file__).resolve()
-ROOT = SCRIPT_PATH.parents[1]
+ROOT = pathlib.Path(os.path.expanduser(os.environ.get("HIVE_ENV_PROJECT_ROOT", ""))).resolve() if os.environ.get("HIVE_ENV_PROJECT_ROOT") else SCRIPT_PATH.parents[1]
 DEFAULT_ENV_FILE = ROOT / ".env.local"
 DEFAULT_AGENT_ENV_FILE = pathlib.Path.home() / ".hivemindos" / ".env"
 OPENCLAW_DIR = pathlib.Path.home() / ".openclaw"
@@ -31,6 +31,25 @@ HERMES_ENV_FILE = pathlib.Path.home() / ".hermes" / ".env"
 AEON_ENV_FILE = pathlib.Path.home() / ".aeon" / ".env"
 
 KEY_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+LOCAL_ONLY_KEYS = {
+    "HIVE_AGENT_ENV_FILE",
+    "HIVE_ENV_BACKUP_DIR",
+    "HIVE_ENV_COLLECTOR_PORT",
+    "HIVE_ENV_FILE",
+    "HIVE_ENV_GPG_RECIPIENT",
+    "HIVE_ENV_PROJECT_ROOT",
+    "HIVE_ENV_PUBLIC_KEY",
+    "HIVE_ENV_TAILNET_SYNC",
+    "HIVE_ENV_TAILNET_TARGETS",
+    "HIVE_ENV_TAILNET_USER",
+    "HIVE_ENV_TAILNET_VERBOSE",
+    "HIVE_NOTE_ROOT",
+    "HIVE_NOTE_SECURE_FOLDER",
+    "HIVE_SHARED_BRAIN_PATH",
+    "NEXT_ALLOWED_DEV_ORIGINS",
+    "NEXT_PUBLIC_OBSIDIAN_VAULT_PATH",
+    "NEXT_PUBLIC_TAILNET_SYNC_ENABLED",
+}
 
 
 def parse_env_file(path: pathlib.Path) -> dict[str, str]:
@@ -142,6 +161,19 @@ def update_openclaw_stores(key: str, value: str) -> None:
     env["vars"] = vars_
     config["env"] = env
     write_json(OPENCLAW_JSON, config)
+
+
+def openclaw_values() -> dict[str, str]:
+    values: dict[str, str] = {}
+    config = read_json(OPENCLAW_JSON)
+    env = config.get("env")
+    config_vars = env.get("vars") if isinstance(env, dict) else {}
+    for source in (read_json(OPENCLAW_SECRETS), config_vars):
+        if isinstance(source, dict):
+            for key, value in source.items():
+                if isinstance(key, str) and isinstance(value, str):
+                    values[key] = value
+    return values
 
 
 def aeon_repo(args: argparse.Namespace) -> str:
@@ -348,6 +380,22 @@ def tailnet_sync_enabled(args: argparse.Namespace) -> bool:
 
 
 def remote_hive_command(args: argparse.Namespace, key: str) -> str:
+    remote_args = remote_update_args(args, key)
+    return remote_hive_shell_command(remote_args)
+
+
+def remote_hive_shell_command(remote_args: list[str]) -> str:
+    quoted = " ".join(shlex.quote(part) for part in remote_args)
+    return (
+        "if command -v hive-env-add >/dev/null 2>&1; then "
+        f"exec hive-env-add {quoted}; "
+        "elif [ -x \"$HOME/.local/bin/hive-env-add\" ]; then "
+        f"exec \"$HOME/.local/bin/hive-env-add\" {quoted}; "
+        "else echo 'hive-env-add is not installed on this machine' >&2; exit 127; fi"
+    )
+
+
+def remote_update_args(args: argparse.Namespace, key: str) -> list[str]:
     remote_args = [
         "--stdin",
         "--scope", args.scope,
@@ -360,14 +408,27 @@ def remote_hive_command(args: argparse.Namespace, key: str) -> str:
     if args.agent_env_file:
         remote_args.extend(["--agent-env-file", args.agent_env_file])
     remote_args.append(key)
-    quoted = " ".join(shlex.quote(part) for part in remote_args)
-    return (
-        "if command -v hive-env-add >/dev/null 2>&1; then "
-        f"exec hive-env-add {quoted}; "
-        "elif [ -x \"$HOME/.local/bin/hive-env-add\" ]; then "
-        f"exec \"$HOME/.local/bin/hive-env-add\" {quoted}; "
-        "else echo 'hive-env-add is not installed on this machine' >&2; exit 127; fi"
-    )
+    return remote_args
+
+
+def shared_env_values(args: argparse.Namespace, env_file: pathlib.Path) -> dict[str, str]:
+    values: dict[str, str] = {}
+    if args.scope in ("all", "app"):
+        values.update(parse_env_file(env_file))
+    if args.scope in ("all", "agent"):
+        if args.runtime == "openclaw":
+            values.update(openclaw_values())
+        elif args.runtime == "hermes":
+            values.update(parse_env_file(HERMES_ENV_FILE))
+        elif args.runtime == "aeon":
+            values.update(parse_env_file(AEON_ENV_FILE))
+        else:
+            values.update(parse_env_file(agent_env_file(args)))
+    return {
+        key: value
+        for key, value in values.items()
+        if KEY_RE.match(key) and key not in LOCAL_ONLY_KEYS
+    }
 
 
 def sync_tailnet_updates(args: argparse.Namespace, updates: dict[str, str]) -> None:
@@ -425,6 +486,71 @@ def sync_tailnet_updates(args: argparse.Namespace, updates: dict[str, str]) -> N
             )
 
 
+def export_json(args: argparse.Namespace, env_file: pathlib.Path) -> None:
+    payload = {
+        "version": 1,
+        "scope": args.scope,
+        "runtime": args.runtime,
+        "values": shared_env_values(args, env_file),
+    }
+    print(json.dumps(payload, sort_keys=True))
+
+
+def pull_from_peer(args: argparse.Namespace, env_file: pathlib.Path, target: str) -> int:
+    command = remote_hive_shell_command([
+        "--export-json",
+        "--scope", args.scope,
+        "--runtime", args.runtime,
+    ])
+    proc = subprocess.run(
+        ["tailscale", "ssh", target, command],
+        text=True,
+        capture_output=True,
+        check=False,
+        timeout=30,
+    )
+    if proc.returncode != 0:
+        print((proc.stderr or proc.stdout).strip() or f"could not pull env from {target}", file=sys.stderr)
+        return 1
+    try:
+        payload = json.loads(proc.stdout)
+    except json.JSONDecodeError:
+        print(f"{target} did not return valid hive-env-add export JSON", file=sys.stderr)
+        return 1
+    raw_values = payload.get("values")
+    if not isinstance(raw_values, dict):
+        print(f"{target} returned no env values", file=sys.stderr)
+        return 1
+    incoming = {key: value for key, value in raw_values.items() if isinstance(key, str) and isinstance(value, str) and KEY_RE.match(key)}
+    current = shared_env_values(args, env_file)
+    applied = 0
+    applied_values: dict[str, str] = {}
+    skipped = 0
+    conflicts: list[str] = []
+    for key, value in incoming.items():
+        if key in current and current[key] != value:
+            if args.conflict == "fail":
+                conflicts.append(key)
+                continue
+            if args.conflict == "local-wins":
+                skipped += 1
+                continue
+        apply_update(args, env_file, key, value, quiet=True)
+        applied += 1
+        applied_values[key] = value
+    if conflicts:
+        print("conflicting keys: " + ", ".join(sorted(conflicts)), file=sys.stderr)
+        return 1
+    print(f"pulled {applied} env key{'s' if applied != 1 else ''} from {target}" + (f"; skipped {skipped} local conflict{'s' if skipped != 1 else ''}" if skipped else ""))
+    if applied and not args.no_backup and args.scope in ("all", "app"):
+        message = refresh_encrypted_backup(env_file)
+        if message:
+            print(message, file=sys.stderr if "failed" in message.lower() else sys.stdout)
+    if applied and not args.no_tailnet_sync:
+        sync_tailnet_updates(args, applied_values)
+    return 0
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Add or update a HivemindOS env var in local app/runtime stores.",
@@ -443,6 +569,28 @@ def parse_args() -> argparse.Namespace:
         "--import-env",
         action="store_true",
         help="Import every valid key from the existing Hermes env source into the selected hive scope.",
+    )
+    parser.add_argument(
+        "--reconcile",
+        action="store_true",
+        help="Push the current shared env set from this machine to every ready Tailnet peer.",
+    )
+    parser.add_argument(
+        "--pull-from",
+        default="",
+        metavar="USER@HOST",
+        help="Pull shared env keys from a trusted Tailnet peer and merge them into this machine.",
+    )
+    parser.add_argument(
+        "--conflict",
+        choices=("local-wins", "remote-wins", "fail"),
+        default="local-wins",
+        help="Conflict policy for --pull-from. Defaults to preserving local values.",
+    )
+    parser.add_argument(
+        "--export-json",
+        action="store_true",
+        help=argparse.SUPPRESS,
     )
     parser.add_argument(
         "--stdin",
@@ -495,6 +643,25 @@ def main() -> int:
         or str(DEFAULT_ENV_FILE)
     )).resolve()
 
+    if args.export_json:
+        export_json(args, env_file)
+        return 0
+
+    if args.pull_from:
+        return pull_from_peer(args, env_file, args.pull_from)
+
+    if args.reconcile:
+        values = shared_env_values(args, env_file)
+        if not values:
+            print("No local shared env keys found to reconcile.", file=sys.stderr)
+            return 1
+        sync_tailnet_updates(args, values)
+        if not args.no_backup and args.scope in ("all", "app"):
+            message = refresh_encrypted_backup(env_file)
+            if message:
+                print(message, file=sys.stderr if "failed" in message.lower() else sys.stdout)
+        return 0
+
     if args.import_env:
         source = pathlib.Path(os.path.expanduser(os.environ.get("HERMES_ENV_FILE", str(HERMES_ENV_FILE)))).resolve()
         values = parse_env_file(source)
@@ -516,7 +683,7 @@ def main() -> int:
         return 0
 
     if not args.assignment:
-        print("Usage: hive-env-add KEY=value, hive-env-add KEY, or hive-env-add --import-env", file=sys.stderr)
+        print("Usage: hive-env-add KEY=value, hive-env-add KEY, hive-env-add --import-env, hive-env-add --reconcile, or hive-env-add --pull-from USER@HOST", file=sys.stderr)
         return 2
 
     if "=" in args.assignment:

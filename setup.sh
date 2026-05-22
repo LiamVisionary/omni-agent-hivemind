@@ -497,18 +497,18 @@ run_tailscale_set_ssh_sudo_noninteractive() {
 
 enable_tailscale_ssh() {
   if ! command -v tailscale >/dev/null 2>&1; then
-    return
+    return 1
   fi
   if ! tailscale status >/dev/null 2>&1; then
-    return
+    return 1
   fi
   if ! tailscale set --help 2>&1 | grep -q -- '--ssh'; then
     warn "This Tailscale version does not support Tailscale SSH"
-    return
+    return 1
   fi
   if tailscale debug prefs 2>/dev/null | grep -q '"RunSSH": true'; then
     ok "Tailscale SSH already advertised by this machine"
-    return
+    return 0
   fi
   tailscale_ssh_error=""
   if run_tailscale_set_ssh false; then
@@ -519,7 +519,7 @@ enable_tailscale_ssh() {
     else
       warn "Could not advertise Tailscale SSH automatically"
       warn_tailscale_ssh_unavailable
-      return
+      return 1
     fi
   elif command -v sudo >/dev/null 2>&1 && run_tailscale_set_ssh_sudo_noninteractive; then
     ok "Tailscale SSH advertised by this machine"
@@ -529,16 +529,18 @@ enable_tailscale_ssh() {
     else
       warn "Could not advertise Tailscale SSH automatically"
       warn_tailscale_ssh_unavailable
-      return
+      return 1
     fi
   else
     warn "Could not advertise Tailscale SSH automatically"
     warn_tailscale_ssh_unavailable
-    return
+    return 1
   fi
   if ! tailscale debug prefs 2>/dev/null | grep -q '"RunSSH": true'; then
     warn "Tailscale accepted the SSH setting, but verification did not report RunSSH=true yet"
+    return 1
   fi
+  return 0
 }
 
 install_tailscale_if_missing() {
@@ -663,13 +665,37 @@ install_hive_env_add() {
   local command_path="$bin_dir/hive-env-add"
   mkdir -p "$bin_dir"
   chmod +x "$ROOT/scripts/hive-env-add"
-  if ln -sf "$ROOT/scripts/hive-env-add" "$command_path" 2>/dev/null; then
-    ok "hive-env-add installed: $command_path"
-  else
-    cp "$ROOT/scripts/hive-env-add" "$command_path"
-    chmod +x "$command_path"
-    ok "hive-env-add installed: $command_path"
+  if [[ -L "$command_path" ]]; then
+    rm -f "$command_path"
   fi
+  cat > "$command_path" <<EOF
+#!/usr/bin/env sh
+set -eu
+
+run_helper() {
+  root="\$1"
+  shift
+  helper="\$root/scripts/hive-env-add"
+  if [ -x "\$helper" ]; then
+    HIVE_ENV_PROJECT_ROOT="\$root" exec "\$helper" "\$@"
+  fi
+  return 1
+}
+
+run_helper "$ROOT" "\$@" || true
+for root in "\$PWD" "\$HOME/hivemindos" "\$HOME/omni-agent-hivemind" "\$HOME/Documents/code/projects/my-anime-waifu-web/hivemind-os"; do
+  run_helper "\$root" "\$@" || true
+done
+found="\$(find "\$HOME" -maxdepth 6 -type f -path '*/scripts/hive-env-add' 2>/dev/null | head -1 || true)"
+if [ -n "\$found" ] && [ -x "\$found" ]; then
+  root="\$(cd "\$(dirname "\$found")/.." && pwd)"
+  HIVE_ENV_PROJECT_ROOT="\$root" exec "\$found" "\$@"
+fi
+echo "hive-env-add could not find a HivemindOS checkout. Set HIVE_ENV_PROJECT_ROOT or rerun setup.sh from the checkout." >&2
+exit 127
+EOF
+  chmod +x "$command_path"
+  ok "hive-env-add installed: $command_path"
   case ":$PATH:" in
     *":$bin_dir:"*) ;;
     *) warn "Add $bin_dir to PATH to run hive-env-add from any folder" ;;
@@ -794,13 +820,16 @@ fi
 
 tailscale_ip=""
 tailnet_sync_enabled="false"
+env_tailnet_sync_enabled="false"
 install_tailscale_if_missing || true
 if command -v tailscale >/dev/null 2>&1; then
   if tailscale status >/dev/null 2>&1; then
     ok "Tailscale is running"
     tailscale_ip="$(tailscale ip -4 2>/dev/null | head -1 || true)"
     tailnet_sync_enabled="true"
-    enable_tailscale_ssh
+    if enable_tailscale_ssh; then
+      env_tailnet_sync_enabled="true"
+    fi
   else
     warn "Tailscale is installed but not connected"
     warn "Multi-machine collaboration and shared memory sync are disabled until you open Tailscale and sign in, or run: tailscale up"
@@ -870,7 +899,7 @@ set_env_local() {
 }
 
 set_env_local "NEXT_PUBLIC_TAILNET_SYNC_ENABLED" "$tailnet_sync_enabled"
-set_env_local "HIVE_ENV_TAILNET_SYNC" "$tailnet_sync_enabled"
+set_env_local "HIVE_ENV_TAILNET_SYNC" "$env_tailnet_sync_enabled"
 set_env_local "HIVE_ENV_TAILNET_USER" "$(id -un 2>/dev/null || printf "%s" "${USER:-}")"
 set_env_local "HONEY_LEDGER_REMOTE_URL" "${HONEY_LEDGER_REMOTE_URL:-https://hivemindos-honey-ledger.hivemindos.workers.dev}"
 set_env_local "HONEY_LEDGER_ISSUER_ID" "${HONEY_LEDGER_ISSUER_ID:-hivemindos}"

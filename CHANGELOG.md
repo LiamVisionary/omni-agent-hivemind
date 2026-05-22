@@ -3,6 +3,14 @@
 This file records user-visible changes before they are committed. New work should
 be added here first, then marked `Committed` or `Pushed` after the git action.
 
+## 2026-05-22 22:38 WITA - Harden Hive Env Reconciliation
+
+- Status: Pushed
+- Areas changed: hive-env-add, macOS/Linux setup and uninstall, README shared env docs, env example, changelog
+- Summary: Install `hive-env-add` as a rediscovering wrapper instead of a fragile checkout symlink, enable env peer sync only after Tailscale SSH is verified, add `hive-env-add --reconcile` for pushing existing env keys to ready peers, and add `--pull-from USER@HOST` with conflict policies for importing missing keys from a trusted Tailnet peer.
+- Verification: `bash -n setup.sh && bash -n uninstall.sh`; `python3 -m py_compile scripts/hive-env-add`; isolated `--export-json` smoke confirmed local-only keys are excluded and agent values win; fake-Tailscale `--pull-from` smoke merged a new key while preserving a local conflict; temp-`HOME` setup-function smoke verified the installed wrapper executes after symlink replacement; installed the repaired local wrapper at `~/.local/bin/hive-env-add`; `git diff --check -- scripts/hive-env-add setup.sh uninstall.sh README.md .env.example CHANGELOG.md`.
+- Intended commit message: `Harden hive env reconciliation`
+
 ## 2026-05-22 22:12 WITA - Offer Homebrew Tailscaled Setup
 
 - Status: Pushed

@@ -183,6 +183,8 @@ Setup installs `hive-env-add` into `~/.local/bin`. GnuPG is optional; when it is
 hive-env-add KEY=value
 hive-env-add KEY
 hive-env-add --import-env
+hive-env-add --reconcile
+hive-env-add --pull-from root@ubuntu.tailnet.ts.net
 ```
 
 By default it updates the app `.env.local` and the generic local agent env store at `~/.hivemindos/.env`. Runtime-specific compatibility writes are explicit:
@@ -193,7 +195,7 @@ hive-env-add --runtime aeon OPENAI_API_KEY
 hive-env-add --runtime openclaw TAVILY_API_KEY
 ```
 
-When Tailscale SSH is available and env sync is enabled, HivemindOS updates trusted peer machines that report they are ready for env sync. Advanced users can set `HIVE_ENV_TAILNET_TARGETS` to choose exact target machines.
+When Tailscale SSH is available and env sync is enabled, HivemindOS updates trusted peer machines that report they are ready for env sync. `--reconcile` pushes this machine's current shared env set to ready peers, which is useful after adding a new device. `--pull-from USER@HOST` imports missing keys from a trusted peer and preserves local conflicts by default; use `--conflict remote-wins` or `--conflict fail` when you need a stricter merge. Advanced users can set `HIVE_ENV_TAILNET_TARGETS` to choose exact target machines.
 
 ## Shared Obsidian Brain
 
