@@ -20,6 +20,14 @@
 - Keep collectors private to Tailscale unless the user explicitly asks for another exposure model.
 - Prefer read-only fleet inspection by default. Remote mutation/update endpoints need explicit design and safety review.
 
+## Setup / Uninstall Mirror
+
+- Any install prompt, package, service, generated file, shell profile edit, agent instruction edit, shared-skill mirror, or optional third-party app added to `setup.sh` or `setup.ps1` must have a matching one-by-one removal prompt in `uninstall.sh` and `uninstall.ps1`.
+- The uninstall prompt should name the same thing the install prompt created and should be conservative by default for destructive or third-party removals.
+- If setup starts or registers a service, uninstall must offer to stop and unregister that exact service label/unit.
+- If setup writes a managed block into an agent/runtime file, uninstall must remove only that managed block and preserve surrounding user-authored content.
+- When adding or changing setup behavior, update this mirror surface in the same commit so install and uninstall stay 1:1.
+
 ## UI Text
 
 - Do not silently truncate user-facing text with ellipses, line clamps, `text-overflow`, or forced no-wrap styling.

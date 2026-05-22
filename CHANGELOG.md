@@ -3,6 +3,14 @@
 This file records user-visible changes before they are committed. New work should
 be added here first, then marked `Committed` or `Pushed` after the git action.
 
+## 2026-05-22 20:04 WITA - Add Mirrored Uninstall Prompts
+
+- Status: Pushed
+- Areas changed: macOS/Linux uninstaller, Windows uninstaller, README setup docs, project agent rules
+- Summary: Add `uninstall.sh` and `uninstall.ps1` with one-by-one prompts to stop HivemindOS dashboard/services, remove shared-skill agent instruction blocks, optionally remove copied skill folders and generated repo files, optionally uninstall Syncthing/Tailscale/pnpm/Obsidian, and optionally delete the checkout. Add an AGENTS rule requiring future setup prompts and install actions to have matching uninstall prompts in the same change.
+- Verification: `bash -n uninstall.sh`; `bash -n setup.sh`; `./uninstall.sh --non-interactive` listed each uninstall prompt without mutating local files; `git diff --check -- uninstall.sh uninstall.ps1 README.md AGENTS.md CHANGELOG.md`; public GitHub search for `bash interactive uninstall script cleanup prompts tailscale syncthing` returned no reusable candidates. PowerShell execution/parsing was not run because `pwsh`/`powershell` is not installed in this macOS workspace.
+- Intended commit message: `Add mirrored uninstall prompts`
+
 ## 2026-05-22 19:57 WITA - Add Native Windows Setup
 
 - Status: Pushed
