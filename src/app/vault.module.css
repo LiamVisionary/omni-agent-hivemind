@@ -176,19 +176,19 @@
 }
 
 .brainLoader.compact {
-  inset: auto 18px 18px auto;
-  width: min(330px, calc(100% - 36px));
-  align-content: start;
-  justify-items: start;
-  gap: 10px;
-  border: 1px solid rgba(45, 212, 191, 0.26);
-  border-radius: 8px;
+  inset: 0;
+  align-content: center;
+  justify-items: center;
+  gap: 14px;
+  border: 0;
+  border-radius: 0;
   background:
-    linear-gradient(90deg, rgba(45, 212, 191, 0.1), transparent 55%),
-    rgba(6, 10, 18, 0.86);
-  box-shadow: 0 18px 46px rgba(0, 0, 0, 0.34);
-  padding: 14px;
-  text-align: left;
+    radial-gradient(circle at 50% 44%, rgba(251, 191, 36, 0.1), transparent 26%),
+    radial-gradient(circle at 50% 54%, rgba(45, 212, 191, 0.1), transparent 34%),
+    rgba(6, 10, 16, 0.42);
+  box-shadow: none;
+  padding: 28px;
+  text-align: center;
 }
 
 .brainLoader > div:not(.brainLoaderComb, .brainLoadingRail) {
@@ -208,9 +208,14 @@
 }
 
 .brainLoaderComb {
-  position: relative;
+  --brain-loader-cell-fill: rgba(13, 22, 31, 0.94);
+  --brain-loader-cell-pulse: rgba(251, 191, 36, 0.22);
+  --brain-loader-edge: rgba(94, 234, 212, 0.54);
+  display: block;
   width: 118px;
   height: 92px;
+  overflow: visible;
+  filter: drop-shadow(0 0 18px rgba(45, 212, 191, 0.16));
 }
 
 .brainLoader.compact .brainLoaderComb {
@@ -218,36 +223,18 @@
   height: 58px;
 }
 
-.brainLoaderComb span {
-  position: absolute;
-  width: 38px;
-  aspect-ratio: 1;
-  clip-path: polygon(25% 6%, 75% 6%, 100% 50%, 75% 94%, 25% 94%, 0 50%);
-  background: rgba(13, 22, 31, 0.94);
-  border: 1px solid rgba(94, 234, 212, 0.54);
-  box-shadow: 0 0 18px rgba(45, 212, 191, 0.16);
+.brainLoaderCells polygon {
+  fill: var(--brain-loader-cell-fill);
+  will-change: fill;
   animation: brainCombPulse 1.45s ease-in-out infinite;
 }
 
-.brainLoader.compact .brainLoaderComb span {
-  width: 25px;
+.brainLoaderEdges line {
+  stroke: var(--brain-loader-edge);
+  stroke-width: 1.4;
+  stroke-linecap: square;
+  vector-effect: non-scaling-stroke;
 }
-
-.brainLoaderComb span:nth-child(1) { left: 40px; top: 0; animation-delay: 0ms; }
-.brainLoaderComb span:nth-child(2) { left: 20px; top: 27px; animation-delay: 90ms; }
-.brainLoaderComb span:nth-child(3) { left: 60px; top: 27px; animation-delay: 180ms; }
-.brainLoaderComb span:nth-child(4) { left: 0; top: 54px; animation-delay: 270ms; }
-.brainLoaderComb span:nth-child(5) { left: 40px; top: 54px; animation-delay: 360ms; }
-.brainLoaderComb span:nth-child(6) { left: 80px; top: 54px; animation-delay: 450ms; }
-.brainLoaderComb span:nth-child(7) { left: 40px; top: 27px; animation-delay: 540ms; }
-
-.brainLoader.compact .brainLoaderComb span:nth-child(1) { left: 26px; top: 0; }
-.brainLoader.compact .brainLoaderComb span:nth-child(2) { left: 13px; top: 18px; }
-.brainLoader.compact .brainLoaderComb span:nth-child(3) { left: 39px; top: 18px; }
-.brainLoader.compact .brainLoaderComb span:nth-child(4) { left: 0; top: 36px; }
-.brainLoader.compact .brainLoaderComb span:nth-child(5) { left: 26px; top: 36px; }
-.brainLoader.compact .brainLoaderComb span:nth-child(6) { left: 52px; top: 36px; }
-.brainLoader.compact .brainLoaderComb span:nth-child(7) { left: 26px; top: 18px; }
 
 .brainLoadingRail {
   position: relative;
@@ -406,15 +393,10 @@
 @keyframes brainCombPulse {
   0%,
   100% {
-    background: rgba(13, 22, 31, 0.94);
-    border-color: rgba(94, 234, 212, 0.42);
-    transform: translateY(0) scale(1);
+    fill: var(--brain-loader-cell-fill);
   }
   45% {
-    background: rgba(251, 191, 36, 0.22);
-    border-color: rgba(251, 191, 36, 0.92);
-    box-shadow: 0 0 22px rgba(251, 191, 36, 0.26);
-    transform: translateY(-3px) scale(1.04);
+    fill: var(--brain-loader-cell-pulse);
   }
 }
 
@@ -494,6 +476,14 @@
   min-width: 0;
 }
 
+.sharedSkillBadges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  justify-content: flex-end;
+  min-width: 0;
+}
+
 .sharedSkillSourceLine small {
   border: 1px solid rgba(148, 163, 184, 0.14);
   border-radius: 999px;
@@ -504,6 +494,24 @@
   line-height: 1;
   padding: 4px 7px;
   text-transform: uppercase;
+}
+
+.hermesUpdateNotice {
+  margin: 0 14px 12px;
+  border: 1px solid rgba(251, 191, 36, 0.2);
+  border-radius: 8px;
+  background: rgba(251, 191, 36, 0.08);
+  color: #fde68a;
+  font-size: 12px;
+  line-height: 1.45;
+  padding: 8px 10px;
+}
+
+.sharedSkillSourceLine .skillUpdateBadge,
+.providerUpdateBadge {
+  border-color: rgba(251, 191, 36, 0.3);
+  background: rgba(251, 191, 36, 0.1);
+  color: #fde68a;
 }
 
 .sharedSkillCard strong {
@@ -604,6 +612,19 @@
   margin-top: 22px;
   color: #f8fafc;
   font-size: 20px;
+}
+
+.providerUpdateBadge {
+  display: inline-flex;
+  width: fit-content;
+  margin-top: 8px;
+  border: 1px solid rgba(251, 191, 36, 0.3);
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 900;
+  line-height: 1.15;
+  padding: 4px 7px;
+  text-transform: uppercase;
 }
 
 .providerSkillButton {
@@ -957,13 +978,15 @@
 
 :global(:root[data-theme="hive-light"]) .brainLoader.compact {
   background:
-    linear-gradient(90deg, rgba(212, 180, 111, 0.14), transparent 55%),
-    rgba(248, 244, 232, 0.92);
+    radial-gradient(circle at 50% 44%, rgba(212, 180, 111, 0.14), transparent 26%),
+    radial-gradient(circle at 50% 54%, rgba(45, 212, 191, 0.08), transparent 34%),
+    rgba(248, 244, 232, 0.5);
 }
 
-:global(:root[data-theme="hive-light"]) .brainLoaderComb span {
-  background: rgba(238, 230, 208, 0.96);
-  border-color: rgba(111, 86, 37, 0.4);
+:global(:root[data-theme="hive-light"]) .brainLoaderComb {
+  --brain-loader-cell-fill: rgba(238, 230, 208, 0.96);
+  --brain-loader-cell-pulse: rgba(212, 180, 111, 0.3);
+  --brain-loader-edge: rgba(111, 86, 37, 0.4);
 }
 
 :global(:root[data-theme="hive-light"]) .brainNode polygon {

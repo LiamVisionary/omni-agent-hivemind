@@ -246,6 +246,7 @@ export async function patchTask(slug: string | null, taskId: string, patch: Patc
   if (!task) throw new Error("Task not found.");
   const fromStatus = task.status;
   const nextStatus = patch.status && KANBAN_STATUSES.includes(patch.status) ? patch.status : undefined;
+  const retryingWorking = nextStatus === "working" && isRetryBlockerResult(task.result);
   const changed = {
     ...task,
     ...patch,
@@ -254,6 +255,8 @@ export async function patchTask(slug: string | null, taskId: string, patch: Patc
     body: patch.body ?? task.body,
     assignee: patch.assignee === "" ? undefined : patch.assignee ?? task.assignee,
     tenant: patch.tenant === "" ? undefined : patch.tenant ?? task.tenant,
+    result: retryingWorking ? patch.result ?? "" : patch.result ?? task.result,
+    agentSession: retryingWorking ? patch.agentSession ?? undefined : patch.agentSession ?? task.agentSession,
     updatedAt: Date.now(),
     completedAt: nextStatus ? (nextStatus === "done" ? Date.now() : undefined) : task.completedAt,
   };
@@ -277,6 +280,11 @@ export async function moveTask(slug: string | null, taskId: string, status: Kanb
   if (!task) throw new Error("Task not found.");
   board.tasks = moveTaskBetweenColumns(board.tasks, taskId, status);
   const moved = board.tasks.find((item) => item.id === taskId);
+  if (moved && status === "ready") {
+    moved.assignee = undefined;
+    moved.tenant = undefined;
+    moved.agentSession = null;
+  }
   if (moved && status === "working" && isRetryBlockerResult(moved.result)) {
     moved.result = "";
     moved.agentSession = null;
@@ -375,13 +383,14 @@ function cleanOptional(value?: string | null) {
 }
 
 function isUnpollableAcceptedWorking(task: KanbanTask) {
+  if (/may still be working|waiting for telemetry|dashboard timeout/i.test(task.result ?? "")) return false;
   return task.status === "working"
     && !task.agentSession?.sessionId
-    && /accepted the delegated work|accepted the task|produced no output|no pollable session|waiting for agent update|dashboard response before timeout|auth is failing|needs Hermes\/Codex/i.test(task.result ?? "");
+    && /produced no output|no pollable session|auth is failing|needs Hermes\/Codex/i.test(task.result ?? "");
 }
 
 function isRetryBlockerResult(result?: string) {
-  return /cannot be marked Working|signed out of Codex|auth is failing|no active session|no pollable session|needs Hermes\/Codex/i.test(result ?? "");
+  return /cannot be marked Working|signed out of Codex|auth is failing|no active session|no pollable session|needs Hermes\/Codex|no assistant response|terminal\/tool output|tool output|session is updating|without a worker update/i.test(result ?? "");
 }
 
 function safeVaultFolder(folder?: string | null) {

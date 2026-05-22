@@ -1,0 +1,245 @@
+import { mkdir, readFile, readdir, writeFile } from "fs/promises";
+import { hostname } from "os";
+import { join } from "path";
+
+import { resolveObsidianVaultPath } from "@/lib/services/obsidian/vault-path";
+import type { AgentWalletConfig } from "@/lib/types/agent-wallet";
+
+const WALLET_FOLDER = "Projects/HivemindOS/Wallets";
+
+export type WalletLedgerRecord = {
+  agentId: string;
+  agentName: string;
+  runtime?: string;
+  machineName?: string;
+  /** Hostname of the dashboard that last wrote the record. */
+  dashboardMachine: string;
+  /** ISO timestamp of the last write. */
+  updatedAt: string;
+  wallet: AgentWalletConfig;
+};
+
+export type WalletLedger = {
+  vaultPath: string;
+  folderPath: string;
+  records: WalletLedgerRecord[];
+};
+
+/* ─── YAML helpers (flat primitives only) ───────────────────────── */
+
+const NEEDS_QUOTE = /[:#\n]|^\s|\s$|^$|^(true|false|null|yes|no|on|off)$|^-?\d/i;
+
+function escapeYamlString(value: string): string {
+  if (!NEEDS_QUOTE.test(value)) return value;
+  return `"${value.replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"`;
+}
+
+function emitYamlValue(value: unknown): string {
+  if (value === null || value === undefined) return '""';
+  if (typeof value === "boolean") return value ? "true" : "false";
+  if (typeof value === "number") return Number.isFinite(value) ? String(value) : "0";
+  if (typeof value === "string") return escapeYamlString(value);
+  return escapeYamlString(JSON.stringify(value));
+}
+
+function parseYamlScalar(raw: string): string | number | boolean {
+  const trimmed = raw.trim();
+  if (trimmed === "true") return true;
+  if (trimmed === "false") return false;
+  if (/^-?\d+(?:\.\d+)?$/.test(trimmed)) return Number(trimmed);
+  if (trimmed.startsWith('"') && trimmed.endsWith('"')) {
+    return trimmed.slice(1, -1).replace(/\\"/g, '"').replace(/\\\\/g, "\\");
+  }
+  if (trimmed.startsWith("'") && trimmed.endsWith("'")) {
+    return trimmed.slice(1, -1);
+  }
+  return trimmed;
+}
+
+function parseFrontmatter(content: string): Record<string, string | number | boolean> {
+  const match = content.match(/^---\s*\n([\s\S]*?)\n---\s*(?:\n|$)/);
+  if (!match) return {};
+  const out: Record<string, string | number | boolean> = {};
+  for (const line of match[1].split(/\r?\n/)) {
+    if (!line.trim() || line.trim().startsWith("#")) continue;
+    const colonIdx = line.indexOf(":");
+    if (colonIdx < 0) continue;
+    const key = line.slice(0, colonIdx).trim();
+    const value = line.slice(colonIdx + 1).trim();
+    if (!key) continue;
+    out[key] = parseYamlScalar(value);
+  }
+  return out;
+}
+
+/* ─── Record (de)serialisation ──────────────────────────────────── */
+
+function networkLabel(network: string): string {
+  switch (network) {
+    case "eip155:8453": return "Base mainnet";
+    case "eip155:84532": return "Base Sepolia";
+    case "solana:mainnet": return "Solana mainnet";
+    case "solana:devnet": return "Solana devnet";
+    default: return network;
+  }
+}
+
+function statusLabel(wallet: AgentWalletConfig): string {
+  if (!wallet.enabled) return "Wallet off";
+  if (wallet.currentBalanceUsd <= 0) return "Needs funding";
+  if (wallet.dailyComputeBurnUsd > 0) {
+    const days = wallet.currentBalanceUsd / wallet.dailyComputeBurnUsd;
+    return `Can spend · ${days.toFixed(1)} days runway`;
+  }
+  return "Can spend";
+}
+
+function renderRecordMarkdown(record: WalletLedgerRecord): string {
+  const frontmatter: Array<[string, unknown]> = [
+    ["agentId", record.agentId],
+    ["agentName", record.agentName],
+    ["runtime", record.runtime ?? ""],
+    ["machineName", record.machineName ?? ""],
+    ["dashboardMachine", record.dashboardMachine],
+    ["updatedAt", record.updatedAt],
+    ["enabled", record.wallet.enabled],
+    ["provider", record.wallet.provider],
+    ["walletAddress", record.wallet.walletAddress],
+    ["network", record.wallet.network],
+    ["tokenSymbol", record.wallet.tokenSymbol],
+    ["seedBalanceUsd", record.wallet.seedBalanceUsd],
+    ["currentBalanceUsd", record.wallet.currentBalanceUsd],
+    ["dailyComputeBurnUsd", record.wallet.dailyComputeBurnUsd],
+    ["maxPaymentUsd", record.wallet.maxPaymentUsd],
+    ["approvalRequiredOverUsd", record.wallet.approvalRequiredOverUsd],
+    ["autoPayEnabled", record.wallet.autoPayEnabled],
+    ["clawCardEnvName", record.wallet.clawCardEnvName],
+    ["moneyClawEnvName", record.wallet.moneyClawEnvName],
+    ["x402BaseUrl", record.wallet.x402BaseUrl],
+    ["survivalStartedAt", record.wallet.survivalStartedAt],
+    ["updatedAtMs", record.wallet.updatedAt],
+    ["notes", record.wallet.notes],
+    ["custodyMode", record.wallet.custodyMode],
+    ["vaultAddress", record.wallet.vaultAddress],
+    ["onchainBalanceUsd", record.wallet.onchainBalanceUsd],
+    ["nativeBalance", record.wallet.nativeBalance],
+    ["lastOnchainSyncAt", record.wallet.lastOnchainSyncAt],
+  ];
+
+  const head = frontmatter.map(([key, value]) => `${key}: ${emitYamlValue(value)}`).join("\n");
+  const balance = record.wallet.currentBalanceUsd.toFixed(2);
+  const body = [
+    `# ${record.agentName} — Wallet`,
+    "",
+    `- **Status**: ${statusLabel(record.wallet)}`,
+    `- **Balance**: $${balance} ${record.wallet.tokenSymbol || "USDC"} on ${networkLabel(record.wallet.network)}`,
+    record.wallet.walletAddress ? `- **Address**: \`${record.wallet.walletAddress}\`` : null,
+    `- **Runtime**: ${record.runtime ?? "—"}`,
+    `- **Last updated**: ${record.updatedAt} from \`${record.dashboardMachine}\``,
+  ].filter(Boolean).join("\n");
+
+  return `---\n${head}\n---\n\n${body}\n`;
+}
+
+function parseRecordMarkdown(filename: string, content: string): WalletLedgerRecord | null {
+  const fm = parseFrontmatter(content);
+  const agentId = typeof fm.agentId === "string" ? fm.agentId : filename.replace(/\.md$/i, "");
+  if (!agentId) return null;
+  const wallet: AgentWalletConfig = {
+    agentId,
+    enabled: Boolean(fm.enabled),
+    provider: (typeof fm.provider === "string" ? fm.provider : "bankr") as AgentWalletConfig["provider"],
+    walletAddress: typeof fm.walletAddress === "string" ? fm.walletAddress : "",
+    network: typeof fm.network === "string" ? fm.network : "eip155:8453",
+    tokenSymbol: typeof fm.tokenSymbol === "string" ? fm.tokenSymbol : "USDC",
+    seedBalanceUsd: typeof fm.seedBalanceUsd === "number" ? fm.seedBalanceUsd : 0,
+    currentBalanceUsd: typeof fm.currentBalanceUsd === "number" ? fm.currentBalanceUsd : 0,
+    dailyComputeBurnUsd: typeof fm.dailyComputeBurnUsd === "number" ? fm.dailyComputeBurnUsd : 0,
+    maxPaymentUsd: typeof fm.maxPaymentUsd === "number" ? fm.maxPaymentUsd : 0,
+    approvalRequiredOverUsd: typeof fm.approvalRequiredOverUsd === "number" ? fm.approvalRequiredOverUsd : 0,
+    autoPayEnabled: Boolean(fm.autoPayEnabled),
+    clawCardEnvName: typeof fm.clawCardEnvName === "string" ? fm.clawCardEnvName : "CLAWCARD_API_KEY",
+    moneyClawEnvName: typeof fm.moneyClawEnvName === "string" ? fm.moneyClawEnvName : "MONEYCLAW_API_KEY",
+    x402BaseUrl: typeof fm.x402BaseUrl === "string" ? fm.x402BaseUrl : "",
+    survivalStartedAt: typeof fm.survivalStartedAt === "number" ? fm.survivalStartedAt : 0,
+    updatedAt: typeof fm.updatedAtMs === "number" ? fm.updatedAtMs : 0,
+    notes: typeof fm.notes === "string" ? fm.notes : "",
+    custodyMode: (typeof fm.custodyMode === "string" ? fm.custodyMode : "watch") as AgentWalletConfig["custodyMode"],
+    vaultAddress: typeof fm.vaultAddress === "string" ? fm.vaultAddress : "",
+    onchainBalanceUsd: typeof fm.onchainBalanceUsd === "number" ? fm.onchainBalanceUsd : 0,
+    nativeBalance: typeof fm.nativeBalance === "number" ? fm.nativeBalance : 0,
+    lastOnchainSyncAt: typeof fm.lastOnchainSyncAt === "number" ? fm.lastOnchainSyncAt : 0,
+  };
+  return {
+    agentId,
+    agentName: typeof fm.agentName === "string" && fm.agentName ? fm.agentName : agentId,
+    runtime: typeof fm.runtime === "string" ? fm.runtime : undefined,
+    machineName: typeof fm.machineName === "string" ? fm.machineName : undefined,
+    dashboardMachine: typeof fm.dashboardMachine === "string" ? fm.dashboardMachine : "",
+    updatedAt: typeof fm.updatedAt === "string" ? fm.updatedAt : new Date(0).toISOString(),
+    wallet,
+  };
+}
+
+/* ─── Public API ─────────────────────────────────────────────────── */
+
+const SAFE_FILE_NAME = /^[A-Za-z0-9._-]+$/;
+
+function fileNameFor(agentId: string): string {
+  const safe = SAFE_FILE_NAME.test(agentId)
+    ? agentId
+    : agentId.replace(/[^A-Za-z0-9._-]/g, "_");
+  return `${safe}.md`;
+}
+
+export async function readWalletLedger(vaultPath?: string): Promise<WalletLedger> {
+  const resolved = resolveObsidianVaultPath(vaultPath);
+  const folderPath = join(resolved, WALLET_FOLDER);
+  let entries: string[] = [];
+  try {
+    entries = await readdir(folderPath);
+  } catch {
+    return { vaultPath: resolved, folderPath, records: [] };
+  }
+  const records: WalletLedgerRecord[] = [];
+  for (const entry of entries) {
+    if (!entry.toLowerCase().endsWith(".md")) continue;
+    if (entry.toLowerCase() === "readme.md") continue;
+    try {
+      const raw = await readFile(join(folderPath, entry), "utf8");
+      const record = parseRecordMarkdown(entry, raw);
+      if (record) records.push(record);
+    } catch {
+      /* skip unreadable file */
+    }
+  }
+  records.sort((a, b) => a.agentName.localeCompare(b.agentName));
+  return { vaultPath: resolved, folderPath, records };
+}
+
+export async function writeWalletRecord(input: {
+  vaultPath?: string;
+  agentId: string;
+  agentName: string;
+  runtime?: string;
+  machineName?: string;
+  wallet: AgentWalletConfig;
+}): Promise<WalletLedgerRecord> {
+  if (!input.agentId.trim()) throw new Error("Missing agentId.");
+  const resolved = resolveObsidianVaultPath(input.vaultPath, { requireWritable: true });
+  const folderPath = join(resolved, WALLET_FOLDER);
+  await mkdir(folderPath, { recursive: true });
+
+  const record: WalletLedgerRecord = {
+    agentId: input.agentId,
+    agentName: input.agentName || input.agentId,
+    runtime: input.runtime,
+    machineName: input.machineName,
+    dashboardMachine: hostname(),
+    updatedAt: new Date().toISOString(),
+    wallet: { ...input.wallet, agentId: input.agentId },
+  };
+  const filePath = join(folderPath, fileNameFor(input.agentId));
+  await writeFile(filePath, renderRecordMarkdown(record), "utf8");
+  return record;
+}

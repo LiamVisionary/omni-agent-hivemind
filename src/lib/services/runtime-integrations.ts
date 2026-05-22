@@ -1,0 +1,269 @@
+import { execFile, spawn } from "node:child_process";
+import { existsSync } from "node:fs";
+import { mkdir, readFile, readdir, writeFile } from "node:fs/promises";
+import { homedir } from "node:os";
+import { dirname, join } from "node:path";
+import { promisify } from "node:util";
+import type { AgentProfile, AgentRuntime, RuntimeCapabilities } from "@/lib/types/agent-runtime";
+import { RUNTIME_CAPABILITIES } from "@/lib/types/agent-runtime";
+
+const execFileAsync = promisify(execFile);
+const HERMES_HOME = join(homedir(), ".hermes");
+const HERMES_DB = join(HERMES_HOME, "state.db");
+const OPENCLAW_AGENTS = join(homedir(), ".openclaw", "agents");
+const RUN_LOG_ROOT = join(homedir(), ".hivemindos", "runtime-runs");
+
+export type RuntimeIntegrationKey =
+  | "sessionSearch"
+  | "backgroundTasks"
+  | "xSearch"
+  | "socialPosting"
+  | "videoGeneration"
+  | "codexRuntime"
+  | "kanbanDecompose";
+
+export type RuntimeIntegrationStatus = {
+  runtime: AgentRuntime;
+  capabilities: RuntimeCapabilities;
+  integrations: Record<RuntimeIntegrationKey, {
+    supported: boolean;
+    enabled: boolean;
+    detail: string;
+  }>;
+  diagnostics: string[];
+};
+
+export type RuntimeSessionSearchResult = {
+  id: string;
+  runtime: AgentRuntime;
+  title: string;
+  source?: string;
+  model?: string | null;
+  startedAt?: string;
+  updatedAt?: string;
+  excerpt: string;
+  path?: string;
+};
+
+type HermesSessionRow = {
+  id: string;
+  source: string;
+  model: string | null;
+  title: string | null;
+  started_at: number;
+  updated_at: number | null;
+  system_prompt: string | null;
+};
+
+export async function getRuntimeIntegrationStatus(runtime: AgentRuntime, agent?: AgentProfile): Promise<RuntimeIntegrationStatus> {
+  const capabilities = { ...RUNTIME_CAPABILITIES[runtime], ...(agent?.runtimeCapabilities ?? {}) };
+  if (runtime !== "hermes") {
+    return {
+      runtime,
+      capabilities,
+      integrations: integrationDefaults(capabilities, {
+        socialPosting: runtime === "openclaw" ? "Available through OpenClaw skills when installed." : "Not exposed by this adapter yet.",
+      }),
+      diagnostics: [],
+    };
+  }
+
+  const diagnostics: string[] = [];
+  const [version, tools, config] = await Promise.all([
+    runHermes(["--version"]).catch((error) => {
+      diagnostics.push(error instanceof Error ? error.message : "Hermes version check failed.");
+      return "";
+    }),
+    runHermes(["tools", "list"]).catch(() => ""),
+    readFile(join(HERMES_HOME, "config.yaml"), "utf8").catch(() => ""),
+  ]);
+  const toolEnabled = (name: string) => new RegExp(`✓\\s+enabled\\s+${escapeRegExp(name)}\\b`).test(tools);
+  const codexConfigured = /provider:\s*openai-codex\b|codex_app_server|codex-runtime/i.test(config);
+  const kanbanAuto = /auto_decompose:\s*true/i.test(config);
+  if (version.trim()) diagnostics.push(version.trim());
+
+  return {
+    runtime,
+    capabilities,
+    integrations: {
+      sessionSearch: {
+        supported: true,
+        enabled: existsSync(HERMES_DB),
+        detail: existsSync(HERMES_DB) ? "Hermes session store is readable." : "Hermes session store was not found.",
+      },
+      backgroundTasks: {
+        supported: true,
+        enabled: Boolean(version.trim()),
+        detail: version.trim() ? "Run Hermes tasks in the background while chat stays available." : "Hermes CLI was not found.",
+      },
+      xSearch: {
+        supported: true,
+        enabled: toolEnabled("x_search"),
+        detail: toolEnabled("x_search") ? "x_search is enabled for CLI." : "Enable x_search after xAI OAuth or XAI_API_KEY is configured.",
+      },
+      socialPosting: {
+        supported: false,
+        enabled: false,
+        detail: "Hermes exposes X search natively here; posting should remain a skill/plugin action.",
+      },
+      videoGeneration: {
+        supported: true,
+        enabled: toolEnabled("video_gen"),
+        detail: toolEnabled("video_gen") ? "video_generate is enabled for CLI." : "Enable video_gen before asking Hermes to create videos.",
+      },
+      codexRuntime: {
+        supported: true,
+        enabled: codexConfigured,
+        detail: codexConfigured ? "Codex/OpenAI path is present in Hermes config." : "Use Hermes Codex auth/runtime setup before routing coding work through Codex.",
+      },
+      kanbanDecompose: {
+        supported: true,
+        enabled: kanbanAuto,
+        detail: kanbanAuto ? "Hermes auto_decompose is on." : "Hermes can decompose Kanban triage tasks manually.",
+      },
+    },
+    diagnostics,
+  };
+}
+
+export async function searchRuntimeSessions(runtime: AgentRuntime, query: string, limit = 20): Promise<RuntimeSessionSearchResult[]> {
+  if (runtime === "hermes") return searchHermesSessions(query, limit);
+  if (runtime === "openclaw") return searchOpenClawSessions(query, limit);
+  return [];
+}
+
+export async function runRuntimeIntegrationAction(runtime: AgentRuntime, action: string, input: Record<string, unknown> = {}) {
+  if (runtime !== "hermes") {
+    return { ok: false, error: `${runtime} does not expose this dashboard integration action yet.` };
+  }
+  if (action === "enable-tool") {
+    const tool = String(input.tool ?? "");
+    if (!["x_search", "video_gen"].includes(tool)) return { ok: false, error: "Unsupported Hermes tool." };
+    await runHermes(["tools", "enable", tool], 20_000);
+    return { ok: true, message: `Enabled Hermes ${tool}.` };
+  }
+  if (action === "disable-tool") {
+    const tool = String(input.tool ?? "");
+    if (!["x_search", "video_gen"].includes(tool)) return { ok: false, error: "Unsupported Hermes tool." };
+    await runHermes(["tools", "disable", tool], 20_000);
+    return { ok: true, message: `Disabled Hermes ${tool}.` };
+  }
+  if (action === "xai-login") {
+    const child = spawn("hermes", ["login", "--provider", "xai-oauth"], {
+      detached: true,
+      stdio: "ignore",
+      env: { ...process.env },
+    });
+    child.unref();
+    return { ok: true, message: "Started Hermes xAI OAuth login in a separate process." };
+  }
+  if (action === "background") {
+    const prompt = String(input.prompt ?? "").trim();
+    if (!prompt) return { ok: false, error: "Background prompt is required." };
+    const id = `hermes-${Date.now().toString(36)}`;
+    const logPath = join(RUN_LOG_ROOT, `${id}.log`);
+    await mkdir(dirname(logPath), { recursive: true });
+    const child = spawn("hermes", ["-z", prompt], {
+      detached: true,
+      stdio: ["ignore", "pipe", "pipe"],
+      env: { ...process.env },
+    });
+    const write = (chunk: Buffer) => void writeFile(logPath, chunk.toString(), { flag: "a" }).catch(() => undefined);
+    child.stdout.on("data", write);
+    child.stderr.on("data", write);
+    child.unref();
+    return { ok: true, id, logPath, message: "Started Hermes background task." };
+  }
+  if (action === "kanban-decompose") {
+    const taskId = String(input.taskId ?? "").trim();
+    const args = ["kanban", "decompose", "--json"];
+    if (taskId) args.push(taskId);
+    else args.push("--all");
+    const output = await runHermes(args, 120_000);
+    return { ok: true, output };
+  }
+  return { ok: false, error: `Unsupported Hermes action: ${action}` };
+}
+
+function integrationDefaults(capabilities: RuntimeCapabilities, overrides: Partial<Record<RuntimeIntegrationKey, string>> = {}) {
+  const keys: RuntimeIntegrationKey[] = ["sessionSearch", "backgroundTasks", "xSearch", "socialPosting", "videoGeneration", "codexRuntime", "kanbanDecompose"];
+  return Object.fromEntries(keys.map((key) => [
+    key,
+    {
+      supported: Boolean(capabilities[key]),
+      enabled: Boolean(capabilities[key]),
+      detail: overrides[key] ?? (capabilities[key] ? "Supported by this runtime adapter." : "Not exposed by this runtime adapter."),
+    },
+  ])) as RuntimeIntegrationStatus["integrations"];
+}
+
+async function searchHermesSessions(query: string, limit: number) {
+  if (!existsSync(HERMES_DB)) return [];
+  const q = query.trim();
+  const pattern = `%${q.replace(/'/g, "''")}%`;
+  const sql = `
+    select id, source, model, title, started_at, coalesce(ended_at, started_at) as updated_at, system_prompt
+    from sessions
+    ${q ? `where lower(coalesce(title, '') || ' ' || coalesce(system_prompt, '') || ' ' || id) like lower('${pattern}')` : ""}
+    order by started_at desc
+    limit ${Math.max(1, Math.min(100, limit))};
+  `;
+  const { stdout } = await execFileAsync("sqlite3", ["-json", HERMES_DB, sql], { timeout: 5_000, maxBuffer: 2_000_000 });
+  const rows = JSON.parse(stdout || "[]") as HermesSessionRow[];
+  return rows.map((row) => ({
+    id: row.id,
+    runtime: "hermes" as const,
+    title: row.title || row.id,
+    source: row.source,
+    model: row.model,
+    startedAt: toIso(row.started_at),
+    updatedAt: toIso(row.updated_at || row.started_at),
+    excerpt: (row.system_prompt || "").replace(/\s+/g, " ").slice(0, 280),
+  }));
+}
+
+async function searchOpenClawSessions(query: string, limit: number) {
+  const agents = await readdir(OPENCLAW_AGENTS, { withFileTypes: true }).catch(() => []);
+  const q = query.trim().toLowerCase();
+  const results: RuntimeSessionSearchResult[] = [];
+  for (const agent of agents) {
+    if (!agent.isDirectory()) continue;
+    const sessionsDir = join(OPENCLAW_AGENTS, agent.name, "sessions");
+    const files = await readdir(sessionsDir, { withFileTypes: true }).catch(() => []);
+    for (const file of files) {
+      if (!file.isFile() || !/\.(json|jsonl)$/i.test(file.name)) continue;
+      const path = join(sessionsDir, file.name);
+      const raw = await readFile(path, "utf8").catch(() => "");
+      const text = raw.replace(/\s+/g, " ");
+      if (q && !text.toLowerCase().includes(q) && !file.name.toLowerCase().includes(q)) continue;
+      results.push({
+        id: `${agent.name}:${file.name.replace(/\.(json|jsonl)$/i, "")}`,
+        runtime: "openclaw",
+        title: `${agent.name} / ${file.name}`,
+        source: agent.name,
+        excerpt: text.slice(0, 280),
+        path,
+      });
+      if (results.length >= limit) return results;
+    }
+  }
+  return results;
+}
+
+async function runHermes(args: string[], timeout = 10_000) {
+  const { stdout, stderr } = await execFileAsync("hermes", args, {
+    timeout,
+    maxBuffer: 2_000_000,
+    env: { ...process.env },
+  });
+  return `${stdout}${stderr ? `\n${stderr}` : ""}`.trim();
+}
+
+function toIso(seconds: number | null | undefined) {
+  const value = Number(seconds);
+  return Number.isFinite(value) && value > 0 ? new Date(value * 1000).toISOString() : undefined;
+}
+
+function escapeRegExp(value: string) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}

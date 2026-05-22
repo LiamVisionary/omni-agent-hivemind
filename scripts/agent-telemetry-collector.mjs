@@ -16,7 +16,7 @@ const defaultHermesDir = process.env.HERMES_HOME || join(homedir(), ".hermes");
 const defaultAeonDir = process.env.AEON_LOCAL_PATH || process.env.AEON_HOME || join(homedir(), ".aeon");
 const maxChars = 1000;
 const maxChatChars = 12_000;
-const chatTimeoutMs = Number(process.env.AGENT_TELEMETRY_CHAT_TIMEOUT_MS || 180_000);
+const chatTimeoutMs = Number(process.env.AGENT_TELEMETRY_CHAT_TIMEOUT_MS || 10 * 60_000);
 const sessionDiscoveryTimeoutMs = Number(process.env.AGENT_TELEMETRY_SESSION_DISCOVERY_TIMEOUT_MS || 15_000);
 const hermesApiHost = process.env.AGENT_TELEMETRY_HERMES_API_HOST || "127.0.0.1";
 const hermesApiPort = Number(process.env.AGENT_TELEMETRY_HERMES_API_PORT || process.env.API_SERVER_PORT || 8642);
@@ -902,7 +902,43 @@ async function proxyHermesApiChat(body, response, text, hermesHome) {
   if (!(await ensureHermesApiServer(hermesHome))) return false;
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), chatTimeoutMs);
+  let sessionTimer = null;
+  let emittedSession = false;
+
+  const ensureHeaders = () => {
+    if (response.headersSent || response.writableEnded) return;
+    response.writeHead(200, {
+      "content-type": "text/event-stream",
+      "cache-control": "no-cache",
+      connection: "keep-alive",
+      "x-hermes-stream-source": "api-server",
+    });
+  };
+
+  async function emitSession() {
+    if (emittedSession || response.writableEnded) return;
+    const session = await waitForHermesApiSession(hermesHome, requestStartedAt - 2_000, text);
+    if (!session) return;
+    ensureHeaders();
+    response.write(ssePayload({
+      session: {
+        id: session.sessionId,
+        startedAt: session.startedAt,
+        updatedAt: session.updatedAt,
+        messageCount: session.messages.length,
+      },
+    }));
+    emittedSession = true;
+  }
+
   try {
+    response.on("close", () => controller.abort());
+    ensureHeaders();
+    response.write(": waiting for Hermes API stream\n\n");
+    sessionTimer = setInterval(() => {
+      void emitSession().catch(() => undefined);
+    }, 1_000);
+
     const upstream = await fetch(`${hermesApiBaseUrl}/v1/chat/completions`, {
       method: "POST",
       headers: hermesApiHeaders({ "Content-Type": "application/json" }),
@@ -914,47 +950,12 @@ async function proxyHermesApiChat(body, response, text, hermesHome) {
       signal: controller.signal,
     });
     if (!upstream.ok || !upstream.body) {
-      if (messagesHaveMultimodalContent(body.messages)) {
-        const errorText = await upstream.text().catch(() => "");
-        response.writeHead(upstream.status || 502, {
-          "content-type": "text/event-stream",
-          "cache-control": "no-cache",
-          connection: "keep-alive",
-          "x-hermes-stream-source": "api-server",
-        });
-        response.end(ssePayload({ error: errorText || "Hermes rejected the attached media." }) + "data: [DONE]\n\n");
-        return true;
-      }
-      return false;
-    }
-
-    response.on("close", () => controller.abort());
-
-    const ensureHeaders = () => {
-      if (response.headersSent || response.writableEnded) return;
-      response.writeHead(200, {
-        "content-type": "text/event-stream",
-        "cache-control": "no-cache",
-        connection: "keep-alive",
-        "x-hermes-stream-source": "api-server",
-      });
-    };
-
-    let emittedSession = false;
-    async function emitSession() {
-      if (emittedSession || response.writableEnded) return;
-      const session = await waitForHermesApiSession(hermesHome, requestStartedAt - 2_000, text);
-      if (!session) return;
-      ensureHeaders();
-      response.write(ssePayload({
-        session: {
-          id: session.sessionId,
-          startedAt: session.startedAt,
-          updatedAt: session.updatedAt,
-          messageCount: session.messages.length,
-        },
-      }));
-      emittedSession = true;
+      const errorText = await upstream.text().catch(() => "");
+      const fallbackMessage = messagesHaveMultimodalContent(body.messages)
+        ? "Hermes rejected the attached media."
+        : `Hermes API returned ${upstream.status || 502}.`;
+      response.end(ssePayload({ error: errorText || fallbackMessage }) + "data: [DONE]\n\n");
+      return true;
     }
 
     await emitSession();
@@ -1008,7 +1009,6 @@ async function proxyHermesApiChat(body, response, text, hermesHome) {
     if (!response.writableEnded) response.end();
     return true;
   } catch {
-    if (!response.headersSent && !response.writableEnded) return false;
     if (!response.writableEnded) {
       response.write(ssePayload({ error: "Hermes API streaming interrupted." }));
       response.end("data: [DONE]\n\n");
@@ -1016,6 +1016,7 @@ async function proxyHermesApiChat(body, response, text, hermesHome) {
     return true;
   } finally {
     clearTimeout(timer);
+    if (sessionTimer) clearInterval(sessionTimer);
   }
 }
 

@@ -79,13 +79,33 @@ function RunCard({ run, selected, onSelect }: RunCardProps) {
 interface RunsProps {
   runs: SwarmRun[];
   selectedId: string;
+  loading?: boolean;
   onSelect: (id: string) => void;
   onLaunch?: () => void;
 }
 
-export function Runs({ runs, selectedId, onSelect, onLaunch }: RunsProps) {
+function RunSkeleton({ index }: { index: number }) {
+  return (
+    <div className={styles.runSkeleton} aria-hidden="true" style={{ animationDelay: `${index * 90}ms` }}>
+      <div className={styles.runSkeletonTop}>
+        <span />
+        <span />
+      </div>
+      <strong />
+      <div className={styles.runSkeletonMeta}>
+        <span />
+        <span />
+        <span />
+      </div>
+      <i />
+    </div>
+  );
+}
+
+export function Runs({ runs, selectedId, loading = false, onSelect, onLaunch }: RunsProps) {
   return (
     <aside className="flex flex-col overflow-hidden"
+      aria-busy={loading || undefined}
       style={{
         gap: 14, padding: "20px 18px",
         borderRight: "1px solid rgba(148,163,184,0.16)",
@@ -98,13 +118,13 @@ export function Runs({ runs, selectedId, onSelect, onLaunch }: RunsProps) {
             margin: "4px 0 0", fontFamily: "var(--f-display)", fontSize: 22, letterSpacing: -0.4,
           }}>The shelf</h2>
           <span style={{ fontFamily: "var(--f-mono)", fontSize: 11, color: "var(--hex-active-border)" }}>
-            {runs.length} jars
+            {loading && !runs.length ? "loading" : `${runs.length} jars`}
           </span>
         </div>
       </div>
 
       <button onClick={onLaunch}
-        className="inline-flex items-center justify-center uppercase font-bold cursor-pointer"
+        className={`${styles.newSimulationButton} inline-flex items-center justify-center uppercase font-bold cursor-pointer`}
         style={{
           gap: 8, padding: "11px 14px", borderRadius: 8,
           border: "1px solid rgba(255,212,90,0.55)",
@@ -116,6 +136,15 @@ export function Runs({ runs, selectedId, onSelect, onLaunch }: RunsProps) {
 
       <div className="flex flex-col overflow-auto"
         style={{ flex: 1, minHeight: 0, gap: 8 }}>
+        {loading ? (
+          <div className={styles.archiveLoadingNote}>
+            <span className={`${styles.dot} ${styles.dotLive}`} />
+            Reading saved simulations
+          </div>
+        ) : null}
+        {loading && !runs.length ? (
+          Array.from({ length: 4 }).map((_, index) => <RunSkeleton key={index} index={index} />)
+        ) : null}
         {runs.map((r) => (
           <RunCard key={r.id} run={r} selected={r.id === selectedId} onSelect={() => onSelect(r.id)} />
         ))}

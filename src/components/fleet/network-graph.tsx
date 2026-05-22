@@ -52,10 +52,11 @@ export function NetworkGraph({
     cx: layout[m.id][0] * w,
     cy: layout[m.id][1] * h,
   }));
-  const addMachinePoint = React.useMemo(() => ({ x: w * 0.86, y: h * 0.2 }), [h, w]);
+  const addMachinePoint = React.useMemo(() => ({ x: w * 0.72, y: h * 0.28 }), [h, w]);
   const pos: Record<string, { x: number; y: number }> = Object.fromEntries(
     clusters.map((c) => [c.m.id, { x: c.cx, y: c.cy }]),
   );
+  const latestBeeGraphRef = React.useRef({ edges, pos });
   const bounds = React.useMemo(() => contentBounds(clusters, addMachinePoint), [clusters, addMachinePoint]);
 
   const clampPan = React.useCallback((next: { x: number; y: number }) => {
@@ -64,6 +65,10 @@ export function NetworkGraph({
       y: clampAxis(next.y, viewport.height, bounds.minY, bounds.maxY),
     };
   }, [bounds.maxX, bounds.maxY, bounds.minX, bounds.minY, viewport.height, viewport.width]);
+
+  React.useLayoutEffect(() => {
+    latestBeeGraphRef.current = { edges, pos };
+  }, [edges, pos]);
 
   React.useLayoutEffect(() => {
     const element = viewportRef.current;
@@ -102,23 +107,33 @@ export function NetworkGraph({
     let raf = 0;
     const SZ = 44;
     const tick = (now: number) => {
+      const { edges: currentEdges, pos: currentPos } = latestBeeGraphRef.current;
       for (let i = 0; i < BEE_COUNT; i++) {
+        const el = beeRefs.current[i];
+        if (!currentEdges.length) {
+          if (el) el.style.opacity = "0";
+          beeStateRef.current[i].t0 = now;
+          continue;
+        }
         const s = beeStateRef.current[i];
         if ((now - s.t0) / s.dur >= 1) {
-          s.edgeIdx = edges.length ? (s.edgeIdx + i + 1) % edges.length : 0;
+          s.edgeIdx = (s.edgeIdx + i + 1) % currentEdges.length;
           s.dir = s.dir === 1 ? -1 : 1;
           s.t0 = now;
         }
+        if (s.edgeIdx >= currentEdges.length) s.edgeIdx = i % currentEdges.length;
         const phase = Math.min(Math.max((now - s.t0) / s.dur, 0), 1);
         const p = s.dir === 1 ? phase : 1 - phase;
-        const [a, b] = edges[s.edgeIdx] ?? [];
-        const A = pos[a], B = pos[b];
-        if (!A || !B) continue;
+        const [a, b] = currentEdges[s.edgeIdx] ?? [];
+        const A = currentPos[a], B = currentPos[b];
+        if (!A || !B) {
+          if (el) el.style.opacity = "0";
+          continue;
+        }
         const x = A.x + (B.x - A.x) * p;
         const y = A.y + (B.y - A.y) * p;
         const o = Math.sin(phase * Math.PI);
         const flip = (s.dir === 1 ? B.x - A.x : A.x - B.x) < 0 ? -1 : 1;
-        const el = beeRefs.current[i];
         if (el) {
           el.style.transform = `translate(${x - SZ / 2}px, ${y - SZ / 2}px) scaleX(${flip})`;
           el.style.opacity = String(o);
@@ -128,7 +143,6 @@ export function NetworkGraph({
     };
     raf = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(raf);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   return (
@@ -180,7 +194,7 @@ export function NetworkGraph({
         className="absolute inset-0 pointer-events-none"
       >
         <defs>
-          <linearGradient id="fleetEdge" x1="0" y1="0" x2="1" y2="0">
+          <linearGradient id="fleetEdge" gradientUnits="userSpaceOnUse" x1={0} y1={0} x2={w} y2={h}>
             <stop offset="0%"   stopColor="var(--edge-stroke-start)" />
             <stop offset="100%" stopColor="var(--edge-stroke-end)" />
           </linearGradient>
@@ -282,8 +296,8 @@ function makeClusterLayout(machines: FleetMachine[]) {
   machines.forEach((machine, index) => {
     const angle = (index / Math.max(machines.length, 1)) * Math.PI * 2 - Math.PI / 2;
     fallback[machine.id] = [
-      0.5 + Math.cos(angle) * 0.32,
-      0.55 + Math.sin(angle) * 0.28,
+      0.5 + Math.cos(angle) * 0.22,
+      0.54 + Math.sin(angle) * 0.16,
     ];
   });
   return { ...fallback, ...CLUSTER_LAYOUT };

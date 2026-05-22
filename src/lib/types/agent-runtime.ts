@@ -9,6 +9,13 @@ export interface RuntimeCapabilities {
   runs?: boolean;
   outputs?: boolean;
   memory?: boolean;
+  sessionSearch?: boolean;
+  backgroundTasks?: boolean;
+  xSearch?: boolean;
+  socialPosting?: boolean;
+  videoGeneration?: boolean;
+  codexRuntime?: boolean;
+  kanbanDecompose?: boolean;
   notifications?: boolean;
   setup?: boolean;
   walletTools?: boolean;
@@ -135,6 +142,9 @@ export const RUNTIME_CAPABILITIES: Record<AgentRuntime, RuntimeCapabilities> = {
     skills: true,
     schedules: true,
     memory: true,
+    sessionSearch: true,
+    socialPosting: true,
+    videoGeneration: true,
     notifications: true,
     setup: true,
     walletTools: true,
@@ -144,6 +154,13 @@ export const RUNTIME_CAPABILITIES: Record<AgentRuntime, RuntimeCapabilities> = {
     chat: true,
     runs: true,
     memory: true,
+    sessionSearch: true,
+    backgroundTasks: true,
+    xSearch: true,
+    socialPosting: false,
+    videoGeneration: true,
+    codexRuntime: true,
+    kanbanDecompose: true,
     setup: true,
     walletTools: true,
   },
@@ -154,6 +171,7 @@ export const RUNTIME_CAPABILITIES: Record<AgentRuntime, RuntimeCapabilities> = {
     runs: true,
     outputs: true,
     memory: true,
+    backgroundTasks: true,
     notifications: true,
     setup: true,
   },

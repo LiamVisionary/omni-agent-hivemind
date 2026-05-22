@@ -67,6 +67,20 @@ export function chooseBeeAssignment(task: KanbanTask, agents: AgentProfile[]): B
     .sort((left, right) => agentDispatchScore(right) - agentDispatchScore(left));
   const queen = available.find((agent) => agent.beeRole === "queen")
     ?? available.find((agent) => /queen|orchestrat|lead|main/i.test(agent.name));
+  const worker = available.find((agent) => (
+    agent.id !== queen?.id
+    && agent.beeRole !== "queen"
+    && (agent.workerClass === workerClass || !agent.workerClass || agent.workerClass === "general")
+  )) ?? available.find((agent) => agent.id !== queen?.id && agent.beeRole !== "queen");
+  if (queen && worker) {
+    return {
+      queen,
+      worker,
+      workerClass,
+      mode: "worker",
+      reason: `${queen.name} is online as Queen Bee and delegated this ${workerClass} work to ${worker.name}.`,
+    };
+  }
   if (queen) {
     return {
       queen,
@@ -77,14 +91,14 @@ export function chooseBeeAssignment(task: KanbanTask, agents: AgentProfile[]): B
     };
   }
 
-  const worker = available.find((agent) => agent.beeRole === "worker")
+  const fallbackWorker = available.find((agent) => agent.beeRole === "worker")
     ?? available[0];
-  if (worker) {
+  if (fallbackWorker) {
     return {
-      worker,
+      worker: fallbackWorker,
       workerClass,
       mode: "worker",
-      reason: `No Queen Bee is online, so the dashboard pickup loop chose ${worker.name} as the best available ${workerClass} worker.`,
+      reason: `No Queen Bee is online, so the dashboard pickup loop chose ${fallbackWorker.name} as the best available ${workerClass} worker.`,
     };
   }
 

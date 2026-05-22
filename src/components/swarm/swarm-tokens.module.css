@@ -103,6 +103,139 @@
   text-transform: uppercase;
 }
 
+.newSimulationButton {
+  position: relative;
+  isolation: isolate;
+  box-shadow: 0 0 0 rgba(255, 212, 90, 0);
+  overflow: hidden;
+  transition:
+    transform 160ms ease,
+    box-shadow 160ms ease,
+    border-color 160ms ease,
+    filter 160ms ease;
+}
+
+.newSimulationButton::after {
+  content: "";
+  position: absolute;
+  inset: -1px;
+  background: linear-gradient(110deg, transparent 18%, rgba(255, 255, 255, 0.22) 42%, transparent 66%);
+  opacity: 0;
+  pointer-events: none;
+  transform: translateX(-80%);
+  transition:
+    opacity 160ms ease,
+    transform 420ms ease;
+}
+
+.newSimulationButton:hover {
+  transform: translateY(-2px);
+  border-color: var(--hex-honey-border) !important;
+  box-shadow:
+    0 10px 24px rgba(0, 0, 0, 0.22),
+    0 0 24px color-mix(in srgb, var(--hex-honey-border) 26%, transparent);
+  filter: saturate(1.12);
+}
+
+.newSimulationButton:hover::after {
+  opacity: 1;
+  transform: translateX(90%);
+}
+
+.newSimulationButton:active {
+  transform: translateY(0);
+}
+
+.newSimulationButton:focus-visible {
+  outline: 2px solid var(--hex-active-border);
+  outline-offset: 3px;
+}
+
+.newSimulationButton svg {
+  transition: transform 160ms ease;
+}
+
+.newSimulationButton:hover svg {
+  transform: rotate(90deg) scale(1.08);
+}
+
+.archiveLoadingNote {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border: 1px solid rgba(94, 234, 212, 0.22);
+  border-radius: 8px;
+  background: rgba(94, 234, 212, 0.08);
+  color: var(--hex-active-border);
+  font-family: var(--f-mono);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.runSkeleton {
+  display: grid;
+  gap: 9px;
+  padding: 12px;
+  border: 1px solid rgba(148, 163, 184, 0.16);
+  border-radius: 12px;
+  background: var(--panel-card-grad);
+  overflow: hidden;
+  animation: swarm-skeleton-breathe 1.35s ease-in-out infinite;
+}
+
+.runSkeleton span,
+.runSkeleton strong,
+.runSkeleton i {
+  display: block;
+  height: 9px;
+  border-radius: 999px;
+  background: linear-gradient(90deg, rgba(148, 163, 184, 0.12), rgba(255, 212, 90, 0.20), rgba(148, 163, 184, 0.12));
+}
+
+.runSkeletonTop,
+.runSkeletonMeta {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.runSkeletonTop span:first-child {
+  width: 58px;
+}
+
+.runSkeletonTop span:last-child {
+  width: 46px;
+}
+
+.runSkeleton strong {
+  width: 82%;
+  height: 13px;
+}
+
+.runSkeletonMeta span {
+  width: 42px;
+}
+
+.runSkeleton i {
+  width: 100%;
+  height: 4px;
+  margin-top: 1px;
+}
+
+@keyframes swarm-skeleton-breathe {
+  0%, 100% {
+    opacity: 0.48;
+    filter: saturate(0.9);
+  }
+  50% {
+    opacity: 1;
+    filter: saturate(1.1);
+  }
+}
+
 .arenaFrame {
   display: grid;
   width: min(100%, 620px);

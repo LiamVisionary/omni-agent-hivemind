@@ -3,7 +3,7 @@
 This file records user-visible changes before they are committed. New work should
 be added here first, then marked `Committed` or `Pushed` after the git action.
 
-## 2026-05-22 14:32 WITA - De-noise Setup Missing Dependency Output
+## 2026-05-22 14:17 WITA - Clarify HivemindOS Setup Dependencies
 
 - Status: Pushed
 - Areas changed: Setup script dependency output, changelog
@@ -18,6 +18,134 @@ be added here first, then marked `Committed` or `Pushed` after the git action.
 - Summary: Replace the remaining user-facing Agent Control Room setup/app wording with HivemindOS, make missing pnpm output include concrete install commands, and have setup try to install Tailscale when it is absent before falling back to explicit install/login instructions. Tailscale remains optional; local-only setup still proceeds when it is not connected.
 - Verification: `bash -n setup.sh`; `bash -n scripts/install-telemetry-collector.sh`; `pnpm exec eslint src/app/page.tsx src/app/api/control-room/status/route.ts src/app/api/chat/agent-runtime/route.ts src/lib/types/agent-runtime.ts` (0 errors, existing page warnings only); `pnpm exec tsc --noEmit --pretty false`; `git diff --check -- setup.sh src/app/page.tsx src/app/api/control-room/status/route.ts src/app/api/chat/agent-runtime/route.ts src/lib/types/agent-runtime.ts src/components/cells/MemoryCell.tsx docs/hermes-local-setup.md scripts/install-telemetry-collector.sh README.md CHANGELOG.md`; `rg` sweep found no remaining live setup/app `Agent Control Room` or `Control Room` wording in setup, src, README, docs, or scripts.
 - Intended commit message: `Clarify HivemindOS setup dependencies`
+
+## 2026-05-22 14:05 WITA - Move Agent Wallets Into Shared Brain
+
+- Status: Uncommitted
+- Areas changed: New `src/lib/services/obsidian/wallet-ledger.ts`, new `src/app/api/obsidian/wallets/route.ts`, hydrate + write-through effects in `src/app/page.tsx`, `machineName` surfaced on `AgentWalletCard`, changelog
+- Summary: Move agent wallet state from device-local `localStorage` to the shared brain so balances follow the agent across machines. Each agent now has a human-readable record at `{vault}/Projects/HivemindOS/Wallets/{agentId}.md` with YAML frontmatter holding the full `AgentWalletConfig` plus metadata (`agentName`, `runtime`, `machineName`, `dashboardMachine`, `updatedAt`) and a brief markdown body summarising the current balance / status / network / runtime / last-write. New `GET /api/obsidian/wallets` lists the ledger and `POST /api/obsidian/wallets` upserts a single record. Dashboard hydrates from the vault on load when `sharedVault.enabled` (vault wins where `updatedAt` is newer than the local copy) and write-throughs each updated wallet with an 800ms debounce so slider drags and rapid edits coalesce. LocalStorage stays as an offline cache so the wallet view still works without the vault. The wallet card now shows the agent's home `machineName` in the subtitle row so cross-device balances are easy to attribute.
+- Verification: `npm run typecheck` (no new errors; pre-existing apple-notes route warnings unchanged). Pattern matches the existing shared-brain integrations (`brain-graph.ts`, `brain-skills.ts`) — same `Projects/HivemindOS/...` parent folder, same `resolveObsidianVaultPath` helper, same `/api/obsidian/<feature>` route shape. Visual verification requires `npm run dev` on http://localhost:5020/wallet — pending user confirmation. To migrate existing local-only wallets, the next time the dashboard loads with the shared vault enabled it will write through current local state; vault then becomes the source of truth.
+- Intended commit message: `Move agent wallets into shared brain`
+
+## 2026-05-22 13:48 WITA - Keep Active Kanban Sessions Working
+
+- Status: Uncommitted
+- Areas changed: Kanban session stall detection, Kanban retry state, Bee assignment selection, agent-runtime streaming, telemetry collector streaming, dashboard nav regression
+- Summary: Require a no-assistant Kanban runtime session to go quiet before moving it to Needs You, keep timeout-accepted runtime connections in Working, clear stale ownership/session state when moving a card back to Ready, delegate executable work to an available worker instead of Queen Bee, stream collector heartbeat/session events immediately, and extend local runtime streams past the old 110-second cutoff.
+- Verification: `node scripts/test-dashboard-nav.mjs && node scripts/test-kanban-workflow.mjs`; `pnpm exec eslint src/app/api/chat/agent-runtime/route.ts scripts/agent-telemetry-collector.mjs src/app/page.tsx src/lib/services/kanban/local-kanban-store.ts src/lib/services/orchestration/bee-roles.ts scripts/test-kanban-workflow.mjs scripts/test-dashboard-nav.mjs` (0 errors, existing page warnings only); `pnpm exec tsc --noEmit --pretty false`; same-card e2e on task `t_mpebcduf_obrj4` confirmed Ready retry claims cleanly, selects Hermes worker mode, receives a pollable session, and streams past the old 110s timeout; the stale New-tab worker edits were reverted and `node scripts/test-dashboard-nav.mjs` confirms the removed New tab stays removed.
+- Intended commit message: `Keep active Kanban sessions working`
+
+## 2026-05-22 13:36 WITA - Add Workboard Loading Skeletons
+
+- Status: Uncommitted
+- Areas changed: Workboard Kanban loading state, Workboard card skeleton styling
+- Summary: Track the initial Kanban board fetch separately from an empty board and show lane-colored skeleton placeholder cards while Workboard tasks load, instead of rendering empty Add Task lanes during the request.
+- Verification: `pnpm exec tsc --noEmit --pretty false`; `pnpm exec eslint src/app/page.tsx` (0 errors, existing dashboard warnings only); `git diff --check -- src/app/page.tsx src/app/kanban-board.module.css CHANGELOG.md`; `node scripts/test-dashboard-nav.mjs`. Browser smoke against `http://127.0.0.1:5020` was attempted, but the local dev page did not activate dashboard tab clicks in headless or in-app browser automation, so the skeleton was not visually captured there.
+- Intended commit message: `Add Workboard loading skeletons`
+
+## 2026-05-22 13:36 WITA - Align Brain Graph Loader Hexagons
+
+- Status: Uncommitted
+- Areas changed: Shared brain graph loading state
+- Summary: Rebuild the loader honeycomb with the same SVG hex polygon math used by the brain graph, including axial center spacing, a deduplicated edge-line layer, and a centered in-graph overlay instead of a separate compact card.
+- Verification: `pnpm exec tsc --noEmit --pretty false`; `pnpm exec eslint src/app/page.tsx` (0 errors, existing page warnings only); `git diff --check -- src/app/page.tsx src/app/vault.module.css CHANGELOG.md`; geometry probe confirmed all six perimeter centers sit exactly `sqrt(3) * radius` from the center; CSS check confirmed compact loading uses `inset: 0`, no border/box-shadow, and the in-graph honeycomb renders at `76px` by `58px`.
+- Intended commit message: `Align brain graph loader hexagons`
+
+## 2026-05-22 13:30 WITA - Badge Hermes Update-Gated Skills
+
+- Status: Uncommitted
+- Areas changed: Shared skills view, skill browser, Agent Settings runtime tools, Hermes runtime update detection
+- Summary: Detect when the local Hermes CLI reports an available update and show compact `Needs Hermes update` badges on Hermes/new-feature skill and tool cards while keeping each card body focused on what the feature does. Update-required runtime cards use that as the single status instead of also saying `Ready`.
+- Verification: `pnpm exec tsc --noEmit --pretty false`; `pnpm exec eslint src/app/page.tsx src/app/fleet.module.css src/app/vault.module.css src/lib/services/runtime-integrations.ts` (0 errors, existing page warnings only; CSS modules ignored by eslint config); `git diff --check -- CHANGELOG.md src/app/page.tsx src/app/fleet.module.css src/app/vault.module.css src/lib/services/runtime-integrations.ts`; live API smoke on `/api/runtimes/hermes/integrations` confirmed the background task card detail is feature copy while Hermes update output stays in diagnostics.
+- Intended commit message: `Badge Hermes update-gated skills`
+
+## 2026-05-22 12:54 WITA - Stop Kanban Retry Boomerangs
+
+- Status: Uncommitted
+- Areas changed: Kanban task claiming, Kanban retry blocker handling
+- Summary: Clear stale blocker results when retrying a Needs You card into Working, and stop dispatching agents when the API rejects a Working claim by returning another status.
+- Verification: `node scripts/test-dashboard-nav.mjs`; `pnpm exec eslint src/app/page.tsx src/lib/services/kanban/local-kanban-store.ts scripts/test-dashboard-nav.mjs` (0 errors, existing page warnings only); `pnpm exec tsc --noEmit --pretty false`; `git diff --check -- src/app/page.tsx src/lib/services/kanban/local-kanban-store.ts scripts/test-dashboard-nav.mjs CHANGELOG.md`. A direct store probe with `pnpm exec tsx` could not run because `tsx` is not installed.
+- Intended commit message: `Stop Kanban retry boomerangs`
+
+## 2026-05-22 13:28 WITA - Add Swarm History Loading Rail
+
+- Status: Uncommitted
+- Areas changed: Swarm past-simulations rail, MiroShark archive loading state
+- Summary: Add an explicit archive-loading state for the Swarm past simulations shelf so saved runs show a loading note and skeleton cards while the archive list is fetched instead of popping in suddenly.
+- Verification: `pnpm exec eslint src/app/page.tsx src/components/swarm/SwarmView.tsx src/components/swarm/runs.tsx src/components/swarm/swarm-tokens.module.css` (0 errors, existing page warnings only; CSS module ignored by eslint config); `pnpm exec tsc --noEmit --pretty false`; `git diff --check -- src/app/page.tsx src/components/swarm/SwarmView.tsx src/components/swarm/runs.tsx src/components/swarm/swarm-tokens.module.css CHANGELOG.md`; in-app browser smoke at `http://127.0.0.1:5020/swarm` rendered the shelf and `new simulation` button with no console errors.
+- Intended commit message: `Add Swarm history loading rail`
+
+## 2026-05-22 12:20 WITA - Derive Fleet Machine Locations
+
+- Status: Uncommitted
+- Areas changed: Fleet location mapping, Tailscale device APIs, fleet discovery merge
+- Summary: Replace the roster/map's index-based mock city fallback with derived machine locations from the local browser timezone, Hetzner-style region hints, and Tailscale relay codes, labeling relay-derived positions explicitly as relays. Carry relay codes through both Tailscale device APIs and keep stale loopback self rows hidden once a Tailscale self device exists.
+- Verification: `pnpm exec tsc --noEmit --pretty false`; `pnpm exec eslint src/app/page.tsx src/app/api/tailscale/devices/route.ts src/app/api/fleet/discover/route.ts` (0 errors, existing page warnings only); `git diff --check -- src/app/page.tsx src/app/api/tailscale/devices/route.ts src/app/api/fleet/discover/route.ts`; live API smokes on `http://localhost:5020/api/tailscale/devices` and `/api/fleet/discover` returned relay codes for the current Mac, peer Mac, `iphone182`, and `ubuntu-8gb-hel1-2`.
+- Intended commit message: `Derive fleet machine locations`
+
+## 2026-05-22 12:20 WITA - Add Runtime Integration Controls
+
+- Status: Uncommitted
+- Areas changed: Runtime capability model, Hermes and OpenClaw adapters, runtime integration APIs, agent settings modal, fleet modal styling
+- Summary: Add agent-agnostic runtime integration status/search/action APIs and a Tools tab in Agent Settings, with Hermes-only controls for xAI login, X search, video generation, background runs, session search, Codex status, and Kanban decomposition surfaced only for Hermes agents.
+- Verification: `pnpm exec tsc --noEmit --pretty false`; `pnpm exec eslint src/app/page.tsx src/app/fleet.module.css src/lib/services/runtime-integrations.ts src/lib/types/agent-runtime.ts src/lib/services/runtime-adapters/hermes.ts src/lib/services/runtime-adapters/openclaw.ts 'src/app/api/runtimes/[runtime]/integrations/route.ts' 'src/app/api/runtimes/[runtime]/sessions/search/route.ts'` (0 errors, existing page warnings only); `git diff --check -- CHANGELOG.md src/app/page.tsx src/app/fleet.module.css src/lib/services/runtime-integrations.ts src/lib/types/agent-runtime.ts src/lib/services/runtime-adapters/hermes.ts 'src/app/api/runtimes/[runtime]/integrations/route.ts' 'src/app/api/runtimes/[runtime]/sessions/search/route.ts'`; live API smokes on `http://localhost:5020/api/runtimes/hermes/integrations`, `/api/runtimes/openclaw/integrations`, and `/api/runtimes/hermes/sessions/search?limit=2`; Playwright smoke opened a seeded Hermes agent settings modal and confirmed the Tools tab rendered with no new console errors.
+- Intended commit message: `Add runtime integration controls`
+
+## 2026-05-22 11:47 WITA - Explain Kanban Tool-Only Stalls
+
+- Status: Uncommitted
+- Areas changed: Kanban session stall notes, dashboard nav smoke test
+- Summary: Restore the dashboard nav smoke test so it asserts the removed New tab stays removed, and include a compact preview of the latest tool output when a Kanban session advances without any assistant response.
+- Verification: `node scripts/test-dashboard-nav.mjs`; `pnpm exec eslint src/app/page.tsx scripts/test-dashboard-nav.mjs` (0 errors, existing page warnings only); `git diff --check -- src/app/page.tsx scripts/test-dashboard-nav.mjs CHANGELOG.md`; `pnpm exec tsc --noEmit --pretty false`; inspected local telemetry for Hermes session `api-a183a8519ea6253b`.
+- Intended commit message: `Explain Kanban tool-only stalls`
+
+## 2026-05-22 12:17 WITA - Add Swarm New Simulation Hover
+
+- Status: Uncommitted
+- Areas changed: Swarm run shelf new-simulation button
+- Summary: Add a scoped hover/focus effect to the Swarm `new simulation` button with lift, honey glow, shine pass, and icon motion.
+- Verification: `pnpm exec eslint src/components/swarm/runs.tsx src/components/swarm/swarm-tokens.module.css` (0 errors; CSS module ignored by eslint config); `git diff --check -- src/components/swarm/runs.tsx src/components/swarm/swarm-tokens.module.css CHANGELOG.md`; in-app browser smoke at `http://127.0.0.1:5020/swarm` reloaded with no console errors. `pnpm exec tsc --noEmit --pretty false` is currently blocked by an unrelated `Buffer` type error in `src/lib/services/runtime-integrations.ts`.
+- Intended commit message: `Add Swarm new simulation hover`
+
+## 2026-05-22 12:14 WITA - Show Vertical Fleet Graph Edges
+
+- Status: Uncommitted
+- Areas changed: Fleet graph edge rendering
+- Summary: Render graph edge gradients in SVG user-space coordinates so perfectly vertical machine links, such as the iPhone link, remain visible.
+- Verification: `pnpm exec tsc --noEmit --pretty false`; `pnpm exec eslint src/components/fleet/network-graph.tsx`; `git diff --check -- src/components/fleet/network-graph.tsx CHANGELOG.md`; Playwright smoke on `http://localhost:5020` confirmed the iPhone edge exists as a vertical graph line and `fleetEdge` now uses `gradientUnits="userSpaceOnUse"` with no console errors.
+- Intended commit message: `Show vertical fleet graph edges`
+
+## 2026-05-22 12:12 WITA - Tighten Fleet Graph Spacing
+
+- Status: Uncommitted
+- Areas changed: Fleet graph machine layout
+- Summary: Compact the fallback graph constellation used by live-discovered machine ids and pull the new-machine affordance inward so machines do not sit at the far corners of the graph.
+- Verification: `pnpm exec tsc --noEmit --pretty false`; `pnpm exec eslint src/components/fleet/network-graph.tsx src/components/fleet/FleetView.tsx`; `git diff --check -- src/components/fleet/network-graph.tsx CHANGELOG.md`; Playwright smoke on `http://localhost:5020` confirmed the live graph rendered with no console errors and a tighter machine spread of about 396px by 288px.
+- Intended commit message: `Tighten fleet graph spacing`
+
+## 2026-05-22 11:38 WITA - Clean Up Fleet Machine Identity
+
+- Status: Uncommitted
+- Areas changed: Fleet Tailscale device discovery, fleet machine discovery merge, changelog
+- Summary: Prefer MagicDNS labels when Tailscale reports generic hostnames such as `localhost`, hide stale offline peers that duplicate the current Mac, and stop preserving old loopback self-discovery records once a Tailscale self device is available.
+- Verification: `pnpm exec tsc --noEmit --pretty false`; `pnpm exec eslint src/app/api/fleet/discover/route.ts src/app/api/tailscale/devices/route.ts src/app/page.tsx` (0 errors, existing page warnings only); `git diff --check -- src/app/api/fleet/discover/route.ts src/app/api/tailscale/devices/route.ts src/app/page.tsx CHANGELOG.md`; live API smokes on `http://localhost:5020/api/tailscale/devices` and `/api/fleet/discover` returned the current Mac, `iphone182`, and `ubuntu-8gb-hel1-2` with no duplicate Mac and no `localhost` device label; Playwright smoke confirmed the fleet page shows those labels with no console errors, and a seeded stale `127.0.0.1` self record stays hidden.
+- Intended commit message: `Clean up fleet machine identity`
+
+## 2026-05-22 11:34 WITA - Fix Fleet Graph Bee Startup
+
+- Status: Uncommitted
+- Areas changed: Fleet graph bee animation loop
+- Summary: Make the graph-view roaming bee animation read the latest edges and machine positions after fleet data arrives, so the Lottie bees appear on first graph load without switching views.
+- Verification: `pnpm exec tsc --noEmit --pretty false`; `pnpm exec eslint src/components/fleet/network-graph.tsx src/components/fleet/FleetView.tsx src/components/fleet/map-view.tsx`; `git diff --check -- src/components/fleet/network-graph.tsx CHANGELOG.md`; Playwright smoke on `http://localhost:5020` loaded Graph directly and confirmed both Lottie bee canvases had nonzero opacity/transforms with no console errors.
+- Intended commit message: `Fix fleet graph bee startup`
+
+## 2026-05-22 11:28 WITA - Add Fleet Map Panning
+
+- Status: Uncommitted
+- Areas changed: Fleet map view interaction
+- Summary: Give the Fleet map the same drag-to-pan treatment as the graph canvas, including pointer capture, viewport recentering, and clamped map bounds.
+- Verification: `pnpm exec tsc --noEmit --pretty false`; `pnpm exec eslint src/components/fleet/map-view.tsx src/components/fleet/network-graph.tsx src/components/fleet/FleetView.tsx`; `git diff --check -- src/components/fleet/map-view.tsx CHANGELOG.md`; Playwright smoke on `http://localhost:5020` switched to Map and confirmed dragging changed the map canvas transform with no console errors.
+- Intended commit message: `Add fleet map panning`
 
 ## 2026-05-22 02:31 WITA - Cache Bee Icons
 
@@ -2330,6 +2458,14 @@ be added here first, then marked `Committed` or `Pushed` after the git action.
 - Summary: Replace the technical machine/agent card treatment with a cleaner command-center layout, compress the oversized hero into an operational header, hide raw collector/version noise, rank meaningful Hermes activity above runtime log files, soften update/empty states, add a stronger visual hierarchy for workspace and agent cards, and render activity bubbles as narrow vertical playing-card-style columns instead of long log rows.
 - Verification: `pnpm typecheck`, `pnpm lint` (warnings only, pre-existing unused-variable warnings), `git diff --check`, dev-server hot compile, `/`, `/api/app/version`, and `/api/fleet/discover` passed.
 - Intended commit message: `Humanize fleet dashboard UI`
+
+## 2026-05-22 11:25 WITA - Stabilize Fleet Story Keys
+
+- Status: Uncommitted
+- Areas changed: Fleet dashboard field-story card rendering
+- Summary: Scope flattened field-story React keys by machine id so agents with the same stable id on different hosts do not collide during rendering.
+- Verification: `pnpm typecheck`, `pnpm lint` (warnings only, pre-existing unused-variable warnings), and `git diff --check` passed.
+- Intended commit message: `Stabilize fleet story keys`
 
 ## 2026-05-18 18:53 WITA - Stabilize Agent Activity Cards
 

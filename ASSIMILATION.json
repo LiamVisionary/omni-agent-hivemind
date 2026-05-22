@@ -1,5 +1,5 @@
 {
-  "created_at": "2026-05-19T17:12:38.098509+00:00",
+  "created_at": "2026-05-22T04:22:36.134263+00:00",
   "custom_code_assessment": "balanced",
   "entries": [
     {
@@ -463,6 +463,34 @@
       "target_path": "src/components/swarm/composer.tsx",
       "reuse_type": "adapted_code",
       "note": "template composer dispatch restored while preserving real MiroShark run state, helper actions, and launch controls"
+    },
+    {
+      "source_repo": "/Users/liam/.hermes/hermes-agent",
+      "source_path": "hermes_cli/tools_config.py",
+      "target_path": "src/lib/services/runtime-integrations.ts",
+      "reuse_type": "adapted_code",
+      "note": "Hermes toolset names/status handling for x_search and video_gen controls"
+    },
+    {
+      "source_repo": "/Users/liam/.hermes/hermes-agent",
+      "source_path": "hermes_cli/commands.py",
+      "target_path": "src/lib/services/runtime-integrations.ts",
+      "reuse_type": "adapted_code",
+      "note": "Hermes slash command/background command semantics mapped to dashboard background action"
+    },
+    {
+      "source_repo": "/Users/liam/.hermes/hermes-agent",
+      "source_path": "hermes_cli/config.py",
+      "target_path": "src/lib/services/runtime-integrations.ts",
+      "reuse_type": "config_adapted",
+      "note": "Hermes x_search and kanban auto_decompose config fields surfaced as read-only status"
+    },
+    {
+      "source_repo": "/Users/liam/.hermes/hermes-agent",
+      "source_path": "agent/transports/codex_app_server.py",
+      "target_path": "src/lib/services/runtime-integrations.ts",
+      "reuse_type": "adapted_code",
+      "note": "Codex app-server presence detection surfaced as Hermes Codex runtime status"
     }
   ]
 }

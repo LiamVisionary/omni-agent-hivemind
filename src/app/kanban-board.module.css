@@ -1200,6 +1200,48 @@
   box-shadow: 0 16px 34px rgba(0, 0, 0, 0.22), 0 0 24px rgba(255, 212, 90, 0.12);
 }
 
+.kanbanSkeletonShell {
+  pointer-events: none;
+}
+
+.workBoardPanel .kanbanSkeletonCard {
+  cursor: default;
+  overflow: hidden;
+  animation: kanbanSkeletonBreathe 1.35s ease-in-out infinite;
+}
+
+.kanbanSkeletonCard span,
+.kanbanSkeletonCard strong {
+  display: block;
+  border-radius: 999px;
+  background: linear-gradient(90deg, rgba(148, 163, 184, 0.12), rgba(var(--lane-accent-rgb), 0.26), rgba(148, 163, 184, 0.12));
+}
+
+.kanbanSkeletonPill {
+  width: 62px;
+  height: 18px;
+}
+
+.kanbanSkeletonCard strong {
+  width: 84%;
+  height: 16px;
+}
+
+.kanbanSkeletonLine {
+  width: 64%;
+  height: 10px;
+}
+
+.kanbanSkeletonLine.wide {
+  width: 100%;
+}
+
+.kanbanSkeletonFooter {
+  width: 46%;
+  height: 9px;
+  margin-top: 2px;
+}
+
 .workBoardPanel .kanbanCardHeader {
   align-items: center;
   min-height: 20px;
@@ -2439,6 +2481,17 @@
   50% {
     opacity: 0.9;
     transform: scale(1.08);
+  }
+}
+
+@keyframes kanbanSkeletonBreathe {
+  0%, 100% {
+    opacity: 0.48;
+    filter: saturate(0.9);
+  }
+  50% {
+    opacity: 1;
+    filter: saturate(1.1);
   }
 }
 

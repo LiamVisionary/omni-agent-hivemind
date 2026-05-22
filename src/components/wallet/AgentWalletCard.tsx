@@ -40,6 +40,7 @@ type ProviderCopy = { label: string; summary: string; setup: string };
 
 type Props = {
   agentName: string;
+  machineName?: string;
   wallet: AgentWalletConfig;
   survival: AgentSurvivalSnapshot;
   honeyReward: HoneyAgentReward | null;
@@ -93,6 +94,7 @@ function shortenAddress(address: string): string {
 
 export function AgentWalletCard({
   agentName,
+  machineName,
   wallet,
   survival,
   honeyReward,
@@ -149,6 +151,7 @@ export function AgentWalletCard({
           </div>
           <span className={styles.network}>
             {networkLabel(wallet.network)} · {wallet.tokenSymbol || "USDC"}
+            {machineName ? ` · ${machineName}` : ""}
           </span>
         </div>
         <button

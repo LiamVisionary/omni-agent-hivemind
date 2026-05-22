@@ -127,6 +127,38 @@ type GatewayStatus = {
   error?: string;
 };
 
+type RuntimeIntegrationKey =
+  | "sessionSearch"
+  | "backgroundTasks"
+  | "xSearch"
+  | "socialPosting"
+  | "videoGeneration"
+  | "codexRuntime"
+  | "kanbanDecompose";
+
+type RuntimeIntegrationStatus = {
+  runtime: AgentRuntime;
+  capabilities: RuntimeCapabilities;
+  integrations: Record<RuntimeIntegrationKey, {
+    supported: boolean;
+    enabled: boolean;
+    detail: string;
+  }>;
+  diagnostics: string[];
+};
+
+type RuntimeSessionSearchResult = {
+  id: string;
+  runtime: AgentRuntime;
+  title: string;
+  source?: string;
+  model?: string | null;
+  startedAt?: string;
+  updatedAt?: string;
+  excerpt: string;
+  path?: string;
+};
+
 type VaultSyncStatus = {
   ok?: boolean;
   error?: string;
@@ -363,6 +395,17 @@ type SkillBrowserSkill = {
   githubUrl?: string;
   providerId?: BrainSkillProviderId | "shared";
   imported?: boolean;
+  requiresHermesUpdate?: boolean;
+};
+
+type HermesUpdateSkillLike = {
+  slug: string;
+  name: string;
+  description?: string;
+  provider?: BrainSkillProviderId | "shared";
+  providerId?: BrainSkillProviderId | "shared";
+  providerLabel?: string;
+  source?: string;
 };
 
 type WorkerClassDraft = {
@@ -428,6 +471,7 @@ type TailscaleDevice = {
   online: boolean;
   ip: string;
   collectorUrl: string;
+  relay?: string;
 };
 
 type MachineGroup = {
@@ -437,6 +481,7 @@ type MachineGroup = {
   collectorUrl: string;
   dnsName?: string;
   ip?: string;
+  relay?: string;
   online: boolean;
   self: boolean;
   collector: "ready" | "not-installed" | "offline" | "missing" | "unknown";
@@ -1330,6 +1375,7 @@ const DISCOVERED_MACHINES_STORAGE_KEY = "hivemindos.discoveredMachines.v1";
 const KANBAN_STALE_WORK_MS = 30 * 60 * 1000;
 const KANBAN_TOOL_OUTPUT_STALL_MS = 5 * 60 * 1000;
 const KANBAN_NO_ASSISTANT_STALL_MS = 2 * 60 * 1000;
+const KANBAN_NO_ASSISTANT_QUIET_MS = 90 * 1000;
 const KANBAN_SESSION_POLL_FAILURE_LIMIT = 3;
 const KANBAN_STALE_AGENT_COOLDOWN_MS = 20 * 60 * 1000;
 const KANBAN_PICKUP_PREVIEW_MS = 1_000;
@@ -1439,6 +1485,38 @@ function runtimeCapabilities(agent?: AgentProfile | null): RuntimeCapabilities {
 
 function runtimeCan(agent: AgentProfile | null | undefined, capability: keyof RuntimeCapabilities) {
   return Boolean(runtimeCapabilities(agent)[capability]);
+}
+
+const HERMES_UPDATE_SKILL_PATTERN = /\b(background|codex|grok|kanban|session search|xai|x search|x-search|twitter|video|imagine|decompose)\b/i;
+const HERMES_UPDATE_INTEGRATION_KEYS = new Set<RuntimeIntegrationKey>([
+  "sessionSearch",
+  "backgroundTasks",
+  "xSearch",
+  "videoGeneration",
+  "codexRuntime",
+  "kanbanDecompose",
+]);
+
+function skillRequiresHermesUpdate(skill: HermesUpdateSkillLike, hermesUpdateRequired: boolean) {
+  if (!hermesUpdateRequired) return false;
+  const providerHints = [
+    skill.provider,
+    skill.providerId,
+    skill.providerLabel,
+    skill.source,
+  ].filter(Boolean).join(" ").toLowerCase();
+  const featureText = `${skill.slug} ${skill.name} ${skill.description ?? ""} ${providerHints}`.replace(/[_-]+/g, " ");
+  return HERMES_UPDATE_SKILL_PATTERN.test(featureText);
+}
+
+function hermesUpdateDetail(status: RuntimeIntegrationStatus | null | undefined) {
+  if (status?.runtime !== "hermes") return "";
+  const details = [
+    ...Object.values(status.integrations).map((integration) => integration.detail),
+    ...status.diagnostics,
+  ].join("\n");
+  const match = details.match(/Update available[^\n]*/i);
+  return match?.[0] ?? "";
 }
 
 function readStoredValue(key: string, suffix: string): string | null {
@@ -1690,6 +1768,14 @@ function kanbanToolOutputStalledMessage(agentName: string) {
 function kanbanNoAssistantStalledMessage(agentName: string, latestCount: number, latestRole: string | null) {
   const roleLabel = latestRole ? ` Latest observed session message role: ${latestRole}.` : "";
   return `${agentName} accepted the task and the session is updating, but no assistant response has appeared after ${latestCount} messages.${roleLabel} Check the agent runtime session or move the card back to Ready for Queen to retry.`;
+}
+
+function kanbanNoAssistantStalledDetail(agentName: string, latestCount: number, latestRole: string | null, latestContent: string) {
+  const summary = latestRole === "tool" ? summarizeKanbanToolOutput(latestContent) : "";
+  return [
+    kanbanNoAssistantStalledMessage(agentName, latestCount, latestRole),
+    summary,
+  ].filter(Boolean).join("\n\n");
 }
 
 function isDashboardWorkChatMessage(message: ChatMessage) {
@@ -1955,6 +2041,16 @@ function collectorKey(url?: string) {
   }
 }
 
+function isLoopbackCollector(url?: string) {
+  if (!url?.trim()) return false;
+  try {
+    const hostname = new URL(url).hostname.toLowerCase();
+    return hostname === "localhost" || hostname === "127.0.0.1" || hostname === "::1" || hostname === "[::1]";
+  } catch {
+    return false;
+  }
+}
+
 function normalizeAgentPath(path?: string) {
   return path
     ?.trim()
@@ -2152,6 +2248,7 @@ function kanbanTaskDispatchPrompt(task: KanbanTask, assignment: ReturnType<typeo
     task.body ? `Task details:\n${task.body}` : "Task details: none provided.",
     task.result ? `Existing notes:\n${task.result}` : "",
     `Suggested worker class: ${beeWorkerClassLabel(assignment.workerClass)}.`,
+    "Treat existing notes as authoritative retry context when they say an old expectation was superseded, removed, or already verified. Do not undo a verified dashboard change just to satisfy a stale task title.",
     "Complete the task as far as your runtime/tools allow. If you are blocked, say exactly what human input, access, or setup is needed. End with a concise result summary and any evidence.",
   ].filter(Boolean).join("\n\n");
 }
@@ -2781,6 +2878,7 @@ function mergeMachineSnapshots(previous: AgentSnapshot[] = [], incoming: AgentSn
 function mergeDiscoveredMachines(current: DiscoveredMachine[], incoming: DiscoveredMachine[]) {
   const currentByKey = new Map(current.map((machine) => [collectorKey(machine.device.collectorUrl) || machine.device.name, machine]));
   const incomingKeys = new Set(incoming.map((machine) => collectorKey(machine.device.collectorUrl) || machine.device.name));
+  const incomingHasTailnetSelf = incoming.some((machine) => machine.device.self && !isLoopbackCollector(machine.device.collectorUrl));
   const now = Date.now();
 
   const merged = incoming.map((machine) => {
@@ -2814,6 +2912,7 @@ function mergeDiscoveredMachines(current: DiscoveredMachine[], incoming: Discove
 
   const preserved = current
     .filter((machine) => !incomingKeys.has(collectorKey(machine.device.collectorUrl) || machine.device.name))
+    .filter((machine) => !(incomingHasTailnetSelf && machine.device.self && isLoopbackCollector(machine.device.collectorUrl)))
     .map((machine) => ({
       ...machine,
       device: machine.device.self ? machine.device : { ...machine.device, online: false },
@@ -2865,14 +2964,72 @@ function splitBrainLabel(label: string): string[] {
   return [first, second ? `${second}${compact.length > 25 ? "..." : ""}` : ""].filter(Boolean);
 }
 
+const BRAIN_LOADER_RADIUS = 20;
+const BRAIN_LOADER_CENTER = { x: 64, y: 64 };
+const BRAIN_LOADER_COORDS: BrainHexCoord[] = [
+  { q: 0, r: 0 },
+  { q: -1, r: 1 },
+  { q: 0, r: 1 },
+  { q: 1, r: 0 },
+  { q: 1, r: -1 },
+  { q: 0, r: -1 },
+  { q: -1, r: 0 },
+];
+
+function brainLoaderCenter(coord: BrainHexCoord): BrainPoint {
+  return {
+    x: BRAIN_LOADER_CENTER.x + Math.sqrt(3) * BRAIN_LOADER_RADIUS * (coord.q + coord.r / 2),
+    y: BRAIN_LOADER_CENTER.y + 1.5 * BRAIN_LOADER_RADIUS * coord.r,
+  };
+}
+
+function brainLoaderEdgeLines() {
+  const points = new Map<string, BrainPoint>();
+  const edgeKeys = new Set<string>();
+
+  for (const coord of BRAIN_LOADER_COORDS) {
+    const center = brainLoaderCenter(coord);
+    const vertices = Array.from({ length: 6 }, (_, index) => brainHexVertex(center, BRAIN_LOADER_RADIUS, index));
+    vertices.forEach((vertex, index) => {
+      const next = vertices[(index + 1) % vertices.length];
+      const aKey = brainPointKey(vertex);
+      const bKey = brainPointKey(next);
+      points.set(aKey, vertex);
+      points.set(bKey, next);
+      edgeKeys.add([aKey, bKey].sort().join("|"));
+    });
+  }
+
+  return Array.from(edgeKeys).map((key) => {
+    const [aKey, bKey] = key.split("|");
+    return { key, a: points.get(aKey)!, b: points.get(bKey)! };
+  });
+}
+
+const BRAIN_LOADER_EDGES = brainLoaderEdgeLines();
+
 function BrainGraphLoader({ compact = false }: { compact?: boolean }) {
   return (
     <div className={vaultClass("brainLoader", compact && "compact")} role="status" aria-live="polite">
-      <div className={vaultClass("brainLoaderComb")} aria-hidden="true">
-        {Array.from({ length: 7 }).map((_, index) => (
-          <span key={index} />
-        ))}
-      </div>
+      <svg className={vaultClass("brainLoaderComb")} viewBox="8 10 112 108" aria-hidden="true">
+        <g className={vaultClass("brainLoaderCells")}>
+          {BRAIN_LOADER_COORDS.map((coord, index) => {
+            const center = brainLoaderCenter(coord);
+            return (
+              <polygon
+                key={`${coord.q},${coord.r}`}
+                points={brainNodePoints(center.x, center.y, BRAIN_LOADER_RADIUS)}
+                style={{ animationDelay: `${index * 90}ms` }}
+              />
+            );
+          })}
+        </g>
+        <g className={vaultClass("brainLoaderEdges")}>
+          {BRAIN_LOADER_EDGES.map((edge) => (
+            <line key={edge.key} x1={edge.a.x} y1={edge.a.y} x2={edge.b.x} y2={edge.b.y} />
+          ))}
+        </g>
+      </svg>
       <div>
         <strong>Mapping shared brain</strong>
         <span>Reading vault notes and link edges</span>
@@ -3019,19 +3176,102 @@ function fleetMetric(seed: string, min: number, max: number) {
   return min + (fleetHash(seed) % (max - min + 1));
 }
 
+type FleetLocation = {
+  location: string;
+  city: string;
+  lat: number;
+  lon: number;
+};
+
+const TIMEZONE_LOCATIONS: Record<string, FleetLocation> = {
+  "Asia/Makassar": { location: "Local timezone", city: "Makassar", lat: -5.1477, lon: 119.4327 },
+  "Asia/Singapore": { location: "Local timezone", city: "Singapore", lat: 1.3521, lon: 103.8198 },
+  "Asia/Jakarta": { location: "Local timezone", city: "Jakarta", lat: -6.2088, lon: 106.8456 },
+  "America/New_York": { location: "Local timezone", city: "New York", lat: 40.7128, lon: -74.0060 },
+  "Europe/Helsinki": { location: "Local timezone", city: "Helsinki", lat: 60.1699, lon: 24.9384 },
+};
+
+const REGION_LOCATIONS: Record<string, FleetLocation> = {
+  ash: { location: "Hetzner ash", city: "Ashburn", lat: 39.0438, lon: -77.4874 },
+  ashburn: { location: "Hetzner ash", city: "Ashburn", lat: 39.0438, lon: -77.4874 },
+  hel: { location: "Hetzner hel", city: "Helsinki", lat: 60.1699, lon: 24.9384 },
+  hel1: { location: "Hetzner hel1", city: "Helsinki", lat: 60.1699, lon: 24.9384 },
+  nbg: { location: "Hetzner nbg", city: "Nuremberg", lat: 49.4521, lon: 11.0767 },
+  nbg1: { location: "Hetzner nbg1", city: "Nuremberg", lat: 49.4521, lon: 11.0767 },
+  fsn: { location: "Hetzner fsn", city: "Falkenstein", lat: 50.4779, lon: 12.3713 },
+  fsn1: { location: "Hetzner fsn1", city: "Falkenstein", lat: 50.4779, lon: 12.3713 },
+  hil: { location: "Hetzner hil", city: "Hillsboro", lat: 45.5229, lon: -122.9898 },
+  hil1: { location: "Hetzner hil1", city: "Hillsboro", lat: 45.5229, lon: -122.9898 },
+};
+
+const TAILSCALE_RELAY_LOCATIONS: Record<string, FleetLocation> = {
+  ams: { location: "Tailscale relay", city: "Amsterdam relay", lat: 52.3676, lon: 4.9041 },
+  blr: { location: "Tailscale relay", city: "Bengaluru relay", lat: 12.9716, lon: 77.5946 },
+  bom: { location: "Tailscale relay", city: "Mumbai relay", lat: 19.0760, lon: 72.8777 },
+  den: { location: "Tailscale relay", city: "Denver relay", lat: 39.7392, lon: -104.9903 },
+  dfw: { location: "Tailscale relay", city: "Dallas relay", lat: 32.7767, lon: -96.7970 },
+  fra: { location: "Tailscale relay", city: "Frankfurt relay", lat: 50.1109, lon: 8.6821 },
+  gru: { location: "Tailscale relay", city: "Sao Paulo relay", lat: -23.5558, lon: -46.6396 },
+  hel: { location: "Tailscale relay", city: "Helsinki relay", lat: 60.1699, lon: 24.9384 },
+  hkg: { location: "Tailscale relay", city: "Hong Kong relay", lat: 22.3193, lon: 114.1694 },
+  jnb: { location: "Tailscale relay", city: "Johannesburg relay", lat: -26.2041, lon: 28.0473 },
+  lax: { location: "Tailscale relay", city: "Los Angeles relay", lat: 34.0522, lon: -118.2437 },
+  lhr: { location: "Tailscale relay", city: "London relay", lat: 51.5072, lon: -0.1276 },
+  lon: { location: "Tailscale relay", city: "London relay", lat: 51.5072, lon: -0.1276 },
+  mad: { location: "Tailscale relay", city: "Madrid relay", lat: 40.4168, lon: -3.7038 },
+  mia: { location: "Tailscale relay", city: "Miami relay", lat: 25.7617, lon: -80.1918 },
+  nrt: { location: "Tailscale relay", city: "Tokyo relay", lat: 35.6762, lon: 139.6503 },
+  nyc: { location: "Tailscale relay", city: "New York relay", lat: 40.7128, lon: -74.0060 },
+  par: { location: "Tailscale relay", city: "Paris relay", lat: 48.8566, lon: 2.3522 },
+  prg: { location: "Tailscale relay", city: "Prague relay", lat: 50.0755, lon: 14.4378 },
+  sea: { location: "Tailscale relay", city: "Seattle relay", lat: 47.6062, lon: -122.3321 },
+  sfo: { location: "Tailscale relay", city: "San Francisco relay", lat: 37.7749, lon: -122.4194 },
+  sin: { location: "Tailscale relay", city: "Singapore relay", lat: 1.3521, lon: 103.8198 },
+  sto: { location: "Tailscale relay", city: "Stockholm relay", lat: 59.3293, lon: 18.0686 },
+  syd: { location: "Tailscale relay", city: "Sydney relay", lat: -33.8688, lon: 151.2093 },
+  tok: { location: "Tailscale relay", city: "Tokyo relay", lat: 35.6762, lon: 139.6503 },
+  tor: { location: "Tailscale relay", city: "Toronto relay", lat: 43.6532, lon: -79.3832 },
+  vie: { location: "Tailscale relay", city: "Vienna relay", lat: 48.2082, lon: 16.3738 },
+  waw: { location: "Tailscale relay", city: "Warsaw relay", lat: 52.2297, lon: 21.0122 },
+  yyz: { location: "Tailscale relay", city: "Toronto relay", lat: 43.6532, lon: -79.3832 },
+};
+
+const UNKNOWN_FLEET_LOCATION: FleetLocation = {
+  location: "Location unknown",
+  city: "Unknown",
+  lat: 0,
+  lon: 0,
+};
+
+function localTimezoneLocation() {
+  if (typeof Intl === "undefined") return undefined;
+  const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+  return timeZone ? TIMEZONE_LOCATIONS[timeZone] : undefined;
+}
+
+function machineRegionLocation(machine: MachineGroup) {
+  const haystack = [machine.name, machine.dnsName, machine.collectorUrl, machine.ip]
+    .filter(Boolean)
+    .join(" ")
+    .toLowerCase();
+  for (const [code, location] of Object.entries(REGION_LOCATIONS)) {
+    if (new RegExp(`(^|[^a-z0-9])${code}(?:\\d+)?($|[^a-z0-9])`).test(haystack)) return location;
+  }
+  return undefined;
+}
+
+function machineRelayLocation(machine: MachineGroup) {
+  const relay = machine.relay?.trim().toLowerCase();
+  return relay ? TAILSCALE_RELAY_LOCATIONS[relay] : undefined;
+}
+
 function fleetMachineLocation(machine: MachineGroup, index: number) {
-  const fallback = [
-    { location: "Local studio", city: "Local", lat: 40.68, lon: -73.96 },
-    { location: "Cloud worker", city: "Ashburn", lat: 39.04, lon: -77.49 },
-    { location: "Remote desk", city: "Lisbon", lat: 38.72, lon: -9.13 },
-    { location: "Vault shelf", city: "Brooklyn", lat: 40.69, lon: -73.97 },
-    { location: "Edge node", city: "Berlin", lat: 52.52, lon: 13.40 },
-  ];
-  const picked = fallback[index % fallback.length];
-  return {
-    ...picked,
-    location: machine.self ? "This Mac" : machine.dnsName ? "Tailnet device" : picked.location,
-  };
+  void index;
+  if (machine.self) {
+    const local = localTimezoneLocation();
+    if (local) return { ...local, location: "This Mac" };
+  }
+  return machineRegionLocation(machine) ?? machineRelayLocation(machine) ?? UNKNOWN_FLEET_LOCATION;
 }
 
 function fleetVersionState(machine: MachineGroup): FleetMachine["versionState"] {
@@ -3080,6 +3320,7 @@ export default function Home() {
   const [brainSkills, setBrainSkills] = useState<BrainSkillInventory | null>(null);
   const [brainSkillsStatus, setBrainSkillsStatus] = useState("");
   const [brainSkillsLoading, setBrainSkillsLoading] = useState(false);
+  const [hermesUpdateRequiredDetail, setHermesUpdateRequiredDetail] = useState("");
   const [brainSkillImportProvider, setBrainSkillImportProvider] = useState<BrainSkillProviderId | "all" | "">("");
   const [brainSkillImportSuccess, setBrainSkillImportSuccess] = useState<BrainSkillProviderId | "all" | "">("");
   const [brainSkillAeonSyncing, setBrainSkillAeonSyncing] = useState(false);
@@ -3145,7 +3386,7 @@ export default function Home() {
   const [machineInitTokenStatus, setMachineInitTokenStatus] = useState<MachineInitTokenStatus>({});
   const [agentRoleModalId, setAgentRoleModalId] = useState("");
   const [agentCreateMachineKey, setAgentCreateMachineKey] = useState("");
-  const [agentSettingsPanel, setAgentSettingsPanel] = useState<"role" | "memory" | "security">("role");
+  const [agentSettingsPanel, setAgentSettingsPanel] = useState<"role" | "memory" | "tools" | "security">("role");
   const [aeonEnvKeys, setAeonEnvKeys] = useState("ANTHROPIC_API_KEY\nCLAUDE_CODE_OAUTH_TOKEN\nBANKR_LLM_KEY\nGH_GLOBAL");
   const [aeonEnvSyncStatus, setAeonEnvSyncStatus] = useState("");
   const [aeonEnvSyncing, setAeonEnvSyncing] = useState(false);
@@ -3176,12 +3417,19 @@ export default function Home() {
   const [agentRuntimeFolderBrowsing, setAgentRuntimeFolderBrowsing] = useState(false);
   const [agentRuntimeFolderStatus, setAgentRuntimeFolderStatus] = useState("");
   const [agentRuntimeAdvancedOpen, setAgentRuntimeAdvancedOpen] = useState(false);
+  const [runtimeIntegrationStatus, setRuntimeIntegrationStatus] = useState<RuntimeIntegrationStatus | null>(null);
+  const [runtimeIntegrationBusy, setRuntimeIntegrationBusy] = useState("");
+  const [runtimeIntegrationMessage, setRuntimeIntegrationMessage] = useState("");
+  const [runtimeSessionQuery, setRuntimeSessionQuery] = useState("");
+  const [runtimeSessionResults, setRuntimeSessionResults] = useState<RuntimeSessionSearchResult[]>([]);
+  const [runtimeBackgroundPrompt, setRuntimeBackgroundPrompt] = useState("");
   const [agentWorkerClassView, setAgentWorkerClassView] = useState<"presets" | "create">("presets");
   const [customWorkerDraft, setCustomWorkerDraft] = useState<WorkerClassDraft>(() => defaultWorkerClassDraft());
   const [customWorkerSkillSearch, setCustomWorkerSkillSearch] = useState("");
   const [customWorkerImageError, setCustomWorkerImageError] = useState("");
   const [setupCommandCopied, setSetupCommandCopied] = useState(false);
   const [kanbanBoard, setKanbanBoard] = useState<KanbanBoard | null>(null);
+  const [kanbanLoading, setKanbanLoading] = useState(false);
   const [kanbanBoards, setKanbanBoards] = useState<KanbanBoardSummary[]>([]);
   const [kanbanBoardSlug, setKanbanBoardSlug] = useState("default");
   const [kanbanError, setKanbanError] = useState("");
@@ -3232,6 +3480,7 @@ export default function Home() {
   const [mirosharkPlatform, setMirosharkPlatform] = useState<"twitter" | "reddit" | "parallel" | "polymarket">("twitter");
   const [mirosharkArchiveRuns, setMirosharkArchiveRuns] = useState<MiroSharkArchivedRun[]>([]);
   const [mirosharkArchiveStatus, setMirosharkArchiveStatus] = useState("");
+  const [mirosharkArchiveLoading, setMirosharkArchiveLoading] = useState(false);
   const [selectedMirosharkRunId, setSelectedMirosharkRunId] = useState("");
   const [mirosharkMetadata, setMirosharkMetadata] = useState<MiroSharkMetadata | null>(null);
   const [mirosharkWorkspaceMode, setMirosharkWorkspaceMode] = useState<MiroSharkWorkspaceMode>("new");
@@ -3381,6 +3630,72 @@ export default function Home() {
     if (!hydrated) return;
     window.localStorage.setItem(WALLET_STORAGE_KEY, JSON.stringify(walletsByAgent));
   }, [hydrated, walletsByAgent]);
+
+  // Hydrate wallets from the shared vault ledger when sharedVault is enabled.
+  // Vault wins where it has a newer `updatedAt` than the locally-stored copy.
+  useEffect(() => {
+    if (!hydrated || !sharedVault.enabled) return;
+    const vaultPath = sharedVault.vaultPath.trim();
+    let cancelled = false;
+    void (async () => {
+      try {
+        const params = vaultPath ? `?vaultPath=${encodeURIComponent(vaultPath)}` : "";
+        const response = await fetch(`/api/obsidian/wallets${params}`);
+        if (!response.ok) return;
+        const data = (await response.json()) as {
+          ok?: boolean;
+          records?: Array<{ agentId: string; wallet: AgentWalletConfig; updatedAt?: string }>;
+        };
+        if (cancelled || !data?.ok || !Array.isArray(data.records) || data.records.length === 0) return;
+        setWalletsByAgent((current) => {
+          let mutated = false;
+          const next = { ...current };
+          for (const record of data.records!) {
+            const existing = next[record.agentId];
+            const remoteMs = record.wallet.updatedAt ?? 0;
+            const localMs = existing?.updatedAt ?? 0;
+            if (!existing || remoteMs > localMs) {
+              next[record.agentId] = record.wallet;
+              mutated = true;
+            }
+          }
+          return mutated ? next : current;
+        });
+      } catch {
+        /* vault unreachable — local cache still works */
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [hydrated, sharedVault.enabled, sharedVault.vaultPath]);
+
+  // Write-through: when wallets change locally, mirror the changed records to
+  // the shared vault. Debounced to coalesce rapid edits (slider drags etc).
+  const walletVaultSyncedRef = useRef<Record<string, number>>({});
+  useEffect(() => {
+    if (!hydrated || !sharedVault.enabled) return;
+    const vaultPath = sharedVault.vaultPath.trim();
+    const timer = window.setTimeout(() => {
+      for (const [agentId, wallet] of Object.entries(walletsByAgent)) {
+        const lastSynced = walletVaultSyncedRef.current[agentId] ?? 0;
+        if ((wallet.updatedAt ?? 0) <= lastSynced) continue;
+        const agent = agents.find((candidate) => candidate.id === agentId);
+        walletVaultSyncedRef.current[agentId] = wallet.updatedAt ?? Date.now();
+        void fetch("/api/obsidian/wallets", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            vaultPath: vaultPath || undefined,
+            agentId,
+            agentName: agent?.name ?? agentId,
+            runtime: agent?.runtime,
+            machineName: agent?.machineName,
+            wallet,
+          }),
+        }).catch(() => { /* ignore vault write errors */ });
+      }
+    }, 800);
+    return () => window.clearTimeout(timer);
+  }, [hydrated, sharedVault.enabled, sharedVault.vaultPath, walletsByAgent, agents]);
 
   useEffect(() => {
     if (!hydrated) return;
@@ -3743,12 +4058,15 @@ export default function Home() {
   const refreshMirosharkArchive = useCallback(async () => {
     if (!sharedVault.enabled) {
       setMirosharkArchiveRuns([]);
+      setMirosharkArchiveLoading(false);
       return;
     }
+    setMirosharkArchiveLoading(true);
     const params = new URLSearchParams();
     if (sharedVault.vaultPath.trim()) params.set("vaultPath", sharedVault.vaultPath.trim());
     const response = await fetch(`/api/miroshark/runs?${params.toString()}`, { cache: "no-store" }).catch(() => null);
     const data = await response?.json().catch(() => null) as { ok?: boolean; runs?: MiroSharkArchivedRun[]; error?: string } | null;
+    setMirosharkArchiveLoading(false);
     if (data?.ok && Array.isArray(data.runs)) {
       setMirosharkArchiveRuns(data.runs);
       setMirosharkArchiveStatus(data.runs.length ? `Loaded ${data.runs.length} saved run${data.runs.length === 1 ? "" : "s"}` : "No saved MiroShark runs yet");
@@ -3794,12 +4112,30 @@ export default function Home() {
       : `Loaded ${noteCount} notes, ${data.graph.nodes.length} cells, and ${data.graph.links.length} links.`);
   }, [brainGraph, sharedVault.enabled, sharedVault.vaultPath]);
 
+  const refreshHermesUpdateRequirement = useCallback(async () => {
+    const hermesAgent = agents.find((agent) => agent.runtime === "hermes");
+    const response = await fetch("/api/runtimes/hermes/integrations", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(hermesAgent ? { agent: hermesAgent } : {}),
+    }).catch(() => null);
+    const data = await response?.json().catch(() => null) as { ok?: boolean; status?: RuntimeIntegrationStatus; error?: string } | null;
+    if (!response?.ok || !data?.ok || !data.status) {
+      setHermesUpdateRequiredDetail("");
+      return "";
+    }
+    const detail = hermesUpdateDetail(data.status);
+    setHermesUpdateRequiredDetail(detail);
+    return detail;
+  }, [agents]);
+
   const refreshBrainSkills = useCallback(async () => {
     if (!sharedVault.enabled) {
       setBrainSkills(null);
       setBrainSkillsStatus("Shared brain is off.");
       return;
     }
+    void refreshHermesUpdateRequirement();
     setBrainSkillsLoading(true);
     const params = new URLSearchParams();
     if (sharedVault.vaultPath.trim()) params.set("vaultPath", sharedVault.vaultPath.trim());
@@ -3815,7 +4151,7 @@ export default function Home() {
     setBrainSkillsStatus(data.totals.shared || providerTotal
       ? `Loaded ${data.totals.shared} shared and ${providerTotal} installed skill${providerTotal === 1 ? "" : "s"}.`
       : "No shared or installed skills found yet.");
-  }, [sharedVault.enabled, sharedVault.vaultPath]);
+  }, [refreshHermesUpdateRequirement, sharedVault.enabled, sharedVault.vaultPath]);
 
   const importBrainSkills = useCallback(async (provider: BrainSkillProviderId | "all") => {
     if (!sharedVault.enabled) {
@@ -3882,10 +4218,13 @@ export default function Home() {
     setSkillBrowserOpen(true);
     setSkillBrowserStatus("");
     setSkillBrowserLoading(true);
+    const hermesDetailPromise = refreshHermesUpdateRequirement();
     const [featuredResponse, communityResponse] = await Promise.all([
       fetch("/api/openclaw/amiclaw-skills", { cache: "no-store" }).catch(() => null),
       fetch("/api/openclaw/skills?limit=24", { cache: "no-store" }).catch(() => null),
     ]);
+    const hermesDetail = await hermesDetailPromise;
+    const hermesUpdateRequired = Boolean(hermesDetail || hermesUpdateRequiredDetail);
     const featured = await featuredResponse?.json().catch(() => null) as { skills?: Array<Record<string, unknown>> } | null;
     const community = await communityResponse?.json().catch(() => null) as { skills?: Array<Record<string, unknown>> } | null;
     const featuredSkills = (featured?.skills ?? []).map((skill) => ({
@@ -3897,6 +4236,12 @@ export default function Home() {
       category: typeof skill.category === "string" ? skill.category : undefined,
       skillMdUrl: typeof skill.skillMdUrl === "string" ? skill.skillMdUrl : undefined,
       githubUrl: typeof skill.githubUrl === "string" ? skill.githubUrl : typeof skill.githubRepoUrl === "string" ? skill.githubRepoUrl : undefined,
+      requiresHermesUpdate: skillRequiresHermesUpdate({
+        slug: String(skill.slug ?? skill.id ?? skill.name ?? "skill"),
+        name: String(skill.name ?? skill.slug ?? "Skill"),
+        description: String(skill.description ?? ""),
+        source: "Featured",
+      }, hermesUpdateRequired),
     }));
     const communitySkills = (community?.skills ?? []).map((skill) => ({
       id: String(skill.slug ?? skill.id ?? skill.name ?? Math.random()),
@@ -3907,6 +4252,12 @@ export default function Home() {
       category: typeof skill.category === "string" ? skill.category : undefined,
       skillMdUrl: typeof skill.skillMdUrl === "string" ? skill.skillMdUrl : undefined,
       githubUrl: typeof skill.githubUrl === "string" ? skill.githubUrl : typeof skill.githubRepoUrl === "string" ? skill.githubRepoUrl : undefined,
+      requiresHermesUpdate: skillRequiresHermesUpdate({
+        slug: String(skill.slug ?? skill.id ?? skill.name ?? "skill"),
+        name: String(skill.name ?? skill.slug ?? "Skill"),
+        description: String(skill.description ?? ""),
+        source: "Community",
+      }, hermesUpdateRequired),
     }));
     const installedSkills: SkillBrowserSkill[] = (brainSkills?.providers ?? []).flatMap((provider) => provider.skills.map((skill) => ({
       id: `${provider.id}-${skill.slug}`,
@@ -3917,6 +4268,7 @@ export default function Home() {
       category: "Installed",
       providerId: provider.id,
       imported: skill.imported,
+      requiresHermesUpdate: skillRequiresHermesUpdate({ ...skill, providerId: provider.id, source: provider.label }, hermesUpdateRequired),
     })));
     const sharedSkills: SkillBrowserSkill[] = (brainSkills?.shared ?? []).map((skill) => ({
       id: `shared-${skill.slug}`,
@@ -3927,6 +4279,7 @@ export default function Home() {
       category: "Ready",
       providerId: "shared" as const,
       imported: true,
+      requiresHermesUpdate: skillRequiresHermesUpdate({ ...skill, providerId: "shared" as const, source: "Shared brain" }, hermesUpdateRequired),
     }));
     const deduped = new Map<string, SkillBrowserSkill>();
     for (const skill of [...sharedSkills, ...installedSkills, ...featuredSkills, ...communitySkills]) {
@@ -3940,7 +4293,7 @@ export default function Home() {
     } else if (!communityResponse?.ok) {
       setSkillBrowserStatus("Featured skills loaded. Community catalog is unavailable on this machine.");
     }
-  }, [brainSkills]);
+  }, [brainSkills, hermesUpdateRequiredDetail, refreshHermesUpdateRequirement]);
 
   const importRemoteSkillToBrain = useCallback(async (skill: SkillBrowserSkill) => {
     if (skill.providerId === "shared") {
@@ -4588,6 +4941,7 @@ export default function Home() {
     if (!hydrated || activeView !== "kanban") return;
     let cancelled = false;
     async function refreshKanban() {
+      setKanbanLoading(true);
       const params = new URLSearchParams({
         board: kanbanBoardSlug,
         include_archived: String(kanbanIncludeArchived),
@@ -4604,6 +4958,7 @@ export default function Home() {
       if (cancelled) return;
       if (!data?.ok || !data.board) {
         setKanbanError(data?.error ?? "Kanban board is unavailable.");
+        setKanbanLoading(false);
         return;
       }
       setKanbanError("");
@@ -4615,6 +4970,7 @@ export default function Home() {
       setSelectedKanbanTaskId((current) => (
         current && data.board?.tasks.some((task) => task.id === current) ? current : data.board?.tasks[0]?.id ?? ""
       ));
+      setKanbanLoading(false);
     }
     refreshKanban();
     const timer = window.setInterval(refreshKanban, 12_000);
@@ -4744,6 +5100,8 @@ export default function Home() {
     ));
   }, [skillBrowserSearch, skillBrowserSkills]);
 
+  const hermesUpdateRequired = Boolean(hermesUpdateRequiredDetail);
+
   const filteredSchedulerSkills = useMemo(() => {
     const query = schedulerSkillSearch.trim().toLowerCase();
     if (!query) return sharedSkillOptions;
@@ -4858,6 +5216,7 @@ export default function Home() {
       collectorUrl: device.collectorUrl,
       dnsName: device.dnsName,
       ip: device.ip,
+      relay: device.relay,
       online: device.online,
       self: device.self,
       collector: (discovered?.collector ?? "unknown") as MachineGroup["collector"],
@@ -4869,6 +5228,13 @@ export default function Home() {
     discoveredMachines.forEach((machine) => {
       const key = collectorKey(machine.device.collectorUrl);
       if (!key || groups.some((group) => group.key === key)) return;
+      if (
+        machine.device.self
+        && isLoopbackCollector(machine.device.collectorUrl)
+        && groups.some((group) => group.self && !isLoopbackCollector(group.collectorUrl))
+      ) {
+        return;
+      }
       groups.push({
         key,
         name: machine.device.self ? "This machine" : machine.device.name,
@@ -4876,6 +5242,7 @@ export default function Home() {
         collectorUrl: machine.device.collectorUrl,
         dnsName: machine.device.dnsName,
         ip: machine.device.ip,
+        relay: machine.device.relay,
         online: machine.device.online,
         self: machine.device.self,
         collector: machine.collector,
@@ -4891,6 +5258,7 @@ export default function Home() {
       collectorUrl: "",
       dnsName: "",
       ip: "",
+      relay: "",
       online: false,
       self: false,
       collector: "missing",
@@ -5172,6 +5540,7 @@ export default function Home() {
     };
     return visibleKanbanColumns.map((column) => ({ ...column, ...displayCopy[column.id] }));
   }, [visibleKanbanColumns]);
+  const kanbanInitialLoading = activeView === "kanban" && kanbanLoading && !kanbanBoard && !kanbanError;
 
   const updateKanbanBoardScrollState = useCallback(() => {
     const element = kanbanBoardScrollRef.current;
@@ -5277,6 +5646,11 @@ export default function Home() {
     () => displayAgents.find((agent) => agent.id === agentRoleModalId) ?? null,
     [agentRoleModalId, displayAgents],
   );
+  useEffect(() => {
+    if (!roleModalAgent || agentSettingsPanel !== "tools") return;
+    void refreshRuntimeIntegrations(roleModalAgent);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [agentSettingsPanel, roleModalAgent?.id, roleModalAgent?.runtime]);
   const agentCreateMachine = useMemo(
     () => machineGroups.find((machine) => machine.key === agentCreateMachineKey) ?? null,
     [agentCreateMachineKey, machineGroups],
@@ -5344,6 +5718,12 @@ export default function Home() {
     setAgentRuntimeFolderEditing(false);
     setAgentRuntimeFolderStatus("");
     setAgentRuntimeAdvancedOpen(false);
+    setRuntimeIntegrationStatus(null);
+    setRuntimeIntegrationBusy("");
+    setRuntimeIntegrationMessage("");
+    setRuntimeSessionQuery("");
+    setRuntimeSessionResults([]);
+    setRuntimeBackgroundPrompt("");
     setAgentWorkerClassView("presets");
     setCustomWorkerDraft(defaultWorkerClassDraft());
     setCustomWorkerSkillSearch("");
@@ -5403,6 +5783,58 @@ export default function Home() {
     } finally {
       setAgentRuntimeFolderBrowsing(false);
     }
+  }
+
+  async function refreshRuntimeIntegrations(agent = roleModalAgent) {
+    if (!agent) return;
+    setRuntimeIntegrationBusy("status");
+    setRuntimeIntegrationMessage("");
+    const response = await fetch(`/api/runtimes/${agent.runtime}/integrations`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ agent }),
+    }).catch(() => null);
+    const data = await response?.json().catch(() => null) as { ok?: boolean; status?: RuntimeIntegrationStatus; error?: string } | null;
+    setRuntimeIntegrationBusy("");
+    if (!response?.ok || !data?.ok || !data.status) {
+      setRuntimeIntegrationMessage(data?.error ?? "Could not read runtime integrations.");
+      return;
+    }
+    setRuntimeIntegrationStatus(data.status);
+  }
+
+  async function runRuntimeIntegrationAction(action: string, input: Record<string, unknown> = {}) {
+    if (!roleModalAgent) return;
+    setRuntimeIntegrationBusy(action);
+    setRuntimeIntegrationMessage("");
+    const response = await fetch(`/api/runtimes/${roleModalAgent.runtime}/integrations`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ agent: roleModalAgent, action, input }),
+    }).catch(() => null);
+    const data = await response?.json().catch(() => null) as { ok?: boolean; message?: string; error?: string; logPath?: string; output?: string } | null;
+    setRuntimeIntegrationBusy("");
+    if (!response?.ok || !data?.ok) {
+      setRuntimeIntegrationMessage(data?.error ?? "Runtime action failed.");
+      return;
+    }
+    setRuntimeIntegrationMessage(data.message ?? data.output ?? "Runtime action completed.");
+    await refreshRuntimeIntegrations(roleModalAgent);
+  }
+
+  async function searchRuntimeSessionsForAgent() {
+    if (!roleModalAgent) return;
+    setRuntimeIntegrationBusy("session-search");
+    setRuntimeIntegrationMessage("");
+    const params = new URLSearchParams({ q: runtimeSessionQuery, limit: "12" });
+    const response = await fetch(`/api/runtimes/${roleModalAgent.runtime}/sessions/search?${params.toString()}`, { cache: "no-store" }).catch(() => null);
+    const data = await response?.json().catch(() => null) as { ok?: boolean; sessions?: RuntimeSessionSearchResult[]; error?: string } | null;
+    setRuntimeIntegrationBusy("");
+    if (!response?.ok || !data?.ok) {
+      setRuntimeIntegrationMessage(data?.error ?? "Session search failed.");
+      return;
+    }
+    setRuntimeSessionResults(data.sessions ?? []);
   }
 
   function createAgentFromModal() {
@@ -8242,6 +8674,8 @@ export default function Home() {
             assignee: owner.name,
             tenant: assignment.mode === "queen" ? "queen-bee" : `${assignment.workerClass}-worker`,
             status: "working",
+            agentSession: null,
+            result: "",
           },
         }),
       });
@@ -8265,6 +8699,22 @@ export default function Home() {
         agentId: owner.id,
         returnedStatus: data.task?.status ?? null,
       });
+      if (data.task?.status !== "working") {
+        const returnedStatus = data.task?.status ?? "unknown";
+        logClientTelemetry("kanban.ready.claim.rejected_status", {
+          taskId: task.id,
+          agentId: owner.id,
+          returnedStatus,
+          result: data.task?.result ?? null,
+        });
+        setKanbanPickupPreviewByTask((current) => {
+          const next = { ...current };
+          delete next[task.id];
+          return next;
+        });
+        await refreshKanbanOnce().catch((error) => setKanbanError(error instanceof Error ? error.message : "Kanban refresh failed."));
+        return;
+      }
       setKanbanPickupPreviewByTask((current) => {
         const next = { ...current };
         delete next[task.id];
@@ -8535,9 +8985,12 @@ export default function Home() {
       });
       if (transientDelegation) {
         if (!isKanbanAwaitingAgentUpdate(task)) {
+          const waitingMessage = `${agent.name} accepted the runtime connection and may still be working. Waiting for telemetry or agent output after the dashboard timeout.`;
           await patchKanbanTask(task.id, {
             status: "working",
-            result: `${agent.name} accepted the task. Waiting for agent update.`,
+            assignee: agent.name,
+            tenant: assignment.mode === "queen" ? "queen-bee" : `${assignment.workerClass}-worker`,
+            result: waitingMessage,
           });
         }
         return { ok: true, message };
@@ -8669,10 +9122,15 @@ export default function Home() {
       && !isInternalHermesSessionPrelude(message.content)
     ));
     const messages = rawMessages
-      .filter((message) => message.role === "user" || message.role === "assistant")
+      .filter((message) => message.role === "user" || message.role === "assistant" || message.role === "tool")
       .map((message): ChatMessage => ({
         role: message.role === "user" ? "user" : "assistant",
-        content: message.content,
+        content: message.role === "tool"
+          ? [
+            "Tool output:",
+            summarizeKanbanToolOutput(message.content) || compactDiagnosticPreview(message.content, 800),
+          ].filter(Boolean).join("\n")
+          : message.content,
         createdAt: message.createdAt ?? data.session?.updatedAt ?? Date.now(),
         kanbanTaskId: task.id,
         sourceSessionId: session.sessionId,
@@ -8703,13 +9161,17 @@ export default function Home() {
     const now = Date.now();
     const sessionUpdatedAt = data.session.updatedAt ?? latestRaw?.createdAt ?? now;
     const latestCount = data.session.messageCount ?? rawMessages.length;
+    const sessionAgeMs = now - (session.startedAt ?? task.updatedAt);
+    const sessionQuietMs = now - sessionUpdatedAt;
     const toolOutputStalled = task.status === "working"
       && latestRaw?.role === "tool"
-      && now - sessionUpdatedAt >= KANBAN_TOOL_OUTPUT_STALL_MS;
+      && sessionQuietMs >= KANBAN_TOOL_OUTPUT_STALL_MS;
     const noAssistantStalled = task.status === "working"
       && latestCount > 1
       && !latestAssistant
-      && now - (session.startedAt ?? task.updatedAt) >= KANBAN_NO_ASSISTANT_STALL_MS;
+      && latestRaw?.role !== "tool"
+      && sessionAgeMs >= KANBAN_NO_ASSISTANT_STALL_MS
+      && sessionQuietMs >= KANBAN_NO_ASSISTANT_QUIET_MS;
     if (toolOutputStalled) {
       const message = kanbanToolOutputStalledDetail(agent.name, latestRaw?.content ?? "");
       logClientTelemetry("kanban.session.tool_output_stalled", {
@@ -8743,15 +9205,20 @@ export default function Home() {
       return;
     }
     if (noAssistantStalled) {
-      const message = kanbanNoAssistantStalledMessage(agent.name, latestCount, latestRaw?.role ?? null);
+      const message = kanbanNoAssistantStalledDetail(agent.name, latestCount, latestRaw?.role ?? null, latestRaw?.content ?? "");
+      const latestToolSummary = latestRaw?.role === "tool" ? summarizeKanbanToolOutput(latestRaw.content) : "";
       logClientTelemetry("kanban.session.no_assistant_stalled", {
         taskId: task.id,
         agentId: agent.id,
         sessionId: session.sessionId,
         latestCount,
         latestRole: latestRaw?.role ?? null,
+        latestContentLength: latestRaw?.content.length ?? 0,
+        latestToolSummary,
         startedAt: session.startedAt ?? null,
         sessionUpdatedAt,
+        sessionAgeMs,
+        sessionQuietMs,
       });
       setMessagesByAgent((current) => ({
         ...current,
@@ -8790,7 +9257,11 @@ export default function Home() {
           updatedAt: sessionUpdatedAt,
           lastMessageCount: latestCount,
         },
-        ...(latestAssistant ? { result: latestAssistant.content.slice(0, 4000) } : {}),
+        ...(latestAssistant
+          ? { result: latestAssistant.content.slice(0, 4000) }
+          : latestRaw?.role === "tool"
+            ? { result: `${agent.name} is still working.\n\n${summarizeKanbanToolOutput(latestRaw.content)}`.slice(0, 4000) }
+            : {}),
       });
     }
   }
@@ -9867,7 +10338,10 @@ export default function Home() {
                         className={`viewTab ${activeView === item.id ? "active" : ""}`}
                         aria-pressed={activeView === item.id}
                         title={`${item.label}: ${item.detail}`}
-                        onClick={() => setActiveView(item.id)}
+                        onClick={() => {
+                          if (item.id === "kanban" && !kanbanBoard) setKanbanLoading(true);
+                          setActiveView(item.id);
+                        }}
                       >
                         {viewIcon(item.id)}
                         <span>
@@ -10316,7 +10790,7 @@ export default function Home() {
                 <ChevronRight aria-hidden="true" />
               </button>
               ) : null}
-              <div ref={kanbanBoardScrollRef} className={kanbanClass("kanbanBoard")} aria-label="Multi-agent Kanban board">
+              <div ref={kanbanBoardScrollRef} className={kanbanClass("kanbanBoard")} aria-label="Multi-agent Kanban board" aria-busy={kanbanLoading || undefined}>
               {kanbanViewColumns.map((column) => (
                 <section
                   className={kanbanClass("kanbanColumn", column.id)}
@@ -10345,7 +10819,19 @@ export default function Home() {
                     </button>
                   </div>
                   <div className={kanbanClass("kanbanCards", "scrollbar-thin")}>
-                    {quickAddStatus === column.id ? (
+                    {kanbanInitialLoading ? (
+                      Array.from({ length: column.id === "done" ? 1 : 2 }).map((_, index) => (
+                        <article className={kanbanClass("kanbanCardShell", "kanbanSkeletonShell")} key={`${column.id}-skeleton-${index}`} aria-hidden="true">
+                          <div className={kanbanClass("kanbanCard", "kanbanSkeletonCard")}>
+                            <span className={kanbanClass("kanbanSkeletonPill")} />
+                            <strong />
+                            <span className={kanbanClass("kanbanSkeletonLine", "wide")} />
+                            <span className={kanbanClass("kanbanSkeletonLine")} />
+                            <span className={kanbanClass("kanbanSkeletonFooter")} />
+                          </div>
+                        </article>
+                      ))
+                    ) : quickAddStatus === column.id ? (
                       <form className={kanbanClass("kanbanInlineAdd")} onSubmit={(event) => createKanbanTask(event, column.id)}>
                         <ComposerField
                           compact
@@ -10378,7 +10864,7 @@ export default function Home() {
                         />
                       </form>
                     ) : null}
-                    {column.tasks.map((task) => {
+                    {!kanbanInitialLoading && column.tasks.map((task) => {
                       const columnIndex = kanbanViewColumns.findIndex((item) => item.id === task.status);
                       const previousColumn = columnIndex > 0 ? kanbanViewColumns[columnIndex - 1] : null;
                       const nextColumn = columnIndex >= 0 && columnIndex < kanbanViewColumns.length - 1 ? kanbanViewColumns[columnIndex + 1] : null;
@@ -10503,7 +10989,7 @@ export default function Home() {
                         </article>
                       );
                     })}
-                    {column.tasks.length === 0 && quickAddStatus !== column.id ? (
+                    {!kanbanInitialLoading && column.tasks.length === 0 && quickAddStatus !== column.id ? (
                       <button
                         type="button"
                         className={kanbanClass("kanbanEmpty", "kanbanEmptyAction")}
@@ -11342,6 +11828,7 @@ export default function Home() {
           templates={swarmTemplates}
           statusLabel={swarmStatusLabel}
           selectedRunId={selectedSwarmRunId}
+          archiveLoading={mirosharkArchiveLoading}
           onSelectRun={(run) => {
             if (run.id !== currentSwarmRun?.id) void loadMirosharkArchivedRun(run.id);
           }}
@@ -11420,6 +11907,7 @@ export default function Home() {
               </button>
               <AgentWalletCard
                 agentName={selectedAgent.name}
+                machineName={selectedAgent.machineName}
                 wallet={selectedWallet}
                 survival={selectedWalletSnapshot}
                 honeyReward={selectedHoneyReward}
@@ -11763,6 +12251,10 @@ export default function Home() {
             </div>
           </div>
 
+          {hermesUpdateRequired ? (
+            <p className={vaultClass("hermesUpdateNotice")}>Hermes update available: {hermesUpdateRequiredDetail}. Skills using the newest Hermes features are marked below.</p>
+          ) : null}
+
           {brainSkills?.shared.length ? (
             <div className={vaultClass("sharedSkillGrid")}>
               <button type="button" className={vaultClass("sharedSkillAddCard")} onClick={openSkillBrowser}>
@@ -11770,17 +12262,23 @@ export default function Home() {
                 <strong>Add skill</strong>
                 <p>Browse featured and community skills, then mirror the ones you trust into the shared brain.</p>
               </button>
-              {brainSkills.shared.map((skill) => (
-                <article key={skill.id} className={vaultClass("sharedSkillCard")}>
-                  <div className={vaultClass("sharedSkillSourceLine")}>
-                    <span>Shared brain</span>
-                    {skill.providerLabel !== "Shared brain" ? <small>from {skill.providerLabel}</small> : null}
-                  </div>
-                  <strong>{skill.name}</strong>
-                  <p>{skill.description || "No description in SKILL.md frontmatter yet."}</p>
-                  <small className={vaultClass("sharedSkillPath")}>{skill.relativePath}</small>
-                </article>
-              ))}
+              {brainSkills.shared.map((skill) => {
+                const needsHermesUpdate = skillRequiresHermesUpdate(skill, hermesUpdateRequired);
+                return (
+                  <article key={skill.id} className={vaultClass("sharedSkillCard")}>
+                    <div className={vaultClass("sharedSkillSourceLine")}>
+                      <span>Shared brain</span>
+                      <div className={vaultClass("sharedSkillBadges")}>
+                        {skill.providerLabel !== "Shared brain" ? <small>from {skill.providerLabel}</small> : null}
+                        {needsHermesUpdate ? <small className={vaultClass("skillUpdateBadge")}>Needs Hermes update</small> : null}
+                      </div>
+                    </div>
+                    <strong>{skill.name}</strong>
+                    <p>{skill.description || "No description in SKILL.md frontmatter yet."}</p>
+                    <small className={vaultClass("sharedSkillPath")}>{skill.relativePath}</small>
+                  </article>
+                );
+              })}
             </div>
           ) : (
             <div className={vaultClass("brainSkillsEmpty")}>
@@ -11818,6 +12316,7 @@ export default function Home() {
             {(brainSkills?.providers ?? BRAIN_SKILL_PROVIDER_FALLBACK).map((provider) => {
               const importable = provider.skills.filter((skill) => !skill.imported).length;
               const imported = provider.skills.length - importable;
+              const updateRequiredCount = provider.skills.filter((skill) => skillRequiresHermesUpdate({ ...skill, providerId: provider.id, source: provider.label }, hermesUpdateRequired)).length;
               const providerStatus = !provider.installed
                 ? `No ${provider.home} install found`
                 : importable > 0 && imported > 0
@@ -11835,6 +12334,7 @@ export default function Home() {
                     <span>{provider.label}</span>
                     <strong>{provider.skills.length}</strong>
                     <small>{providerStatus}</small>
+                    {updateRequiredCount ? <small className={vaultClass("providerUpdateBadge")}>{updateRequiredCount} need Hermes update</small> : null}
                   </div>
                   <Button
                     type="button"
@@ -12765,31 +13265,38 @@ export default function Home() {
               </form>
             ) : null}
             {skillBrowserStatus ? <p className={fleetClass("skillBrowserStatus")}>{skillBrowserStatus}</p> : null}
+            {hermesUpdateRequired ? (
+              <p className={fleetClass("skillBrowserStatus", "skillBrowserWarning")}>Hermes update available: {hermesUpdateRequiredDetail}. Update-gated skills are marked before you add them to the brain.</p>
+            ) : null}
             <div className={fleetClass("skillBrowserGrid")}>
               {skillBrowserLoading ? (
                 <div className={fleetClass("scheduleEmpty")}><LoaderCircle aria-hidden="true" className={vaultClass("spinIcon")} /><strong>Loading skills</strong><p>Checking installed skills and community catalogs.</p></div>
-              ) : filteredSkillBrowserSkills.length ? filteredSkillBrowserSkills.map((skill) => (
-                <article key={`${skill.source}-${skill.id}`} className={fleetClass("skillBrowserCard")}>
-                  <div>
-                    <Image src="/icons/worker-bee-general-v2.png" alt="" width={24} height={24} unoptimized />
-                    <span>{skill.source}{skill.category ? ` · ${skill.category}` : ""}</span>
-                  </div>
-                  <strong>{skill.name}</strong>
-                  <p>{skill.description || "No description provided yet."}</p>
-                  <div className={fleetClass("scheduleActions")}>
-                    <Button type="button" size="sm" onClick={() => void importRemoteSkillToBrain(skill)} disabled={skill.imported || skillBrowserImporting === skill.id}>
-                      {skillBrowserImporting === skill.id ? <LoaderCircle aria-hidden="true" className={vaultClass("spinIcon")} /> : <Download aria-hidden="true" />}
-                      {skill.imported ? "In brain" : "Add to brain"}
-                    </Button>
-                    {skill.githubUrl || skill.skillMdUrl ? (
-                      <Button type="button" size="sm" variant="secondary" onClick={() => navigator.clipboard?.writeText(skill.githubUrl || skill.skillMdUrl || "")}>
-                        <Copy aria-hidden="true" />
-                        Copy source
+              ) : filteredSkillBrowserSkills.length ? filteredSkillBrowserSkills.map((skill) => {
+                const needsHermesUpdate = skill.requiresHermesUpdate || skillRequiresHermesUpdate(skill, hermesUpdateRequired);
+                return (
+                  <article key={`${skill.source}-${skill.id}`} className={fleetClass("skillBrowserCard")}>
+                    <div className={fleetClass("skillBrowserMetaRow")}>
+                      <Image src="/icons/worker-bee-general-v2.png" alt="" width={24} height={24} unoptimized />
+                      <span>{skill.source}{skill.category ? ` · ${skill.category}` : ""}</span>
+                      {needsHermesUpdate ? <small className={fleetClass("skillUpdateBadge")}>Needs Hermes update</small> : null}
+                    </div>
+                    <strong>{skill.name}</strong>
+                    <p>{skill.description || "No description provided yet."}</p>
+                    <div className={fleetClass("scheduleActions")}>
+                      <Button type="button" size="sm" onClick={() => void importRemoteSkillToBrain(skill)} disabled={skill.imported || skillBrowserImporting === skill.id}>
+                        {skillBrowserImporting === skill.id ? <LoaderCircle aria-hidden="true" className={vaultClass("spinIcon")} /> : <Download aria-hidden="true" />}
+                        {skill.imported ? "In brain" : "Add to brain"}
                       </Button>
-                    ) : null}
-                  </div>
-                </article>
-              )) : (
+                      {skill.githubUrl || skill.skillMdUrl ? (
+                        <Button type="button" size="sm" variant="secondary" onClick={() => navigator.clipboard?.writeText(skill.githubUrl || skill.skillMdUrl || "")}>
+                          <Copy aria-hidden="true" />
+                          Copy source
+                        </Button>
+                      ) : null}
+                    </div>
+                  </article>
+                );
+              }) : (
                 <div className={fleetClass("scheduleEmpty")}><Sparkles aria-hidden="true" /><strong>No skills found</strong><p>Try a different search, or import from provider installs below the shared skills shelf.</p></div>
               )}
             </div>
@@ -12877,14 +13384,14 @@ export default function Home() {
             </div>
 
             <div className={fleetClass("agentSettingsTabs")} role="tablist" aria-label="Agent settings sections">
-              {(["role", "memory", "security"] as const).map((panel) => (
+              {(agentCreateMachine ? (["role", "memory", "security"] as const) : (["role", "memory", "tools", "security"] as const)).map((panel) => (
                 <button
                   type="button"
                   key={panel}
                   className={agentSettingsPanel === panel ? fleetClass("activeSegment") : ""}
                   onClick={() => setAgentSettingsPanel(panel)}
                 >
-                  {panel === "role" ? "Role" : panel === "memory" ? "Memory" : "Security"}
+                  {panel === "role" ? "Role" : panel === "memory" ? "Memory" : panel === "tools" ? "Tools" : "Security"}
                 </button>
               ))}
             </div>
@@ -13160,6 +13667,136 @@ export default function Home() {
                   </label>
                 ) : null}
                 {agentRuntimeFolderStatus ? <p className={fleetClass("agentMemoryStatus")}>{agentRuntimeFolderStatus}</p> : null}
+              </div>
+            ) : null}
+
+            {agentSettingsPanel === "tools" && roleModalAgent ? (
+              <div className={fleetClass("agentRuntimeToolsPanel")}>
+                <div className={fleetClass("agentRuntimeToolsHeader")}>
+                  <div>
+                    <strong>Runtime integrations</strong>
+                    <p>These controls stay adapter-neutral. Hermes-only actions appear only when this agent actually runs Hermes.</p>
+                  </div>
+                  <Button type="button" variant="secondary" onClick={() => void refreshRuntimeIntegrations(roleModalAgent)} disabled={runtimeIntegrationBusy === "status"}>
+                    {runtimeIntegrationBusy === "status" ? <LoaderCircle aria-hidden="true" className="animate-spin" /> : <RefreshCcw aria-hidden="true" />}
+                    Refresh
+                  </Button>
+                </div>
+
+                <div className={fleetClass("agentRuntimeCapabilityGrid")}>
+                  {([
+                    ["sessionSearch", "Session search", "Search prior work across this runtime.", Search],
+                    ["backgroundTasks", "Background tasks", "Run work without blocking chat.", Repeat2],
+                    ["xSearch", "X search", "Fetch X posts through runtime auth.", MessageSquare],
+                    ["socialPosting", "X posting", "Publish through installed social skills.", Send],
+                    ["videoGeneration", "AI video", "Generate videos through runtime tools.", Sparkles],
+                    ["codexRuntime", "Codex runtime", "Delegate coding to Codex paths.", Cpu],
+                    ["kanbanDecompose", "Kanban decomposition", "Break triage goals into child work.", KanbanSquare],
+                  ] as const).map(([key, label, detail, Icon]) => {
+                    const item = runtimeIntegrationStatus?.integrations[key];
+                    const supported = item?.supported ?? Boolean(runtimeCapabilities(roleModalAgent)[key]);
+                    const enabled = item?.enabled ?? supported;
+                    const needsHermesUpdate = roleModalAgent.runtime === "hermes" && supported && hermesUpdateRequired && HERMES_UPDATE_INTEGRATION_KEYS.has(key);
+                    const statusLabel = needsHermesUpdate
+                      ? "Needs Hermes update"
+                      : supported
+                        ? enabled ? "Ready" : "Needs setup"
+                        : "Not exposed";
+                    return (
+                      <article key={key} className={fleetClass("agentRuntimeCapabilityCard", supported ? "supported" : "unsupported")}>
+                        <Icon aria-hidden="true" />
+                        <div>
+                          <strong>{label}</strong>
+                          <div className={fleetClass("agentRuntimeCapabilityBadges")}>
+                            <span className={needsHermesUpdate ? fleetClass("needsHermesUpdate") : undefined}>{statusLabel}</span>
+                          </div>
+                          <p>{detail}</p>
+                        </div>
+                      </article>
+                    );
+                  })}
+                </div>
+
+                <div className={fleetClass("agentRuntimeToolWorkbench")}>
+                  <section>
+                    <div>
+                      <strong>Search sessions</strong>
+                      <p>Works for runtimes with readable local session history. Hermes uses its SQLite session store; OpenClaw scans local session transcripts when present.</p>
+                    </div>
+                    <form
+                      onSubmit={(event) => {
+                        event.preventDefault();
+                        void searchRuntimeSessionsForAgent();
+                      }}
+                    >
+                      <input
+                        value={runtimeSessionQuery}
+                        onChange={(event) => setRuntimeSessionQuery(event.target.value)}
+                        placeholder="April 15, Codex, Kanban, auth..."
+                      />
+                      <Button type="submit" disabled={runtimeIntegrationBusy === "session-search"}>
+                        {runtimeIntegrationBusy === "session-search" ? <LoaderCircle aria-hidden="true" className="animate-spin" /> : <Search aria-hidden="true" />}
+                        Search
+                      </Button>
+                    </form>
+                    {runtimeSessionResults.length ? (
+                      <div className={fleetClass("agentRuntimeSessionResults")}>
+                        {runtimeSessionResults.map((session) => (
+                          <article key={session.id}>
+                            <strong>{session.title}</strong>
+                            <span>{[session.source, session.model, session.startedAt ? new Date(session.startedAt).toLocaleString() : ""].filter(Boolean).join(" · ")}</span>
+                            <p>{session.excerpt || session.path || "No preview available."}</p>
+                          </article>
+                        ))}
+                      </div>
+                    ) : null}
+                  </section>
+
+                  {roleModalAgent.runtime === "hermes" ? (
+                    <section>
+                      <div>
+                        <strong>Hermes extras</strong>
+                        <p>These call the local Hermes CLI and leave other runtimes untouched.</p>
+                      </div>
+                      <div className={fleetClass("agentRuntimeActionGrid")}>
+                        <Button type="button" variant="secondary" disabled={Boolean(runtimeIntegrationBusy)} onClick={() => void runRuntimeIntegrationAction("xai-login")}>
+                          <PlugZap aria-hidden="true" />
+                          xAI login
+                        </Button>
+                        <Button type="button" variant="secondary" disabled={Boolean(runtimeIntegrationBusy)} onClick={() => void runRuntimeIntegrationAction("enable-tool", { tool: "x_search" })}>
+                          <MessageSquare aria-hidden="true" />
+                          Enable X search
+                        </Button>
+                        <Button type="button" variant="secondary" disabled={Boolean(runtimeIntegrationBusy)} onClick={() => void runRuntimeIntegrationAction("enable-tool", { tool: "video_gen" })}>
+                          <Sparkles aria-hidden="true" />
+                          Enable video
+                        </Button>
+                        <Button type="button" variant="secondary" disabled={Boolean(runtimeIntegrationBusy)} onClick={() => void runRuntimeIntegrationAction("kanban-decompose")}>
+                          <KanbanSquare aria-hidden="true" />
+                          Decompose triage
+                        </Button>
+                      </div>
+                      <label className={fleetClass("agentSettingsField")}>
+                        <span>Background prompt</span>
+                        <textarea
+                          value={runtimeBackgroundPrompt}
+                          onChange={(event) => setRuntimeBackgroundPrompt(event.target.value)}
+                          placeholder="Ask Hermes to handle a background task while chat stays free."
+                        />
+                      </label>
+                      <Button
+                        type="button"
+                        disabled={runtimeIntegrationBusy === "background" || !runtimeBackgroundPrompt.trim()}
+                        onClick={() => void runRuntimeIntegrationAction("background", { prompt: runtimeBackgroundPrompt })}
+                      >
+                        {runtimeIntegrationBusy === "background" ? <LoaderCircle aria-hidden="true" className="animate-spin" /> : <Repeat2 aria-hidden="true" />}
+                        Start background task
+                      </Button>
+                    </section>
+                  ) : null}
+                </div>
+
+                {runtimeIntegrationMessage ? <p className={fleetClass("agentRuntimeToolStatus")}>{runtimeIntegrationMessage}</p> : null}
               </div>
             ) : null}
 

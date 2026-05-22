@@ -96,19 +96,52 @@ async function main() {
     needsHumanUnassigned = await moveTask(needsHumanUnassigned, "ready");
     assert(!needsHumanUnassigned.assignee, "Unassigned Needs Human task should go back to Ready for assignment.");
 
-    let stale = await createTask("accepted without session should not wait forever", "working", {
+    let needsHumanReadyRetry = await createTask("needs human assigned ready retry", "needs-human");
+    needsHumanReadyRetry = await patchTask(needsHumanReadyRetry, {
+      assignee: "Hermes on Test Machine",
+      tenant: "code-worker",
+      agentSession: {
+        agentId: "hermes-test",
+        agentName: "Hermes on Test Machine",
+        telemetryUrl: "http://127.0.0.1:8787",
+        sessionId: "api-stale-session",
+        startedAt: Date.now(),
+        updatedAt: Date.now(),
+        lastMessageCount: 12,
+      },
+      result: "Retry with a clean claim.",
+    });
+    needsHumanReadyRetry = await moveTask(needsHumanReadyRetry, "ready");
+    assert(!needsHumanReadyRetry.assignee && !needsHumanReadyRetry.tenant && !needsHumanReadyRetry.agentSession, "Moving Needs Human back to Ready should clear stale ownership/session state.");
+    assert(needsHumanReadyRetry.result === "Retry with a clean claim.", "Moving back to Ready should preserve retry notes.");
+
+    let stale = await createTask("hard unpollable accepted work should not wait forever", "working", {
       assignee: "Hermes on Test Machine",
       tenant: "general-worker",
-      result: "Hermes on Test Machine accepted the delegated work. Waiting for agent update.",
+      result: "Hermes on Test Machine returned no task output and no pollable session.",
     });
     assert(stale.status === "working" && !stale.agentSession, "Fixture should start as unpollable Working.");
     stale = await patchTask(stale, {
       status: "working",
-      result: "Hermes on Test Machine accepted the task. Waiting for agent update.",
+      result: "Hermes on Test Machine returned no task output and no pollable session.",
       agentSession: null,
     });
     assert(stale.status === "needs-human", "Unpollable accepted work must fail closed to Needs Human.");
     assert(!stale.completedAt, "Moving out of Done/Working recovery must not retain completedAt.");
+
+    let timeoutAccepted = await createTask("timeout accepted runtime can keep working", "needs-human", {
+      assignee: "Hermes on Test Machine",
+      tenant: "code-worker",
+      result: "Previous dashboard timeout.",
+    });
+    timeoutAccepted = await patchTask(timeoutAccepted, {
+      status: "working",
+      assignee: "Hermes on Test Machine",
+      tenant: "code-worker",
+      agentSession: null,
+      result: "Hermes on Test Machine accepted the runtime connection and may still be working. Waiting for telemetry or agent output after the dashboard timeout.",
+    });
+    assert(timeoutAccepted.status === "working", "Timeout-accepted runtime work should stay Working while telemetry catches up.");
 
     const source = await readFile(new URL("../src/app/page.tsx", import.meta.url), "utf8");
     assert(

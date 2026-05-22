@@ -11,7 +11,7 @@ import { getHoneyWorkspaceId, recordHoneyUsage } from "@/lib/services/wallet/hon
 import { recordTelemetryBatch } from "@/lib/services/telemetry/local-telemetry";
 
 export const runtime = "nodejs";
-export const maxDuration = 120;
+export const maxDuration = 600;
 
 type IncomingMessage = {
   role: string;
@@ -29,6 +29,7 @@ type RuntimeRouteTelemetry = {
 };
 
 const INTERACTIVE_RUNTIME_LOCK_MS = 130_000;
+const RUNTIME_FETCH_TIMEOUT_MS = 10 * 60 * 1000;
 const interactiveRuntimeLocks = new Map<string, number>();
 
 function telemetryPayloadForProfile(profile?: AgentProfile) {
@@ -272,7 +273,7 @@ async function streamTrustedComputeGateway(
         bankrLlmKey: process.env.BANKR_LLM_KEY?.trim() || process.env.BANKR_API_KEY?.trim() || "",
         messages: modelMessages,
       }),
-      signal: AbortSignal.timeout(110_000),
+      signal: AbortSignal.timeout(RUNTIME_FETCH_TIMEOUT_MS),
     });
   } catch (error) {
     return Response.json({
@@ -368,7 +369,7 @@ async function streamHttpRuntime(
         walletTools: wallet ? { x402Fetch: "/api/wallet/x402" } : undefined,
         context: context || undefined,
       }),
-      signal: AbortSignal.timeout(110_000),
+      signal: AbortSignal.timeout(RUNTIME_FETCH_TIMEOUT_MS),
     });
     recordRuntimeTelemetry(telemetry, "agent_runtime.http.fetch.response", {
       ...telemetryPayloadForProfile(profile),
@@ -484,7 +485,12 @@ async function streamHttpRuntime(
           buffer = events.pop() ?? "";
           for (const eventText of events) {
             const dataLine = eventText.split("\n").find((line) => line.startsWith("data:"));
-            if (!dataLine) continue;
+            if (!dataLine) {
+              if (eventText.trim().startsWith(":")) {
+                controller.enqueue(encoder.encode(`${eventText}\n\n`));
+              }
+              continue;
+            }
             const raw = dataLine.replace(/^data:\s*/, "");
             if (raw === "[DONE]") continue;
             try {

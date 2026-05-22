@@ -411,7 +411,7 @@ export function FleetView({
                 .slice(0, 4)
                 .map((a) => (
                   <article
-                    key={a.id}
+                    key={`${a._m.id}:${a.id}`}
                     onClick={() => handleSelectAgent(a._m, a)}
                     className="rounded-xl cursor-pointer"
                     style={{

@@ -42,6 +42,11 @@ export function MapView({
   onSelectMachine,
 }: MapViewProps) {
   const w = width, h = height;
+  const viewportRef = React.useRef<HTMLDivElement | null>(null);
+  const dragRef = React.useRef<{ pointerId: number; x: number; y: number; panX: number; panY: number } | null>(null);
+  const [viewport, setViewport] = React.useState({ width: 0, height: 0 });
+  const [pan, setPan] = React.useState({ x: 0, y: 0 });
+  const [dragging, setDragging] = React.useState(false);
 
   const pos = React.useMemo(() => {
     const o: Record<string, { x: number; y: number }> = {};
@@ -52,6 +57,34 @@ export function MapView({
     }
     return o;
   }, [machines, w, h]);
+  const bounds = React.useMemo(() => mapContentBounds(machines, pos, w, h), [machines, pos, w, h]);
+
+  const clampPan = React.useCallback((next: { x: number; y: number }) => {
+    return {
+      x: clampAxis(next.x, viewport.width, bounds.minX, bounds.maxX),
+      y: clampAxis(next.y, viewport.height, bounds.minY, bounds.maxY),
+    };
+  }, [bounds.maxX, bounds.maxY, bounds.minX, bounds.minY, viewport.height, viewport.width]);
+
+  React.useLayoutEffect(() => {
+    const element = viewportRef.current;
+    if (!element) return;
+    const update = () => setViewport({ width: element.clientWidth, height: element.clientHeight });
+    update();
+    const observer = new ResizeObserver(update);
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, []);
+
+  React.useLayoutEffect(() => {
+    if (!viewport.width || !viewport.height) return;
+    // Recenter when the projected map or containing stage changes size.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setPan(clampPan({
+      x: viewport.width / 2 - (bounds.minX + bounds.maxX) / 2,
+      y: viewport.height / 2 - (bounds.minY + bounds.maxY) / 2,
+    }));
+  }, [bounds.maxX, bounds.maxY, bounds.minX, bounds.minY, clampPan, machines.length, viewport.height, viewport.width]);
 
   // Bee animation across great-circle (quadratic-bezier) arcs.
   const BEE_COUNT = 2;
@@ -102,7 +135,45 @@ export function MapView({
   }, []);
 
   return (
-    <div className="relative mx-auto" style={{ width: w, height: h }}>
+    <div
+      ref={viewportRef}
+      className="relative h-full w-full overflow-hidden"
+      style={{ cursor: dragging ? "grabbing" : "grab", touchAction: "none" }}
+      onPointerDown={(event) => {
+        if (event.button !== 0) return;
+        const target = event.target;
+        if (target instanceof Element && target.closest("button, [data-fleet-cell-control]")) return;
+        dragRef.current = { pointerId: event.pointerId, x: event.clientX, y: event.clientY, panX: pan.x, panY: pan.y };
+        setDragging(true);
+        event.currentTarget.setPointerCapture(event.pointerId);
+      }}
+      onPointerMove={(event) => {
+        const drag = dragRef.current;
+        if (!drag || drag.pointerId !== event.pointerId) return;
+        setPan(clampPan({
+          x: drag.panX + event.clientX - drag.x,
+          y: drag.panY + event.clientY - drag.y,
+        }));
+      }}
+      onPointerUp={(event) => {
+        if (dragRef.current?.pointerId === event.pointerId) dragRef.current = null;
+        setDragging(false);
+      }}
+      onPointerCancel={() => {
+        dragRef.current = null;
+        setDragging(false);
+      }}
+      aria-label="Fleet map canvas. Drag to pan across machines."
+    >
+      <div
+        className="absolute left-0 top-0"
+        style={{
+          width: w,
+          height: h,
+          transform: `translate(${pan.x}px, ${pan.y}px)`,
+          willChange: "transform",
+        }}
+      >
       <svg
         viewBox={`0 0 ${w} ${h}`}
         width={w} height={h}
@@ -251,6 +322,47 @@ export function MapView({
           </div>
         ))}
       </div>
+      </div>
     </div>
   );
+}
+
+function mapContentBounds(
+  machines: FleetMachine[],
+  pos: Record<string, { x: number; y: number }>,
+  width: number,
+  height: number,
+) {
+  const padding = 90;
+  const pinWidth = 56;
+  const pinHeight = (pinWidth * 2) / Math.sqrt(3);
+  let minX = 0;
+  let minY = 0;
+  let maxX = width;
+  let maxY = height;
+
+  for (const machine of machines) {
+    const point = pos[machine.id];
+    if (!point) continue;
+    minX = Math.min(minX, point.x - pinWidth / 2);
+    maxX = Math.max(maxX, point.x + pinWidth / 2);
+    minY = Math.min(minY, point.y - pinHeight / 2);
+    maxY = Math.max(maxY, point.y + 72);
+  }
+
+  return {
+    minX: minX - padding,
+    minY: minY - padding,
+    maxX: maxX + padding,
+    maxY: maxY + padding,
+  };
+}
+
+function clampAxis(value: number, viewportSize: number, minContent: number, maxContent: number) {
+  if (!viewportSize) return value;
+  const contentSize = maxContent - minContent;
+  if (contentSize <= viewportSize) return viewportSize / 2 - (minContent + maxContent) / 2;
+  const min = viewportSize - maxContent;
+  const max = -minContent;
+  return Math.min(max, Math.max(min, value));
 }

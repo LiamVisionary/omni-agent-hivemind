@@ -28,6 +28,7 @@ interface SwarmViewProps {
   templates?: SwarmTemplate[];
   statusLabel?: string;
   selectedRunId?: string;
+  archiveLoading?: boolean;
   onSelectRun?: (run: SwarmRun) => void;
   onLaunch?: (template: TemplateId) => void;
   onPickTemplate?: (template: TemplateId) => void;
@@ -68,6 +69,7 @@ export function SwarmView({
   templates = [],
   statusLabel = "waiting for data",
   selectedRunId,
+  archiveLoading = false,
   onSelectRun,
   onLaunch,
   onPickTemplate,
@@ -209,6 +211,7 @@ export function SwarmView({
           <Runs
             runs={runs}
             selectedId={selectedId}
+            loading={archiveLoading}
             onSelect={handleSelectRun}
             onLaunch={handleLaunch}
           />
