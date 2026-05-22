@@ -1,4 +1,4 @@
-# Hermes Agent Control Room Local Setup
+# HivemindOS Local Setup
 
 Use a local, read-only-by-default clone of `shannhk/hermes-agent-control-room`
 as the seed for one-click VPS and Hermes deployment workflows:
@@ -31,4 +31,4 @@ Known live-code risks in the upstream bootstrap:
 - global npm packages for Claude Code and Codex
 - `nousresearch/hermes-agent:latest` in Docker templates
 
-Use the Control Room as docs, templates, registry, runbooks, and task-bus structure on this computer. Install or run Hermes runtime pieces separately only after reviewing/pinning each external dependency.
+Use HivemindOS as docs, templates, registry, runbooks, and task-bus structure on this computer. Install or run Hermes runtime pieces separately only after reviewing/pinning each external dependency.

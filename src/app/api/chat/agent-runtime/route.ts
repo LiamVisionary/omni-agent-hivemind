@@ -114,7 +114,7 @@ function buildVaultContext(sharedVault: SharedVaultConfig | null): string {
     "- Kanban storage: boards are stored as kanban.json files under the shared Kanban folder. Collaboration can use any folder sync provider, including Obsidian Sync, iCloud Drive, Dropbox, Syncthing, Git, or the built-in Syncthing-over-Tailscale pairing.",
     "- Notifications: when you need the user's attention outside chat, write a markdown notification under the notifications folder using priority low, normal, high, or urgent. High-priority messaging escalation is only a preference flag; a configured messaging agent should handle Telegram, iMessage, Discord, or similar delivery when configured.",
     "- Brain access tracking: when you inspect a vault note through the dashboard, call /api/obsidian/access with vaultPath, notePath, agentName, agentId, runtime, machineName, and action so the shared brain records who accessed what and when.",
-    `- Hermes Agent Control Room path: ${sharedVault.controlRoomPath || "(not set)"}`,
+    `- HivemindOS folder path: ${sharedVault.controlRoomPath || "(not set)"}`,
     `- Instructions: ${sharedVault.instructions || "Read AGENTS.md before durable vault edits."}`,
   ];
   return lines.join("\n");

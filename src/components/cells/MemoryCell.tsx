@@ -4,7 +4,7 @@ import { Cell } from "./Cell";
 
 /**
  * MemoryCell renders the "shared brain" state — typically the Obsidian
- * vault and the Hermes Control Room paths.
+ * vault and HivemindOS paths.
  *
  * Default view answers: "Is the shared brain connected? Where is it?
  * Who is opted in?" — the three things from the Shared Brain screen

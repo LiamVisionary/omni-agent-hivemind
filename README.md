@@ -234,4 +234,4 @@ See [ROADMAP.md](ROADMAP.md).
 
 ## Provenance
 
-HivemindOS packages agent-control patterns, OpenClaw integration code, Hermes control-room workflows, MiroShark companion integration, and local-first fleet telemetry into a standalone open-source dashboard. Portions of the OpenClaw integration were adapted from an internal source app. The AI SDK route and chat UI patterns were adapted from public Next.js agent examples. The Hermes control-room workflow is inspired by `shannhk/hermes-agent-control-room`.
+HivemindOS packages agent-control patterns, OpenClaw integration code, HivemindOS workflow templates, MiroShark companion integration, and local-first fleet telemetry into a standalone open-source dashboard. Portions of the OpenClaw integration were adapted from an internal source app. The AI SDK route and chat UI patterns were adapted from public Next.js agent examples. Some workflow templates were inspired by `shannhk/hermes-agent-control-room`.

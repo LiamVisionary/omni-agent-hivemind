@@ -40,7 +40,7 @@ export async function POST(request: NextRequest) {
   try {
     const pathStats = await stat(resolvedPath);
     if (!pathStats.isDirectory()) {
-      return Response.json({ ok: false, controlRoomPath: resolvedPath, error: "Control Room path is not a directory" });
+      return Response.json({ ok: false, controlRoomPath: resolvedPath, error: "HivemindOS path is not a directory" });
     }
     await access(resolvedPath, constants.R_OK);
 
@@ -83,7 +83,7 @@ export async function POST(request: NextRequest) {
     return Response.json({
       ok: false,
       controlRoomPath: resolvedPath,
-      error: error instanceof Error ? error.message : "Could not read Control Room path",
+      error: error instanceof Error ? error.message : "Could not read HivemindOS path",
     });
   }
 }

@@ -98,7 +98,7 @@ export const DEFAULT_SHARED_VAULT: SharedVaultConfig = {
   noteTaskImportFolders: "Projects\nInbox",
   noteTaskImportEnabled: false,
   controlRoomPath: process.env.NEXT_PUBLIC_HERMES_CONTROL_ROOM_PATH ?? "~/agent-control-room",
-  instructions: "Use this vault as the shared memory and handoff space for all local agents. Read AGENTS.md before durable edits. Use the Hermes Agent Control Room as the operating manual, registry, runbook library, and task-bus template.",
+  instructions: "Use this vault as the shared memory and handoff space for all local agents. Read AGENTS.md before durable edits. Use HivemindOS as the operating manual, registry, runbook library, and task-bus template.",
 };
 
 export const RUNTIME_LABELS: Record<AgentRuntime, string> = {

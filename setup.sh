@@ -122,7 +122,7 @@ cd "$ROOT"
 
 parse_args "$@"
 
-info "Agent Control Room setup"
+info "HivemindOS setup"
 
 install_rsync_if_missing() {
   if command -v rsync >/dev/null 2>&1; then
@@ -197,6 +197,39 @@ enable_tailscale_ssh() {
   if ! tailscale debug prefs 2>/dev/null | grep -q '"RunSSH": true'; then
     warn "Tailscale accepted the SSH setting, but verification did not report RunSSH=true yet"
   fi
+}
+
+install_tailscale_if_missing() {
+  if command -v tailscale >/dev/null 2>&1; then
+    return 0
+  fi
+
+  warn "Tailscale is not installed; trying to install it for multi-machine sync"
+  if [[ "$(uname -s)" == "Darwin" ]] && command -v brew >/dev/null 2>&1; then
+    brew install --cask tailscale || true
+    if ! command -v tailscale >/dev/null 2>&1; then
+      brew install tailscale || true
+    fi
+  elif command -v apt-get >/dev/null 2>&1 && command -v sudo >/dev/null 2>&1; then
+    if command -v curl >/dev/null 2>&1; then
+      curl -fsSL https://tailscale.com/install.sh | sh || true
+    else
+      warn "Install curl first, then run: curl -fsSL https://tailscale.com/install.sh | sh"
+    fi
+  else
+    warn "Install Tailscale later to enable multi-machine collaboration:"
+    warn "  macOS: brew install --cask tailscale"
+    warn "  Linux: curl -fsSL https://tailscale.com/install.sh | sh"
+    return 1
+  fi
+
+  if command -v tailscale >/dev/null 2>&1; then
+    ok "Tailscale installed"
+    return 0
+  fi
+
+  warn "Tailscale install did not put the tailscale CLI on PATH"
+  return 1
 }
 
 install_hive_env_add() {
@@ -299,6 +332,13 @@ elif command -v corepack >/dev/null 2>&1; then
 else
   missing+=("pnpm or corepack")
   fail "pnpm is missing"
+  if [[ "$(uname -s)" == "Darwin" ]]; then
+    warn "Install pnpm with one of:"
+    warn "  npm install -g pnpm"
+    warn "  brew install pnpm"
+  else
+    warn "Install pnpm with: npm install -g pnpm"
+  fi
 fi
 
 if command -v corepack >/dev/null 2>&1; then
@@ -308,6 +348,7 @@ fi
 
 tailscale_ip=""
 tailnet_sync_enabled="false"
+install_tailscale_if_missing || true
 if command -v tailscale >/dev/null 2>&1; then
   if tailscale status >/dev/null 2>&1; then
     ok "Tailscale is running"
@@ -316,7 +357,7 @@ if command -v tailscale >/dev/null 2>&1; then
     enable_tailscale_ssh
   else
     warn "Tailscale is installed but not connected"
-    warn "Multi-machine collaboration and shared memory sync are disabled until you run: tailscale up"
+    warn "Multi-machine collaboration and shared memory sync are disabled until you open Tailscale and sign in, or run: tailscale up"
   fi
 else
   warn "Tailscale is not installed"
@@ -336,6 +377,16 @@ if (( ${#missing[@]} > 0 )); then
   for item in "${missing[@]}"; do
     echo "  - $item"
   done
+  if printf "%s\n" "${missing[@]}" | grep -q "pnpm"; then
+    echo
+    echo "Install pnpm with one of:"
+    if [[ "$(uname -s)" == "Darwin" ]]; then
+      echo "  npm install -g pnpm"
+      echo "  brew install pnpm"
+    else
+      echo "  npm install -g pnpm"
+    fi
+  fi
   echo
   echo "After fixing those, rerun:"
   echo "  ./setup.sh"
@@ -441,7 +492,7 @@ fi
 start_dashboard() {
   info "Starting dashboard dev server on port $PORT"
   mkdir -p "$ROOT/.next"
-  nohup ./scripts/run-with-memory-limit.sh --limit-mb 5000 -- pnpm exec next dev --webpack -p "$PORT" > "$ROOT/.next/agent-control-room.log" 2>&1 &
+  nohup ./scripts/run-with-memory-limit.sh --limit-mb 5000 -- pnpm exec next dev --webpack -p "$PORT" > "$ROOT/.next/hivemindos.log" 2>&1 &
   sleep 2
 }
 

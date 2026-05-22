@@ -3,6 +3,14 @@
 This file records user-visible changes before they are committed. New work should
 be added here first, then marked `Committed` or `Pushed` after the git action.
 
+## 2026-05-22 14:17 WITA - Clarify HivemindOS Setup Dependencies
+
+- Status: Pushed
+- Areas changed: Setup script, setup/app HivemindOS branding, shared brain copy, local setup docs, telemetry collector service description
+- Summary: Replace the remaining user-facing Agent Control Room setup/app wording with HivemindOS, make missing pnpm output include concrete install commands, and have setup try to install Tailscale when it is absent before falling back to explicit install/login instructions. Tailscale remains optional; local-only setup still proceeds when it is not connected.
+- Verification: `bash -n setup.sh`; `bash -n scripts/install-telemetry-collector.sh`; `pnpm exec eslint src/app/page.tsx src/app/api/control-room/status/route.ts src/app/api/chat/agent-runtime/route.ts src/lib/types/agent-runtime.ts` (0 errors, existing page warnings only); `pnpm exec tsc --noEmit --pretty false`; `git diff --check -- setup.sh src/app/page.tsx src/app/api/control-room/status/route.ts src/app/api/chat/agent-runtime/route.ts src/lib/types/agent-runtime.ts src/components/cells/MemoryCell.tsx docs/hermes-local-setup.md scripts/install-telemetry-collector.sh README.md CHANGELOG.md`; `rg` sweep found no remaining live setup/app `Agent Control Room` or `Control Room` wording in setup, src, README, docs, or scripts.
+- Intended commit message: `Clarify HivemindOS setup dependencies`
+
 ## 2026-05-22 02:31 WITA - Cache Bee Icons
 
 - Status: Pushed

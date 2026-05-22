@@ -323,7 +323,7 @@ SERVICE
   mkdir -p "$(dirname "$SERVICE")"
   cat > "$SERVICE" <<SERVICE
 [Unit]
-Description=Agent Control Room telemetry collector
+Description=HivemindOS telemetry collector
 
 [Service]
 Environment=AGENT_TELEMETRY_PORT=$PORT

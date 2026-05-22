@@ -12003,7 +12003,7 @@ export default function Home() {
                   <small>Folder-backed notes from Obsidian, Tailnet sync, or another markdown provider can feed unchecked tasks and Next action sections into Ideas.</small>
                 </label>
                 <label className="flex flex-col gap-1 text-xs text-[var(--muted)]">
-                  Control Room folder
+                  HivemindOS folder
                   <input
                     value={sharedVault.controlRoomPath}
                     onChange={(event) => updateSharedVault({ controlRoomPath: event.target.value })}
@@ -12023,7 +12023,7 @@ export default function Home() {
                     Check vault path
                   </Button>
                   <Button type="button" size="sm" variant="secondary" onClick={checkControlRoomStatus}>
-                    Check Control Room
+                    Check HivemindOS
                   </Button>
                 </div>
               </div>
@@ -12064,13 +12064,13 @@ export default function Home() {
                 </span>
               </li>
               <li className="rounded-md border border-[rgba(148,163,184,0.14)] bg-[rgba(10,14,21,0.55)] px-3 py-2">
-                <strong className="block text-[var(--foreground)]">Control Room</strong>
+                <strong className="block text-[var(--foreground)]">HivemindOS</strong>
                 <span className="text-[var(--muted)]">
                   {controlRoomStatus
                     ? (controlRoomStatus as { ok?: boolean; reason?: string }).ok
                       ? "Connected. Agents see the operating manual and registry."
                       : `Not connected — ${(controlRoomStatus as { reason?: string }).reason ?? "verify the folder path."}`
-                    : "Press Check Control Room to verify."}
+                    : "Press Check HivemindOS to verify."}
                 </span>
               </li>
             </ul>
@@ -13121,7 +13121,7 @@ export default function Home() {
                 {(agentCreateMachine ? agentCreateDraft.useSharedVault : roleModalAgent?.useSharedVault !== false) ? (
                   <div className={fleetClass("agentSettingsInfo")}>
                     <BrainCircuit aria-hidden="true" />
-                    <p>{sharedVault.enabled ? `Shared brain: ${sharedVault.vaultPath || "auto-detected vault"}. Memory, Kanban, notifications, and control-room context are shared from there.` : "Shared brain is off. Turn it on from the Vault view to give agents one common memory space."}</p>
+                    <p>{sharedVault.enabled ? `Shared brain: ${sharedVault.vaultPath || "auto-detected vault"}. Memory, Kanban, notifications, and HivemindOS context are shared from there.` : "Shared brain is off. Turn it on from the Vault view to give agents one common memory space."}</p>
                   </div>
                 ) : null}
                 {!agentCreateMachine && roleModalAgent ? (
