@@ -1320,6 +1320,7 @@ createServer(async (request, response) => {
       capabilities: {
         chat: runtimes.includes("hermes"),
         runtimes,
+        runtimeIntegrations: true,
         syncthing: syncthing.installed,
         defaultSyncPath,
       },

@@ -3550,6 +3550,8 @@ export default function Home() {
   const [quickAddMachineTargets, setQuickAddMachineTargets] = useState<Record<string, KanbanMachineTarget | null>>({});
   const [quickAddMachineMenuOpen, setQuickAddMachineMenuOpen] = useState<Record<string, boolean>>({});
   const [kanbanCardMachineMenuOpen, setKanbanCardMachineMenuOpen] = useState<Record<string, boolean>>({});
+  const [kanbanCardAttachmentMenuOpen, setKanbanCardAttachmentMenuOpen] = useState<Record<string, boolean>>({});
+  const [kanbanCardAttachmentTargetId, setKanbanCardAttachmentTargetId] = useState("");
   const [quickAddAttachmentError, setQuickAddAttachmentError] = useState("");
   const [quickAddAttachmentMenuOpen, setQuickAddAttachmentMenuOpen] = useState(false);
   const [kanbanBoardScrollState, setKanbanBoardScrollState] = useState({ canScrollLeft: false, canScrollRight: false });
@@ -3601,6 +3603,8 @@ export default function Home() {
   const chatImageInputRef = useRef<HTMLInputElement | null>(null);
   const quickAddFileInputRef = useRef<HTMLInputElement | null>(null);
   const quickAddImageInputRef = useRef<HTMLInputElement | null>(null);
+  const kanbanCardFileInputRef = useRef<HTMLInputElement | null>(null);
+  const kanbanCardImageInputRef = useRef<HTMLInputElement | null>(null);
   const kanbanSteerFileInputRef = useRef<HTMLInputElement | null>(null);
   const kanbanSteerImageInputRef = useRef<HTMLInputElement | null>(null);
   const customWorkerImageInputRef = useRef<HTMLInputElement | null>(null);
@@ -3821,6 +3825,7 @@ export default function Home() {
       && !kanbanSteerAttachmentMenuOpen
       && !Object.values(quickAddMachineMenuOpen).some(Boolean)
       && !Object.values(kanbanCardMachineMenuOpen).some(Boolean)
+      && !Object.values(kanbanCardAttachmentMenuOpen).some(Boolean)
     ) return;
     function closeAttachmentMenu(event: MouseEvent | TouchEvent) {
       const target = event.target;
@@ -3829,10 +3834,12 @@ export default function Home() {
       if (target instanceof Node && quickAddMachineMenuRef.current?.contains(target)) return;
       if (target instanceof Node && kanbanSteerAttachmentMenuRef.current?.contains(target)) return;
       if (target instanceof Element && target.closest("[data-kanban-machine-menu='true']")) return;
+      if (target instanceof Element && target.closest("[data-kanban-card-attachment-menu='true']")) return;
       setAttachmentMenuOpen(false);
       setQuickAddAttachmentMenuOpen(false);
       setQuickAddMachineMenuOpen({});
       setKanbanCardMachineMenuOpen({});
+      setKanbanCardAttachmentMenuOpen({});
       setKanbanSteerAttachmentMenuOpen(false);
     }
     function closeAttachmentMenuOnEscape(event: KeyboardEvent) {
@@ -3841,6 +3848,7 @@ export default function Home() {
         setQuickAddAttachmentMenuOpen(false);
         setQuickAddMachineMenuOpen({});
         setKanbanCardMachineMenuOpen({});
+        setKanbanCardAttachmentMenuOpen({});
         setKanbanSteerAttachmentMenuOpen(false);
       }
     }
@@ -3852,7 +3860,7 @@ export default function Home() {
       document.removeEventListener("touchstart", closeAttachmentMenu);
       document.removeEventListener("keydown", closeAttachmentMenuOnEscape);
     };
-  }, [attachmentMenuOpen, kanbanCardMachineMenuOpen, quickAddAttachmentMenuOpen, quickAddMachineMenuOpen, kanbanSteerAttachmentMenuOpen]);
+  }, [attachmentMenuOpen, kanbanCardAttachmentMenuOpen, kanbanCardMachineMenuOpen, quickAddAttachmentMenuOpen, quickAddMachineMenuOpen, kanbanSteerAttachmentMenuOpen]);
 
   useEffect(() => {
     if (!kanbanSteerTargetMenuOpen) return;
@@ -8396,6 +8404,53 @@ export default function Home() {
     });
   }
 
+  async function addKanbanCardFiles(taskId: string, files: FileList | File[], kind: "image" | "file") {
+    const task = kanbanBoard?.tasks.find((item) => item.id === taskId);
+    if (!task) return;
+    try {
+      const next = await readComposerFiles(files, kind);
+      setKanbanCardAttachmentMenuOpen((current) => ({ ...current, [taskId]: false }));
+      await patchKanbanTask(taskId, {
+        attachments: [...(task.attachments ?? []), ...next],
+      });
+    } catch (error) {
+      setKanbanError(error instanceof Error ? error.message : "Could not attach that file.");
+    }
+  }
+
+  function openKanbanCardFilePicker(taskId: string, kind: "image" | "file") {
+    setKanbanCardAttachmentTargetId(taskId);
+    if (kind === "image") kanbanCardImageInputRef.current?.click();
+    else kanbanCardFileInputRef.current?.click();
+  }
+
+  function handleKanbanCardFileChange(event: ChangeEvent<HTMLInputElement>) {
+    if (kanbanCardAttachmentTargetId && event.target.files?.length) {
+      void addKanbanCardFiles(kanbanCardAttachmentTargetId, event.target.files, "file");
+    }
+    event.target.value = "";
+  }
+
+  function handleKanbanCardImageChange(event: ChangeEvent<HTMLInputElement>) {
+    if (kanbanCardAttachmentTargetId && event.target.files?.length) {
+      void addKanbanCardFiles(kanbanCardAttachmentTargetId, event.target.files, "image");
+    }
+    event.target.value = "";
+  }
+
+  async function attachKanbanCardDirectory(task: KanbanTask) {
+    try {
+      const directory = await pickLinkedDirectory();
+      if (!directory) return;
+      setKanbanCardAttachmentMenuOpen((current) => ({ ...current, [task.id]: false }));
+      await patchKanbanTask(task.id, {
+        linkedDirectories: [...(task.linkedDirectories ?? []), directory],
+      });
+    } catch (error) {
+      setKanbanError(error instanceof Error ? error.message : "Could not link that directory.");
+    }
+  }
+
   async function moveKanbanTask(taskId: string, status: KanbanStatus) {
     const currentTask = kanbanBoard?.tasks.find((task) => task.id === taskId);
     const targetStatus = status === "working" && !currentTask?.assignee?.trim()
@@ -10811,6 +10866,21 @@ export default function Home() {
 
       {activeView === "kanban" ? (
       <section className={kanbanClass("workBoardPanel", "tabPanel")}>
+        <input
+          ref={kanbanCardFileInputRef}
+          type="file"
+          multiple
+          className={chatClass("chatFileInput")}
+          onChange={handleKanbanCardFileChange}
+        />
+        <input
+          ref={kanbanCardImageInputRef}
+          type="file"
+          accept="image/*"
+          multiple
+          className={chatClass("chatFileInput")}
+          onChange={handleKanbanCardImageChange}
+        />
         <div className={kanbanClass("workBoardShell")}>
           <section className={kanbanClass("workBoardHero")} aria-label="Work board summary">
             <div className={kanbanClass("workBoardHeroCopy")}>
@@ -11152,6 +11222,58 @@ export default function Home() {
                                     </button>
                                   ))}
                                 </div>
+                                ) : null}
+                              </div>
+                              <div className={kanbanClass("kanbanCardAttachmentPicker")} data-kanban-card-attachment-menu="true">
+                                <button
+                                  type="button"
+                                  className={kanbanClass("kanbanCardAttachmentButton")}
+                                  aria-label={`Add attachments to ${task.title}`}
+                                  title="Add attachments"
+                                  aria-expanded={Boolean(kanbanCardAttachmentMenuOpen[task.id])}
+                                  onClick={(event) => {
+                                    event.stopPropagation();
+                                    setKanbanCardAttachmentMenuOpen((current) => ({ ...current, [task.id]: !current[task.id] }));
+                                  }}
+                                >
+                                  <Plus aria-hidden="true" />
+                                </button>
+                                {kanbanCardAttachmentMenuOpen[task.id] ? (
+                                  <div className={kanbanClass("kanbanAttachmentMenu")} role="menu">
+                                    <button
+                                      type="button"
+                                      role="menuitem"
+                                      onClick={(event) => {
+                                        event.stopPropagation();
+                                        openKanbanCardFilePicker(task.id, "image");
+                                      }}
+                                    >
+                                      <Paperclip aria-hidden="true" />
+                                      Images
+                                    </button>
+                                    <button
+                                      type="button"
+                                      role="menuitem"
+                                      onClick={(event) => {
+                                        event.stopPropagation();
+                                        openKanbanCardFilePicker(task.id, "file");
+                                      }}
+                                    >
+                                      <FileUp aria-hidden="true" />
+                                      Files
+                                    </button>
+                                    <button
+                                      type="button"
+                                      role="menuitem"
+                                      onClick={(event) => {
+                                        event.stopPropagation();
+                                        void attachKanbanCardDirectory(task);
+                                      }}
+                                    >
+                                      <FolderOpen aria-hidden="true" />
+                                      Directory
+                                    </button>
+                                  </div>
                                 ) : null}
                               </div>
                               {taskAttachmentCount > 0 ? (

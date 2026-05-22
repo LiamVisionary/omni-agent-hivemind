@@ -3,6 +3,22 @@
 This file records user-visible changes before they are committed. New work should
 be added here first, then marked `Committed` or `Pushed` after the git action.
 
+## 2026-05-22 16:02 WITA - Add Card Attachment Button
+
+- Status: Uncommitted
+- Areas changed: Workboard card metadata controls and card attachment persistence
+- Summary: Add a visible card-level `+` attachment menu beside the machine selector so existing tasks can append images, files, or directories without opening another editor.
+- Verification: `pnpm exec tsc --noEmit --pretty false`; `pnpm exec eslint src/app/page.tsx` (0 errors, existing warnings only); `node --check scripts/agent-telemetry-collector.mjs && node scripts/test-kanban-workflow.mjs && git diff --check`; `node scripts/test-dashboard-nav.mjs && git diff --check`.
+- Intended commit message: `Add card attachment button`
+
+## 2026-05-22 15:56 WITA - Advertise Runtime Integration Collectors
+
+- Status: Uncommitted
+- Areas changed: Telemetry collector capabilities
+- Summary: Include `runtimeIntegrations` in collector health capabilities so the dashboard can identify collectors that support machine-local runtime integration checks.
+- Verification: `node --check scripts/agent-telemetry-collector.mjs`; `git diff --check -- CHANGELOG.md scripts/agent-telemetry-collector.mjs`.
+- Intended commit message: `Advertise runtime integration collectors`
+
 ## 2026-05-22 15:53 WITA - Check Hermes Updates Per Machine
 
 - Status: Pushed

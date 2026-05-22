@@ -1449,8 +1449,14 @@
   position: relative;
 }
 
+.kanbanCardAttachmentPicker {
+  position: relative;
+  display: inline-flex;
+}
+
 .kanbanMachinePicker > button,
 .kanbanMachineLabel,
+.kanbanCardAttachmentButton,
 .kanbanAttachmentCount {
   display: inline-flex;
   align-items: center;
@@ -1468,13 +1474,16 @@
 }
 
 .kanbanMachinePicker > button,
-.kanbanMachineLabel {
+.kanbanMachineLabel,
+.kanbanCardAttachmentButton {
   cursor: pointer;
 }
 
 .kanbanMachinePicker > button:hover,
 .kanbanMachineLabel:hover,
-.kanbanMachineLabel:focus-visible {
+.kanbanMachineLabel:focus-visible,
+.kanbanCardAttachmentButton:hover,
+.kanbanCardAttachmentButton:focus-visible {
   border-color: rgba(94, 234, 212, 0.34);
   color: #99f6e4;
   outline: none;
@@ -1482,13 +1491,15 @@
 
 .kanbanMachinePicker svg,
 .kanbanMachineLabel svg,
+.kanbanCardAttachmentButton svg,
 .kanbanAttachmentCount svg {
   width: 12px;
   height: 12px;
   flex: 0 0 auto;
 }
 
-.kanbanMachineMenu {
+.kanbanMachineMenu,
+.kanbanAttachmentMenu {
   display: grid;
   gap: 4px;
   min-width: 180px;
@@ -1506,14 +1517,25 @@
   top: calc(100% + 6px);
 }
 
+.kanbanAttachmentMenu {
+  position: absolute;
+  z-index: 40;
+  left: 0;
+  top: calc(100% + 6px);
+  min-width: 150px;
+}
+
 .kanbanCardMeta .kanbanMachineMenu {
   left: 0;
   right: auto;
   min-width: min(240px, calc(100vw - 48px));
 }
 
-.kanbanMachineMenu button {
+.kanbanMachineMenu button,
+.kanbanAttachmentMenu button {
   display: flex;
+  align-items: center;
+  gap: 8px;
   width: 100%;
   justify-content: flex-start;
   border: 0;
@@ -1529,7 +1551,8 @@
 }
 
 .kanbanMachineMenu button:hover,
-.kanbanMachineMenu button[aria-checked="true"] {
+.kanbanMachineMenu button[aria-checked="true"],
+.kanbanAttachmentMenu button:hover {
   background: rgba(20, 184, 166, 0.12);
   color: #ccfbf1;
 }
@@ -1543,13 +1566,17 @@
 }
 
 .kanbanCardShell:has([data-kanban-machine-menu="true"] [aria-expanded="true"]),
-.kanbanCard:has([data-kanban-machine-menu="true"] [aria-expanded="true"]) {
+.kanbanCard:has([data-kanban-machine-menu="true"] [aria-expanded="true"]),
+.kanbanCardShell:has([data-kanban-card-attachment-menu="true"] [aria-expanded="true"]),
+.kanbanCard:has([data-kanban-card-attachment-menu="true"] [aria-expanded="true"]) {
   position: relative;
   z-index: 35;
 }
 
 .workBoardPanel .kanbanColumn:has([data-kanban-machine-menu="true"] [aria-expanded="true"]),
-.workBoardPanel .kanbanCards:has([data-kanban-machine-menu="true"] [aria-expanded="true"]) {
+.workBoardPanel .kanbanCards:has([data-kanban-machine-menu="true"] [aria-expanded="true"]),
+.workBoardPanel .kanbanColumn:has([data-kanban-card-attachment-menu="true"] [aria-expanded="true"]),
+.workBoardPanel .kanbanCards:has([data-kanban-card-attachment-menu="true"] [aria-expanded="true"]) {
   overflow: visible;
   z-index: 35;
 }
