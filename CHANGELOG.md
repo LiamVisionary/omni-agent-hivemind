@@ -5,7 +5,7 @@ be added here first, then marked `Committed` or `Pushed` after the git action.
 
 ## 2026-05-22 16:34 WITA - Add Kanban Undo Reversal Flow
 
-- Status: Uncommitted
+- Status: Pushed
 - Areas changed: Kanban task menu, dispatch prompt, task metadata, Workboard card badges
 - Summary: Add an `Undo work` context-menu action only for Done and Needs You cards, requeue the card as a targeted undo assignment, inject explicit task-scoped reversal instructions into the worker prompt, and show an orange Undo badge while the reversal is ready/working.
 - Verification: `pnpm exec tsc --noEmit --pretty false`; `pnpm exec eslint src/app/page.tsx src/lib/services/kanban/local-kanban-store.ts src/lib/types/kanban.ts` (0 errors, existing page warnings only); `node scripts/test-kanban-workflow.mjs && node scripts/test-dashboard-nav.mjs && git diff --check`.
