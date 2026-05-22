@@ -1963,6 +1963,31 @@
   height: 12px;
 }
 
+.runtimeSetupBadge {
+  display: inline-flex;
+  align-items: center;
+  width: fit-content;
+  max-width: 100%;
+  border: 0;
+  border-radius: 6px;
+  background: rgba(250, 204, 21, 0.08);
+  color: #facc15;
+  cursor: pointer;
+  font: inherit;
+  font-size: 11px;
+  font-weight: 900;
+  letter-spacing: 0.04em;
+  line-height: 1.1;
+  padding: 3px 6px;
+  text-transform: uppercase;
+}
+
+.runtimeSetupBadge:hover,
+.runtimeSetupBadge[aria-pressed="true"] {
+  background: rgba(250, 204, 21, 0.14);
+  color: #fde68a;
+}
+
 .agentRuntimeCapabilityBadges small {
   border: 1px solid rgba(251, 191, 36, 0.28);
   border-radius: 999px;
@@ -1971,6 +1996,48 @@
   font-size: 10px;
   font-weight: 900;
   padding: 4px 7px;
+}
+
+.agentRuntimeSetupPanel {
+  display: grid;
+  gap: 12px;
+  border: 1px solid rgba(45, 212, 191, 0.2);
+  border-radius: 8px;
+  background: rgba(3, 7, 18, 0.48);
+  padding: 14px;
+}
+
+.agentRuntimeSetupPanel strong {
+  display: block;
+  color: var(--foreground);
+  font-size: 14px;
+  line-height: 1.3;
+}
+
+.agentRuntimeSetupPanel p {
+  margin: 4px 0 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.agentRuntimeSetupPanel ol {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding-left: 18px;
+}
+
+.agentRuntimeSetupPanel li {
+  color: rgba(203, 213, 225, 0.82);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.agentRuntimeSetupActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
 }
 
 .agentRuntimeCapabilityCard p {

@@ -40,6 +40,26 @@ export type KanbanAgentSession = {
   lastMessageCount?: number;
 };
 
+export type KanbanTaskAttachment = {
+  id: string;
+  kind: "image" | "audio" | "file";
+  name: string;
+  mimeType: string;
+  size: number;
+  dataUrl: string;
+};
+
+export type KanbanLinkedDirectory = {
+  id: string;
+  name: string;
+};
+
+export type KanbanMachineTarget = {
+  key: string;
+  name: string;
+  collectorUrl?: string;
+};
+
 export type KanbanTask = {
   id: string;
   title: string;
@@ -51,6 +71,9 @@ export type KanbanTask = {
   priority: KanbanPriority;
   workspace: "scratch" | "worktree" | `dir:${string}`;
   skills: string[];
+  attachments?: KanbanTaskAttachment[];
+  linkedDirectories?: KanbanLinkedDirectory[];
+  targetMachine?: KanbanMachineTarget | null;
   agentSession?: KanbanAgentSession | null;
   idempotencyKey?: string;
   createdAt: number;

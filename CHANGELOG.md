@@ -3,6 +3,22 @@
 This file records user-visible changes before they are committed. New work should
 be added here first, then marked `Committed` or `Pushed` after the git action.
 
+## 2026-05-22 15:47 WITA - Add Kanban Machine Targets And Unlimited Attachments
+
+- Status: Uncommitted
+- Areas changed: Kanban task model, Kanban assignment filtering, Workboard card/quick-add UI, shared composer attachment helpers
+- Summary: Persist each task's target machine, attached files/images, and linked directories. Add a subtle `Any machine`/machine selector to quick-add and cards, route Ready assignment only through agents on the chosen machine when one is set, and remove the attachment count caps so users can repeatedly add one or many images/files/directories.
+- Verification: `pnpm exec tsc --noEmit --pretty false`; `pnpm exec eslint src/app/page.tsx src/app/kanban-board.module.css src/lib/types/kanban.ts src/lib/services/kanban/local-kanban-store.ts` (0 errors, existing page warnings only; CSS module ignored by eslint config); `node scripts/test-kanban-workflow.mjs && node scripts/test-dashboard-nav.mjs`; `git diff --check`.
+- Intended commit message: `Add Kanban machine targets and attachments`
+
+## 2026-05-22 15:23 WITA - Add Runtime Setup Actions
+
+- Status: Uncommitted
+- Areas changed: Agent Settings runtime setup controls
+- Summary: Turn `Needs setup` runtime statuses into buttons that open a reusable setup panel with capability-specific setup actions, including Hermes xAI/X search and video tool setup.
+- Verification: `pnpm exec tsc --noEmit --pretty false`; `pnpm exec eslint src/app/page.tsx src/app/fleet.module.css` (0 errors, existing page warnings only; CSS module ignored by eslint config); `git diff --check -- CHANGELOG.md src/app/page.tsx src/app/fleet.module.css`.
+- Intended commit message: `Add runtime setup actions`
+
 ## 2026-05-22 15:16 WITA - Keep Runtime Update Badges In Sync
 
 - Status: Pushed

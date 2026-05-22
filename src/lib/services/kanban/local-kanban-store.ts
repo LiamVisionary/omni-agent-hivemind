@@ -30,11 +30,14 @@ type CreateTaskInput = {
   priority?: KanbanPriority;
   workspace?: KanbanTask["workspace"];
   skills?: string[];
+  attachments?: KanbanTask["attachments"];
+  linkedDirectories?: KanbanTask["linkedDirectories"];
+  targetMachine?: KanbanTask["targetMachine"];
   parents?: string[];
   idempotencyKey?: string;
 };
 
-type PatchTaskInput = Partial<Pick<KanbanTask, "title" | "body" | "result" | "assignee" | "tenant" | "status" | "priority" | "workspace" | "skills" | "agentSession">>;
+type PatchTaskInput = Partial<Pick<KanbanTask, "title" | "body" | "result" | "assignee" | "tenant" | "status" | "priority" | "workspace" | "skills" | "attachments" | "linkedDirectories" | "targetMachine" | "agentSession">>;
 
 export type KanbanStorageOptions = {
   vaultPath?: string | null;
@@ -171,6 +174,9 @@ function normalizeTask(task: KanbanTask): KanbanTask {
   return {
     ...task,
     status: normalizeKanbanStatus(task.status),
+    attachments: Array.isArray(task.attachments) ? task.attachments : [],
+    linkedDirectories: Array.isArray(task.linkedDirectories) ? task.linkedDirectories : [],
+    targetMachine: task.targetMachine?.key ? task.targetMachine : null,
   };
 }
 
@@ -227,6 +233,9 @@ export async function createTask(slug: string | null, input: CreateTaskInput, op
     priority: input.priority ?? "normal",
     workspace: input.workspace ?? "scratch",
     skills: input.skills ?? [],
+    attachments: Array.isArray(input.attachments) ? input.attachments : [],
+    linkedDirectories: Array.isArray(input.linkedDirectories) ? input.linkedDirectories : [],
+    targetMachine: input.targetMachine?.key ? input.targetMachine : null,
     idempotencyKey: cleanOptional(input.idempotencyKey),
     createdAt: now,
     updatedAt: now,
@@ -255,6 +264,9 @@ export async function patchTask(slug: string | null, taskId: string, patch: Patc
     body: patch.body ?? task.body,
     assignee: patch.assignee === "" ? undefined : patch.assignee ?? task.assignee,
     tenant: patch.tenant === "" ? undefined : patch.tenant ?? task.tenant,
+    attachments: patch.attachments ?? task.attachments,
+    linkedDirectories: patch.linkedDirectories ?? task.linkedDirectories,
+    targetMachine: patch.targetMachine === null ? null : patch.targetMachine ?? task.targetMachine,
     result: retryingWorking ? patch.result ?? "" : patch.result ?? task.result,
     agentSession: retryingWorking ? patch.agentSession ?? undefined : patch.agentSession ?? task.agentSession,
     updatedAt: Date.now(),

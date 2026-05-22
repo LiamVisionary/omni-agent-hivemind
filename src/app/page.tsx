@@ -63,7 +63,7 @@ import type { AgentProfile, AgentRuntime, BeeWorkerClass, CustomWorkerClassProfi
 import type { AgentNotification, AgentNotificationSettings, AgentNotificationSummary } from "@/lib/types/agent-notifications";
 import { createAgentProfile, DEFAULT_SHARED_VAULT, RUNTIME_CAPABILITIES, RUNTIME_DEFAULTS, RUNTIME_KINDS, RUNTIME_LABELS } from "@/lib/types/agent-runtime";
 import type { AgentPaymentProvider, AgentWalletConfig, HoneyTreasuryConfig } from "@/lib/types/agent-wallet";
-import type { KanbanBoard, KanbanStatus, KanbanTask } from "@/lib/types/kanban";
+import type { KanbanBoard, KanbanLinkedDirectory, KanbanMachineTarget, KanbanStatus, KanbanTask, KanbanTaskAttachment } from "@/lib/types/kanban";
 import { KANBAN_COLUMNS } from "@/lib/types/kanban";
 import { AGENT_PAYMENT_PROVIDER_COPY } from "@/lib/config/agent-payments";
 import { beeRoleIconPath } from "@/lib/config/bee-role-icons";
@@ -159,6 +159,20 @@ type RuntimeSessionSearchResult = {
   path?: string;
 };
 
+type RuntimeSetupAction = {
+  id: string;
+  label: string;
+  action: string;
+  input?: Record<string, unknown>;
+};
+
+type RuntimeSetupDefinition = {
+  title: string;
+  description: string;
+  steps: string[];
+  actions: RuntimeSetupAction[];
+};
+
 type VaultSyncStatus = {
   ok?: boolean;
   error?: string;
@@ -192,19 +206,9 @@ type KanbanPickupPreview = {
   assignee: string;
 };
 
-type ChatAttachment = {
-  id: string;
-  kind: "image" | "audio" | "file";
-  name: string;
-  mimeType: string;
-  size: number;
-  dataUrl: string;
-};
+type ChatAttachment = KanbanTaskAttachment;
 
-type LinkedDirectory = {
-  id: string;
-  name: string;
-};
+type LinkedDirectory = KanbanLinkedDirectory;
 
 type ChatContentPart =
   | { type: "text"; text: string }
@@ -1519,6 +1523,47 @@ function hermesUpdateDetail(status: RuntimeIntegrationStatus | null | undefined)
   return match?.[0] ?? "";
 }
 
+function runtimeSetupDefinition(runtime: AgentRuntime, key: RuntimeIntegrationKey): RuntimeSetupDefinition {
+  if (runtime === "hermes") {
+    if (key === "xSearch") {
+      return {
+        title: "Set up X search",
+        description: "Connect xAI/Grok credentials, then enable the Hermes X search tool for this runtime.",
+        steps: ["Start xAI login or make sure XAI_API_KEY is configured.", "Enable the Hermes x_search tool.", "Refresh runtime integrations."],
+        actions: [
+          { id: "xai-login", label: "Start xAI login", action: "xai-login" },
+          { id: "enable-x-search", label: "Enable X search", action: "enable-tool", input: { tool: "x_search" } },
+        ],
+      };
+    }
+    if (key === "videoGeneration") {
+      return {
+        title: "Set up AI video",
+        description: "Enable the Hermes video tool after Grok/xAI credentials are available.",
+        steps: ["Start xAI login or configure the provider credentials.", "Enable the Hermes video_gen tool.", "Refresh runtime integrations."],
+        actions: [
+          { id: "xai-login", label: "Start xAI login", action: "xai-login" },
+          { id: "enable-video", label: "Enable video", action: "enable-tool", input: { tool: "video_gen" } },
+        ],
+      };
+    }
+    if (key === "codexRuntime") {
+      return {
+        title: "Set up Codex runtime",
+        description: "Point Hermes at a Codex/OpenAI runtime path before routing coding work through it.",
+        steps: ["Open Hermes configuration.", "Add the Codex/OpenAI runtime provider path.", "Refresh runtime integrations."],
+        actions: [],
+      };
+    }
+  }
+  return {
+    title: "Set up runtime capability",
+    description: "This runtime reports the capability, but it needs provider credentials, a local tool toggle, or a readable data path before it can be used.",
+    steps: ["Complete the runtime-specific setup outside this panel.", "Return here and refresh runtime integrations."],
+    actions: [],
+  };
+}
+
 function readStoredValue(key: string, suffix: string): string | null {
   if (typeof window === "undefined") return null;
   const current = window.localStorage.getItem(key);
@@ -2242,10 +2287,19 @@ function kanbanEventLabel(kind: string) {
 }
 
 function kanbanTaskDispatchPrompt(task: KanbanTask, assignment: ReturnType<typeof chooseBeeAssignment>) {
+  const attachmentDetails = [
+    task.linkedDirectories?.length ? ["Linked directories:", ...task.linkedDirectories.map((directory) => `- ${directory.name}`)].join("\n") : "",
+    task.attachments?.length ? [
+      "Attached files/images:",
+      ...task.attachments.map((attachment) => `- ${attachment.kind}: ${attachment.name} (${attachment.mimeType || "unknown"}, ${attachmentSizeLabel(attachment.size)})`),
+    ].join("\n") : "",
+  ].filter(Boolean).join("\n\n");
   return [
     "You are receiving an automated Kanban assignment from the Queen Bee orchestrator.",
     `Task: ${task.title}`,
     task.body ? `Task details:\n${task.body}` : "Task details: none provided.",
+    task.targetMachine?.name ? `Target machine: ${task.targetMachine.name}` : "Target machine: Any machine.",
+    attachmentDetails,
     task.result ? `Existing notes:\n${task.result}` : "",
     `Suggested worker class: ${beeWorkerClassLabel(assignment.workerClass)}.`,
     "Treat existing notes as authoritative retry context when they say an old expectation was superseded, removed, or already verified. Do not undo a verified dashboard change just to satisfy a stale task title.",
@@ -2594,6 +2648,31 @@ function readAttachmentFile(file: File, kind: "image" | "file"): Promise<ChatAtt
     reader.onerror = () => reject(new Error(`Could not read ${file.name}`));
     reader.readAsDataURL(file);
   });
+}
+
+async function readComposerFiles(files: FileList | File[], kind: "image" | "file") {
+  const incoming = Array.from(files);
+  if (incoming.length === 0) throw new Error("Choose at least one file.");
+  const maxAttachmentBytes = 8_000_000;
+  const oversized = incoming.find((file) => file.size > maxAttachmentBytes);
+  if (oversized) throw new Error(`${oversized.name} is too large. Keep attachments under 8 MB.`);
+  return Promise.all(incoming.map((file) => readAttachmentFile(file, kind)));
+}
+
+async function pickLinkedDirectory(): Promise<LinkedDirectory | null> {
+  type DirectoryPickerWindow = Window & typeof globalThis & {
+    showDirectoryPicker?: () => Promise<{ name?: string }>;
+  };
+  const picker = (window as DirectoryPickerWindow).showDirectoryPicker;
+  if (!picker) throw new Error("Directory picker is not available in this browser.");
+  try {
+    const handle = await picker();
+    const name = handle.name?.trim();
+    return name ? { id: `${name}-${crypto.randomUUID()}`, name } : null;
+  } catch (error) {
+    if (error instanceof DOMException && error.name === "AbortError") return null;
+    throw error;
+  }
 }
 
 function attachmentSizeLabel(size: number) {
@@ -3421,6 +3500,7 @@ export default function Home() {
   const [runtimeIntegrationBusy, setRuntimeIntegrationBusy] = useState("");
   const [runtimeIntegrationMessage, setRuntimeIntegrationMessage] = useState("");
   const [runtimeUpdateConfirmKey, setRuntimeUpdateConfirmKey] = useState<RuntimeIntegrationKey | "">("");
+  const [runtimeSetupKey, setRuntimeSetupKey] = useState<RuntimeIntegrationKey | "">("");
   const [runtimeSessionQuery, setRuntimeSessionQuery] = useState("");
   const [runtimeSessionResults, setRuntimeSessionResults] = useState<RuntimeSessionSearchResult[]>([]);
   const [runtimeBackgroundPrompt, setRuntimeBackgroundPrompt] = useState("");
@@ -3467,6 +3547,8 @@ export default function Home() {
   const [quickAddDrafts, setQuickAddDrafts] = useState<Record<string, string>>({});
   const [quickAddAttachments, setQuickAddAttachments] = useState<Record<string, ChatAttachment[]>>({});
   const [quickAddDirectories, setQuickAddDirectories] = useState<Record<string, LinkedDirectory[]>>({});
+  const [quickAddMachineTargets, setQuickAddMachineTargets] = useState<Record<string, KanbanMachineTarget | null>>({});
+  const [quickAddMachineMenuOpen, setQuickAddMachineMenuOpen] = useState<Record<string, boolean>>({});
   const [quickAddAttachmentError, setQuickAddAttachmentError] = useState("");
   const [quickAddAttachmentMenuOpen, setQuickAddAttachmentMenuOpen] = useState(false);
   const [kanbanBoardScrollState, setKanbanBoardScrollState] = useState({ canScrollLeft: false, canScrollRight: false });
@@ -3523,6 +3605,7 @@ export default function Home() {
   const customWorkerImageInputRef = useRef<HTMLInputElement | null>(null);
   const kanbanBoardScrollRef = useRef<HTMLDivElement | null>(null);
   const quickAddAttachmentMenuRef = useRef<HTMLDivElement | null>(null);
+  const quickAddMachineMenuRef = useRef<HTMLDivElement | null>(null);
   const kanbanSteerAttachmentMenuRef = useRef<HTMLDivElement | null>(null);
   const kanbanSteerTargetMenuRef = useRef<HTMLDivElement | null>(null);
   const attachmentMenuRef = useRef<HTMLDivElement | null>(null);
@@ -3731,20 +3814,28 @@ export default function Home() {
   }, [notificationCursor, notifications.length]);
 
   useEffect(() => {
-    if (!attachmentMenuOpen && !quickAddAttachmentMenuOpen && !kanbanSteerAttachmentMenuOpen) return;
+    if (
+      !attachmentMenuOpen
+      && !quickAddAttachmentMenuOpen
+      && !kanbanSteerAttachmentMenuOpen
+      && !Object.values(quickAddMachineMenuOpen).some(Boolean)
+    ) return;
     function closeAttachmentMenu(event: MouseEvent | TouchEvent) {
       const target = event.target;
       if (target instanceof Node && attachmentMenuRef.current?.contains(target)) return;
       if (target instanceof Node && quickAddAttachmentMenuRef.current?.contains(target)) return;
+      if (target instanceof Node && quickAddMachineMenuRef.current?.contains(target)) return;
       if (target instanceof Node && kanbanSteerAttachmentMenuRef.current?.contains(target)) return;
       setAttachmentMenuOpen(false);
       setQuickAddAttachmentMenuOpen(false);
+      setQuickAddMachineMenuOpen({});
       setKanbanSteerAttachmentMenuOpen(false);
     }
     function closeAttachmentMenuOnEscape(event: KeyboardEvent) {
       if (event.key === "Escape") {
         setAttachmentMenuOpen(false);
         setQuickAddAttachmentMenuOpen(false);
+        setQuickAddMachineMenuOpen({});
         setKanbanSteerAttachmentMenuOpen(false);
       }
     }
@@ -3756,7 +3847,7 @@ export default function Home() {
       document.removeEventListener("touchstart", closeAttachmentMenu);
       document.removeEventListener("keydown", closeAttachmentMenuOnEscape);
     };
-  }, [attachmentMenuOpen, quickAddAttachmentMenuOpen, kanbanSteerAttachmentMenuOpen]);
+  }, [attachmentMenuOpen, quickAddAttachmentMenuOpen, quickAddMachineMenuOpen, kanbanSteerAttachmentMenuOpen]);
 
   useEffect(() => {
     if (!kanbanSteerTargetMenuOpen) return;
@@ -5283,6 +5374,25 @@ export default function Home() {
 
     return groups;
   }, [displayAgents, discoveredMachines, tailscaleDevices]);
+
+  const kanbanMachineTargets = useMemo<KanbanMachineTarget[]>(() => machineGroups
+    .filter((machine) => machine.key !== "unassigned" && machine.collector === "ready" && machine.agents.length > 0)
+    .map((machine) => ({
+      key: machine.key,
+      name: machine.self ? "This Mac" : machine.name,
+      collectorUrl: machine.collectorUrl,
+    })), [machineGroups]);
+
+  const agentsForKanbanTask = useCallback((task: KanbanTask) => {
+    const target = task.targetMachine;
+    if (!target?.key) return displayAgents;
+    const targetKey = collectorKey(target.collectorUrl) || target.key;
+    return displayAgents.filter((agent) => {
+      const agentKey = collectorKey(agent.telemetryUrl);
+      if (agentKey && agentKey === targetKey) return true;
+      return Boolean(agent.machineName && agent.machineName === target.name);
+    });
+  }, [displayAgents]);
 
   const visibleAgentCount = useMemo(
     () => machineGroups.reduce((total, machine) => total + machine.agents.length, 0),
@@ -8191,6 +8301,7 @@ export default function Home() {
     const title = quickAddDrafts[status]?.trim();
     const attachments = quickAddAttachments[status] ?? [];
     const directories = quickAddDirectories[status] ?? [];
+    const targetMachine = quickAddMachineTargets[status] ?? null;
     if (!title && attachments.length === 0 && directories.length === 0) return;
     const body = [
       directories.length ? ["Linked directories:", ...directories.map((directory) => `- ${directory.name}`)].join("\n") : "",
@@ -8210,6 +8321,9 @@ export default function Home() {
         tenant: "",
         priority: "normal",
         status,
+        attachments,
+        linkedDirectories: directories,
+        targetMachine,
       }),
     });
     const data = await response.json().catch(() => null) as KanbanResponse | null;
@@ -8220,6 +8334,8 @@ export default function Home() {
     setQuickAddDrafts((current) => ({ ...current, [status]: "" }));
     setQuickAddAttachments((current) => ({ ...current, [status]: [] }));
     setQuickAddDirectories((current) => ({ ...current, [status]: [] }));
+    setQuickAddMachineTargets((current) => ({ ...current, [status]: null }));
+    setQuickAddMachineMenuOpen((current) => ({ ...current, [status]: false }));
     setQuickAddAttachmentError("");
     setQuickAddStatus("");
     if (data.board) {
@@ -8266,6 +8382,13 @@ export default function Home() {
       return;
     }
     await refreshKanbanOnce().catch((error) => setKanbanError(error instanceof Error ? error.message : "Kanban refresh failed."));
+  }
+
+  async function updateKanbanTaskMachine(task: KanbanTask, targetMachine: KanbanMachineTarget | null) {
+    await patchKanbanTask(task.id, {
+      targetMachine,
+      ...(task.status === "ready" ? { assignee: "", tenant: "", agentSession: null } : {}),
+    });
   }
 
   async function moveKanbanTask(taskId: string, status: KanbanStatus) {
@@ -8603,23 +8726,33 @@ export default function Home() {
   /* eslint-enable react-hooks/refs */
 
   async function orchestrateReadyKanbanTask(task: KanbanTask) {
+    const targetAgents = agentsForKanbanTask(task);
     logClientTelemetry("kanban.ready.orchestrate.start", {
       taskId: task.id,
       status: task.status,
       displayAgentCount: displayAgents.length,
+      eligibleAgentCount: targetAgents.length,
+      targetMachine: task.targetMachine?.name ?? "Any machine",
     });
-    if (displayAgents.length === 0) {
+    if (targetAgents.length === 0) {
       logClientTelemetry("kanban.ready.orchestrate.no_agents", { taskId: task.id });
+      if (task.targetMachine?.name) {
+        await patchKanbanTask(task.id, {
+          status: "needs-human",
+          agentSession: null,
+          result: `No reachable agent is available on ${task.targetMachine.name}. Choose another machine or set the task back to Any machine, then retry.`,
+        });
+      }
       await refreshKanbanOnce().catch((error) => setKanbanError(error instanceof Error ? error.message : "Kanban refresh failed."));
       return;
     }
 
     const excludedAgentIds = new Set<string>();
 
-    while (excludedAgentIds.size < displayAgents.length) {
+    while (excludedAgentIds.size < targetAgents.length) {
       // eslint-disable-next-line react-hooks/purity
       const now = Date.now();
-      const eligibleAgents = displayAgents.filter((agent) => {
+      const eligibleAgents = targetAgents.filter((agent) => {
         const cooldownUntil = kanbanDispatchCooldownRef.current.get(agent.id) ?? 0;
         return !excludedAgentIds.has(agent.id)
           && cooldownUntil <= now;
@@ -8750,7 +8883,9 @@ export default function Home() {
     await patchKanbanTask(task.id, {
       status: "needs-human",
       agentSession: null,
-      result: "Queen Bee could not find a reachable eligible agent for this task.",
+      result: task.targetMachine?.name
+        ? `Queen Bee could not find a reachable eligible agent on ${task.targetMachine.name} for this task.`
+        : "Queen Bee could not find a reachable eligible agent for this task.",
     });
     logClientTelemetry("kanban.ready.orchestrate.exhausted", {
       taskId: task.id,
@@ -8761,7 +8896,12 @@ export default function Home() {
       delete next[task.id];
       return next;
     });
-    await addKanbanSystemComment(task.id, "Queen Bee could not find a reachable eligible agent for this task.");
+    await addKanbanSystemComment(
+      task.id,
+      task.targetMachine?.name
+        ? `Queen Bee could not find a reachable eligible agent on ${task.targetMachine.name} for this task.`
+        : "Queen Bee could not find a reachable eligible agent for this task.",
+    );
     await refreshKanbanOnce().catch((error) => setKanbanError(error instanceof Error ? error.message : "Kanban refresh failed."));
   }
 
@@ -9055,6 +9195,14 @@ export default function Home() {
         await patchKanbanTask(task.id, { status: "needs-human", agentSession: null, result: `Delegation failed for ${agent.name}: ${message}` });
       }
       await addKanbanSystemComment(task.id, `Delegation failed for ${agent.name}: ${message}`);
+      if (task.targetMachine?.key) {
+        await patchKanbanTask(task.id, {
+          status: "needs-human",
+          agentSession: null,
+          result: `Delegation failed for ${agent.name} on ${task.targetMachine.name}: ${message}`,
+        });
+        return { ok: true, message };
+      }
       return { ok: false, message };
     } finally {
       if (kanbanRuntimeAbortRef.current.get(task.id) === controller) {
@@ -9799,20 +9947,9 @@ export default function Home() {
   }
 
   async function addChatFiles(files: FileList | File[], kind: "image" | "file") {
-    const incoming = Array.from(files);
-    if (incoming.length === 0) {
-      setAttachmentError("Choose at least one file.");
-      return;
-    }
-    const maxAttachmentBytes = 8_000_000;
-    const oversized = incoming.find((file) => file.size > maxAttachmentBytes);
-    if (oversized) {
-      setAttachmentError(`${oversized.name} is too large. Keep attachments under 8 MB.`);
-      return;
-    }
     try {
-      const next = await Promise.all(incoming.map((file) => readAttachmentFile(file, kind)));
-      setChatAttachments((current) => [...current, ...next].slice(0, 6));
+      const next = await readComposerFiles(files, kind);
+      setChatAttachments((current) => [...current, ...next]);
       setAttachmentError("");
       setAttachmentMenuOpen(false);
     } catch (error) {
@@ -9835,22 +9972,11 @@ export default function Home() {
   }
 
   async function addQuickAddFiles(status: KanbanStatus, files: FileList | File[], kind: "image" | "file") {
-    const incoming = Array.from(files);
-    if (incoming.length === 0) {
-      setQuickAddAttachmentError("Choose at least one file.");
-      return;
-    }
-    const maxAttachmentBytes = 8_000_000;
-    const oversized = incoming.find((file) => file.size > maxAttachmentBytes);
-    if (oversized) {
-      setQuickAddAttachmentError(`${oversized.name} is too large. Keep attachments under 8 MB.`);
-      return;
-    }
     try {
-      const next = await Promise.all(incoming.map((file) => readAttachmentFile(file, kind)));
+      const next = await readComposerFiles(files, kind);
       setQuickAddAttachments((current) => ({
         ...current,
-        [status]: [...(current[status] ?? []), ...next].slice(0, 6),
+        [status]: [...(current[status] ?? []), ...next],
       }));
       setQuickAddAttachmentError("");
       setQuickAddAttachmentMenuOpen(false);
@@ -9874,26 +10000,16 @@ export default function Home() {
   }
 
   async function attachQuickAddDirectory(status: KanbanStatus) {
-    type DirectoryPickerWindow = Window & typeof globalThis & {
-      showDirectoryPicker?: () => Promise<{ name?: string }>;
-    };
-    const picker = (window as DirectoryPickerWindow).showDirectoryPicker;
-    if (!picker) {
-      setQuickAddAttachmentError("Directory picker is not available in this browser.");
-      return;
-    }
     try {
-      const handle = await picker();
-      const name = handle.name?.trim();
-      if (!name) return;
+      const directory = await pickLinkedDirectory();
+      if (!directory) return;
       setQuickAddDirectories((current) => ({
         ...current,
-        [status]: [...(current[status] ?? []), { id: `${name}-${crypto.randomUUID()}`, name }].slice(0, 4),
+        [status]: [...(current[status] ?? []), directory],
       }));
       setQuickAddAttachmentError("");
       setQuickAddAttachmentMenuOpen(false);
     } catch (error) {
-      if (error instanceof DOMException && error.name === "AbortError") return;
       setQuickAddAttachmentError(error instanceof Error ? error.message : "Could not link that directory.");
     }
   }
@@ -9903,20 +10019,9 @@ export default function Home() {
   }
 
   async function addKanbanSteerFiles(files: FileList | File[], kind: "image" | "file") {
-    const incoming = Array.from(files);
-    if (incoming.length === 0) {
-      setKanbanSteerAttachmentError("Choose at least one file.");
-      return;
-    }
-    const maxAttachmentBytes = 8_000_000;
-    const oversized = incoming.find((file) => file.size > maxAttachmentBytes);
-    if (oversized) {
-      setKanbanSteerAttachmentError(`${oversized.name} is too large. Keep attachments under 8 MB.`);
-      return;
-    }
     try {
-      const next = await Promise.all(incoming.map((file) => readAttachmentFile(file, kind)));
-      setKanbanSteerAttachments((current) => [...current, ...next].slice(0, 6));
+      const next = await readComposerFiles(files, kind);
+      setKanbanSteerAttachments((current) => [...current, ...next]);
       setKanbanSteerAttachmentError("");
       setKanbanSteerAttachmentMenuOpen(false);
     } catch (error) {
@@ -9939,23 +10044,13 @@ export default function Home() {
   }
 
   async function attachKanbanSteerDirectory() {
-    type DirectoryPickerWindow = Window & typeof globalThis & {
-      showDirectoryPicker?: () => Promise<{ name?: string }>;
-    };
-    const picker = (window as DirectoryPickerWindow).showDirectoryPicker;
-    if (!picker) {
-      setKanbanSteerAttachmentError("Directory picker is not available in this browser.");
-      return;
-    }
     try {
-      const handle = await picker();
-      const name = handle.name?.trim();
-      if (!name) return;
-      setKanbanSteerDirectories((current) => [...current, { id: `${name}-${crypto.randomUUID()}`, name }].slice(0, 4));
+      const directory = await pickLinkedDirectory();
+      if (!directory) return;
+      setKanbanSteerDirectories((current) => [...current, directory]);
       setKanbanSteerAttachmentError("");
       setKanbanSteerAttachmentMenuOpen(false);
     } catch (error) {
-      if (error instanceof DOMException && error.name === "AbortError") return;
       setKanbanSteerAttachmentError(error instanceof Error ? error.message : "Could not link that directory.");
     }
   }
@@ -10889,6 +10984,48 @@ export default function Home() {
                       ))
                     ) : quickAddStatus === column.id ? (
                       <form className={kanbanClass("kanbanInlineAdd")} onSubmit={(event) => createKanbanTask(event, column.id)}>
+                        <div className={kanbanClass("kanbanInlineAddMeta")} ref={quickAddMachineMenuRef}>
+                          <span>Machine</span>
+                          <div className={kanbanClass("kanbanMachinePicker")}>
+                            <button
+                              type="button"
+                              aria-expanded={Boolean(quickAddMachineMenuOpen[column.id])}
+                              onClick={() => setQuickAddMachineMenuOpen((current) => ({ ...current, [column.id]: !current[column.id] }))}
+                            >
+                              {quickAddMachineTargets[column.id]?.name ?? "Any machine"}
+                              <ChevronDown aria-hidden="true" />
+                            </button>
+                            {quickAddMachineMenuOpen[column.id] ? (
+                              <div className={kanbanClass("kanbanMachineMenu")} role="menu">
+                                <button
+                                  type="button"
+                                  role="menuitemradio"
+                                  aria-checked={!quickAddMachineTargets[column.id]}
+                                  onClick={() => {
+                                    setQuickAddMachineTargets((current) => ({ ...current, [column.id]: null }));
+                                    setQuickAddMachineMenuOpen((current) => ({ ...current, [column.id]: false }));
+                                  }}
+                                >
+                                  Any machine
+                                </button>
+                                {kanbanMachineTargets.map((machine) => (
+                                  <button
+                                    type="button"
+                                    role="menuitemradio"
+                                    aria-checked={quickAddMachineTargets[column.id]?.key === machine.key}
+                                    key={machine.key}
+                                    onClick={() => {
+                                      setQuickAddMachineTargets((current) => ({ ...current, [column.id]: machine }));
+                                      setQuickAddMachineMenuOpen((current) => ({ ...current, [column.id]: false }));
+                                    }}
+                                  >
+                                    {machine.name}
+                                  </button>
+                                ))}
+                              </div>
+                            ) : null}
+                          </div>
+                        </div>
                         <ComposerField
                           compact
                           value={quickAddDrafts[column.id] ?? ""}
@@ -10916,6 +11053,7 @@ export default function Home() {
                             setQuickAddStatus("");
                             setQuickAddAttachmentError("");
                             setQuickAddAttachmentMenuOpen(false);
+                            setQuickAddMachineMenuOpen((current) => ({ ...current, [column.id]: false }));
                           }}
                         />
                       </form>
@@ -10932,6 +11070,7 @@ export default function Home() {
                       const messageExpanded = Boolean(expandedKanbanCards[task.id]);
                       const terminalMessage = isKanbanTerminalMessage(message);
                       const pickupPreview = kanbanPickupPreviewByTask[task.id];
+                      const taskAttachmentCount = (task.attachments?.length ?? 0) + (task.linkedDirectories?.length ?? 0);
                       return (
                         <article className={kanbanClass("kanbanCardShell")} key={task.id}>
                           <div
@@ -10964,6 +11103,51 @@ export default function Home() {
                               ) : null}
                             </div>
                             <strong className={kanbanClass("kanbanCardTitle")}>{task.title}</strong>
+                            <div className={kanbanClass("kanbanCardMeta")}>
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <button
+                                    type="button"
+                                    className={kanbanClass("kanbanMachineLabel")}
+                                    onClick={(event) => event.stopPropagation()}
+                                  >
+                                    {task.targetMachine?.name ?? "Any machine"}
+                                    <ChevronDown aria-hidden="true" />
+                                  </button>
+                                </TooltipTrigger>
+                                <TooltipContent side="bottom" className={kanbanClass("kanbanMachineTooltip")}>
+                                  <button
+                                    type="button"
+                                    aria-pressed={!task.targetMachine?.key}
+                                    onClick={(event) => {
+                                      event.stopPropagation();
+                                      void updateKanbanTaskMachine(task, null);
+                                    }}
+                                  >
+                                    Any machine
+                                  </button>
+                                  {kanbanMachineTargets.map((machine) => (
+                                    <button
+                                      type="button"
+                                      aria-pressed={task.targetMachine?.key === machine.key}
+                                      key={machine.key}
+                                      onClick={(event) => {
+                                        event.stopPropagation();
+                                        void updateKanbanTaskMachine(task, machine);
+                                      }}
+                                    >
+                                      {machine.name}
+                                    </button>
+                                  ))}
+                                </TooltipContent>
+                              </Tooltip>
+                              {taskAttachmentCount > 0 ? (
+                                <span className={kanbanClass("kanbanAttachmentCount")}>
+                                  <Paperclip aria-hidden="true" />
+                                  {taskAttachmentCount}
+                                </span>
+                              ) : null}
+                            </div>
                             <div className={kanbanClass("kanbanMessageRow")}>
                               {terminalMessage ? (
                                 <pre className={kanbanClass("kanbanCardTerminal")}><code>{message}</code></pre>
@@ -13753,6 +13937,7 @@ export default function Home() {
                     const supported = item?.supported ?? Boolean(runtimeCapabilities(roleModalAgent)[key]);
                     const enabled = item?.enabled ?? supported;
                     const needsHermesUpdate = roleModalAgent.runtime === "hermes" && supported && hermesUpdateRequired && HERMES_UPDATE_INTEGRATION_KEYS.has(key);
+                    const needsSetup = supported && !enabled && !needsHermesUpdate;
                     const statusLabel = needsHermesUpdate
                       ? "Needs Hermes update"
                       : supported
@@ -13806,6 +13991,15 @@ export default function Home() {
                                   </button>
                                 )}
                               </span>
+                            ) : needsSetup ? (
+                              <button
+                                type="button"
+                                className={fleetClass("runtimeSetupBadge")}
+                                aria-pressed={runtimeSetupKey === key}
+                                onClick={() => setRuntimeSetupKey((current) => current === key ? "" : key)}
+                              >
+                                {statusLabel}
+                              </button>
                             ) : (
                               <span>{statusLabel}</span>
                             )}
@@ -13816,6 +14010,43 @@ export default function Home() {
                     );
                   })}
                 </div>
+
+                {runtimeSetupKey ? (() => {
+                  const setup = runtimeSetupDefinition(roleModalAgent.runtime, runtimeSetupKey);
+                  return (
+                    <section className={fleetClass("agentRuntimeSetupPanel")}>
+                      <div>
+                        <strong>{setup.title}</strong>
+                        <p>{setup.description}</p>
+                      </div>
+                      <ol>
+                        {setup.steps.map((step) => <li key={step}>{step}</li>)}
+                      </ol>
+                      <div className={fleetClass("agentRuntimeSetupActions")}>
+                        {setup.actions.map((action) => (
+                          <Button
+                            key={action.id}
+                            type="button"
+                            variant={action.id === setup.actions[0]?.id ? "default" : "secondary"}
+                            disabled={Boolean(runtimeIntegrationBusy)}
+                            onClick={() => void runRuntimeIntegrationAction(action.action, action.input ?? {})}
+                          >
+                            {runtimeIntegrationBusy === action.action ? <LoaderCircle aria-hidden="true" className="animate-spin" /> : <PlugZap aria-hidden="true" />}
+                            {action.label}
+                          </Button>
+                        ))}
+                        <Button type="button" variant="secondary" onClick={() => void refreshRuntimeIntegrations(roleModalAgent)} disabled={runtimeIntegrationBusy === "status"}>
+                          {runtimeIntegrationBusy === "status" ? <LoaderCircle aria-hidden="true" className="animate-spin" /> : <RefreshCcw aria-hidden="true" />}
+                          Refresh
+                        </Button>
+                        <Button type="button" variant="ghost" onClick={() => setRuntimeSetupKey("")}>
+                          <X aria-hidden="true" />
+                          Close
+                        </Button>
+                      </div>
+                    </section>
+                  );
+                })() : null}
 
                 <div className={fleetClass("agentRuntimeToolWorkbench")}>
                   <section>
