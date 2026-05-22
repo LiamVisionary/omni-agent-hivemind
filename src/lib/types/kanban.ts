@@ -78,6 +78,8 @@ export type KanbanTask = {
   idempotencyKey?: string;
   reviewedAt?: number;
   reviewedBy?: string;
+  undoRequestedAt?: number;
+  undoRequestedBy?: string;
   createdAt: number;
   updatedAt: number;
   completedAt?: number;

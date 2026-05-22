@@ -1843,6 +1843,26 @@
   color: #bbf7d0;
 }
 
+.kanbanUndoBadge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-height: 24px;
+  border: 1px solid rgba(251, 146, 60, 0.34);
+  border-radius: 999px;
+  background: rgba(251, 146, 60, 0.1);
+  color: #fed7aa;
+  font-size: 10px;
+  font-weight: 900;
+  line-height: 1;
+  padding: 5px 8px;
+}
+
+.kanbanUndoBadge svg {
+  width: 12px;
+  height: 12px;
+}
+
 .kanbanReviewBadge {
   display: inline-flex;
   align-items: center;

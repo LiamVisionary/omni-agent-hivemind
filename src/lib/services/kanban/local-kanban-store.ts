@@ -37,8 +37,9 @@ type CreateTaskInput = {
   idempotencyKey?: string;
 };
 
-type PatchTaskInput = Partial<Pick<KanbanTask, "title" | "body" | "result" | "assignee" | "tenant" | "status" | "priority" | "workspace" | "skills" | "attachments" | "linkedDirectories" | "targetMachine" | "agentSession" | "reviewedBy">> & {
+type PatchTaskInput = Partial<Pick<KanbanTask, "title" | "body" | "result" | "assignee" | "tenant" | "status" | "priority" | "workspace" | "skills" | "attachments" | "linkedDirectories" | "targetMachine" | "agentSession" | "reviewedBy" | "undoRequestedBy">> & {
   reviewedAt?: number | null;
+  undoRequestedAt?: number | null;
 };
 
 export type KanbanStorageOptions = {
@@ -273,6 +274,8 @@ export async function patchTask(slug: string | null, taskId: string, patch: Patc
     agentSession: retryingWorking ? patch.agentSession ?? undefined : patch.agentSession ?? task.agentSession,
     reviewedAt: patch.reviewedAt === null ? undefined : patch.reviewedAt ?? task.reviewedAt,
     reviewedBy: patch.reviewedBy === "" ? undefined : patch.reviewedBy ?? task.reviewedBy,
+    undoRequestedAt: patch.undoRequestedAt === null ? undefined : patch.undoRequestedAt ?? task.undoRequestedAt,
+    undoRequestedBy: patch.undoRequestedBy === "" ? undefined : patch.undoRequestedBy ?? task.undoRequestedBy,
     updatedAt: Date.now(),
     completedAt: nextStatus ? (nextStatus === "done" ? Date.now() : undefined) : task.completedAt,
   };

@@ -45,6 +45,7 @@ import {
   RefreshCcw,
   Repeat2,
   Puzzle,
+  RotateCcw,
   Send,
   Settings2,
   ShieldCheck,
@@ -211,6 +212,11 @@ type WorkspaceGitSnapshot = {
   head: string;
   dirty: boolean;
   statusLines: string[];
+};
+
+type KanbanTaskPatch = Omit<Partial<KanbanTask>, "reviewedAt" | "undoRequestedAt"> & {
+  reviewedAt?: number | null;
+  undoRequestedAt?: number | null;
 };
 
 type ChatAttachment = KanbanTaskAttachment;
@@ -2302,9 +2308,18 @@ function kanbanTaskDispatchPrompt(task: KanbanTask, assignment: ReturnType<typeo
       ...task.attachments.map((attachment) => `- ${attachment.kind}: ${attachment.name} (${attachment.mimeType || "unknown"}, ${attachmentSizeLabel(attachment.size)})`),
     ].join("\n") : "",
   ].filter(Boolean).join("\n\n");
+  const undoDetails = task.undoRequestedAt
+    ? [
+      "Undo request:",
+      "Reverse only the work performed for this Kanban task. Do not roll back unrelated user or agent changes.",
+      "Inspect the current workspace and the task notes, then make the smallest targeted reversal you can.",
+      "If you cannot identify the task-specific changes safely, stop and explain exactly what human input is needed.",
+    ].join("\n")
+    : "";
   return [
     "You are receiving an automated Kanban assignment from the Queen Bee orchestrator.",
     `Task: ${task.title}`,
+    undoDetails,
     task.body ? `Task details:\n${task.body}` : "Task details: none provided.",
     task.targetMachine?.name ? `Target machine: ${task.targetMachine.name}` : "Target machine: Any machine.",
     attachmentDetails,
@@ -8398,7 +8413,7 @@ export default function Home() {
     setKanbanBoardSlug(data.board.meta.slug);
   }
 
-  async function patchKanbanTask(taskId: string, patch: Partial<KanbanTask>) {
+  async function patchKanbanTask(taskId: string, patch: KanbanTaskPatch) {
     const response = await fetch(`/api/kanban?board=${encodeURIComponent(kanbanBoardSlug)}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
@@ -8424,6 +8439,27 @@ export default function Home() {
       reviewedAt: Date.now(),
       reviewedBy: "dashboard",
     });
+  }
+
+  async function requestKanbanTaskUndo(task: KanbanTask) {
+    const now = Date.now();
+    const priorResult = task.result?.trim();
+    await patchKanbanTask(task.id, {
+      status: "ready",
+      assignee: "",
+      tenant: "",
+      agentSession: null,
+      reviewedAt: null,
+      reviewedBy: "",
+      undoRequestedAt: now,
+      undoRequestedBy: "dashboard",
+      result: [
+        `Undo requested ${new Date(now).toLocaleString()}.`,
+        "Only reverse work performed for this task; preserve unrelated changes.",
+        priorResult ? `Previous task result:\n${priorResult}` : "",
+      ].filter(Boolean).join("\n\n"),
+    });
+    await addKanbanSystemComment(task.id, "Undo requested from the task menu; Queen Bee will assign a targeted reversal.");
   }
 
   async function readWorkspaceGitSnapshot(): Promise<WorkspaceGitSnapshot | null> {
@@ -8787,6 +8823,12 @@ export default function Home() {
         onClick: () => undefined,
         children: moveTargets,
       },
+      ...(task.status === "done" || task.status === "needs-human" ? [{
+        key: "undo",
+        label: "Undo work",
+        icon: <RotateCcw aria-hidden="true" />,
+        onClick: () => void requestKanbanTaskUndo(task),
+      } satisfies CellMenuItem] : []),
       {
         key: "assign",
         label: "Assign",
@@ -11248,6 +11290,7 @@ export default function Home() {
                       const terminalMessage = isKanbanTerminalMessage(message);
                       const pickupPreview = kanbanPickupPreviewByTask[task.id];
                       const taskAttachmentCount = (task.attachments?.length ?? 0) + (task.linkedDirectories?.length ?? 0);
+                      const undoInProgress = Boolean(task.undoRequestedAt && (task.status === "ready" || task.status === "working"));
                       return (
                         <article className={kanbanClass("kanbanCardShell")} key={task.id}>
                           <div
@@ -11266,6 +11309,12 @@ export default function Home() {
                           >
                             <div className={kanbanClass("kanbanCardHeader")}>
                               <span className={kanbanClass("priorityPill", task.priority)}>{task.priority}</span>
+                              {undoInProgress ? (
+                                <span className={kanbanClass("kanbanUndoBadge")} title="Undo is underway">
+                                  <RotateCcw aria-hidden="true" />
+                                  Undo
+                                </span>
+                              ) : null}
                               {pickupPreview ? (
                                 <motion.span
                                   className={kanbanClass("kanbanPickupPreview")}
