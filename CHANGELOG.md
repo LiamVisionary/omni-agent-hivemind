@@ -3,6 +3,30 @@
 This file records user-visible changes before they are committed. New work should
 be added here first, then marked `Committed` or `Pushed` after the git action.
 
+## 2026-05-22 15:53 WITA - Check Hermes Updates Per Machine
+
+- Status: Uncommitted
+- Areas changed: Runtime integrations API, telemetry collector runtime endpoint, Hermes update actions
+- Summary: Route runtime integration status/actions through an agent's remote collector when its telemetry URL points at another machine, so Hermes update badges and `hermes update` run against the selected agent machine instead of always checking the dashboard host.
+- Verification: Pending.
+- Intended commit message: `Check Hermes updates per machine`
+
+## 2026-05-22 15:51 WITA - Make Card Machine Picker Pressed And Unclipped
+
+- Status: Uncommitted
+- Areas changed: Workboard card machine picker interaction and popover styling
+- Summary: Replace the hover tooltip machine selector with a press-controlled card menu, close it on outside click/Escape/selection, and let the lane/card overflow visibly while the menu is open so the machine list does not clip.
+- Verification: `pnpm exec tsc --noEmit --pretty false`; `pnpm exec eslint src/app/page.tsx` (0 errors, existing warnings only); `node scripts/test-dashboard-nav.mjs && node scripts/test-kanban-workflow.mjs && git diff --check`.
+- Intended commit message: `Make card machine picker press controlled`
+
+## 2026-05-22 15:50 WITA - Proxy Remote Runtime Integrations Through Collectors
+
+- Status: Uncommitted
+- Areas changed: runtime integration API route and agent telemetry collector
+- Summary: Route non-local agent runtime integration checks/actions through each machine's telemetry collector, and expose Hermes integration status/actions from the collector so remote machines can report tool setup and run supported integration commands.
+- Verification: `pnpm exec tsc --noEmit --pretty false`; `node --check scripts/agent-telemetry-collector.mjs`; `git diff --check`.
+- Intended commit message: `Proxy remote runtime integrations through collectors`
+
 ## 2026-05-22 15:48 WITA - Wrap Workboard Machine Tooltip Provider
 
 - Status: Pushed

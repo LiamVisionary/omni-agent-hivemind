@@ -3549,6 +3549,7 @@ export default function Home() {
   const [quickAddDirectories, setQuickAddDirectories] = useState<Record<string, LinkedDirectory[]>>({});
   const [quickAddMachineTargets, setQuickAddMachineTargets] = useState<Record<string, KanbanMachineTarget | null>>({});
   const [quickAddMachineMenuOpen, setQuickAddMachineMenuOpen] = useState<Record<string, boolean>>({});
+  const [kanbanCardMachineMenuOpen, setKanbanCardMachineMenuOpen] = useState<Record<string, boolean>>({});
   const [quickAddAttachmentError, setQuickAddAttachmentError] = useState("");
   const [quickAddAttachmentMenuOpen, setQuickAddAttachmentMenuOpen] = useState(false);
   const [kanbanBoardScrollState, setKanbanBoardScrollState] = useState({ canScrollLeft: false, canScrollRight: false });
@@ -3819,6 +3820,7 @@ export default function Home() {
       && !quickAddAttachmentMenuOpen
       && !kanbanSteerAttachmentMenuOpen
       && !Object.values(quickAddMachineMenuOpen).some(Boolean)
+      && !Object.values(kanbanCardMachineMenuOpen).some(Boolean)
     ) return;
     function closeAttachmentMenu(event: MouseEvent | TouchEvent) {
       const target = event.target;
@@ -3826,9 +3828,11 @@ export default function Home() {
       if (target instanceof Node && quickAddAttachmentMenuRef.current?.contains(target)) return;
       if (target instanceof Node && quickAddMachineMenuRef.current?.contains(target)) return;
       if (target instanceof Node && kanbanSteerAttachmentMenuRef.current?.contains(target)) return;
+      if (target instanceof Element && target.closest("[data-kanban-machine-menu='true']")) return;
       setAttachmentMenuOpen(false);
       setQuickAddAttachmentMenuOpen(false);
       setQuickAddMachineMenuOpen({});
+      setKanbanCardMachineMenuOpen({});
       setKanbanSteerAttachmentMenuOpen(false);
     }
     function closeAttachmentMenuOnEscape(event: KeyboardEvent) {
@@ -3836,6 +3840,7 @@ export default function Home() {
         setAttachmentMenuOpen(false);
         setQuickAddAttachmentMenuOpen(false);
         setQuickAddMachineMenuOpen({});
+        setKanbanCardMachineMenuOpen({});
         setKanbanSteerAttachmentMenuOpen(false);
       }
     }
@@ -3847,7 +3852,7 @@ export default function Home() {
       document.removeEventListener("touchstart", closeAttachmentMenu);
       document.removeEventListener("keydown", closeAttachmentMenuOnEscape);
     };
-  }, [attachmentMenuOpen, quickAddAttachmentMenuOpen, quickAddMachineMenuOpen, kanbanSteerAttachmentMenuOpen]);
+  }, [attachmentMenuOpen, kanbanCardMachineMenuOpen, quickAddAttachmentMenuOpen, quickAddMachineMenuOpen, kanbanSteerAttachmentMenuOpen]);
 
   useEffect(() => {
     if (!kanbanSteerTargetMenuOpen) return;
@@ -10805,7 +10810,6 @@ export default function Home() {
       ) : null}
 
       {activeView === "kanban" ? (
-      <TooltipProvider delayDuration={120}>
       <section className={kanbanClass("workBoardPanel", "tabPanel")}>
         <div className={kanbanClass("workBoardShell")}>
           <section className={kanbanClass("workBoardHero")} aria-label="Work board summary">
@@ -11105,23 +11109,28 @@ export default function Home() {
                             </div>
                             <strong className={kanbanClass("kanbanCardTitle")}>{task.title}</strong>
                             <div className={kanbanClass("kanbanCardMeta")}>
-                              <Tooltip>
-                                <TooltipTrigger asChild>
+                              <div className={kanbanClass("kanbanMachinePicker")} data-kanban-machine-menu="true">
+                                <button
+                                  type="button"
+                                  className={kanbanClass("kanbanMachineLabel")}
+                                  aria-expanded={Boolean(kanbanCardMachineMenuOpen[task.id])}
+                                  onClick={(event) => {
+                                    event.stopPropagation();
+                                    setKanbanCardMachineMenuOpen((current) => ({ ...current, [task.id]: !current[task.id] }));
+                                  }}
+                                >
+                                  {task.targetMachine?.name ?? "Any machine"}
+                                  <ChevronDown aria-hidden="true" />
+                                </button>
+                                {kanbanCardMachineMenuOpen[task.id] ? (
+                                <div className={kanbanClass("kanbanMachineMenu")} role="menu">
                                   <button
                                     type="button"
-                                    className={kanbanClass("kanbanMachineLabel")}
-                                    onClick={(event) => event.stopPropagation()}
-                                  >
-                                    {task.targetMachine?.name ?? "Any machine"}
-                                    <ChevronDown aria-hidden="true" />
-                                  </button>
-                                </TooltipTrigger>
-                                <TooltipContent side="bottom" className={kanbanClass("kanbanMachineTooltip")}>
-                                  <button
-                                    type="button"
-                                    aria-pressed={!task.targetMachine?.key}
+                                    role="menuitemradio"
+                                    aria-checked={!task.targetMachine?.key}
                                     onClick={(event) => {
                                       event.stopPropagation();
+                                      setKanbanCardMachineMenuOpen((current) => ({ ...current, [task.id]: false }));
                                       void updateKanbanTaskMachine(task, null);
                                     }}
                                   >
@@ -11130,18 +11139,21 @@ export default function Home() {
                                   {kanbanMachineTargets.map((machine) => (
                                     <button
                                       type="button"
-                                      aria-pressed={task.targetMachine?.key === machine.key}
+                                      role="menuitemradio"
+                                      aria-checked={task.targetMachine?.key === machine.key}
                                       key={machine.key}
                                       onClick={(event) => {
                                         event.stopPropagation();
+                                        setKanbanCardMachineMenuOpen((current) => ({ ...current, [task.id]: false }));
                                         void updateKanbanTaskMachine(task, machine);
                                       }}
                                     >
                                       {machine.name}
                                     </button>
                                   ))}
-                                </TooltipContent>
-                              </Tooltip>
+                                </div>
+                                ) : null}
+                              </div>
                               {taskAttachmentCount > 0 ? (
                                 <span className={kanbanClass("kanbanAttachmentCount")}>
                                   <Paperclip aria-hidden="true" />
@@ -11259,7 +11271,6 @@ export default function Home() {
           </div>
         </div>
       </section>
-      </TooltipProvider>
       ) : null}
 
       {selectedKanbanTask && kanbanTaskModal ? (

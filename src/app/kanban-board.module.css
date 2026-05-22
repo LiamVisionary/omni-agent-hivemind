@@ -1488,8 +1488,7 @@
   flex: 0 0 auto;
 }
 
-.kanbanMachineMenu,
-.kanbanMachineTooltip {
+.kanbanMachineMenu {
   display: grid;
   gap: 4px;
   min-width: 180px;
@@ -1502,12 +1501,18 @@
 
 .kanbanMachineMenu {
   position: absolute;
+  z-index: 40;
   right: 0;
   top: calc(100% + 6px);
 }
 
-.kanbanMachineMenu button,
-.kanbanMachineTooltip button {
+.kanbanCardMeta .kanbanMachineMenu {
+  left: 0;
+  right: auto;
+  min-width: min(240px, calc(100vw - 48px));
+}
+
+.kanbanMachineMenu button {
   display: flex;
   width: 100%;
   justify-content: flex-start;
@@ -1524,18 +1529,29 @@
 }
 
 .kanbanMachineMenu button:hover,
-.kanbanMachineMenu button[aria-checked="true"],
-.kanbanMachineTooltip button:hover,
-.kanbanMachineTooltip button[aria-pressed="true"] {
+.kanbanMachineMenu button[aria-checked="true"] {
   background: rgba(20, 184, 166, 0.12);
   color: #ccfbf1;
 }
 
 .kanbanCardMeta {
   display: flex;
+  position: relative;
   flex-wrap: wrap;
   align-items: center;
   gap: 6px;
+}
+
+.kanbanCardShell:has([data-kanban-machine-menu="true"] [aria-expanded="true"]),
+.kanbanCard:has([data-kanban-machine-menu="true"] [aria-expanded="true"]) {
+  position: relative;
+  z-index: 35;
+}
+
+.workBoardPanel .kanbanColumn:has([data-kanban-machine-menu="true"] [aria-expanded="true"]),
+.workBoardPanel .kanbanCards:has([data-kanban-machine-menu="true"] [aria-expanded="true"]) {
+  overflow: visible;
+  z-index: 35;
 }
 
 .kanbanAttachmentCount {

@@ -515,6 +515,131 @@ async function resolveHermesBin() {
   return "hermes";
 }
 
+function escapeRegExp(value) {
+  return String(value).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+async function runHermes(args, timeout = 10_000) {
+  const { stdout, stderr } = await execFileAsync(await resolveHermesBin(), args, {
+    timeout,
+    maxBuffer: 2_000_000,
+    env: { ...process.env },
+  });
+  return `${stdout}${stderr ? `\n${stderr}` : ""}`.trim();
+}
+
+async function hermesIntegrationStatus(agent = {}) {
+  const hermesHome = expandHome(agent.localDataDir || defaultHermesDir);
+  const diagnostics = [];
+  const [version, tools, config] = await Promise.all([
+    runHermes(["--version"]).catch((error) => {
+      diagnostics.push(error instanceof Error ? error.message : "Hermes version check failed.");
+      return "";
+    }),
+    runHermes(["tools", "list"]).catch(() => ""),
+    readFile(join(hermesHome, "config.yaml"), "utf8").catch(() => ""),
+  ]);
+  const toolEnabled = (name) => new RegExp(`✓\\s+enabled\\s+${escapeRegExp(name)}\\b`).test(tools);
+  const codexConfigured = /provider:\s*openai-codex\b|codex_app_server|codex-runtime/i.test(config);
+  const kanbanAuto = /auto_decompose:\s*true/i.test(config);
+  const hermesDb = join(hermesHome, "state.db");
+  const sessionStoreReadable = await access(hermesDb, constants.R_OK).then(() => true).catch(() => false);
+  if (version.trim()) diagnostics.push(version.trim());
+  return {
+    runtime: "hermes",
+    machine: { host: hostname(), collectorUrl: `http://${hostname()}:${port}` },
+    capabilities: {
+      status: true,
+      chat: true,
+      runs: true,
+      memory: true,
+      sessionSearch: true,
+      backgroundTasks: true,
+      xSearch: true,
+      socialPosting: false,
+      videoGeneration: true,
+      codexRuntime: true,
+      kanbanDecompose: true,
+      setup: true,
+    },
+    integrations: {
+      sessionSearch: {
+        supported: true,
+        enabled: sessionStoreReadable,
+        detail: sessionStoreReadable ? "Hermes session store is readable." : "Hermes session store was not found.",
+      },
+      backgroundTasks: {
+        supported: true,
+        enabled: Boolean(version.trim()),
+        detail: version.trim() ? "Run Hermes tasks in the background while chat stays available." : "Hermes CLI was not found.",
+      },
+      xSearch: {
+        supported: true,
+        enabled: toolEnabled("x_search"),
+        detail: toolEnabled("x_search") ? "x_search is enabled for CLI." : "Enable x_search after xAI OAuth or XAI_API_KEY is configured.",
+      },
+      socialPosting: {
+        supported: false,
+        enabled: false,
+        detail: "Hermes exposes X search natively here; posting should remain a skill/plugin action.",
+      },
+      videoGeneration: {
+        supported: true,
+        enabled: toolEnabled("video_gen"),
+        detail: toolEnabled("video_gen") ? "video_generate is enabled for CLI." : "Enable video_gen before asking Hermes to create videos.",
+      },
+      codexRuntime: {
+        supported: true,
+        enabled: codexConfigured,
+        detail: codexConfigured ? "Codex/OpenAI path is present in Hermes config." : "Use Hermes Codex auth/runtime setup before routing coding work through Codex.",
+      },
+      kanbanDecompose: {
+        supported: true,
+        enabled: kanbanAuto,
+        detail: kanbanAuto ? "Hermes auto_decompose is on." : "Hermes can decompose Kanban triage tasks manually.",
+      },
+    },
+    diagnostics,
+  };
+}
+
+async function runHermesIntegrationAction(action, input = {}) {
+  if (action === "enable-tool") {
+    const tool = String(input.tool || "");
+    if (!["x_search", "video_gen"].includes(tool)) return { ok: false, error: "Unsupported Hermes tool." };
+    await runHermes(["tools", "enable", tool], 20_000);
+    return { ok: true, message: `Enabled Hermes ${tool}.` };
+  }
+  if (action === "disable-tool") {
+    const tool = String(input.tool || "");
+    if (!["x_search", "video_gen"].includes(tool)) return { ok: false, error: "Unsupported Hermes tool." };
+    await runHermes(["tools", "disable", tool], 20_000);
+    return { ok: true, message: `Disabled Hermes ${tool}.` };
+  }
+  if (action === "xai-login") {
+    const child = spawn(await resolveHermesBin(), ["login", "--provider", "xai-oauth"], {
+      detached: true,
+      stdio: "ignore",
+      env: { ...process.env },
+    });
+    child.unref();
+    return { ok: true, message: "Started Hermes xAI OAuth login on this machine." };
+  }
+  if (action === "hermes-update") {
+    const output = await runHermes(["update"], 300_000);
+    return { ok: true, message: "Hermes update completed on this machine.", output };
+  }
+  if (action === "kanban-decompose") {
+    const taskId = String(input.taskId || "").trim();
+    const args = ["kanban", "decompose", "--json"];
+    if (taskId) args.push(taskId);
+    else args.push("--all");
+    const output = await runHermes(args, 120_000);
+    return { ok: true, output };
+  }
+  return { ok: false, error: `Unsupported Hermes action: ${action}` };
+}
+
 function startUpdate() {
   const command = `cd ${shellQuote(appDir)} && mkdir -p .next && { echo "--- update $(date -u +%Y-%m-%dT%H:%M:%SZ) ---"; git pull --ff-only; if command -v corepack >/dev/null 2>&1; then corepack prepare pnpm@8.6.12 --activate; hash -r 2>/dev/null || true; fi; CI=true NODE_OPTIONS="\${NODE_OPTIONS:+\$NODE_OPTIONS }--no-deprecation" pnpm install --frozen-lockfile; pnpm build; ./setup.sh; } >> .next/agent-update.log 2>&1`;
   const child = spawn("sh", ["-lc", command], {
@@ -1199,6 +1324,29 @@ createServer(async (request, response) => {
   if (pathname === "/agents") {
     const agents = await localAgents();
     jsonResponse(response, 200, { ok: true, host: hostname(), agents });
+    return;
+  }
+  const runtimeIntegrationMatch = pathname.match(/^\/runtimes\/([^/]+)\/integrations$/);
+  if (runtimeIntegrationMatch && request.method === "POST") {
+    try {
+      const rawBody = await readBody(request);
+      const body = rawBody ? JSON.parse(rawBody) : {};
+      const runtimeName = runtimeIntegrationMatch[1];
+      if (runtimeName !== "hermes") {
+        jsonResponse(response, 404, { ok: false, error: `${runtimeName} integrations are not exposed by this collector yet.` });
+        return;
+      }
+      if (body.action) {
+        jsonResponse(response, 200, await runHermesIntegrationAction(body.action, body.input || {}));
+        return;
+      }
+      jsonResponse(response, 200, { ok: true, status: await hermesIntegrationStatus(body.agent || {}) });
+    } catch (error) {
+      jsonResponse(response, 500, {
+        ok: false,
+        error: error instanceof Error ? error.message : "Runtime integration check failed.",
+      });
+    }
     return;
   }
   if (pathname === "/schedules") {
