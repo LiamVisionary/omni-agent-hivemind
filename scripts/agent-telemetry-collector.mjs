@@ -255,6 +255,27 @@ async function syncthingInstalled() {
   return access(bin, constants.X_OK).then(() => ({ installed: true, bin })).catch(() => ({ installed: false, bin }));
 }
 
+async function resolveHiveEnvAdd() {
+  const candidates = [
+    process.env.HIVE_ENV_ADD_BIN,
+    join(homedir(), ".local", "bin", "hive-env-add"),
+    join(appDir, "scripts", "hive-env-add"),
+  ].filter(Boolean);
+  for (const path of candidates) {
+    try {
+      await access(path, constants.X_OK);
+      return { ready: true, command: path };
+    } catch {
+      // try next
+    }
+  }
+  return {
+    ready: false,
+    command: "hive-env-add",
+    error: "hive-env-add is not installed or executable. Run setup on this machine.",
+  };
+}
+
 function startSyncthingDetached() {
   const runner = join(appDir, "scripts", "run-syncthing.sh");
   const child = spawn(runner, [], {
@@ -1318,6 +1339,7 @@ createServer(async (request, response) => {
   }
   if (pathname === "/health") {
     const syncthing = await syncthingInstalled();
+    const envSync = await resolveHiveEnvAdd();
     const agents = await localAgents();
     const runtimes = [...new Set(agents.map((agent) => agent.runtime))];
     jsonResponse(response, 200, {
@@ -1325,9 +1347,10 @@ createServer(async (request, response) => {
       host: hostname(),
       version: await appVersion(),
       envSync: {
-        ready: true,
+        ready: envSync.ready,
         user: currentUsername(),
-        command: "hive-env-add",
+        command: envSync.command,
+        error: envSync.error,
       },
       capabilities: {
         chat: runtimes.includes("hermes"),

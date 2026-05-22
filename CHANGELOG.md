@@ -3,6 +3,14 @@
 This file records user-visible changes before they are committed. New work should
 be added here first, then marked `Committed` or `Pushed` after the git action.
 
+## 2026-05-22 22:57 WITA - Streamline Env And Sync Setup
+
+- Status: Pushed
+- Areas changed: macOS/Linux setup, telemetry collector health, shared env docs, changelog
+- Summary: Make setup discover env-ready HivemindOS peers, prompt to pull missing env keys from a trusted peer and push local keys with `hive-env-add --reconcile`, verify collector env readiness from the actual helper executable, and offer an interactive Syncthing pair/test-note check when another Syncthing-capable Tailnet collector is found.
+- Verification: `bash -n setup.sh`; `node --check scripts/agent-telemetry-collector.mjs`; peer-discovery smoke found Ubuntu as both env-ready and Syncthing-capable through collector health; temporary collector smoke on port 18787 reported `envSync.ready=true` with the executable `~/.local/bin/hive-env-add`; `git diff --check -- setup.sh scripts/agent-telemetry-collector.mjs README.md CHANGELOG.md`.
+- Intended commit message: `Streamline env and sync setup`
+
 ## 2026-05-22 22:38 WITA - Harden Hive Env Reconciliation
 
 - Status: Pushed

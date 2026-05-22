@@ -803,6 +803,181 @@ configure_shared_skills() {
   ./scripts/seed-shared-skills.sh --import-sources "$imports" --share-targets "$targets"
 }
 
+tailnet_peer_collector_urls() {
+  command -v tailscale >/dev/null 2>&1 || return 0
+  tailscale status --json 2>/dev/null | node -e '
+const port = process.argv[2] || "8787";
+let raw = "";
+process.stdin.on("data", (chunk) => { raw += chunk; });
+process.stdin.on("end", () => {
+  let data;
+  try {
+    data = JSON.parse(raw);
+  } catch {
+    return;
+  }
+  for (const peer of Object.values(data.Peer || {})) {
+    if (!peer || peer.Online === false) continue;
+    const ip = (peer.TailscaleIPs || []).find((value) => /^\d+\.\d+\.\d+\.\d+$/.test(String(value)));
+    if (!ip) continue;
+    const name = String(peer.DNSName || peer.HostName || ip).replace(/\.$/, "");
+    console.log(`${name}\thttp://${ip}:${port}\t${ip}`);
+  }
+});
+' x "$COLLECTOR_PORT" || true
+}
+
+collector_json_field() {
+  local url="$1"
+  local expr="$2"
+  { curl -fsS --max-time 3 "$url/health" 2>/dev/null || true; } | node -e '
+const expr = process.argv[1];
+let raw = "";
+process.stdin.on("data", (chunk) => { raw += chunk; });
+process.stdin.on("end", () => {
+  try {
+    const data = JSON.parse(raw);
+    const value = expr.split(".").reduce((acc, key) => acc && acc[key], data);
+    if (value !== undefined && value !== null) process.stdout.write(String(value));
+  } catch {}
+});
+' "$expr"
+}
+
+env_ready_peer_targets() {
+  local name url ip ready user
+  while IFS=$'\t' read -r name url ip; do
+    [[ -n "$url" ]] || continue
+    ready="$(collector_json_field "$url" "envSync.ready")"
+    [[ "$ready" == "true" ]] || continue
+    user="$(collector_json_field "$url" "envSync.user")"
+    [[ -n "$user" ]] || continue
+    printf "%s\t%s@%s\t%s\n" "$name" "$user" "$name" "$url"
+  done < <(tailnet_peer_collector_urls)
+}
+
+configure_env_reconciliation() {
+  [[ "$env_tailnet_sync_enabled" == "true" ]] || return 0
+  setup_is_interactive || return 0
+  command -v hive-env-add >/dev/null 2>&1 || [[ -x "$HOME/.local/bin/hive-env-add" ]] || return 0
+
+  local first_peer=""
+  local peer_count=0
+  local name target url
+  while IFS=$'\t' read -r name target url; do
+    [[ -n "$target" ]] || continue
+    peer_count=$((peer_count + 1))
+    [[ -n "$first_peer" ]] || first_peer="$target"
+  done < <(env_ready_peer_targets)
+
+  if (( peer_count == 0 )); then
+    warn "No env-ready HivemindOS peers found yet; run hive-env-add --reconcile after another machine finishes setup"
+    return 0
+  fi
+
+  info "Found $peer_count env-ready HivemindOS peer$( (( peer_count == 1 )) && echo "" || echo "s" )"
+  if prompt_yes_no "Pull missing shared env keys from $first_peer now?" "yes"; then
+    "$HOME/.local/bin/hive-env-add" --pull-from "$first_peer" || warn "Env pull from $first_peer did not complete"
+  fi
+  if prompt_yes_no "Push this machine's current shared env keys to ready peers now?" "yes"; then
+    "$HOME/.local/bin/hive-env-add" --reconcile || warn "Env reconciliation did not complete"
+  fi
+}
+
+collector_request() {
+  local url="$1"
+  local path="$2"
+  local body="${3:-}"
+  if [[ -n "$body" ]]; then
+    curl -fsS --max-time 20 -H "content-type: application/json" -d "$body" "$url$path"
+  else
+    curl -fsS --max-time 20 "$url$path"
+  fi
+}
+
+json_get() {
+  local expr="$1"
+  node -e '
+const expr = process.argv[1];
+let raw = "";
+process.stdin.on("data", (chunk) => { raw += chunk; });
+process.stdin.on("end", () => {
+  try {
+    const data = JSON.parse(raw);
+    const value = expr.split(".").reduce((acc, key) => acc && acc[key], data);
+    if (value !== undefined && value !== null) process.stdout.write(String(value));
+  } catch {}
+});
+' "$expr"
+}
+
+json_escape() {
+  node -e 'process.stdout.write(JSON.stringify(process.argv[1] || ""))' "$1"
+}
+
+verify_syncthing_with_peer() {
+  local remote_name="$1"
+  local remote_url="$2"
+  local remote_ip="$3"
+  local local_url="http://127.0.0.1:$COLLECTOR_PORT"
+  local local_status remote_status local_device remote_device local_path remote_path id content
+
+  local_status="$(collector_request "$local_url" "/syncthing/status" 2>/dev/null || true)"
+  remote_status="$(collector_request "$remote_url" "/syncthing/status" 2>/dev/null || true)"
+  local_device="$(printf "%s" "$local_status" | json_get "deviceID")"
+  remote_device="$(printf "%s" "$remote_status" | json_get "deviceID")"
+  local_path="$(printf "%s" "$local_status" | json_get "defaultSyncPath")"
+  remote_path="$(printf "%s" "$remote_status" | json_get "defaultSyncPath")"
+  if [[ -z "$local_device" || -z "$remote_device" || -z "$local_path" || -z "$remote_path" ]]; then
+    warn "Syncthing is not ready on both collectors; skipping end-to-end sync verification"
+    return 1
+  fi
+
+  collector_request "$local_url" "/syncthing/configure" "{\"folderId\":\"hivemindos-vault\",\"label\":\"hivemindos-vault\",\"path\":$(json_escape "$local_path"),\"peerDeviceID\":$(json_escape "$remote_device"),\"peerName\":$(json_escape "$remote_name"),\"peerAddresses\":[\"tcp://$remote_ip:22000\",\"dynamic\"]}" >/dev/null || return 1
+  collector_request "$remote_url" "/syncthing/configure" "{\"folderId\":\"hivemindos-vault\",\"label\":\"hivemindos-vault\",\"path\":$(json_escape "$remote_path"),\"peerDeviceID\":$(json_escape "$local_device"),\"peerName\":$(json_escape "$(hostname)"),\"peerAddresses\":[\"dynamic\"]}" >/dev/null || return 1
+
+  id="setup-$(date +%s)-$RANDOM"
+  content="hivemindos syncthing setup test $id"
+  collector_request "$local_url" "/syncthing/test-note" "{\"action\":\"write\",\"root\":$(json_escape "$local_path"),\"id\":$(json_escape "$id"),\"content\":$(json_escape "$content")}" >/dev/null || return 1
+  for _ in {1..30}; do
+    if [[ "$(collector_request "$remote_url" "/syncthing/test-note" "{\"action\":\"read\",\"root\":$(json_escape "$remote_path"),\"id\":$(json_escape "$id")}" 2>/dev/null | json_get "content")" == "$content" ]]; then
+      collector_request "$local_url" "/syncthing/test-note" "{\"action\":\"delete\",\"root\":$(json_escape "$local_path"),\"id\":$(json_escape "$id")}" >/dev/null 2>&1 || true
+      collector_request "$remote_url" "/syncthing/test-note" "{\"action\":\"delete\",\"root\":$(json_escape "$remote_path"),\"id\":$(json_escape "$id")}" >/dev/null 2>&1 || true
+      ok "Syncthing shared-brain sync verified with $remote_name"
+      return 0
+    fi
+    sleep 2
+  done
+  warn "Syncthing pairing was configured, but the test note did not appear on $remote_name yet"
+  return 1
+}
+
+configure_syncthing_verification() {
+  [[ "$tailnet_sync_enabled" == "true" ]] || return 0
+  setup_is_interactive || return 0
+  local name url ip ready first_name="" first_url="" first_ip="" count=0
+  while IFS=$'\t' read -r name url ip; do
+    [[ -n "$url" ]] || continue
+    ready="$(collector_json_field "$url" "capabilities.syncthing")"
+    [[ "$ready" == "true" ]] || continue
+    count=$((count + 1))
+    [[ -n "$first_url" ]] || { first_name="$name"; first_url="$url"; first_ip="$ip"; }
+  done < <(tailnet_peer_collector_urls)
+  (( count > 0 )) || return 0
+  if prompt_yes_no "Verify Syncthing shared-brain sync with $first_name now?" "yes"; then
+    verify_syncthing_with_peer "$first_name" "$first_url" "$first_ip" || warn "Syncthing verification did not complete; the dashboard can retry pairing later"
+  fi
+}
+
+wait_for_local_collector() {
+  local url="http://127.0.0.1:$COLLECTOR_PORT/health"
+  for _ in {1..15}; do
+    curl -fsS --max-time 2 "$url" >/dev/null 2>&1 && return 0
+    sleep 1
+  done
+  return 1
+}
+
 if command -v node >/dev/null 2>&1; then
   ok "Node found: $(node --version)"
 else
@@ -964,6 +1139,12 @@ else
   fi
   AGENT_TELEMETRY_PORT="$COLLECTOR_PORT" AGENT_TELEMETRY_HERMES_RESTART="${AGENT_TELEMETRY_HERMES_RESTART:-$hermes_restart_mode}" ./scripts/install-telemetry-collector.sh
   ok "Collector installed"
+  if wait_for_local_collector; then
+    configure_env_reconciliation
+    configure_syncthing_verification
+  else
+    warn "Local collector did not respond yet; skipping setup-time env and Syncthing reconciliation prompts"
+  fi
 fi
 
 build_stamp="$setup_cache_dir/build.sha"

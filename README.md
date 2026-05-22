@@ -170,8 +170,8 @@ HivemindOS uses Tailscale in a few specific ways:
 
 - **Agent connection:** the dashboard finds and connects to agent machines through your Tailscale VPN.
 - **Env sync:** `hive-env-add` sends env updates to trusted peer machines over Tailscale SSH. Secret values travel through stdin, not command arguments, logs, or shared notes.
-- **Brain sync:** the shared Obsidian vault can sync in realtime with Syncthing over Tailscale. Obsidian Sync, iCloud Drive, Dropbox, Git, Syncthing, or any normal folder sync provider also work.
-- **Vault repair:** rsync over Tailscale SSH is available as an advanced fallback for one-shot push, pull, or bidirectional repair jobs.
+- **Brain sync:** the shared Obsidian vault is a local folder. In Brain, choose whether an external provider such as Obsidian Sync, iCloud Drive, Dropbox, Git, or another folder sync tool owns realtime sync, or let HivemindOS pair Syncthing over Tailscale.
+- **Vault repair:** rsync over Tailscale SSH is available as an advanced fallback for one-shot push, pull, or bidirectional repair jobs. rsync repair conflicts are written as explicit `.conflict-host-timestamp` copies; Syncthing conflicts are handled by Syncthing in the vault and Syncthing UI.
 
 Plaintext secrets do not belong in the shared vault. If GPG is configured, `hive-env-add` can refresh an encrypted `hive.env.gpg` backup in your chosen notes folder.
 
@@ -195,7 +195,7 @@ hive-env-add --runtime aeon OPENAI_API_KEY
 hive-env-add --runtime openclaw TAVILY_API_KEY
 ```
 
-When Tailscale SSH is available and env sync is enabled, HivemindOS updates trusted peer machines that report they are ready for env sync. `--reconcile` pushes this machine's current shared env set to ready peers, which is useful after adding a new device. `--pull-from USER@HOST` imports missing keys from a trusted peer and preserves local conflicts by default; use `--conflict remote-wins` or `--conflict fail` when you need a stricter merge. Advanced users can set `HIVE_ENV_TAILNET_TARGETS` to choose exact target machines.
+When Tailscale SSH is available and env sync is enabled, HivemindOS updates trusted peer machines that report they are ready for env sync. Setup offers to pull missing keys from an existing ready peer and push this machine's keys to peers. `--reconcile` does the same push later, which is useful after adding a new device. `--pull-from USER@HOST` imports missing keys from a trusted peer and preserves local conflicts by default; use `--conflict remote-wins` or `--conflict fail` when you need a stricter merge. Advanced users can set `HIVE_ENV_TAILNET_TARGETS` to choose exact target machines.
 
 ## Shared Obsidian Brain
 
@@ -211,7 +211,7 @@ The Brain workspace can hold:
 
 HivemindOS can auto-detect common local Obsidian vault locations, validate an explicit vault path, and fall back to local Kanban storage at `~/.hivemindos/kanban` if the vault is unavailable.
 
-For multi-machine sharing, the built-in path pairs Syncthing over Tailscale so trusted machines each keep a local copy of the same vault. No Obsidian Sync subscription is required.
+For multi-machine sharing, the built-in path pairs Syncthing over Tailscale so trusted machines each keep a local copy of the same vault. No Obsidian Sync subscription is required. If you already use Obsidian Sync, iCloud Drive, Dropbox, Git, or another provider, select that external sync owner in Brain so HivemindOS does not auto-pair Syncthing on top of it. When setup finds another Syncthing-capable collector and the Brain setting allows HivemindOS Syncthing, it can pair the shared vault and write/read a small test note to verify that sync is actually flowing.
 
 ## Multi-Machine Setup
 
