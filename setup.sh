@@ -429,6 +429,44 @@ install_obsidian_if_missing() {
   fi
 }
 
+install_gpg_if_missing() {
+  if command -v gpg >/dev/null 2>&1; then
+    ok "GPG found: $(gpg --version 2>/dev/null | head -1)"
+    return 0
+  fi
+  if ! setup_is_interactive; then
+    warn "GPG is missing; encrypted hive-env-add note backups are disabled in non-interactive setup"
+    return 0
+  fi
+  if ! prompt_yes_no "GPG is missing. Install GnuPG so hive-env-add can refresh encrypted env backups?" "yes"; then
+    warn "Skipping GnuPG install; hive-env-add will still update local env files"
+    return 0
+  fi
+  if [[ "$(uname -s)" == "Darwin" ]] && { command -v brew >/dev/null 2>&1 || ensure_homebrew; }; then
+    info "Installing GnuPG with Homebrew"
+    brew install gnupg
+  elif command -v apt-get >/dev/null 2>&1 && command -v sudo >/dev/null 2>&1; then
+    info "Installing GnuPG with apt"
+    sudo apt-get update
+    sudo apt-get install -y gnupg
+  elif command -v dnf >/dev/null 2>&1 && command -v sudo >/dev/null 2>&1; then
+    info "Installing GnuPG with dnf"
+    sudo dnf install -y gnupg2
+  elif command -v yum >/dev/null 2>&1 && command -v sudo >/dev/null 2>&1; then
+    info "Installing GnuPG with yum"
+    sudo yum install -y gnupg2
+  else
+    warn "No automatic GnuPG installer found for this OS"
+    warn "Install GnuPG later to enable encrypted hive-env-add note backups"
+    return 0
+  fi
+  if command -v gpg >/dev/null 2>&1; then
+    ok "GPG installed: $(gpg --version 2>/dev/null | head -1)"
+  else
+    warn "GnuPG install finished, but setup could not verify gpg on PATH"
+  fi
+}
+
 install_hive_env_add() {
   local bin_dir="${HOME}/.local/bin"
   local command_path="$bin_dir/hive-env-add"
@@ -593,6 +631,7 @@ else
 fi
 
 install_obsidian_if_missing
+install_gpg_if_missing
 
 if (( ${#missing[@]} > 0 )); then
   echo
@@ -732,6 +771,26 @@ start_dashboard() {
   sleep 2
 }
 
+open_dashboard_if_requested() {
+  local url="$1"
+  setup_is_interactive || return 0
+  if ! prompt_yes_no "Open the HivemindOS dashboard now?" "yes"; then
+    return 0
+  fi
+  if [[ "$(uname -s)" == "Darwin" ]] && command -v open >/dev/null 2>&1; then
+    open "$url"
+  elif command -v xdg-open >/dev/null 2>&1; then
+    xdg-open "$url" >/dev/null 2>&1 &
+  elif command -v sensible-browser >/dev/null 2>&1; then
+    sensible-browser "$url" >/dev/null 2>&1 &
+  else
+    warn "Could not find a browser opener. Open this URL manually: $url"
+    return 0
+  fi
+  ok "Opened dashboard: $url"
+}
+
+dashboard_openable="false"
 if [[ "$CLI_SKIP_DASHBOARD" == "true" ]]; then
   warn "Skipping dashboard start because --skip-dashboard was provided"
 else
@@ -744,12 +803,14 @@ else
       kill "$port_pid"
       sleep 2
       start_dashboard
+      dashboard_openable="true"
     else
       warn "Port $PORT is already in use by another process; leaving it alone"
       warn "Use PORT=<free-port> ./setup.sh or stop PID $port_pid first"
     fi
   else
     start_dashboard
+    dashboard_openable="true"
   fi
 fi
 
@@ -787,3 +848,6 @@ else
   echo "Local-only mode is ready. Install and log in to Tailscale later to enable multi-machine collaboration and shared memory sync."
 fi
 echo
+if [[ "$dashboard_openable" == "true" ]]; then
+  open_dashboard_if_requested "$local_url"
+fi

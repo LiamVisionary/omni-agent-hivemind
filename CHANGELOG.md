@@ -3,6 +3,14 @@
 This file records user-visible changes before they are committed. New work should
 be added here first, then marked `Committed` or `Pushed` after the git action.
 
+## 2026-05-22 20:34 WITA - Install Env Encryption Helpers
+
+- Status: Pushed
+- Areas changed: macOS/Linux setup and uninstaller, Windows setup and uninstaller, README setup docs, changelog
+- Summary: Prompt to install GnuPG for `hive-env-add` encrypted backups, install a Windows `hive-env-add.cmd` shim alongside the existing macOS/Linux helper install, add mirrored uninstall prompts for GnuPG and the Windows helper shim, and ask interactive users whether to open the dashboard after setup starts it.
+- Verification: `bash -n setup.sh && bash -n uninstall.sh`; `./uninstall.sh --non-interactive`; `git diff --check -- setup.sh setup.ps1 uninstall.sh uninstall.ps1 README.md CHANGELOG.md`. PowerShell parse check was skipped because `pwsh`/`powershell` is not installed in this macOS workspace.
+- Intended commit message: `Install env encryption helpers`
+
 ## 2026-05-22 20:27 WITA - Resolve Pnpm After Setup Installs
 
 - Status: Pushed

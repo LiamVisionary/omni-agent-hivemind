@@ -298,6 +298,20 @@ if ask "Uninstall pnpm from this machine?" "no"; then
   if [[ "$(uname -s)" == "Darwin" ]] && run_if_exists brew; then brew uninstall pnpm >/dev/null 2>&1 || true; fi
 fi
 
+if ask "Uninstall GnuPG/GPG from this machine?" "no"; then
+  if [[ "$(uname -s)" == "Darwin" ]] && run_if_exists brew; then
+    brew uninstall gnupg >/dev/null 2>&1 || true
+  elif run_if_exists apt-get && run_if_exists sudo; then
+    sudo apt-get remove -y gnupg >/dev/null 2>&1 || true
+  elif run_if_exists dnf && run_if_exists sudo; then
+    sudo dnf remove -y gnupg2 >/dev/null 2>&1 || true
+  elif run_if_exists yum && run_if_exists sudo; then
+    sudo yum remove -y gnupg2 >/dev/null 2>&1 || true
+  else
+    warn "No automatic GnuPG uninstall path configured for this OS"
+  fi
+fi
+
 if ask "Uninstall Obsidian from this machine?" "no"; then
   if [[ "$(uname -s)" == "Darwin" ]] && run_if_exists brew; then
     brew uninstall --cask obsidian >/dev/null 2>&1 || true

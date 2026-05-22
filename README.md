@@ -52,9 +52,9 @@ Then open the dashboard printed by setup, usually:
 http://localhost:5020
 ```
 
-Setup checks Node.js and pnpm/Corepack, installs dependencies, offers optional installs for Tailscale, Syncthing, and Obsidian, installs the lightweight machine monitor where supported, builds the dashboard, starts it when possible, and prints local plus Tailscale URLs when available. On macOS/Linux use `setup.sh`; on native Windows use `setup.ps1`, which prompts for winget installs of Node.js, pnpm, Tailscale, Syncthing, and Obsidian. If Tailscale is installed and logged in, HivemindOS enables cross-machine collaboration. If not, it runs cleanly as a local-only dashboard.
+Setup checks Node.js and pnpm/Corepack, installs dependencies, offers optional installs for Tailscale, Syncthing, Obsidian, and GnuPG, installs `hive-env-add`, installs the lightweight machine monitor where supported, builds the dashboard, starts it when possible, and can open the dashboard for you. On macOS/Linux use `setup.sh`; on native Windows use `setup.ps1`, which prompts for winget installs of Node.js, pnpm, Tailscale, Syncthing, Obsidian, and GnuPG. If Tailscale is installed and logged in, HivemindOS enables cross-machine collaboration. If not, it runs cleanly as a local-only dashboard.
 
-To remove HivemindOS later, run the matching uninstaller. It asks one prompt at a time before removing services, generated files, shared-skill agent hints, or optional apps such as Tailscale, Syncthing, pnpm, and Obsidian:
+To remove HivemindOS later, run the matching uninstaller. It asks one prompt at a time before removing services, generated files, `hive-env-add`, shared-skill agent hints, or optional apps such as Tailscale, Syncthing, pnpm, GnuPG, and Obsidian:
 
 ```bash
 ./uninstall.sh
@@ -151,7 +151,7 @@ Plaintext secrets do not belong in the shared vault. If GPG is configured, `hive
 
 ## Shared Env
 
-Setup installs `hive-env-add` into `~/.local/bin`.
+Setup installs `hive-env-add` into `~/.local/bin`. GnuPG is optional; when it is installed and a recipient or public key is configured, `hive-env-add` refreshes the encrypted `hive.env.gpg` backup in the shared notes folder.
 
 ```bash
 hive-env-add KEY=value

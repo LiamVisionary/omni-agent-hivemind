@@ -193,6 +193,57 @@ function Ensure-Obsidian {
   }
 }
 
+function Ensure-Gpg {
+  if (Test-Command gpg) {
+    Ok "GPG found: $((gpg --version 2>$null | Select-Object -First 1))"
+    return
+  }
+  if (Ask-YesNo "GPG is missing. Install GnuPG so hive-env-add can refresh encrypted env backups?" $true) {
+    Install-WingetPackage "GnuPG" "GnuPG.GnuPG" | Out-Null
+    Refresh-Path
+  }
+  if (Test-Command gpg) {
+    Ok "GPG found: $((gpg --version 2>$null | Select-Object -First 1))"
+  } else {
+    Warn "GPG is optional and not installed. hive-env-add will still update local env files."
+  }
+}
+
+function Ensure-HiveEnvAdd {
+  $binDir = Join-Path ([Environment]::GetFolderPath("UserProfile")) ".local\bin"
+  $shimPath = Join-Path $binDir "hive-env-add.cmd"
+  $scriptPath = Join-Path $Root "scripts\hive-env-add"
+  New-Item -ItemType Directory -Force -Path $binDir | Out-Null
+  $pythonCommand = if (Test-Command py) { "py -3" } elseif (Test-Command python) { "python" } elseif (Test-Command python3) { "python3" } else { "" }
+  if (-not $pythonCommand) {
+    Warn "Python is missing; hive-env-add shim installed but will need Python to run."
+    $pythonCommand = "python"
+  }
+  Set-Content -Path $shimPath -Value "@echo off`r`n$pythonCommand `"$scriptPath`" %*`r`n" -Encoding ASCII
+  Ok "hive-env-add installed: $shimPath"
+  $userPath = [Environment]::GetEnvironmentVariable("Path", "User")
+  if (($userPath -split ";") -notcontains $binDir) {
+    if (Ask-YesNo "Add $binDir to your user PATH for hive-env-add?" $true) {
+      $nextPath = if ($userPath) { "$userPath;$binDir" } else { $binDir }
+      [Environment]::SetEnvironmentVariable("Path", $nextPath, "User")
+      Refresh-Path
+      Ok "Added $binDir to user PATH"
+    } else {
+      Warn "Add $binDir to PATH to run hive-env-add from any folder"
+    }
+  } else {
+    Refresh-Path
+  }
+}
+
+function Open-DashboardIfRequested($Url) {
+  if ($SkipDashboard) { return }
+  if (Ask-YesNo "Open the HivemindOS dashboard now?" $true) {
+    Start-Process $Url
+    Ok "Opened dashboard: $Url"
+  }
+}
+
 function Set-EnvLocal($Key, $Value) {
   $envFile = Join-Path $Root ".env.local"
   if (-not (Test-Path $envFile)) { New-Item -ItemType File -Path $envFile | Out-Null }
@@ -229,6 +280,8 @@ Ensure-Pnpm
 $tailnetSyncEnabled = Ensure-Tailscale
 Ensure-Syncthing $tailnetSyncEnabled
 Ensure-Obsidian
+Ensure-Gpg
+Ensure-HiveEnvAdd
 
 if ($Missing.Count -gt 0) {
   Write-Host ""
@@ -280,6 +333,7 @@ if ($SkipBuild) {
   Ok "Dashboard built"
 }
 
+$dashboardOpenable = $false
 if ($SkipDashboard) {
   Warn "Skipping dashboard start because -SkipDashboard was provided"
 } else {
@@ -297,6 +351,7 @@ if ($SkipDashboard) {
     } else {
       Start-Process -FilePath "corepack" -ArgumentList @("pnpm", "exec", "next", "dev", "--webpack", "-p", "$Port") -WorkingDirectory $Root -RedirectStandardOutput $stdoutPath -RedirectStandardError $stderrPath -WindowStyle Hidden
     }
+    $dashboardOpenable = $true
   }
 }
 
@@ -313,4 +368,8 @@ if ($tailnetSyncEnabled) {
   Write-Host "Tailscale is connected. Syncthing can sync shared-brain folders over your Tailnet."
 } else {
   Write-Host "Local-only mode is ready. Install and log in to Tailscale later to enable multi-machine collaboration and shared memory sync."
+}
+Write-Host ""
+if ($dashboardOpenable) {
+  Open-DashboardIfRequested "http://localhost:$Port"
 }
