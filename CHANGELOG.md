@@ -3,6 +3,14 @@
 This file records user-visible changes before they are committed. New work should
 be added here first, then marked `Committed` or `Pushed` after the git action.
 
+## 2026-05-22 20:19 WITA - Keep Uninstall Prompts Flowing
+
+- Status: Pushed
+- Areas changed: macOS/Linux uninstaller, changelog
+- Summary: Treat missing agent instruction files and absent Aeon skills folders as no-op cleanup cases so `uninstall.sh` does not exit during shared-skill cleanup before reaching later prompts for copied skills, generated files, caches, Syncthing, Tailscale, pnpm, Obsidian, and checkout deletion.
+- Verification: `bash -n uninstall.sh`; `./uninstall.sh --non-interactive`; temp-`HOME` piped uninstall run completed past shared-skill cleanup; `git diff --check -- uninstall.sh CHANGELOG.md`.
+- Intended commit message: `Keep uninstall prompts flowing`
+
 ## 2026-05-22 20:04 WITA - Add Mirrored Uninstall Prompts
 
 - Status: Pushed

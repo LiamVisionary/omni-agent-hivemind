@@ -72,7 +72,7 @@ run_if_exists() {
 
 remove_managed_block() {
   local file="$1"
-  [[ -f "$file" ]] || return
+  [[ -f "$file" ]] || return 0
   local tmp_file
   tmp_file="$(mktemp)"
   awk '
@@ -82,7 +82,7 @@ remove_managed_block() {
     END { if (changed != 1) exit 3 }
   ' "$file" > "$tmp_file" || {
     rm -f "$tmp_file"
-    return
+    return 0
   }
   mv "$tmp_file" "$file"
   ok "Removed HivemindOS shared-skill block from $file"
@@ -218,13 +218,15 @@ fs.writeFileSync(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
 NODE
     ok "Removed shared-brain skills from $aeon_root/skills.json"
   fi
-  find "$aeon_root/skills" -mindepth 2 -maxdepth 2 -name .hivemind-skill-source.json -type f 2>/dev/null |
-    while IFS= read -r marker; do
-      if grep -q '"managedBy": "hivemindos"' "$marker" || grep -q '"provider": "shared-brain"' "$marker"; then
-        rm -rf "$(dirname "$marker")"
-        ok "Removed $(dirname "$marker")"
-      fi
-    done
+  if [[ -d "$aeon_root/skills" ]]; then
+    find "$aeon_root/skills" -mindepth 2 -maxdepth 2 -name .hivemind-skill-source.json -type f 2>/dev/null |
+      while IFS= read -r marker; do
+        if grep -q '"managedBy": "hivemindos"' "$marker" || grep -q '"provider": "shared-brain"' "$marker"; then
+          rm -rf "$(dirname "$marker")"
+          ok "Removed $(dirname "$marker")"
+        fi
+      done
+  fi
 fi
 
 if ask "Remove the shared Skills shelf created in the Obsidian vault?" "no"; then
