@@ -346,6 +346,52 @@ start_syncthing_if_available() {
   fi
 }
 
+tailscale_cli_candidates() {
+  command -v tailscale 2>/dev/null || true
+  [[ -x /Applications/Tailscale.app/Contents/MacOS/tailscale ]] && printf "%s\n" "/Applications/Tailscale.app/Contents/MacOS/tailscale"
+  [[ -x /Applications/Tailscale.app/Contents/MacOS/Tailscale ]] && printf "%s\n" "/Applications/Tailscale.app/Contents/MacOS/Tailscale"
+}
+
+format_tailscale_error() {
+  printf "%s" "$1" | tr '\n' ' ' | sed 's/[[:space:]]\{1,\}/ /g'
+}
+
+run_tailscale_set_ssh() {
+  local use_sudo="${1:-false}"
+  local cli output
+  tailscale_ssh_error=""
+  while IFS= read -r cli; do
+    [[ -n "$cli" ]] || continue
+    if [[ "$use_sudo" == "true" ]]; then
+      output="$(sudo "$cli" set --ssh=true 2>&1)" || {
+        tailscale_ssh_error="$output"
+        continue
+      }
+    else
+      output="$("$cli" set --ssh=true 2>&1)" || {
+        tailscale_ssh_error="$output"
+        continue
+      }
+    fi
+    return 0
+  done < <(tailscale_cli_candidates | awk '!seen[$0]++')
+  return 1
+}
+
+run_tailscale_set_ssh_sudo_noninteractive() {
+  local cli output
+  tailscale_ssh_error=""
+  while IFS= read -r cli; do
+    [[ -n "$cli" ]] || continue
+    output="$(sudo -n "$cli" set --ssh=true 2>&1)" || {
+      tailscale_ssh_error="$output"
+      continue
+    }
+    return 0
+  done < <(tailscale_cli_candidates | awk '!seen[$0]++')
+  return 1
+}
+
 enable_tailscale_ssh() {
   if ! command -v tailscale >/dev/null 2>&1; then
     return
@@ -361,20 +407,27 @@ enable_tailscale_ssh() {
     ok "Tailscale SSH already advertised by this machine"
     return
   fi
-  if tailscale set --ssh=true >/dev/null 2>&1 || tailscale set --ssh >/dev/null 2>&1; then
+  tailscale_ssh_error=""
+  if run_tailscale_set_ssh false; then
     ok "Tailscale SSH advertised by this machine"
-  elif command -v sudo >/dev/null 2>&1 && (sudo -n tailscale set --ssh=true >/dev/null 2>&1 || sudo -n tailscale set --ssh >/dev/null 2>&1); then
+  elif command -v sudo >/dev/null 2>&1 && run_tailscale_set_ssh_sudo_noninteractive; then
     ok "Tailscale SSH advertised by this machine"
   elif command -v sudo >/dev/null 2>&1 && setup_is_interactive && prompt_yes_no "Tailscale SSH needs admin privileges. Run sudo tailscale set --ssh now?" "yes"; then
-    if sudo tailscale set --ssh=true >/dev/null 2>&1 || sudo tailscale set --ssh >/dev/null 2>&1; then
+    if run_tailscale_set_ssh true; then
       ok "Tailscale SSH advertised by this machine"
     else
       warn "Could not advertise Tailscale SSH automatically"
+      if [[ -n "$tailscale_ssh_error" ]]; then
+        warn "Tailscale said: $(format_tailscale_error "$tailscale_ssh_error")"
+      fi
       warn "Run this on each sync machine if prompted for admin rights: sudo tailscale set --ssh"
       return
     fi
   else
     warn "Could not advertise Tailscale SSH automatically"
+    if [[ -n "$tailscale_ssh_error" ]]; then
+      warn "Tailscale said: $(format_tailscale_error "$tailscale_ssh_error")"
+    fi
     warn "Run this on each sync machine if prompted for admin rights: sudo tailscale set --ssh"
     return
   fi

@@ -3,6 +3,14 @@
 This file records user-visible changes before they are committed. New work should
 be added here first, then marked `Committed` or `Pushed` after the git action.
 
+## 2026-05-22 20:57 WITA - Report Tailscale SSH Errors
+
+- Status: Pushed
+- Areas changed: macOS/Linux setup, changelog
+- Summary: Try both the PATH Tailscale CLI and the macOS app-bundled Tailscale CLI when advertising Tailscale SSH, avoid retrying a second sudo command after the user enters their password, and print the captured Tailscale error when SSH advertisement still fails.
+- Verification: `bash -n setup.sh`; fake Tailscale CLI smoke test verified fallback to the app CLI and captured error formatting; `git diff --check -- setup.sh CHANGELOG.md`.
+- Intended commit message: `Report Tailscale SSH errors`
+
 ## 2026-05-22 20:41 WITA - Smooth Setup Service Startup
 
 - Status: Pushed
