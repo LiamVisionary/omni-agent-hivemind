@@ -206,6 +206,13 @@ type KanbanPickupPreview = {
   assignee: string;
 };
 
+type WorkspaceGitSnapshot = {
+  signature: string;
+  head: string;
+  dirty: boolean;
+  statusLines: string[];
+};
+
 type ChatAttachment = KanbanTaskAttachment;
 
 type LinkedDirectory = KanbanLinkedDirectory;
@@ -8412,6 +8419,35 @@ export default function Home() {
     });
   }
 
+  async function markKanbanTaskReviewed(task: KanbanTask) {
+    await patchKanbanTask(task.id, {
+      reviewedAt: Date.now(),
+      reviewedBy: "dashboard",
+    });
+  }
+
+  async function readWorkspaceGitSnapshot(): Promise<WorkspaceGitSnapshot | null> {
+    if (!appVersion?.appDir) return null;
+    const response = await fetch("/api/workspace/git-status", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ cwd: appVersion.appDir }),
+    }).catch(() => null);
+    const data = await response?.json().catch(() => null) as { ok?: boolean; snapshot?: WorkspaceGitSnapshot } | null;
+    return response?.ok && data?.ok && data.snapshot ? data.snapshot : null;
+  }
+
+  function kanbanWorkspaceChangeSummary(before: WorkspaceGitSnapshot | null, after: WorkspaceGitSnapshot | null) {
+    if (!after || before?.signature === after.signature) return "";
+    const changedFiles = after.statusLines.map((line) => line.slice(3).trim()).filter(Boolean);
+    const headChanged = before?.head && before.head !== after.head;
+    return [
+      "Runtime completed with observable workspace changes.",
+      headChanged ? `HEAD changed from ${before.head.slice(0, 7)} to ${after.head.slice(0, 7)}.` : "",
+      changedFiles.length ? `Changed files: ${changedFiles.slice(0, 8).join(", ")}${changedFiles.length > 8 ? ", ..." : ""}.` : "",
+    ].filter(Boolean).join(" ");
+  }
+
   async function addKanbanCardFiles(taskId: string, files: FileList | File[], kind: "image" | "file") {
     const task = kanbanBoard?.tasks.find((item) => item.id === taskId);
     if (!task) return;
@@ -9020,6 +9056,7 @@ export default function Home() {
     const localTaskId = `kanban-${task.id}-${Date.now()}`;
     let fullText = "";
     let sawAgentSession = false;
+    const workspaceBefore = await readWorkspaceGitSnapshot();
     let lastAgentSession: NonNullable<KanbanTask["agentSession"]> | null = null;
     logClientTelemetry("kanban.dispatch.start", {
       taskId: task.id,
@@ -9207,6 +9244,19 @@ export default function Home() {
       }
 
       if (!fullText.trim()) {
+        const workspaceAfter = await readWorkspaceGitSnapshot();
+        const workspaceSummary = kanbanWorkspaceChangeSummary(workspaceBefore, workspaceAfter);
+        if (workspaceSummary) {
+          logClientTelemetry("kanban.dispatch.completed_from_workspace", {
+            taskId: task.id,
+            agentId: agent.id,
+            changedFiles: workspaceAfter?.statusLines.length ?? 0,
+          });
+          updateTask(localTaskId, { status: "completed", lastMessage: workspaceSummary, completedAt: Date.now() });
+          await patchKanbanTask(task.id, { status: "done", agentSession: null, result: workspaceSummary });
+          await addKanbanSystemComment(task.id, `${agent.name} completed delegated work with workspace changes.`);
+          return { ok: true, message: workspaceSummary };
+        }
         logClientTelemetry("kanban.dispatch.empty_without_session", {
           taskId: task.id,
           agentId: agent.id,
@@ -9228,6 +9278,20 @@ export default function Home() {
     } catch (error) {
       if (controller.signal.aborted) {
         if (noProgressTimedOut) {
+          const workspaceAfter = await readWorkspaceGitSnapshot();
+          const workspaceSummary = kanbanWorkspaceChangeSummary(workspaceBefore, workspaceAfter);
+          if (workspaceSummary) {
+            logClientTelemetry("kanban.dispatch.no_progress_workspace_completed", {
+              taskId: task.id,
+              agentId: agent.id,
+              timeoutMs: KANBAN_DISPATCH_NO_PROGRESS_MS,
+              changedFiles: workspaceAfter?.statusLines.length ?? 0,
+            });
+            updateTask(localTaskId, { status: "completed", lastMessage: workspaceSummary, completedAt: Date.now() });
+            await patchKanbanTask(task.id, { status: "done", agentSession: null, result: workspaceSummary });
+            await addKanbanSystemComment(task.id, `${agent.name} completed delegated work with workspace changes.`);
+            return { ok: true, message: workspaceSummary };
+          }
           const message = `${agent.name} accepted the runtime connection, but did not produce output or attach a fresh pollable session within ${Math.round(KANBAN_DISPATCH_NO_PROGRESS_MS / 1000)}s. Check the agent runtime session, then move this card back to Ready for Queen.`;
           logClientTelemetry("kanban.dispatch.no_progress_timeout", {
             taskId: task.id,
@@ -11357,6 +11421,27 @@ export default function Home() {
                               ) : null}
                               {staleWorking ? <span className={kanbanClass("priorityPill", "stale")}>quiet {formatDurationShort(kanbanStaleAge(task))}</span> : null}
                               <span className={kanbanClass("kanbanCardActions")}>
+                                {task.status === "done" ? (
+                                  task.reviewedAt ? (
+                                    <span className={kanbanClass("kanbanReviewBadge", "reviewed")} title={`Reviewed ${formatRelativeTime(task.reviewedAt)}`}>
+                                      <Check aria-hidden="true" />
+                                      Reviewed
+                                    </span>
+                                  ) : (
+                                    <button
+                                      type="button"
+                                      className={kanbanClass("kanbanReviewBadge")}
+                                      onClick={(event) => {
+                                        event.stopPropagation();
+                                        void markKanbanTaskReviewed(task);
+                                      }}
+                                      aria-label={`Review ${task.title}`}
+                                      title="Mark reviewed"
+                                    >
+                                      Review
+                                    </button>
+                                  )
+                                ) : null}
                                 <span className={kanbanClass("kanbanCardMoveFabs")}>
                                   <button
                                     type="button"

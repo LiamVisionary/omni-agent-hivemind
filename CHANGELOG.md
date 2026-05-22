@@ -3,6 +3,14 @@
 This file records user-visible changes before they are committed. New work should
 be added here first, then marked `Committed` or `Pushed` after the git action.
 
+## 2026-05-22 16:28 WITA - Complete Silent Workspace Changes And Add Review Badge
+
+- Status: Uncommitted
+- Areas changed: Kanban completion handling, workspace git status API, Done-card review UI, Kanban task metadata
+- Summary: Treat silent runtime runs with observable workspace changes as completed work instead of Needs Human, add a workspace git snapshot endpoint for before/after comparison, and add a Done-column `Review` badge that switches to `Reviewed` with a checkmark.
+- Verification: Patched live task `t_mpebcduf_obrj4` from Needs Human to Done after confirming the requested New-tab work completed; `pnpm exec tsc --noEmit --pretty false`; `pnpm exec eslint src/app/page.tsx src/app/api/chat/agent-runtime/route.ts src/app/api/workspace/git-status/route.ts src/lib/services/kanban/local-kanban-store.ts src/lib/types/kanban.ts` (0 errors, existing page warnings only); `node scripts/test-kanban-workflow.mjs && node scripts/test-dashboard-nav.mjs && git diff --check`; `curl -sS -X POST http://127.0.0.1:5020/api/workspace/git-status ...` confirmed the workspace snapshot API reports git state.
+- Intended commit message: `Complete silent workspace changes and add review badge`
+
 ## 2026-05-22 16:13 WITA - Bound Kanban Dispatches Without Sessions
 
 - Status: Pushed

@@ -1,4 +1,8 @@
 import { NextRequest } from "next/server";
+import { execFile } from "child_process";
+import { stat } from "fs/promises";
+import { resolve } from "path";
+import { promisify } from "util";
 import type { AgentProfile, SharedVaultConfig } from "@/lib/types/agent-runtime";
 import { getRuntimeUrl } from "@/lib/types/agent-runtime";
 import { sendMessageViaGateway } from "@/lib/services/openclaw/gateway-client";
@@ -31,6 +35,14 @@ type RuntimeRouteTelemetry = {
 const INTERACTIVE_RUNTIME_LOCK_MS = 130_000;
 const RUNTIME_FETCH_TIMEOUT_MS = 10 * 60 * 1000;
 const interactiveRuntimeLocks = new Map<string, number>();
+const execFileAsync = promisify(execFile);
+
+type WorkspaceSnapshot = {
+  head: string;
+  dirty: boolean;
+  statusLines: string[];
+  signature: string;
+};
 
 function telemetryPayloadForProfile(profile?: AgentProfile) {
   if (!profile) return {};
@@ -91,6 +103,39 @@ function buildWorkingDirectoryContext(workingDirectory?: string): string {
     "Working directory context:",
     `- Use this directory for the chat unless the user says otherwise: ${trimmed}`,
   ].join("\n");
+}
+
+async function readWorkspaceSnapshot(workingDirectory?: string): Promise<WorkspaceSnapshot | null> {
+  const trimmed = workingDirectory?.trim();
+  if (!trimmed) return null;
+  try {
+    const cwd = resolve(trimmed);
+    const pathStats = await stat(cwd);
+    if (!pathStats.isDirectory()) return null;
+    const [head, status] = await Promise.all([
+      execFileAsync("git", ["-C", cwd, "rev-parse", "HEAD"], { timeout: 5_000 }).then(({ stdout }) => stdout.trim()),
+      execFileAsync("git", ["-C", cwd, "status", "--porcelain"], { timeout: 5_000, maxBuffer: 500_000 }).then(({ stdout }) => stdout.trim()),
+    ]);
+    return {
+      head,
+      dirty: status.length > 0,
+      statusLines: status ? status.split("\n").slice(0, 12) : [],
+      signature: `${head}:${status}`,
+    };
+  } catch {
+    return null;
+  }
+}
+
+function workspaceChangeSummary(before: WorkspaceSnapshot | null, after: WorkspaceSnapshot | null) {
+  if (!after || before?.signature === after.signature) return "";
+  const changedFiles = after.statusLines.map((line) => line.slice(3).trim()).filter(Boolean);
+  const headChanged = before?.head && before.head !== after.head;
+  return [
+    "Runtime completed with observable workspace changes.",
+    headChanged ? `HEAD changed from ${before.head.slice(0, 7)} to ${after.head.slice(0, 7)}.` : "",
+    changedFiles.length ? `Changed files: ${changedFiles.slice(0, 8).join(", ")}${changedFiles.length > 8 ? ", ..." : ""}.` : "",
+  ].filter(Boolean).join(" ");
 }
 
 function activeSharedVault(profile: AgentProfile, sharedVault?: SharedVaultConfig): SharedVaultConfig | null {
@@ -329,6 +374,7 @@ async function streamHttpRuntime(
   const runtimeMessage = context
     ? `${context}\n\nUser message:\n${inputCheck.text}`
     : inputCheck.text;
+  const workspaceBefore = await readWorkspaceSnapshot(workingDirectory);
   let upstream: Response;
   const fetchStartedAt = Date.now();
   let fetchSettled = false;
@@ -512,6 +558,20 @@ async function streamHttpRuntime(
                 ? ssePayload({ error: outputCheck.reason ?? "Response blocked by security policy" })
                 : ssePayload({ choices: [{ delta: { content: outputCheck.text } }] })));
             }
+          }
+        }
+        if (!fullText.trim()) {
+          const workspaceAfter = await readWorkspaceSnapshot(workingDirectory);
+          const summary = workspaceChangeSummary(workspaceBefore, workspaceAfter);
+          if (summary) {
+            fullText = summary;
+            controller.enqueue(encoder.encode(ssePayload({ choices: [{ delta: { content: summary } }] })));
+            recordRuntimeTelemetry(telemetry, "agent_runtime.http.workspace_completed", {
+              ...telemetryPayloadForProfile(profile),
+              url,
+              changedFiles: workspaceAfter?.statusLines.length ?? 0,
+              headChanged: Boolean(workspaceBefore?.head && workspaceAfter?.head && workspaceBefore.head !== workspaceAfter.head),
+            });
           }
         }
         const event = await recordChatHoney(profile, userText, fullText, honeyLedgerEnabled);

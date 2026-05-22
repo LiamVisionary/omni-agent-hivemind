@@ -76,6 +76,8 @@ export type KanbanTask = {
   targetMachine?: KanbanMachineTarget | null;
   agentSession?: KanbanAgentSession | null;
   idempotencyKey?: string;
+  reviewedAt?: number;
+  reviewedBy?: string;
   createdAt: number;
   updatedAt: number;
   completedAt?: number;

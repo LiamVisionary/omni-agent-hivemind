@@ -37,7 +37,9 @@ type CreateTaskInput = {
   idempotencyKey?: string;
 };
 
-type PatchTaskInput = Partial<Pick<KanbanTask, "title" | "body" | "result" | "assignee" | "tenant" | "status" | "priority" | "workspace" | "skills" | "attachments" | "linkedDirectories" | "targetMachine" | "agentSession">>;
+type PatchTaskInput = Partial<Pick<KanbanTask, "title" | "body" | "result" | "assignee" | "tenant" | "status" | "priority" | "workspace" | "skills" | "attachments" | "linkedDirectories" | "targetMachine" | "agentSession" | "reviewedBy">> & {
+  reviewedAt?: number | null;
+};
 
 export type KanbanStorageOptions = {
   vaultPath?: string | null;
@@ -269,6 +271,8 @@ export async function patchTask(slug: string | null, taskId: string, patch: Patc
     targetMachine: patch.targetMachine === null ? null : patch.targetMachine ?? task.targetMachine,
     result: retryingWorking ? patch.result ?? "" : patch.result ?? task.result,
     agentSession: retryingWorking ? patch.agentSession ?? undefined : patch.agentSession ?? task.agentSession,
+    reviewedAt: patch.reviewedAt === null ? undefined : patch.reviewedAt ?? task.reviewedAt,
+    reviewedBy: patch.reviewedBy === "" ? undefined : patch.reviewedBy ?? task.reviewedBy,
     updatedAt: Date.now(),
     completedAt: nextStatus ? (nextStatus === "done" ? Date.now() : undefined) : task.completedAt,
   };
