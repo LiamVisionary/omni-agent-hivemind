@@ -46,6 +46,8 @@ sudo tailscale up
 sudo tailscale set --ssh
 ```
 
+If setup detects the sandboxed macOS GUI build while running interactively, it can offer to run the Homebrew formula flow for you.
+
 - On Linux machines that should host Tailscale SSH:
 
 ```bash

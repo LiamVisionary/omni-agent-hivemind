@@ -3,6 +3,14 @@
 This file records user-visible changes before they are committed. New work should
 be added here first, then marked `Committed` or `Pushed` after the git action.
 
+## 2026-05-22 22:12 WITA - Offer Homebrew Tailscaled Setup
+
+- Status: Pushed
+- Areas changed: macOS/Linux setup, README quick start, changelog
+- Summary: Detect Homebrew/open-source Tailscale CLI and `tailscaled` separately from the sandboxed macOS GUI shim, offer to install/start/connect the Homebrew daemon when the GUI build cannot host Tailscale SSH, retry SSH enablement through that daemon, and document that setup can run the Homebrew formula flow interactively.
+- Verification: `bash -n setup.sh`; sandboxed-GUI fake CLI smoke confirmed setup suppresses stale sudo advice and offers the Homebrew daemon path; `git diff --check -- setup.sh README.md CHANGELOG.md`.
+- Intended commit message: `Offer Homebrew tailscaled setup`
+
 ## 2026-05-22 22:01 WITA - Link Tailscale Mac CLI Guide
 
 - Status: Pushed

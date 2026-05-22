@@ -347,7 +347,12 @@ start_syncthing_if_available() {
 }
 
 tailscale_cli_candidates() {
-  command -v tailscale 2>/dev/null || true
+  homebrew_tailscale_cli_candidates
+  local path_cli
+  path_cli="$(command -v tailscale 2>/dev/null || true)"
+  if [[ -n "$path_cli" ]] && ! tailscale_cli_is_macos_app_shim "$path_cli"; then
+    printf "%s\n" "$path_cli"
+  fi
   [[ -x /Applications/Tailscale.app/Contents/MacOS/tailscale ]] && printf "%s\n" "/Applications/Tailscale.app/Contents/MacOS/tailscale"
   [[ -x /Applications/Tailscale.app/Contents/MacOS/Tailscale ]] && printf "%s\n" "/Applications/Tailscale.app/Contents/MacOS/Tailscale"
 }
@@ -356,8 +361,78 @@ format_tailscale_error() {
   printf "%s" "$1" | tr '\n' ' ' | sed 's/[[:space:]]\{1,\}/ /g'
 }
 
+tailscale_cli_is_macos_app_shim() {
+  [[ -f "$1" ]] && grep -q "/Applications/Tailscale.app/Contents/MacOS" "$1" 2>/dev/null
+}
+
 tailscale_ssh_error_is_sandboxed() {
   [[ "$1" == *"sandboxed Tailscale GUI builds"* ]]
+}
+
+homebrew_tailscale_cli_candidates() {
+  local prefix candidate
+  for candidate in /opt/homebrew/opt/tailscale/bin/tailscale /opt/homebrew/bin/tailscale /usr/local/opt/tailscale/bin/tailscale /usr/local/bin/tailscale; do
+    [[ -x "$candidate" ]] && ! tailscale_cli_is_macos_app_shim "$candidate" && printf "%s\n" "$candidate"
+  done
+  if command -v brew >/dev/null 2>&1; then
+    prefix="$(brew --prefix tailscale 2>/dev/null || true)"
+    [[ -n "$prefix" && -x "$prefix/bin/tailscale" ]] && printf "%s\n" "$prefix/bin/tailscale"
+  fi
+}
+
+homebrew_tailscaled_candidates() {
+  local prefix candidate
+  for candidate in /opt/homebrew/opt/tailscale/bin/tailscaled /opt/homebrew/bin/tailscaled /usr/local/opt/tailscale/bin/tailscaled /usr/local/bin/tailscaled; do
+    [[ -x "$candidate" ]] && printf "%s\n" "$candidate"
+  done
+  if command -v brew >/dev/null 2>&1; then
+    prefix="$(brew --prefix tailscale 2>/dev/null || true)"
+    [[ -n "$prefix" && -x "$prefix/bin/tailscaled" ]] && printf "%s\n" "$prefix/bin/tailscaled"
+  fi
+}
+
+first_homebrew_tailscale_cli() {
+  homebrew_tailscale_cli_candidates | awk '!seen[$0]++ { print; exit }'
+}
+
+homebrew_tailscaled_is_available() {
+  [[ -n "$(homebrew_tailscaled_candidates | head -1)" ]]
+}
+
+setup_homebrew_tailscaled_for_ssh() {
+  [[ "$(uname -s)" == "Darwin" ]] || return 1
+  setup_is_interactive || return 1
+  command -v brew >/dev/null 2>&1 || ensure_homebrew || return 1
+
+  local prompt="Tailscale SSH needs the Homebrew/open-source tailscaled daemon on this Mac. Install and start it now?"
+  if homebrew_tailscaled_is_available; then
+    prompt="Tailscale SSH needs the Homebrew/open-source tailscaled daemon on this Mac. Start and connect the installed daemon now?"
+  fi
+  if ! prompt_yes_no "$prompt" "yes"; then
+    return 1
+  fi
+
+  if ! homebrew_tailscaled_is_available; then
+    info "Installing Homebrew Tailscale CLI/daemon"
+    brew install --formula tailscale
+  else
+    ok "Homebrew tailscaled found: $(homebrew_tailscaled_candidates | head -1)"
+  fi
+
+  info "Starting Homebrew tailscaled service"
+  sudo brew services start tailscale
+  refresh_tool_paths
+
+  local formula_cli
+  formula_cli="$(first_homebrew_tailscale_cli)"
+  if [[ -z "$formula_cli" ]]; then
+    warn "Homebrew tailscale CLI was not found after install/start"
+    return 1
+  fi
+
+  info "Connecting Homebrew tailscaled"
+  sudo "$formula_cli" up
+  sudo "$formula_cli" status >/dev/null 2>&1
 }
 
 warn_tailscale_ssh_unavailable() {
@@ -366,10 +441,21 @@ warn_tailscale_ssh_unavailable() {
   fi
   if tailscale_ssh_error_is_sandboxed "$tailscale_ssh_error"; then
     warn "This macOS Tailscale build cannot host Tailscale SSH. Shared-brain Syncthing can still work, but Tailscale SSH features from this Mac are disabled."
-    warn "To host Tailscale SSH from this Mac, install the open-source tailscale + tailscaled CLI build: https://github.com/tailscale/tailscale/wiki/Tailscaled-on-macOS"
+    if homebrew_tailscaled_is_available; then
+      warn "Homebrew tailscaled is installed but is not the active Tailscale backend. Start/connect it with: sudo brew services start tailscale && sudo tailscale up && sudo tailscale set --ssh"
+    else
+      warn "Setup can install/start the Homebrew tailscale daemon interactively, or follow: https://github.com/tailscale/tailscale/wiki/Tailscaled-on-macOS"
+    fi
   else
     warn "Run this on each sync machine if prompted for admin rights: sudo tailscale set --ssh"
   fi
+}
+
+try_homebrew_tailscaled_for_ssh() {
+  tailscale_ssh_error_is_sandboxed "$tailscale_ssh_error" || return 1
+  setup_homebrew_tailscaled_for_ssh || return 1
+  tailscale_ssh_error=""
+  run_tailscale_set_ssh false || run_tailscale_set_ssh_sudo_noninteractive || run_tailscale_set_ssh true
 }
 
 run_tailscale_set_ssh() {
@@ -427,6 +513,14 @@ enable_tailscale_ssh() {
   tailscale_ssh_error=""
   if run_tailscale_set_ssh false; then
     ok "Tailscale SSH advertised by this machine"
+  elif tailscale_ssh_error_is_sandboxed "$tailscale_ssh_error"; then
+    if try_homebrew_tailscaled_for_ssh; then
+      ok "Tailscale SSH advertised by this machine"
+    else
+      warn "Could not advertise Tailscale SSH automatically"
+      warn_tailscale_ssh_unavailable
+      return
+    fi
   elif command -v sudo >/dev/null 2>&1 && run_tailscale_set_ssh_sudo_noninteractive; then
     ok "Tailscale SSH advertised by this machine"
   elif command -v sudo >/dev/null 2>&1 && setup_is_interactive && prompt_yes_no "Tailscale SSH needs admin privileges. Run sudo tailscale set --ssh now?" "yes"; then
