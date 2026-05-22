@@ -1376,7 +1376,7 @@ function swarmMarketFromItems(items: Record<string, unknown>[], timelineItems: R
   };
 }
 
-type DashboardView = "agents" | "new" | "kanban" | "scheduler" | "swarm" | "wallet" | "vault" | "notifications" | "chat";
+type DashboardView = "agents" | "kanban" | "scheduler" | "swarm" | "wallet" | "vault" | "notifications" | "chat";
 type DashboardTheme = "dark" | "hive-light";
 
 const STORAGE_KEY = "hivemindos.agentProfiles.v1";
@@ -2325,7 +2325,9 @@ function kanbanTaskDispatchPrompt(task: KanbanTask, assignment: ReturnType<typeo
     attachmentDetails,
     task.result ? `Existing notes:\n${task.result}` : "",
     `Suggested worker class: ${beeWorkerClassLabel(assignment.workerClass)}.`,
-    "Treat existing notes as authoritative retry context when they say an old expectation was superseded, removed, or already verified. Do not undo a verified dashboard change just to satisfy a stale task title.",
+    task.undoRequestedAt
+      ? "This is an explicit undo request. Treat the previous completed change for this task as the target and reverse it narrowly, even if existing notes say the original task was verified or completed."
+      : "Treat existing notes as authoritative retry context when they say an old expectation was superseded, removed, or already verified. Do not undo a verified dashboard change just to satisfy a stale task title.",
     "Complete the task as far as your runtime/tools allow. If you are blocked, say exactly what human input, access, or setup is needed. End with a concise result summary and any evidence.",
   ].filter(Boolean).join("\n\n");
 }
@@ -2401,7 +2403,6 @@ function kanbanTaskAssignmentForAgent(task: KanbanTask, agent: AgentProfile): Re
 
 function viewIcon(view: DashboardView) {
   if (view === "agents") return <Network aria-hidden="true" />;
-  if (view === "new") return <Plus aria-hidden="true" />;
   if (view === "kanban") return <KanbanSquare aria-hidden="true" />;
   if (view === "scheduler") return <Repeat2 aria-hidden="true" />;
   if (view === "swarm") return <Activity aria-hidden="true" />;
@@ -5728,11 +5729,6 @@ export default function Home() {
       detail: `${visibleAgentCount} agents`,
     },
     {
-      id: "new" as const,
-      label: "New",
-      detail: "test tab",
-    },
-    {
       id: "kanban" as const,
       label: "Work",
       detail: `${kanbanBoard?.tasks.length ?? 0} tasks`,
@@ -5776,7 +5772,6 @@ export default function Home() {
     const detail = activeNavItem?.detail ?? "";
     const headers: Record<DashboardView, { label: string; title: string }> = {
       agents: { label: "Fleet", title: "Where the hive is deployed" },
-      new: { label: "New", title: "New test tab" },
       kanban: { label: "Work Board", title: "What the hive is up to" },
       scheduler: { label: "Scheduler", title: "What the hive will do next" },
       swarm: { label: "Swarm Theater", title: "What the hive is simulating" },
@@ -8872,15 +8867,23 @@ export default function Home() {
   /* eslint-enable react-hooks/refs */
 
   async function orchestrateReadyKanbanTask(task: KanbanTask) {
+    const undoRequested = Boolean(task.undoRequestedAt);
     const targetAgents = agentsForKanbanTask(task);
+    const dispatchAgents = undoRequested
+      ? [
+        ...targetAgents.filter((agent) => agent.beeRole !== "queen"),
+        ...targetAgents.filter((agent) => agent.beeRole === "queen"),
+      ]
+      : targetAgents;
     logClientTelemetry("kanban.ready.orchestrate.start", {
       taskId: task.id,
       status: task.status,
       displayAgentCount: displayAgents.length,
-      eligibleAgentCount: targetAgents.length,
+      eligibleAgentCount: dispatchAgents.length,
       targetMachine: task.targetMachine?.name ?? "Any machine",
+      undoRequested,
     });
-    if (targetAgents.length === 0) {
+    if (dispatchAgents.length === 0) {
       logClientTelemetry("kanban.ready.orchestrate.no_agents", { taskId: task.id });
       if (task.targetMachine?.name) {
         await patchKanbanTask(task.id, {
@@ -8895,20 +8898,21 @@ export default function Home() {
 
     const excludedAgentIds = new Set<string>();
 
-    while (excludedAgentIds.size < targetAgents.length) {
+    while (excludedAgentIds.size < dispatchAgents.length) {
       // eslint-disable-next-line react-hooks/purity
       const now = Date.now();
-      const eligibleAgents = targetAgents.filter((agent) => {
+      const eligibleAgents = dispatchAgents.filter((agent) => {
         const cooldownUntil = kanbanDispatchCooldownRef.current.get(agent.id) ?? 0;
         return !excludedAgentIds.has(agent.id)
           && cooldownUntil <= now;
       });
-      const assignment = chooseBeeAssignment(task, eligibleAgents);
+      const assignment = chooseBeeAssignment(task, eligibleAgents, { preferQueen: !undoRequested });
       if (assignment.mode === "pending") {
         logClientTelemetry("kanban.ready.orchestrate.pending", {
           taskId: task.id,
           excludedAgentCount: excludedAgentIds.size,
           eligibleAgentCount: eligibleAgents.length,
+          undoRequested,
         });
         await refreshKanbanOnce().catch((error) => setKanbanError(error instanceof Error ? error.message : "Kanban refresh failed."));
         return;
@@ -10677,7 +10681,7 @@ export default function Home() {
               </div>
 
               <nav className="viewTabs" aria-label="Dashboard views">
-                {(["agents", "new", "kanban", "vault", "scheduler", "swarm", "wallet"] as DashboardView[])
+                {(["agents", "kanban", "vault", "scheduler", "swarm", "wallet"] as DashboardView[])
                   .map((id) => navItems.find((item) => item.id === id))
                   .filter((item): item is (typeof navItems)[number] => Boolean(item))
                   .map((item) => (
@@ -10717,12 +10721,6 @@ export default function Home() {
         </TooltipProvider>
 
         <div className="commandMain">
-      {activeView === "new" ? (
-      <section className="tabPanel rounded-[28px] border border-white/10 bg-white/[0.03] p-6 text-sm text-[var(--muted)]">
-        New test tab
-      </section>
-      ) : null}
-
       {activeView === "agents" ? (
       <section className={fleetClass("fleetConstellationPanel", "tabPanel")}>
         <FleetView

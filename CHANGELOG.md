@@ -3,6 +3,22 @@
 This file records user-visible changes before they are committed. New work should
 be added here first, then marked `Committed` or `Pushed` after the git action.
 
+## 2026-05-22 16:47 WITA - Route Kanban Undo To Workers
+
+- Status: Pushed
+- Areas changed: Kanban undo dispatch prompt, Queen/worker assignment routing, Kanban workflow regression test
+- Summary: Route explicit undo requests to an eligible worker before falling back to Queen and remove the stale retry prompt guard that told agents not to undo verified work.
+- Verification: Telemetry inspection confirmed task `t_mpebcduf_obrj4` was requeued for undo, skipped Aeon, assigned to Queen Bee, then failed with no fresh pollable session; `pnpm exec tsc --noEmit --pretty false`; `pnpm exec eslint src/app/page.tsx src/lib/services/orchestration/bee-roles.ts scripts/test-kanban-workflow.mjs scripts/test-dashboard-nav.mjs` (0 errors, existing page warnings only); `node scripts/test-dashboard-nav.mjs && git diff --check`; `node scripts/test-kanban-workflow.mjs`.
+- Intended commit message: `Route Kanban undo requests to workers`
+
+## 2026-05-22 16:44 WITA - Undo New Test Navigation Tab
+
+- Status: Pushed
+- Areas changed: Dashboard navigation and nav smoke test
+- Summary: Remove the temporary `New` dashboard navigation tab and placeholder test panel while preserving later Kanban completion/undo workflow changes.
+- Verification: `node scripts/test-dashboard-nav.mjs && git diff --check`; `pnpm exec tsc --noEmit --pretty false`; `pnpm exec eslint src/app/page.tsx src/lib/services/orchestration/bee-roles.ts scripts/test-kanban-workflow.mjs scripts/test-dashboard-nav.mjs` (0 errors, existing page warnings only).
+- Intended commit message: `Undo New test navigation tab`
+
 ## 2026-05-22 16:34 WITA - Add Kanban Undo Reversal Flow
 
 - Status: Pushed

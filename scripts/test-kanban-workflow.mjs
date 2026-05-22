@@ -154,6 +154,17 @@ async function main() {
       "Regression guard failed: dispatches with no content/session need a bounded no-progress timeout.",
     );
     assert(
+      source.includes("This is an explicit undo request.")
+      && source.includes("reverse it narrowly")
+      && source.includes("Treat existing notes as authoritative retry context"),
+      "Regression guard failed: explicit undo prompts must override stale retry context.",
+    );
+    assert(
+      source.includes("const undoRequested = Boolean(task.undoRequestedAt);")
+      && source.includes("preferQueen: !undoRequested"),
+      "Regression guard failed: undo requests should prefer worker routing before Queen fallback.",
+    );
+    assert(
       source.includes('logClientTelemetry("kanban.dispatch.no_final_assistant"')
       && source.includes('logClientTelemetry("kanban.dispatch.completed_from_session"')
       && source.includes('await patchKanbanTask(task.id, {\n              status: "needs-human",\n              agentSession: null,'),

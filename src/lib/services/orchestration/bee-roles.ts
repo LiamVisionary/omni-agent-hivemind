@@ -28,6 +28,10 @@ export type BeeAssignment = {
   reason: string;
 };
 
+type BeeAssignmentOptions = {
+  preferQueen?: boolean;
+};
+
 const CLASS_KEYWORDS: Array<{ workerClass: BeeWorkerClass; keywords: RegExp[] }> = [
   { workerClass: "planner", keywords: [/plan/i, /decompos/i, /architect/i, /strategy/i, /roadmap/i, /coordinate/i, /orchestrat/i] },
   { workerClass: "code", keywords: [/code/i, /bug/i, /api/i, /test/i, /repo/i, /typescript/i, /css/i, /component/i, /build/i, /implement/i] },
@@ -60,8 +64,9 @@ function agentDispatchScore(agent: AgentProfile) {
   return score;
 }
 
-export function chooseBeeAssignment(task: KanbanTask, agents: AgentProfile[]): BeeAssignment {
+export function chooseBeeAssignment(task: KanbanTask, agents: AgentProfile[], options: BeeAssignmentOptions = {}): BeeAssignment {
   const workerClass = inferWorkerClass(task);
+  const preferQueen = options.preferQueen ?? true;
   const available = agents
     .filter((agent) => agent.beeRole !== "observer" && agent.beeRole !== "human")
     .sort((left, right) => agentDispatchScore(right) - agentDispatchScore(left));
@@ -81,6 +86,18 @@ export function chooseBeeAssignment(task: KanbanTask, agents: AgentProfile[]): B
       reason: `${queen.name} is online as Queen Bee and delegated this ${workerClass} work to ${worker.name}.`,
     };
   }
+  const fallbackWorker = available.find((agent) => agent.beeRole === "worker")
+    ?? available.find((agent) => agent.beeRole !== "queen")
+    ?? (preferQueen ? available[0] : undefined);
+  if (!preferQueen && fallbackWorker) {
+    return {
+      queen,
+      worker: fallbackWorker,
+      workerClass,
+      mode: "worker",
+      reason: `Undo work is routed directly to ${fallbackWorker.name} as the best available ${workerClass} worker.`,
+    };
+  }
   if (queen) {
     return {
       queen,
@@ -91,8 +108,6 @@ export function chooseBeeAssignment(task: KanbanTask, agents: AgentProfile[]): B
     };
   }
 
-  const fallbackWorker = available.find((agent) => agent.beeRole === "worker")
-    ?? available[0];
   if (fallbackWorker) {
     return {
       worker: fallbackWorker,
