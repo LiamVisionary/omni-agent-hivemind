@@ -3,6 +3,14 @@
 This file records user-visible changes before they are committed. New work should
 be added here first, then marked `Committed` or `Pushed` after the git action.
 
+## 2026-05-22 15:48 WITA - Wrap Workboard Machine Tooltip Provider
+
+- Status: Uncommitted
+- Areas changed: Workboard machine target tooltip
+- Summary: Wrap the Workboard surface in `TooltipProvider` so card machine selectors can render without the Radix tooltip provider runtime error.
+- Verification: `pnpm exec tsc --noEmit --pretty false`; `pnpm exec eslint src/app/page.tsx` (0 errors, existing page warnings only); `node scripts/test-dashboard-nav.mjs && node scripts/test-kanban-workflow.mjs`; `git diff --check src/app/page.tsx`.
+- Intended commit message: `Wrap Workboard machine tooltip provider`
+
 ## 2026-05-22 15:47 WITA - Add Kanban Machine Targets And Unlimited Attachments
 
 - Status: Pushed

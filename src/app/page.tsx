@@ -10805,6 +10805,7 @@ export default function Home() {
       ) : null}
 
       {activeView === "kanban" ? (
+      <TooltipProvider delayDuration={120}>
       <section className={kanbanClass("workBoardPanel", "tabPanel")}>
         <div className={kanbanClass("workBoardShell")}>
           <section className={kanbanClass("workBoardHero")} aria-label="Work board summary">
@@ -11258,6 +11259,7 @@ export default function Home() {
           </div>
         </div>
       </section>
+      </TooltipProvider>
       ) : null}
 
       {selectedKanbanTask && kanbanTaskModal ? (
