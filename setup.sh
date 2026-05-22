@@ -356,6 +356,22 @@ format_tailscale_error() {
   printf "%s" "$1" | tr '\n' ' ' | sed 's/[[:space:]]\{1,\}/ /g'
 }
 
+tailscale_ssh_error_is_sandboxed() {
+  [[ "$1" == *"sandboxed Tailscale GUI builds"* ]]
+}
+
+warn_tailscale_ssh_unavailable() {
+  if [[ -n "$tailscale_ssh_error" ]]; then
+    warn "Tailscale said: $(format_tailscale_error "$tailscale_ssh_error")"
+  fi
+  if tailscale_ssh_error_is_sandboxed "$tailscale_ssh_error"; then
+    warn "This macOS Tailscale build cannot host Tailscale SSH. Shared-brain Syncthing can still work, but Tailscale SSH features from this Mac are disabled."
+    warn "To host Tailscale SSH from this Mac, install the open-source tailscale + tailscaled CLI build instead of the sandboxed GUI build."
+  else
+    warn "Run this on each sync machine if prompted for admin rights: sudo tailscale set --ssh"
+  fi
+}
+
 run_tailscale_set_ssh() {
   local use_sudo="${1:-false}"
   local cli output
@@ -380,11 +396,12 @@ run_tailscale_set_ssh() {
 
 run_tailscale_set_ssh_sudo_noninteractive() {
   local cli output
-  tailscale_ssh_error=""
   while IFS= read -r cli; do
     [[ -n "$cli" ]] || continue
     output="$(sudo -n "$cli" set --ssh=true 2>&1)" || {
-      tailscale_ssh_error="$output"
+      if ! tailscale_ssh_error_is_sandboxed "$tailscale_ssh_error"; then
+        tailscale_ssh_error="$output"
+      fi
       continue
     }
     return 0
@@ -417,18 +434,12 @@ enable_tailscale_ssh() {
       ok "Tailscale SSH advertised by this machine"
     else
       warn "Could not advertise Tailscale SSH automatically"
-      if [[ -n "$tailscale_ssh_error" ]]; then
-        warn "Tailscale said: $(format_tailscale_error "$tailscale_ssh_error")"
-      fi
-      warn "Run this on each sync machine if prompted for admin rights: sudo tailscale set --ssh"
+      warn_tailscale_ssh_unavailable
       return
     fi
   else
     warn "Could not advertise Tailscale SSH automatically"
-    if [[ -n "$tailscale_ssh_error" ]]; then
-      warn "Tailscale said: $(format_tailscale_error "$tailscale_ssh_error")"
-    fi
-    warn "Run this on each sync machine if prompted for admin rights: sudo tailscale set --ssh"
+    warn_tailscale_ssh_unavailable
     return
   fi
   if ! tailscale debug prefs 2>/dev/null | grep -q '"RunSSH": true'; then

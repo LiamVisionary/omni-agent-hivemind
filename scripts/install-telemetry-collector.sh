@@ -65,12 +65,24 @@ enable_tailscale_ssh() {
     echo "Tailscale SSH already advertised by this machine"
     return
   fi
-  if tailscale set --ssh=true >/dev/null 2>&1 || tailscale set --ssh >/dev/null 2>&1; then
+  local tailscale_ssh_error=""
+  if tailscale_ssh_error="$(tailscale set --ssh=true 2>&1)"; then
     echo "Tailscale SSH advertised by this machine"
-  elif command -v sudo >/dev/null 2>&1 && (sudo -n tailscale set --ssh=true >/dev/null 2>&1 || sudo -n tailscale set --ssh >/dev/null 2>&1); then
+  elif command -v sudo >/dev/null 2>&1 && tailscale_sudo_error="$(sudo -n tailscale set --ssh=true 2>&1)"; then
     echo "Tailscale SSH advertised by this machine"
   else
-    echo "Could not advertise Tailscale SSH automatically; run on this machine: sudo tailscale set --ssh" >&2
+    if [[ -n "${tailscale_sudo_error:-}" && "$tailscale_ssh_error" != *"sandboxed Tailscale GUI builds"* ]]; then
+      tailscale_ssh_error="$tailscale_sudo_error"
+    fi
+    echo "Could not advertise Tailscale SSH automatically." >&2
+    if [[ -n "$tailscale_ssh_error" ]]; then
+      echo "Tailscale said: $(printf "%s" "$tailscale_ssh_error" | tr '\n' ' ' | sed 's/[[:space:]]\{1,\}/ /g')" >&2
+    fi
+    if [[ "$tailscale_ssh_error" == *"sandboxed Tailscale GUI builds"* ]]; then
+      echo "This macOS Tailscale build cannot host Tailscale SSH. Shared-brain Syncthing can still work, but Tailscale SSH features from this Mac are disabled." >&2
+    else
+      echo "Run on this machine if prompted for admin rights: sudo tailscale set --ssh" >&2
+    fi
     return
   fi
   if ! tailscale debug prefs 2>/dev/null | grep -q '"RunSSH": true'; then

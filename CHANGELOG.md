@@ -3,6 +3,14 @@
 This file records user-visible changes before they are committed. New work should
 be added here first, then marked `Committed` or `Pushed` after the git action.
 
+## 2026-05-22 21:05 WITA - Clarify Sandboxed Tailscale SSH
+
+- Status: Pushed
+- Areas changed: macOS/Linux setup, telemetry collector installer, changelog
+- Summary: Detect the Tailscale error for sandboxed macOS GUI builds, stop recommending `sudo tailscale set --ssh` for that unsupported install type, and explain that Syncthing still works while Tailscale SSH-hosted features require the open-source `tailscale` + `tailscaled` CLI build.
+- Verification: `bash -n setup.sh && bash -n scripts/install-telemetry-collector.sh`; fake Tailscale CLI smoke tests for setup and collector installer confirmed sandboxed-GUI messages suppress the stale sudo advice; `git diff --check -- setup.sh scripts/install-telemetry-collector.sh CHANGELOG.md`.
+- Intended commit message: `Clarify sandboxed Tailscale SSH`
+
 ## 2026-05-22 20:57 WITA - Report Tailscale SSH Errors
 
 - Status: Pushed
