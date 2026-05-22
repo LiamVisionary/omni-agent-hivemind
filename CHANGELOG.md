@@ -3,6 +3,14 @@
 This file records user-visible changes before they are committed. New work should
 be added here first, then marked `Committed` or `Pushed` after the git action.
 
+## 2026-05-22 14:32 WITA - De-noise Setup Missing Dependency Output
+
+- Status: Pushed
+- Areas changed: Setup script dependency output, changelog
+- Summary: Print pnpm install instructions only once in the final required-dependency block, describe missing Tailscale as optional when setup cannot auto-install it, and use singular wording when only one required dependency is missing.
+- Verification: `bash -n setup.sh`; `git diff --check -- setup.sh CHANGELOG.md`; simulated a missing-pnpm/no-Tailscale-installer run with a temporary PATH containing only `node`, confirming pnpm install commands print once, Tailscale is described as optional, and the final rerun prompt uses singular wording.
+- Intended commit message: `De-noise setup dependency output`
+
 ## 2026-05-22 14:17 WITA - Clarify HivemindOS Setup Dependencies
 
 - Status: Pushed

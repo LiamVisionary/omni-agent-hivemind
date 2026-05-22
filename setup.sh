@@ -204,22 +204,20 @@ install_tailscale_if_missing() {
     return 0
   fi
 
-  warn "Tailscale is not installed; trying to install it for multi-machine sync"
   if [[ "$(uname -s)" == "Darwin" ]] && command -v brew >/dev/null 2>&1; then
+    warn "Tailscale is not installed; trying to install it for multi-machine sync"
     brew install --cask tailscale || true
     if ! command -v tailscale >/dev/null 2>&1; then
       brew install tailscale || true
     fi
   elif command -v apt-get >/dev/null 2>&1 && command -v sudo >/dev/null 2>&1; then
     if command -v curl >/dev/null 2>&1; then
+      warn "Tailscale is not installed; trying to install it for multi-machine sync"
       curl -fsSL https://tailscale.com/install.sh | sh || true
     else
       warn "Install curl first, then run: curl -fsSL https://tailscale.com/install.sh | sh"
     fi
   else
-    warn "Install Tailscale later to enable multi-machine collaboration:"
-    warn "  macOS: brew install --cask tailscale"
-    warn "  Linux: curl -fsSL https://tailscale.com/install.sh | sh"
     return 1
   fi
 
@@ -332,13 +330,6 @@ elif command -v corepack >/dev/null 2>&1; then
 else
   missing+=("pnpm or corepack")
   fail "pnpm is missing"
-  if [[ "$(uname -s)" == "Darwin" ]]; then
-    warn "Install pnpm with one of:"
-    warn "  npm install -g pnpm"
-    warn "  brew install pnpm"
-  else
-    warn "Install pnpm with: npm install -g pnpm"
-  fi
 fi
 
 if command -v corepack >/dev/null 2>&1; then
@@ -360,8 +351,11 @@ if command -v tailscale >/dev/null 2>&1; then
     warn "Multi-machine collaboration and shared memory sync are disabled until you open Tailscale and sign in, or run: tailscale up"
   fi
 else
-  warn "Tailscale is not installed"
+  warn "Tailscale is optional and not installed."
   warn "Multi-machine collaboration and shared memory sync are disabled. Local-only dashboard, agents, and local vault features will still work."
+  warn "To enable multi-machine sync later:"
+  warn "  macOS: brew install --cask tailscale"
+  warn "  Linux: curl -fsSL https://tailscale.com/install.sh | sh"
 fi
 
 if [[ "$tailnet_sync_enabled" == "true" ]]; then
@@ -373,7 +367,11 @@ fi
 
 if (( ${#missing[@]} > 0 )); then
   echo
-  warn "Setup needs a couple things first:"
+  if (( ${#missing[@]} == 1 )); then
+    warn "Setup needs one required dependency first:"
+  else
+    warn "Setup needs a couple things first:"
+  fi
   for item in "${missing[@]}"; do
     echo "  - $item"
   done
@@ -388,7 +386,11 @@ if (( ${#missing[@]} > 0 )); then
     fi
   fi
   echo
-  echo "After fixing those, rerun:"
+  if (( ${#missing[@]} == 1 )); then
+    echo "After fixing that, rerun:"
+  else
+    echo "After fixing those, rerun:"
+  fi
   echo "  ./setup.sh"
   exit 1
 fi
