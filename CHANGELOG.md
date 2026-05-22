@@ -5,7 +5,7 @@ be added here first, then marked `Committed` or `Pushed` after the git action.
 
 ## 2026-05-22 16:05 WITA - Remove Inline Add Machine Label
 
-- Status: Uncommitted
+- Status: Pushed
 - Areas changed: Workboard inline task composer
 - Summary: Remove the redundant `Machine` label from the inline task creation area and right-align the machine selector.
 - Verification: `pnpm exec tsc --noEmit --pretty false`; `pnpm exec eslint src/app/page.tsx` (0 errors, existing warnings only); `node scripts/test-dashboard-nav.mjs && git diff --check`.
