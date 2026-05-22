@@ -3,6 +3,14 @@
 This file records user-visible changes before they are committed. New work should
 be added here first, then marked `Committed` or `Pushed` after the git action.
 
+## 2026-05-22 21:09 WITA - Document Tailscale Preflight
+
+- Status: Pushed
+- Areas changed: README quick start, changelog
+- Summary: Add optional-but-recommended Tailscale preflight steps before setup, including local-only guidance, macOS sandboxed GUI limitations, macOS open-source CLI/daemon commands for Tailscale SSH hosting, and Linux Tailscale SSH setup commands.
+- Verification: `git diff --check -- README.md CHANGELOG.md`; README quick-start excerpt reviewed to confirm Tailscale preflight appears before setup commands.
+- Intended commit message: `Document Tailscale preflight`
+
 ## 2026-05-22 21:05 WITA - Clarify Sandboxed Tailscale SSH
 
 - Status: Pushed
