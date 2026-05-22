@@ -52,7 +52,7 @@ Then open the dashboard printed by setup, usually:
 http://localhost:5020
 ```
 
-Setup checks Node.js and pnpm/Corepack, installs dependencies, installs the lightweight machine monitor where supported, builds the dashboard, starts it when possible, and prints local plus Tailscale URLs when available. On macOS/Linux use `setup.sh`; on native Windows use `setup.ps1`, which prompts for winget installs of Node.js, pnpm, Tailscale, and Syncthing. If Tailscale is installed and logged in, HivemindOS enables cross-machine collaboration. If not, it runs cleanly as a local-only dashboard.
+Setup checks Node.js and pnpm/Corepack, installs dependencies, offers optional installs for Tailscale, Syncthing, and Obsidian, installs the lightweight machine monitor where supported, builds the dashboard, starts it when possible, and prints local plus Tailscale URLs when available. On macOS/Linux use `setup.sh`; on native Windows use `setup.ps1`, which prompts for winget installs of Node.js, pnpm, Tailscale, Syncthing, and Obsidian. If Tailscale is installed and logged in, HivemindOS enables cross-machine collaboration. If not, it runs cleanly as a local-only dashboard.
 
 To remove HivemindOS later, run the matching uninstaller. It asks one prompt at a time before removing services, generated files, shared-skill agent hints, or optional apps such as Tailscale, Syncthing, pnpm, and Obsidian:
 

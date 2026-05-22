@@ -48,6 +48,24 @@ function Refresh-Path {
   $env:Path = "$machinePath;$userPath"
 }
 
+function Invoke-Pnpm {
+  param([string[]]$Arguments)
+  Refresh-Path
+  if (Test-Command pnpm) {
+    & pnpm @Arguments
+    return
+  }
+  if (Test-Command corepack) {
+    & corepack pnpm @Arguments
+    return
+  }
+  Fail "pnpm is still not available on PATH"
+  Write-Host "Open a new terminal or run one of:"
+  Write-Host "  npm install -g pnpm"
+  Write-Host "  winget install --id pnpm.pnpm"
+  exit 1
+}
+
 function Ensure-Node {
   if (Test-Command node) {
     Ok "Node found: $(node --version)"
@@ -94,6 +112,9 @@ function Ensure-Pnpm {
   }
   if (Test-Command pnpm) {
     Ok "pnpm found: $(pnpm --version)"
+  } elseif (Test-Command corepack) {
+    $pnpmVersion = Invoke-Pnpm @("--version")
+    Ok "pnpm available through Corepack: $pnpmVersion"
   } else {
     $Missing.Add("pnpm or corepack")
     Fail "pnpm is missing"
@@ -154,6 +175,24 @@ function Ensure-Syncthing([bool]$TailnetSyncEnabled) {
   }
 }
 
+function Ensure-Obsidian {
+  $obsidianCommand = Test-Command obsidian
+  $obsidianApp = Test-Path (Join-Path $env:LOCALAPPDATA "Obsidian\Obsidian.exe")
+  if ($obsidianCommand -or $obsidianApp) {
+    Ok "Obsidian found"
+    return
+  }
+  if (Ask-YesNo "Obsidian is missing. Install it for the shared brain desktop app now?" $true) {
+    Install-WingetPackage "Obsidian" "Obsidian.Obsidian" | Out-Null
+    Refresh-Path
+  }
+  if ((Test-Command obsidian) -or (Test-Path (Join-Path $env:LOCALAPPDATA "Obsidian\Obsidian.exe"))) {
+    Ok "Obsidian installed"
+  } else {
+    Warn "Obsidian is optional and not installed. Install later with: winget install --id Obsidian.Obsidian"
+  }
+}
+
 function Set-EnvLocal($Key, $Value) {
   $envFile = Join-Path $Root ".env.local"
   if (-not (Test-Path $envFile)) { New-Item -ItemType File -Path $envFile | Out-Null }
@@ -189,6 +228,7 @@ Ensure-Node
 Ensure-Pnpm
 $tailnetSyncEnabled = Ensure-Tailscale
 Ensure-Syncthing $tailnetSyncEnabled
+Ensure-Obsidian
 
 if ($Missing.Count -gt 0) {
   Write-Host ""
@@ -222,7 +262,7 @@ if ($SkipDeps) {
 } else {
   Info "Installing app dependencies"
   $env:NODE_OPTIONS = "$($env:NODE_OPTIONS) --no-deprecation".Trim()
-  pnpm install --frozen-lockfile
+  Invoke-Pnpm @("install", "--frozen-lockfile")
   Set-Content -Path $depsStamp -Value $depsHash
   Ok "Dependencies installed"
 }
@@ -235,7 +275,7 @@ if ($SkipBuild) {
   Ok "Dashboard build already current"
 } else {
   Info "Building dashboard"
-  pnpm exec next build --webpack
+  Invoke-Pnpm @("exec", "next", "build", "--webpack")
   Set-Content -Path $buildStamp -Value $buildHash
   Ok "Dashboard built"
 }
@@ -251,7 +291,12 @@ if ($SkipDashboard) {
     New-Item -ItemType Directory -Force -Path ".next" | Out-Null
     $stdoutPath = Join-Path $Root ".next\hivemindos-windows.log"
     $stderrPath = Join-Path $Root ".next\hivemindos-windows.err.log"
-    Start-Process -FilePath "pnpm" -ArgumentList @("exec", "next", "dev", "--webpack", "-p", "$Port") -WorkingDirectory $Root -RedirectStandardOutput $stdoutPath -RedirectStandardError $stderrPath -WindowStyle Hidden
+    Refresh-Path
+    if (Test-Command pnpm) {
+      Start-Process -FilePath "pnpm" -ArgumentList @("exec", "next", "dev", "--webpack", "-p", "$Port") -WorkingDirectory $Root -RedirectStandardOutput $stdoutPath -RedirectStandardError $stderrPath -WindowStyle Hidden
+    } else {
+      Start-Process -FilePath "corepack" -ArgumentList @("pnpm", "exec", "next", "dev", "--webpack", "-p", "$Port") -WorkingDirectory $Root -RedirectStandardOutput $stdoutPath -RedirectStandardError $stderrPath -WindowStyle Hidden
+    }
   }
 }
 

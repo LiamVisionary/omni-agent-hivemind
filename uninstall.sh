@@ -301,6 +301,10 @@ fi
 if ask "Uninstall Obsidian from this machine?" "no"; then
   if [[ "$(uname -s)" == "Darwin" ]] && run_if_exists brew; then
     brew uninstall --cask obsidian >/dev/null 2>&1 || true
+  elif run_if_exists flatpak; then
+    flatpak uninstall -y md.obsidian.Obsidian >/dev/null 2>&1 || true
+  elif run_if_exists snap && run_if_exists sudo; then
+    sudo snap remove obsidian >/dev/null 2>&1 || true
   else
     warn "No automatic Obsidian uninstall path configured for this OS"
   fi

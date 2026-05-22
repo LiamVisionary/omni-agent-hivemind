@@ -95,6 +95,53 @@ ensure_homebrew() {
   ok "Homebrew installed: $(brew --version | head -1)"
 }
 
+refresh_tool_paths() {
+  load_homebrew_shellenv >/dev/null 2>&1 || true
+  if command -v npm >/dev/null 2>&1; then
+    local npm_prefix=""
+    npm_prefix="$(npm config get prefix 2>/dev/null || true)"
+    if [[ -n "$npm_prefix" && "$npm_prefix" != "undefined" && -d "$npm_prefix/bin" ]]; then
+      case ":$PATH:" in
+        *":$npm_prefix/bin:"*) ;;
+        *) export PATH="$npm_prefix/bin:$PATH" ;;
+      esac
+    fi
+  fi
+  hash -r 2>/dev/null || true
+}
+
+pnpm_version() {
+  refresh_tool_paths
+  if command -v pnpm >/dev/null 2>&1; then
+    pnpm --version
+    return
+  fi
+  if command -v corepack >/dev/null 2>&1; then
+    corepack pnpm --version
+    return
+  fi
+  return 1
+}
+
+pnpm_run() {
+  refresh_tool_paths
+  if command -v pnpm >/dev/null 2>&1; then
+    pnpm "$@"
+    return
+  fi
+  if command -v corepack >/dev/null 2>&1; then
+    corepack pnpm "$@"
+    return
+  fi
+  fail "pnpm is still not available on PATH"
+  echo "Open a new terminal or run one of:"
+  echo "  npm install -g pnpm"
+  if [[ "$(uname -s)" == "Darwin" ]]; then
+    echo "  brew install pnpm"
+  fi
+  exit 1
+}
+
 usage() {
   cat <<'EOF'
 Usage: ./setup.sh [options]
@@ -341,6 +388,47 @@ install_tailscale_if_missing() {
   return 1
 }
 
+obsidian_is_installed() {
+  if command -v obsidian >/dev/null 2>&1; then
+    return 0
+  fi
+  [[ "$(uname -s)" == "Darwin" && -d "/Applications/Obsidian.app" ]]
+}
+
+install_obsidian_if_missing() {
+  if obsidian_is_installed; then
+    ok "Obsidian found"
+    return 0
+  fi
+  if ! setup_is_interactive; then
+    warn "Obsidian is missing; skipping optional desktop app install in non-interactive setup"
+    return 0
+  fi
+  if ! prompt_yes_no "Obsidian is missing. Install it for the shared brain desktop app now?" "yes"; then
+    warn "Skipping Obsidian install; the shared brain still works as local markdown files"
+    return 0
+  fi
+  if [[ "$(uname -s)" == "Darwin" ]] && { command -v brew >/dev/null 2>&1 || ensure_homebrew; }; then
+    info "Installing Obsidian with Homebrew"
+    brew install --cask obsidian
+  elif command -v flatpak >/dev/null 2>&1; then
+    info "Installing Obsidian with Flatpak"
+    flatpak install -y flathub md.obsidian.Obsidian
+  elif command -v snap >/dev/null 2>&1 && command -v sudo >/dev/null 2>&1; then
+    info "Installing Obsidian with snap"
+    sudo snap install obsidian --classic
+  else
+    warn "No automatic Obsidian installer found for this OS"
+    warn "Install Obsidian later from https://obsidian.md/download"
+    return 0
+  fi
+  if obsidian_is_installed; then
+    ok "Obsidian installed"
+  else
+    warn "Obsidian install finished, but setup could not verify the app on PATH"
+  fi
+}
+
 install_hive_env_add() {
   local bin_dir="${HOME}/.local/bin"
   local command_path="$bin_dir/hive-env-add"
@@ -360,6 +448,7 @@ install_hive_env_add() {
 }
 
 install_pnpm_if_missing() {
+  refresh_tool_paths
   if command -v pnpm >/dev/null 2>&1; then
     ok "pnpm found: $(pnpm --version)"
     return 0
@@ -369,8 +458,7 @@ install_pnpm_if_missing() {
       info "pnpm not found; enabling pnpm through corepack"
       corepack enable
       corepack prepare pnpm@8.6.12 --activate
-      hash -r 2>/dev/null || true
-      ok "pnpm enabled: $(pnpm --version)"
+      ok "pnpm enabled: $(pnpm_version)"
       return 0
     fi
   fi
@@ -378,8 +466,7 @@ install_pnpm_if_missing() {
     if setup_is_interactive && prompt_yes_no "pnpm is missing. Install pnpm globally with npm now?" "yes"; then
       info "Installing pnpm with npm"
       npm install -g pnpm
-      hash -r 2>/dev/null || true
-      ok "pnpm installed: $(pnpm --version)"
+      ok "pnpm installed: $(pnpm_version)"
       return 0
     fi
   fi
@@ -387,8 +474,7 @@ install_pnpm_if_missing() {
     if prompt_yes_no "pnpm is missing. Install pnpm with Homebrew now?" "yes"; then
       info "Installing pnpm with Homebrew"
       brew install pnpm
-      hash -r 2>/dev/null || true
-      ok "pnpm installed: $(pnpm --version)"
+      ok "pnpm installed: $(pnpm_version)"
       return 0
     fi
   fi
@@ -474,7 +560,7 @@ install_pnpm_if_missing || true
 
 if command -v corepack >/dev/null 2>&1; then
   corepack prepare pnpm@8.6.12 --activate >/dev/null 2>&1 || true
-  hash -r 2>/dev/null || true
+  refresh_tool_paths
 fi
 
 tailscale_ip=""
@@ -505,6 +591,8 @@ if [[ "$tailnet_sync_enabled" == "true" ]]; then
 else
   warn "Skipping Tailnet rsync/Syncthing setup because Tailscale is not connected"
 fi
+
+install_obsidian_if_missing
 
 if (( ${#missing[@]} > 0 )); then
   echo
@@ -602,7 +690,7 @@ elif [[ "$CLI_FORCE" != "true" && -d "$ROOT/node_modules" && -f "$deps_stamp" &&
   ok "Dependencies already installed"
 else
   info "Installing app dependencies"
-  NODE_OPTIONS="${NODE_OPTIONS:+$NODE_OPTIONS }--no-deprecation" pnpm install --frozen-lockfile
+  NODE_OPTIONS="${NODE_OPTIONS:+$NODE_OPTIONS }--no-deprecation" pnpm_run install --frozen-lockfile
   printf "%s\n" "$deps_hash" > "$deps_stamp"
   ok "Dependencies installed"
 fi
@@ -627,7 +715,7 @@ elif [[ "$CLI_FORCE" != "true" && -d "$ROOT/.next" && -f "$build_stamp" && "$(ca
   ok "Dashboard build already current"
 else
   info "Building dashboard"
-  pnpm build
+  pnpm_run build
   printf "%s\n" "$build_hash" > "$build_stamp"
   ok "Dashboard built"
 fi
@@ -635,7 +723,12 @@ fi
 start_dashboard() {
   info "Starting dashboard dev server on port $PORT"
   mkdir -p "$ROOT/.next"
-  nohup ./scripts/run-with-memory-limit.sh --limit-mb 5000 -- pnpm exec next dev --webpack -p "$PORT" > "$ROOT/.next/hivemindos.log" 2>&1 &
+  refresh_tool_paths
+  if command -v pnpm >/dev/null 2>&1; then
+    nohup ./scripts/run-with-memory-limit.sh --limit-mb 5000 -- pnpm exec next dev --webpack -p "$PORT" > "$ROOT/.next/hivemindos.log" 2>&1 &
+  else
+    nohup ./scripts/run-with-memory-limit.sh --limit-mb 5000 -- corepack pnpm exec next dev --webpack -p "$PORT" > "$ROOT/.next/hivemindos.log" 2>&1 &
+  fi
   sleep 2
 }
 

@@ -3,6 +3,14 @@
 This file records user-visible changes before they are committed. New work should
 be added here first, then marked `Committed` or `Pushed` after the git action.
 
+## 2026-05-22 20:27 WITA - Resolve Pnpm After Setup Installs
+
+- Status: Pushed
+- Areas changed: macOS/Linux setup, Windows setup, macOS/Linux uninstaller, README setup docs, changelog
+- Summary: Refresh Homebrew and npm global bin paths after setup installs pnpm, route later dependency/build/dev commands through a pnpm wrapper that can fall back to Corepack, and add optional Obsidian install prompts to setup so the existing uninstall prompts have a matching install surface.
+- Verification: `bash -n setup.sh && bash -n uninstall.sh`; `git diff --check -- setup.sh setup.ps1 uninstall.sh README.md CHANGELOG.md`; local `command -v pnpm`, `pnpm --version`, and `command -v corepack` confirm pnpm is available through the active Node toolchain. PowerShell parse check was skipped because `pwsh`/`powershell` is not installed in this macOS workspace.
+- Intended commit message: `Resolve pnpm after setup installs`
+
 ## 2026-05-22 20:19 WITA - Keep Uninstall Prompts Flowing
 
 - Status: Pushed
