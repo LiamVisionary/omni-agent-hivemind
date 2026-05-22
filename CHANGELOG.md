@@ -29,7 +29,7 @@ be added here first, then marked `Committed` or `Pushed` after the git action.
 
 ## 2026-05-22 15:51 WITA - Add Remote Collector Background Runtime Action
 
-- Status: Uncommitted
+- Status: Pushed
 - Areas changed: agent telemetry collector runtime integrations
 - Summary: Add the Hermes background runtime action to the telemetry collector so remote machines can start background Hermes work through the same runtime integration panel as local machines.
 - Verification: `node --check scripts/agent-telemetry-collector.mjs`; `git diff --check`.
