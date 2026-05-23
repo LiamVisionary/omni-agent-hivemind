@@ -3,6 +3,14 @@
 This file records user-visible changes before they are committed. New work should
 be added here first, then marked `Committed` or `Pushed` after the git action.
 
+## 2026-05-23 16:18 WITA - Make Tailscale Auth Headless Friendly
+
+- Status: Pushed
+- Areas changed: macOS setup, telemetry collector installer, changelog
+- Summary: Print the managed Tailscale auth URL for use on any device, ask before opening it locally on interactive macOS runs, and keep waiting for auth completion so headless machines are not forced through a local browser.
+- Verification: `bash -n setup.sh && bash -n scripts/install-telemetry-collector.sh`; `pnpm run test:fleet-local`; `git diff --check -- setup.sh scripts/install-telemetry-collector.sh CHANGELOG.md`; Tailscale login URL parser smoke.
+- Intended commit message: `Make Tailscale auth headless friendly`
+
 ## 2026-05-23 16:05 WITA - Await Managed Tailscale Login
 
 - Status: Pushed
