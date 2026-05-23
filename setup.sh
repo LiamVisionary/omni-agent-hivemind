@@ -423,6 +423,30 @@ homebrew_tailscale_formula_installed() {
   command -v brew >/dev/null 2>&1 && brew list --formula tailscale >/dev/null 2>&1
 }
 
+tailscale_up_retry_args_from_error() {
+  awk '
+    /^[[:space:]]*tailscale up[[:space:]]/ {
+      sub(/^[[:space:]]*tailscale up[[:space:]]*/, "");
+      print;
+      exit;
+    }
+  '
+}
+
+connect_homebrew_tailscaled() {
+  local formula_cli="$1"
+  local output retry_args
+  output="$(run_with_timeout 45 sudo "$formula_cli" up --timeout=30s 2>&1)" && return 0
+  retry_args="$(printf "%s\n" "$output" | tailscale_up_retry_args_from_error)"
+  if [[ -n "$retry_args" ]]; then
+    warn "Tailscale requires existing non-default settings; retrying with: tailscale up $retry_args"
+    # shellcheck disable=SC2086
+    output="$(run_with_timeout 45 sudo "$formula_cli" up $retry_args 2>&1)" && return 0
+  fi
+  printf "%s\n" "$output" >&2
+  return 1
+}
+
 setup_homebrew_tailscaled_for_fleet() {
   [[ "$(uname -s)" == "Darwin" ]] || return 1
   setup_is_interactive || return 1
@@ -460,7 +484,7 @@ setup_homebrew_tailscaled_for_fleet() {
   fi
 
   info "Connecting Homebrew tailscaled"
-  if ! run_with_timeout 45 sudo "$formula_cli" up --timeout=30s; then
+  if ! connect_homebrew_tailscaled "$formula_cli"; then
     warn "Homebrew tailscaled did not finish connecting within 45 seconds"
     warn "Open Tailscale auth if prompted, then rerun setup."
     return 1

@@ -3,6 +3,14 @@
 This file records user-visible changes before they are committed. New work should
 be added here first, then marked `Committed` or `Pushed` after the git action.
 
+## 2026-05-23 15:35 WITA - Retry Tailscale Up With Existing Flags
+
+- Status: Pushed
+- Areas changed: macOS setup, telemetry collector installer, changelog
+- Summary: Capture `tailscale up` errors that require existing non-default flags, parse Tailscale's suggested retry command, and rerun the managed Homebrew daemon connection with those flags so settings like `--accept-routes` do not stall setup.
+- Verification: `bash -n setup.sh && bash -n scripts/install-telemetry-collector.sh`; parser smoke extracted `--timeout=30s --accept-routes` from Tailscale's suggested command shape; `pnpm run test:fleet-local`; `git diff --check -- setup.sh scripts/install-telemetry-collector.sh CHANGELOG.md`.
+- Intended commit message: `Retry tailscale up with existing flags`
+
 ## 2026-05-23 15:20 WITA - Bound Managed Tailscaled Connection
 
 - Status: Pushed
