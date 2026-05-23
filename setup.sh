@@ -1138,11 +1138,12 @@ else
     hermes_restart_mode="ask"
   fi
   AGENT_TELEMETRY_PORT="$COLLECTOR_PORT" AGENT_TELEMETRY_HERMES_RESTART="${AGENT_TELEMETRY_HERMES_RESTART:-$hermes_restart_mode}" ./scripts/install-telemetry-collector.sh
-  ok "Collector installed"
   if wait_for_local_collector; then
+    ok "Collector installed and healthy locally"
     configure_env_reconciliation
     configure_syncthing_verification
   else
+    warn "Collector service was installed, but local health is not responding yet"
     warn "Local collector did not respond yet; skipping setup-time env and Syncthing reconciliation prompts"
   fi
 fi

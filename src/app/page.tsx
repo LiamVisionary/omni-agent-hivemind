@@ -2993,7 +2993,7 @@ function machineNetworkIssue(machine: MachineGroup, tailscaleStatus: string): Fl
     return {
       label: "Collector not reachable. Fix?",
       title: "HivemindOS collector is not reachable",
-      detail: "Tailscale lists this machine, but this dashboard cannot reach its collector on port 8787. First confirm the peer is reachable over Tailnet, then verify the collector locally on that machine and from this dashboard.",
+      detail: "Tailscale lists this machine, but this dashboard cannot reach its collector on port 8787. The collector may be healthy locally while macOS firewall, Tailscale Shields Up, or Tailnet reachability blocks inbound access from this dashboard.",
       commands: [
         "# From this dashboard machine",
         `tailscale ping ${tailnetTarget}`,
@@ -3001,11 +3001,14 @@ function machineNetworkIssue(machine: MachineGroup, tailscaleStatus: string): Fl
         "",
         "# On the other machine",
         "tailscale status",
+        "tailscale debug prefs | grep ShieldsUp",
+        "tailscale set --shields-up=false",
         "sudo tailscale up",
         "cd ~/hivemindos",
         "git pull --ff-only",
         "./scripts/install-telemetry-collector.sh",
         "curl http://127.0.0.1:8787/health",
+        "lsof -nP -iTCP:8787 -sTCP:LISTEN",
         "",
         "# If local health works but remote curl times out on macOS",
         "sudo /usr/libexec/ApplicationFirewall/socketfilterfw --add \"$(command -v node)\"",

@@ -80,6 +80,7 @@ enable_tailscale_ssh() {
     fi
     if [[ "$tailscale_ssh_error" == *"sandboxed Tailscale GUI builds"* ]]; then
       echo "This macOS Tailscale build cannot host Tailscale SSH. Shared-brain Syncthing can still work, but Tailscale SSH features from this Mac are disabled." >&2
+      echo "Fleet collector discovery does not require Tailscale SSH; it uses normal Tailnet HTTP on port $PORT." >&2
     else
       echo "Run on this machine if prompted for admin rights: sudo tailscale set --ssh" >&2
     fi
@@ -130,6 +131,78 @@ launchctl_bounded() {
   if ! run_with_timeout "$seconds" launchctl "$@"; then
     echo "launchctl $* did not finish quickly; continuing setup." >&2
     return 1
+  fi
+}
+
+prompt_yes_no() {
+  local question="$1"
+  local default="${2:-yes}"
+  local answer=""
+  if [[ ! -t 0 || ! -t 1 ]]; then
+    [[ "$default" == "yes" ]]
+    return
+  fi
+  if [[ "$default" == "yes" ]]; then
+    read -r -p "$question [Y/n] " answer
+    [[ ! "$answer" =~ ^[Nn] ]]
+  else
+    read -r -p "$question [y/N] " answer
+    [[ "$answer" =~ ^[Yy] ]]
+  fi
+}
+
+collector_local_health() {
+  curl -fsS --max-time 2 "http://127.0.0.1:$PORT/health" >/dev/null 2>&1
+}
+
+wait_for_local_collector() {
+  local seconds="${1:-10}"
+  local elapsed=0
+  while (( elapsed < seconds )); do
+    if collector_local_health; then
+      return 0
+    fi
+    sleep 1
+    elapsed=$((elapsed + 1))
+  done
+  return 1
+}
+
+maybe_allow_node_through_macos_firewall() {
+  if [[ "$(uname -s)" != "Darwin" || ! -x /usr/libexec/ApplicationFirewall/socketfilterfw ]]; then
+    return
+  fi
+  if ! prompt_yes_no "Allow this collector's Node binary through the macOS firewall for Tailnet dashboards?" "yes"; then
+    echo "Skipping macOS firewall allow-list. If another dashboard cannot reach this collector, allow incoming connections for: $NODE_BIN" >&2
+    return
+  fi
+  if command -v sudo >/dev/null 2>&1; then
+    sudo /usr/libexec/ApplicationFirewall/socketfilterfw --add "$NODE_BIN" >/dev/null 2>&1 || true
+    sudo /usr/libexec/ApplicationFirewall/socketfilterfw --unblockapp "$NODE_BIN" >/dev/null 2>&1 || true
+    echo "Allowed Node collector binary through macOS firewall: $NODE_BIN"
+  else
+    echo "sudo is unavailable; allow incoming connections for this Node binary manually: $NODE_BIN" >&2
+  fi
+}
+
+maybe_disable_tailscale_shields_up() {
+  if ! command -v tailscale >/dev/null 2>&1 || ! tailscale status >/dev/null 2>&1; then
+    return
+  fi
+  if ! tailscale debug prefs 2>/dev/null | grep -q '"ShieldsUp": true'; then
+    return
+  fi
+  echo "Tailscale Shields Up is enabled; other Tailnet machines cannot reach this collector while it is on." >&2
+  if ! prompt_yes_no "Disable Tailscale Shields Up now so Fleet dashboards can reach this collector?" "yes"; then
+    echo "Leaving Shields Up enabled. Disable later with: tailscale set --shields-up=false" >&2
+    return
+  fi
+  if tailscale set --shields-up=false >/dev/null 2>&1; then
+    echo "Disabled Tailscale Shields Up"
+  elif command -v sudo >/dev/null 2>&1 && sudo tailscale set --shields-up=false >/dev/null 2>&1; then
+    echo "Disabled Tailscale Shields Up"
+  else
+    echo "Could not disable Shields Up automatically. Run: tailscale set --shields-up=false" >&2
   fi
 }
 
@@ -302,6 +375,7 @@ PLIST
   launchctl_bounded 5 load "$PLIST"
   launchctl_bounded 5 kickstart -k "gui/$(id -u)/com.agent-control-room.telemetry" >/dev/null 2>&1 || true
   echo "Installed macOS LaunchAgent on port $PORT"
+  maybe_allow_node_through_macos_firewall
 else
   if [[ "$TAILNET_SYNC_ENABLED" == "true" ]]; then
     install_syncthing_if_missing
@@ -355,6 +429,7 @@ fi
 
 if [[ "$TAILNET_SYNC_ENABLED" == "true" ]]; then
   install_rsync_if_missing
+  maybe_disable_tailscale_shields_up
   enable_tailscale_ssh
 fi
 
@@ -365,3 +440,12 @@ if command -v tailscale >/dev/null 2>&1; then
   fi
 fi
 echo "Local collector URL: http://127.0.0.1:$PORT"
+if wait_for_local_collector 10; then
+  echo "Local collector health: ok"
+else
+  echo "Local collector health did not respond yet. Check logs and retry: curl http://127.0.0.1:$PORT/health" >&2
+fi
+if [[ -n "${IP:-}" ]]; then
+  echo "Tailnet reachability check from another dashboard machine:"
+  echo "  curl --max-time 5 http://$IP:$PORT/health"
+fi

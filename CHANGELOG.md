@@ -3,6 +3,14 @@
 This file records user-visible changes before they are committed. New work should
 be added here first, then marked `Committed` or `Pushed` after the git action.
 
+## 2026-05-23 14:15 WITA - Diagnose Tailnet Collector Reachability
+
+- Status: Pushed
+- Areas changed: Collector installer, setup success wording, Fleet collector repair modal, changelog
+- Summary: Prompt macOS users to allow the Node collector through Application Firewall, detect and offer to disable Tailscale Shields Up, clarify that Tailscale SSH is not required for Fleet collector discovery, print a dashboard-side Tailnet curl check after install, and make setup report local collector health separately from service installation.
+- Verification: `bash -n setup.sh && bash -n scripts/install-telemetry-collector.sh`; `pnpm run test:fleet-local`; `pnpm exec tsc --noEmit --pretty false`; `pnpm exec eslint src/app/page.tsx src/app/api/fleet/discover/route.ts` (0 errors, existing page warnings only); `git diff --check -- setup.sh scripts/install-telemetry-collector.sh src/app/page.tsx CHANGELOG.md`.
+- Intended commit message: `Diagnose Tailnet collector reachability`
+
 ## 2026-05-23 13:45 WITA - Fix Local Fleet Collector Detection
 
 - Status: Pushed
