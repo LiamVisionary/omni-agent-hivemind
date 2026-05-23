@@ -367,6 +367,9 @@ start_syncthing_if_available() {
 }
 
 tailscale_cli_candidates() {
+  if [[ -n "${HIVE_TAILSCALE_CLI:-}" && -x "${HIVE_TAILSCALE_CLI:-}" ]]; then
+    printf "%s\n" "$HIVE_TAILSCALE_CLI"
+  fi
   homebrew_tailscale_cli_candidates
   local path_cli
   path_cli="$(command -v tailscale 2>/dev/null || true)"
@@ -415,6 +418,70 @@ first_homebrew_tailscale_cli() {
   homebrew_tailscale_cli_candidates | awk '!seen[$0]++ { print; exit }'
 }
 
+tailscale_cli_socket_arg() {
+  local cli="$1"
+  [[ "$(uname -s)" == "Darwin" ]] || return 1
+  case "$cli" in
+    /opt/homebrew/*|/usr/local/*) ;;
+    *) return 1 ;;
+  esac
+  if [[ -S /var/run/tailscaled.socket ]]; then
+    printf "%s\n" "--socket=/var/run/tailscaled.socket"
+    return 0
+  fi
+  return 1
+}
+
+run_tailscale_cli() {
+  local cli="$1"
+  shift
+  local socket_arg
+  socket_arg="$(tailscale_cli_socket_arg "$cli" || true)"
+  if [[ -n "$socket_arg" ]]; then
+    "$cli" "$socket_arg" "$@"
+  else
+    "$cli" "$@"
+  fi
+}
+
+run_tailscale_cli_sudo() {
+  local cli="$1"
+  shift
+  local socket_arg
+  socket_arg="$(tailscale_cli_socket_arg "$cli" || true)"
+  if [[ -n "$socket_arg" ]]; then
+    sudo "$cli" "$socket_arg" "$@"
+  else
+    sudo "$cli" "$@"
+  fi
+}
+
+run_tailscale_cli_sudo_noninteractive() {
+  local cli="$1"
+  shift
+  local socket_arg
+  socket_arg="$(tailscale_cli_socket_arg "$cli" || true)"
+  if [[ -n "$socket_arg" ]]; then
+    sudo -n "$cli" "$socket_arg" "$@"
+  else
+    sudo -n "$cli" "$@"
+  fi
+}
+
+tailscale_prefs_has() {
+  local pattern="$1"
+  local cli
+  if [[ -z "${HIVE_TAILSCALE_CLI:-}" ]] && command -v tailscale >/dev/null 2>&1 && tailscale debug prefs 2>/dev/null | grep -q "$pattern"; then
+    return 0
+  fi
+  while IFS= read -r cli; do
+    [[ -n "$cli" ]] || continue
+    run_tailscale_cli "$cli" debug prefs 2>/dev/null | grep -q "$pattern" && return 0
+    run_tailscale_cli_sudo_noninteractive "$cli" debug prefs 2>/dev/null | grep -q "$pattern" && return 0
+  done < <(tailscale_cli_candidates | awk '!seen[$0]++')
+  return 1
+}
+
 homebrew_tailscaled_is_available() {
   [[ -n "$(homebrew_tailscaled_candidates | head -1)" ]]
 }
@@ -442,7 +509,7 @@ wait_for_tailscale_running() {
   local seconds="${2:-180}"
   local elapsed=0
   while (( elapsed < seconds )); do
-    if sudo "$formula_cli" status >/dev/null 2>&1; then
+    if run_tailscale_cli_sudo "$formula_cli" status >/dev/null 2>&1; then
       return 0
     fi
     sleep 3
@@ -453,28 +520,28 @@ wait_for_tailscale_running() {
 
 tailscale_status_connected() {
   local cli
-  if command -v tailscale >/dev/null 2>&1 && tailscale status >/dev/null 2>&1; then
+  if [[ -z "${HIVE_TAILSCALE_CLI:-}" ]] && command -v tailscale >/dev/null 2>&1 && tailscale status >/dev/null 2>&1; then
     return 0
   fi
   while IFS= read -r cli; do
     [[ -n "$cli" ]] || continue
-    "$cli" status >/dev/null 2>&1 && return 0
-    sudo -n "$cli" status >/dev/null 2>&1 && return 0
+    run_tailscale_cli "$cli" status >/dev/null 2>&1 && return 0
+    run_tailscale_cli_sudo_noninteractive "$cli" status >/dev/null 2>&1 && return 0
   done < <(tailscale_cli_candidates | awk '!seen[$0]++')
   return 1
 }
 
 tailscale_ip4() {
   local cli ip
-  if command -v tailscale >/dev/null 2>&1; then
+  if [[ -z "${HIVE_TAILSCALE_CLI:-}" ]] && command -v tailscale >/dev/null 2>&1; then
     ip="$(tailscale ip -4 2>/dev/null | head -1 || true)"
     [[ -n "$ip" ]] && printf "%s\n" "$ip" && return 0
   fi
   while IFS= read -r cli; do
     [[ -n "$cli" ]] || continue
-    ip="$("$cli" ip -4 2>/dev/null | head -1 || true)"
+    ip="$(run_tailscale_cli "$cli" ip -4 2>/dev/null | head -1 || true)"
     [[ -n "$ip" ]] && printf "%s\n" "$ip" && return 0
-    ip="$(sudo -n "$cli" ip -4 2>/dev/null | head -1 || true)"
+    ip="$(run_tailscale_cli_sudo_noninteractive "$cli" ip -4 2>/dev/null | head -1 || true)"
     [[ -n "$ip" ]] && printf "%s\n" "$ip" && return 0
   done < <(tailscale_cli_candidates | awk '!seen[$0]++')
   return 1
@@ -483,11 +550,11 @@ tailscale_ip4() {
 connect_existing_tailscale_cli() {
   local cli="$1"
   local output retry_args auth_url
-  output="$(run_with_timeout 45 sudo "$cli" up --timeout=30s 2>&1)" && return 0
+  output="$(run_with_timeout 45 run_tailscale_cli_sudo "$cli" up --timeout=30s 2>&1)" && return 0
   retry_args="$(printf "%s\n" "$output" | tailscale_up_retry_args_from_error)"
   if [[ -n "$retry_args" ]]; then
     # shellcheck disable=SC2086
-    output="$(run_with_timeout 45 sudo "$cli" up $retry_args 2>&1)" && return 0
+    output="$(run_with_timeout 45 run_tailscale_cli_sudo "$cli" up $retry_args 2>&1)" && return 0
   fi
   auth_url="$(printf "%s\n" "$output" | tailscale_auth_url_from_output)"
   if [[ -n "$auth_url" ]]; then
@@ -507,11 +574,11 @@ connect_existing_tailscale_cli() {
 connect_homebrew_tailscaled() {
   local formula_cli="$1"
   local output retry_args auth_url
-  output="$(run_with_timeout 45 sudo "$formula_cli" up --timeout=30s 2>&1)" && return 0
+  output="$(run_with_timeout 45 run_tailscale_cli_sudo "$formula_cli" up --timeout=30s 2>&1)" && return 0
   retry_args="$(printf "%s\n" "$output" | tailscale_up_retry_args_from_error)"
   if [[ -n "$retry_args" ]]; then
     # shellcheck disable=SC2086
-    output="$(run_with_timeout 45 sudo "$formula_cli" up $retry_args 2>&1)" && return 0
+    output="$(run_with_timeout 45 run_tailscale_cli_sudo "$formula_cli" up $retry_args 2>&1)" && return 0
   fi
   auth_url="$(printf "%s\n" "$output" | tailscale_auth_url_from_output)"
   if [[ -n "$auth_url" ]]; then
@@ -570,6 +637,7 @@ setup_homebrew_tailscaled_for_fleet() {
     warn "Homebrew tailscale CLI was not found after install/start"
     return 1
   fi
+  export HIVE_TAILSCALE_CLI="$formula_cli"
 
   info "Connecting Homebrew tailscaled"
   if ! connect_homebrew_tailscaled "$formula_cli"; then
@@ -577,7 +645,7 @@ setup_homebrew_tailscaled_for_fleet() {
     warn "Setup waited for Tailscale auth, but the daemon did not become reachable before the timeout."
     return 1
   fi
-  if ! run_with_timeout 10 sudo "$formula_cli" status >/dev/null 2>&1; then
+  if ! run_with_timeout 10 run_tailscale_cli_sudo "$formula_cli" status >/dev/null 2>&1; then
     warn "Homebrew tailscaled started, but status did not respond quickly"
     return 1
   fi
@@ -587,7 +655,7 @@ setup_homebrew_tailscaled_for_fleet() {
 prefer_homebrew_tailscaled_for_macos_fleet() {
   [[ "$(uname -s)" == "Darwin" ]] || return 0
   setup_is_interactive || return 0
-  if tailscale debug prefs 2>/dev/null | grep -q '"RunSSH": true'; then
+  if tailscale_prefs_has '"RunSSH": true'; then
     return 0
   fi
   setup_homebrew_tailscaled_for_fleet || true
@@ -601,7 +669,7 @@ warn_tailscale_ssh_unavailable() {
   if tailscale_ssh_error_is_sandboxed "$tailscale_ssh_error"; then
     warn "This macOS Tailscale build cannot host Tailscale SSH. Shared-brain Syncthing can still work, but Tailscale SSH features from this Mac are disabled."
     if homebrew_tailscaled_is_available; then
-      warn "Homebrew tailscaled is installed but is not the active Tailscale backend. Start/connect it with: sudo brew services start tailscale && sudo tailscale up && sudo tailscale set --ssh"
+      warn "Homebrew tailscaled is installed, but the active CLI call still reached the sandboxed GUI backend."
     else
       warn "Setup can install/start the Homebrew tailscale daemon interactively, or follow: https://github.com/tailscale/tailscale/wiki/Tailscaled-on-macOS"
     fi
@@ -624,12 +692,12 @@ run_tailscale_set_ssh() {
   while IFS= read -r cli; do
     [[ -n "$cli" ]] || continue
     if [[ "$use_sudo" == "true" ]]; then
-      output="$(sudo "$cli" set --ssh=true 2>&1)" || {
+      output="$(run_tailscale_cli_sudo "$cli" set --ssh=true 2>&1)" || {
         tailscale_ssh_error="$output"
         continue
       }
     else
-      output="$("$cli" set --ssh=true 2>&1)" || {
+      output="$(run_tailscale_cli "$cli" set --ssh=true 2>&1)" || {
         tailscale_ssh_error="$output"
         continue
       }
@@ -643,7 +711,7 @@ run_tailscale_set_ssh_sudo_noninteractive() {
   local cli output
   while IFS= read -r cli; do
     [[ -n "$cli" ]] || continue
-    output="$(sudo -n "$cli" set --ssh=true 2>&1)" || {
+    output="$(run_tailscale_cli_sudo_noninteractive "$cli" set --ssh=true 2>&1)" || {
       if ! tailscale_ssh_error_is_sandboxed "$tailscale_ssh_error"; then
         tailscale_ssh_error="$output"
       fi
@@ -655,17 +723,20 @@ run_tailscale_set_ssh_sudo_noninteractive() {
 }
 
 enable_tailscale_ssh() {
-  if ! command -v tailscale >/dev/null 2>&1; then
+  if ! tailscale_status_connected; then
     return 1
   fi
-  if ! tailscale status >/dev/null 2>&1; then
-    return 1
-  fi
-  if ! tailscale set --help 2>&1 | grep -q -- '--ssh'; then
+  local help_output=""
+  while IFS= read -r cli; do
+    [[ -n "$cli" ]] || continue
+    help_output="$(run_tailscale_cli "$cli" set --help 2>&1 || true)"
+    [[ "$help_output" == *"--ssh"* ]] && break
+  done < <(tailscale_cli_candidates | awk '!seen[$0]++')
+  if [[ "$help_output" != *"--ssh"* ]]; then
     warn "This Tailscale version does not support Tailscale SSH"
     return 1
   fi
-  if tailscale debug prefs 2>/dev/null | grep -q '"RunSSH": true'; then
+  if tailscale_prefs_has '"RunSSH": true'; then
     ok "Tailscale SSH already advertised by this machine"
     return 0
   fi
@@ -695,7 +766,7 @@ enable_tailscale_ssh() {
     warn_tailscale_ssh_unavailable
     return 1
   fi
-  if ! tailscale debug prefs 2>/dev/null | grep -q '"RunSSH": true'; then
+  if ! tailscale_prefs_has '"RunSSH": true'; then
     warn "Tailscale accepted the SSH setting, but verification did not report RunSSH=true yet"
     return 1
   fi
@@ -987,8 +1058,10 @@ configure_shared_skills() {
 }
 
 tailnet_peer_collector_urls() {
-  command -v tailscale >/dev/null 2>&1 || return 0
-  tailscale status --json 2>/dev/null | node -e '
+  local cli
+  cli="$(tailscale_cli_candidates | awk '!seen[$0]++ { print; exit }')"
+  [[ -n "$cli" ]] || return 0
+  run_tailscale_cli "$cli" status --json 2>/dev/null | node -e '
 const port = process.argv[2] || "8787";
 let raw = "";
 process.stdin.on("data", (chunk) => { raw += chunk; });

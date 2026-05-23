@@ -3,6 +3,14 @@
 This file records user-visible changes before they are committed. New work should
 be added here first, then marked `Committed` or `Pushed` after the git action.
 
+## 2026-05-23 16:58 WITA - Pin Tailscale SSH To Managed Daemon
+
+- Status: Pushed
+- Areas changed: setup script, telemetry collector installer, changelog
+- Summary: Route managed macOS Tailscale status, login, IP, prefs, Shields Up, and SSH commands through the Homebrew CLI with the tailscaled socket so setup does not reconnect successfully with Homebrew and then advertise SSH against the sandboxed GUI backend.
+- Verification: `bash -n setup.sh && bash -n scripts/install-telemetry-collector.sh`; `pnpm run test:fleet-local`; `git diff --check -- setup.sh scripts/install-telemetry-collector.sh CHANGELOG.md`; stale sandboxed-GUI fallback copy search.
+- Intended commit message: `Pin Tailscale SSH to managed daemon`
+
 ## 2026-05-23 16:45 WITA - Complete Tailscale During Setup
 
 - Status: Pushed

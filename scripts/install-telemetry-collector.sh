@@ -85,8 +85,75 @@ homebrew_tailscale_formula_installed() {
 }
 
 tailscale_cli_candidates() {
+  if [[ -n "${HIVE_TAILSCALE_CLI:-}" && -x "${HIVE_TAILSCALE_CLI:-}" ]]; then
+    printf "%s\n" "$HIVE_TAILSCALE_CLI"
+  fi
   homebrew_tailscale_cli
   command -v tailscale 2>/dev/null || true
+}
+
+tailscale_cli_socket_arg() {
+  local cli="$1"
+  [[ "$(uname -s)" == "Darwin" ]] || return 1
+  case "$cli" in
+    /opt/homebrew/*|/usr/local/*) ;;
+    *) return 1 ;;
+  esac
+  if [[ -S /var/run/tailscaled.socket ]]; then
+    printf "%s\n" "--socket=/var/run/tailscaled.socket"
+    return 0
+  fi
+  return 1
+}
+
+run_tailscale_cli() {
+  local cli="$1"
+  shift
+  local socket_arg
+  socket_arg="$(tailscale_cli_socket_arg "$cli" || true)"
+  if [[ -n "$socket_arg" ]]; then
+    "$cli" "$socket_arg" "$@"
+  else
+    "$cli" "$@"
+  fi
+}
+
+run_tailscale_cli_sudo() {
+  local cli="$1"
+  shift
+  local socket_arg
+  socket_arg="$(tailscale_cli_socket_arg "$cli" || true)"
+  if [[ -n "$socket_arg" ]]; then
+    sudo "$cli" "$socket_arg" "$@"
+  else
+    sudo "$cli" "$@"
+  fi
+}
+
+run_tailscale_cli_sudo_noninteractive() {
+  local cli="$1"
+  shift
+  local socket_arg
+  socket_arg="$(tailscale_cli_socket_arg "$cli" || true)"
+  if [[ -n "$socket_arg" ]]; then
+    sudo -n "$cli" "$socket_arg" "$@"
+  else
+    sudo -n "$cli" "$@"
+  fi
+}
+
+tailscale_prefs_has() {
+  local pattern="$1"
+  local cli
+  if [[ -z "${HIVE_TAILSCALE_CLI:-}" ]] && command -v tailscale >/dev/null 2>&1 && tailscale debug prefs 2>/dev/null | grep -q "$pattern"; then
+    return 0
+  fi
+  while IFS= read -r cli; do
+    [[ -n "$cli" ]] || continue
+    run_tailscale_cli "$cli" debug prefs 2>/dev/null | grep -q "$pattern" && return 0
+    run_tailscale_cli_sudo_noninteractive "$cli" debug prefs 2>/dev/null | grep -q "$pattern" && return 0
+  done < <(tailscale_cli_candidates | awk '!seen[$0]++')
+  return 1
 }
 
 tailscale_up_retry_args_from_error() {
@@ -108,7 +175,7 @@ wait_for_tailscale_running() {
   local seconds="${2:-180}"
   local elapsed=0
   while (( elapsed < seconds )); do
-    if sudo "$formula_cli" status >/dev/null 2>&1; then
+    if run_tailscale_cli_sudo "$formula_cli" status >/dev/null 2>&1; then
       return 0
     fi
     sleep 3
@@ -119,13 +186,13 @@ wait_for_tailscale_running() {
 
 tailscale_status_connected() {
   local cli
-  if command -v tailscale >/dev/null 2>&1 && tailscale status >/dev/null 2>&1; then
+  if [[ -z "${HIVE_TAILSCALE_CLI:-}" ]] && command -v tailscale >/dev/null 2>&1 && tailscale status >/dev/null 2>&1; then
     return 0
   fi
   while IFS= read -r cli; do
     [[ -n "$cli" ]] || continue
-    "$cli" status >/dev/null 2>&1 && return 0
-    sudo -n "$cli" status >/dev/null 2>&1 && return 0
+    run_tailscale_cli "$cli" status >/dev/null 2>&1 && return 0
+    run_tailscale_cli_sudo_noninteractive "$cli" status >/dev/null 2>&1 && return 0
   done < <(tailscale_cli_candidates | awk '!seen[$0]++')
   return 1
 }
@@ -133,11 +200,11 @@ tailscale_status_connected() {
 connect_homebrew_tailscaled() {
   local formula_cli="$1"
   local output retry_args auth_url
-  output="$(run_with_timeout 45 sudo "$formula_cli" up --timeout=30s 2>&1)" && return 0
+  output="$(run_with_timeout 45 run_tailscale_cli_sudo "$formula_cli" up --timeout=30s 2>&1)" && return 0
   retry_args="$(printf "%s\n" "$output" | tailscale_up_retry_args_from_error)"
   if [[ -n "$retry_args" ]]; then
     # shellcheck disable=SC2086
-    output="$(run_with_timeout 45 sudo "$formula_cli" up $retry_args 2>&1)" && return 0
+    output="$(run_with_timeout 45 run_tailscale_cli_sudo "$formula_cli" up $retry_args 2>&1)" && return 0
   fi
   auth_url="$(printf "%s\n" "$output" | tailscale_auth_url_from_output)"
   if [[ -n "$auth_url" ]]; then
@@ -237,12 +304,13 @@ setup_homebrew_tailscaled_for_fleet() {
     echo "Homebrew tailscale CLI was not found after install/start." >&2
     return 1
   fi
+  export HIVE_TAILSCALE_CLI="$formula_cli"
   echo "Connecting Homebrew tailscaled"
   if ! connect_homebrew_tailscaled "$formula_cli"; then
     echo "Homebrew tailscaled did not finish connecting before the auth wait timed out." >&2
     return 1
   fi
-  if ! run_with_timeout 10 sudo "$formula_cli" status >/dev/null 2>&1; then
+  if ! run_with_timeout 10 run_tailscale_cli_sudo "$formula_cli" status >/dev/null 2>&1; then
     echo "Homebrew tailscaled started, but status did not respond quickly." >&2
     return 1
   fi
@@ -250,21 +318,28 @@ setup_homebrew_tailscaled_for_fleet() {
 }
 
 enable_tailscale_ssh() {
-  if ! command -v tailscale >/dev/null 2>&1 || ! tailscale status >/dev/null 2>&1; then
+  if ! tailscale_status_connected; then
     return
   fi
-  if ! tailscale set --help 2>&1 | grep -q -- '--ssh'; then
+  local cli help_output=""
+  while IFS= read -r cli; do
+    [[ -n "$cli" ]] || continue
+    help_output="$(run_tailscale_cli "$cli" set --help 2>&1 || true)"
+    [[ "$help_output" == *"--ssh"* ]] && break
+  done < <(tailscale_cli_candidates | awk '!seen[$0]++')
+  if [[ "$help_output" != *"--ssh"* ]]; then
     echo "This Tailscale version does not support Tailscale SSH." >&2
     return
   fi
-  if tailscale debug prefs 2>/dev/null | grep -q '"RunSSH": true'; then
+  if tailscale_prefs_has '"RunSSH": true'; then
     echo "Tailscale SSH already advertised by this machine"
     return
   fi
   local tailscale_ssh_error=""
-  if tailscale_ssh_error="$(tailscale set --ssh=true 2>&1)"; then
+  cli="$(tailscale_cli_candidates | awk '!seen[$0]++ { print; exit }')"
+  if [[ -n "$cli" ]] && tailscale_ssh_error="$(run_tailscale_cli "$cli" set --ssh=true 2>&1)"; then
     echo "Tailscale SSH advertised by this machine"
-  elif command -v sudo >/dev/null 2>&1 && tailscale_sudo_error="$(sudo -n tailscale set --ssh=true 2>&1)"; then
+  elif [[ -n "$cli" ]] && command -v sudo >/dev/null 2>&1 && tailscale_sudo_error="$(run_tailscale_cli_sudo_noninteractive "$cli" set --ssh=true 2>&1)"; then
     echo "Tailscale SSH advertised by this machine"
   else
     if [[ -n "${tailscale_sudo_error:-}" && "$tailscale_ssh_error" != *"sandboxed Tailscale GUI builds"* ]]; then
@@ -277,7 +352,7 @@ enable_tailscale_ssh() {
     if [[ "$tailscale_ssh_error" == *"sandboxed Tailscale GUI builds"* ]]; then
       echo "This macOS Tailscale build cannot host Tailscale SSH. Shared-brain Syncthing can still work, but Tailscale SSH features from this Mac are disabled." >&2
       echo "Fleet collector discovery does not require Tailscale SSH; it uses normal Tailnet HTTP on port $PORT." >&2
-      echo "For the most reliable managed Fleet setup on macOS, use the Homebrew tailscaled daemon instead of the sandboxed GUI backend." >&2
+      echo "Homebrew tailscaled is installed, but the active CLI call still reached the sandboxed GUI backend." >&2
       if setup_homebrew_tailscaled_for_fleet; then
         enable_tailscale_ssh
       fi
@@ -286,7 +361,7 @@ enable_tailscale_ssh() {
     fi
     return
   fi
-  if ! tailscale debug prefs 2>/dev/null | grep -q '"RunSSH": true'; then
+  if ! tailscale_prefs_has '"RunSSH": true'; then
     echo "Tailscale accepted the SSH setting, but verification did not report RunSSH=true yet." >&2
   fi
 }
@@ -386,10 +461,10 @@ maybe_allow_node_through_macos_firewall() {
 }
 
 maybe_disable_tailscale_shields_up() {
-  if ! command -v tailscale >/dev/null 2>&1 || ! tailscale status >/dev/null 2>&1; then
+  if ! tailscale_status_connected; then
     return
   fi
-  if ! tailscale debug prefs 2>/dev/null | grep -q '"ShieldsUp": true'; then
+  if ! tailscale_prefs_has '"ShieldsUp": true'; then
     return
   fi
   echo "Tailscale Shields Up is enabled; other Tailnet machines cannot reach this collector while it is on." >&2
@@ -397,9 +472,11 @@ maybe_disable_tailscale_shields_up() {
     echo "Leaving Shields Up enabled. Disable later with: tailscale set --shields-up=false" >&2
     return
   fi
-  if tailscale set --shields-up=false >/dev/null 2>&1; then
+  local cli
+  cli="$(tailscale_cli_candidates | awk '!seen[$0]++ { print; exit }')"
+  if [[ -n "$cli" ]] && run_tailscale_cli "$cli" set --shields-up=false >/dev/null 2>&1; then
     echo "Disabled Tailscale Shields Up"
-  elif command -v sudo >/dev/null 2>&1 && sudo tailscale set --shields-up=false >/dev/null 2>&1; then
+  elif [[ -n "$cli" ]] && command -v sudo >/dev/null 2>&1 && run_tailscale_cli_sudo "$cli" set --shields-up=false >/dev/null 2>&1; then
     echo "Disabled Tailscale Shields Up"
   else
     echo "Could not disable Shields Up automatically. Run: tailscale set --shields-up=false" >&2
@@ -633,10 +710,16 @@ if [[ "$TAILNET_SYNC_ENABLED" == "true" ]]; then
   enable_tailscale_ssh
 fi
 
-if command -v tailscale >/dev/null 2>&1; then
-  IP="$(tailscale ip -4 2>/dev/null | head -1 || true)"
-  if [[ -n "$IP" ]]; then
-    echo "Collector URL: http://$IP:$PORT"
+if tailscale_status_connected; then
+  TAILSCALE_CLI="$(tailscale_cli_candidates | awk '!seen[$0]++ { print; exit }')"
+  if [[ -n "$TAILSCALE_CLI" ]]; then
+    IP="$(run_tailscale_cli "$TAILSCALE_CLI" ip -4 2>/dev/null | head -1 || true)"
+    if [[ -z "$IP" ]]; then
+      IP="$(run_tailscale_cli_sudo_noninteractive "$TAILSCALE_CLI" ip -4 2>/dev/null | head -1 || true)"
+    fi
+    if [[ -n "$IP" ]]; then
+      echo "Collector URL: http://$IP:$PORT"
+    fi
   fi
 fi
 echo "Local collector URL: http://127.0.0.1:$PORT"
