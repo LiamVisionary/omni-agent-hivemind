@@ -3,6 +3,14 @@
 This file records user-visible changes before they are committed. New work should
 be added here first, then marked `Committed` or `Pushed` after the git action.
 
+## 2026-05-23 17:32 WITA - Dedupe Fleet Machines
+
+- Status: Pushed
+- Areas changed: Fleet discovery API, Tailscale devices API, Fleet machine grouping, changelog
+- Summary: Collapse duplicate Tailnet records for the same physical machine by normalized machine identity, merge stale discovered machines by the same identity, and prefer self/ready/agent-bearing records so `This Mac` and renamed Mac peers do not appear twice in the roster or graph.
+- Verification: `pnpm exec tsc --noEmit --pretty false`; `pnpm exec eslint src/app/api/fleet/discover/route.ts src/app/api/tailscale/devices/route.ts src/app/page.tsx` (0 errors, existing warnings only); `git diff --check -- src/app/api/fleet/discover/route.ts src/app/api/tailscale/devices/route.ts src/app/page.tsx CHANGELOG.md`.
+- Intended commit message: `Dedupe Fleet machines`
+
 ## 2026-05-23 17:18 WITA - Make Tailscale Auth User-Opened
 
 - Status: Pushed

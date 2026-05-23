@@ -61,12 +61,38 @@ function normalizeName(value?: string) {
   return value?.toLowerCase().replace(/[^a-z0-9]+/g, "") ?? "";
 }
 
+function deviceIdentityKey(device: ReturnType<typeof simplifyDevice>) {
+  if (device.self) return "self";
+  const name = normalizeName(device.name) || normalizeName(dnsLabel(device.dnsName));
+  return name || device.ip || device.collectorUrl;
+}
+
 function isStaleSelfDuplicate(
   self: ReturnType<typeof simplifyDevice> | undefined,
   device: ReturnType<typeof simplifyDevice>,
 ) {
   if (!self || device.self || device.online) return false;
   return normalizeName(self.name) !== "" && normalizeName(self.name) === normalizeName(device.name);
+}
+
+function deviceFreshnessScore(device: ReturnType<typeof simplifyDevice>) {
+  return (device.self ? 10_000 : 0)
+    + (device.online ? 1_000 : 0)
+    + (device.active ? 100 : 0)
+    + (device.lastHandshake && !device.lastHandshake.startsWith("0001-01-01") ? 10 : 0)
+    + ((device.rxBytes ?? 0) > 0 || (device.txBytes ?? 0) > 0 ? 1 : 0);
+}
+
+function dedupeDevices(devices: ReturnType<typeof simplifyDevice>[]) {
+  const byIdentity = new Map<string, ReturnType<typeof simplifyDevice>>();
+  for (const device of devices) {
+    const key = deviceIdentityKey(device);
+    const previous = byIdentity.get(key);
+    if (!previous || deviceFreshnessScore(device) > deviceFreshnessScore(previous)) {
+      byIdentity.set(key, device);
+    }
+  }
+  return [...byIdentity.values()];
 }
 
 function simplifyDevice(peer: TailscalePeer, self = false) {
@@ -103,7 +129,7 @@ export async function GET() {
     const peers = Object.values(status.Peer ?? {})
       .map((peer) => simplifyDevice(peer))
       .filter((device) => !isStaleSelfDuplicate(self, device));
-    const devices = [...(self ? [self] : []), ...peers];
+    const devices = dedupeDevices([...(self ? [self] : []), ...peers]);
     return Response.json({
       ok: status.BackendState === "Running",
       backendState: status.BackendState,

@@ -106,9 +106,35 @@ function normalizeName(value?: string) {
   return value?.toLowerCase().replace(/[^a-z0-9]+/g, "") ?? "";
 }
 
+function deviceIdentityKey(device: Device) {
+  if (device.self) return "self";
+  const name = normalizeName(device.name) || normalizeName(dnsLabel(device.dnsName));
+  return name || device.ip || device.collectorUrl;
+}
+
 function isStaleSelfDuplicate(self: Device | undefined, device: Device) {
   if (!self || device.self || device.online) return false;
   return normalizeName(self.name) !== "" && normalizeName(self.name) === normalizeName(device.name);
+}
+
+function deviceFreshnessScore(device: Device) {
+  return (device.self ? 10_000 : 0)
+    + (device.online ? 1_000 : 0)
+    + (device.active ? 100 : 0)
+    + (device.lastHandshake && !device.lastHandshake.startsWith("0001-01-01") ? 10 : 0)
+    + ((device.rxBytes ?? 0) > 0 || (device.txBytes ?? 0) > 0 ? 1 : 0);
+}
+
+function dedupeDevices(devices: Device[]) {
+  const byIdentity = new Map<string, Device>();
+  for (const device of devices) {
+    const key = deviceIdentityKey(device);
+    const previous = byIdentity.get(key);
+    if (!previous || deviceFreshnessScore(device) > deviceFreshnessScore(previous)) {
+      byIdentity.set(key, device);
+    }
+  }
+  return [...byIdentity.values()];
 }
 
 function simplifyDevice(peer: TailscalePeer, self = false): Device {
@@ -143,7 +169,7 @@ async function tailscaleDevices() {
   const peers = Object.values(status.Peer ?? {})
     .map((peer) => simplifyDevice(peer))
     .filter((device) => !isStaleSelfDuplicate(self, device));
-  const devices = [...(self ? [self] : []), ...peers];
+  const devices = dedupeDevices([...(self ? [self] : []), ...peers]);
   return devices.length ? devices : [localDevice()];
 }
 
@@ -196,7 +222,7 @@ function defaultQueenAgent(device: Device, agents: AgentProfile[], capabilities?
 
 export async function GET() {
   const devices = await tailscaleDevices().catch(() => [localDevice()]);
-  const machines = await Promise.all(devices.map(async (device) => {
+  const discovered = await Promise.all(devices.map(async (device) => {
     if (!device.collectorUrl) {
       return { device, collector: "missing", agents: [], snapshots: [] };
     }
@@ -265,6 +291,35 @@ export async function GET() {
       };
     }
   }));
+  const machines = dedupeMachines(discovered);
 
   return Response.json({ ok: true, machines });
+}
+
+function machineScore(machine: {
+  device: Device;
+  collector: string;
+  agents: AgentProfile[];
+}) {
+  return (machine.device.self ? 10_000 : 0)
+    + (machine.collector === "ready" ? 1_000 : 0)
+    + (machine.agents.length * 10)
+    + deviceFreshnessScore(machine.device);
+}
+
+function dedupeMachines<T extends { device: Device; collector: string; agents: AgentProfile[] }>(machines: T[]) {
+  const byIdentity = new Map<string, T>();
+  for (const machine of machines) {
+    const key = deviceIdentityKey(machine.device);
+    const previous = byIdentity.get(key);
+    if (!previous) {
+      byIdentity.set(key, machine);
+      continue;
+    }
+    const preferred = machineScore(machine) > machineScore(previous) ? machine : previous;
+    const agents = [...previous.agents, ...machine.agents]
+      .filter((agent, index, all) => all.findIndex((item) => item.id === agent.id) === index);
+    byIdentity.set(key, { ...preferred, agents });
+  }
+  return [...byIdentity.values()];
 }

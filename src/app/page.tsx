@@ -2127,6 +2127,29 @@ function isLoopbackCollector(url?: string) {
   }
 }
 
+function normalizeMachineName(value?: string) {
+  return value?.toLowerCase().replace(/[^a-z0-9]+/g, "") ?? "";
+}
+
+function machineIdentityFromParts({
+  self,
+  name,
+  dnsName,
+  collectorUrl,
+  ip,
+}: {
+  self?: boolean;
+  name?: string;
+  dnsName?: string;
+  collectorUrl?: string;
+  ip?: string;
+}) {
+  if (self) return "self";
+  const dnsLabel = dnsName?.replace(/\.$/, "").split(".")[0] ?? "";
+  const normalizedName = normalizeMachineName(name) || normalizeMachineName(dnsLabel);
+  return normalizedName || collectorKey(collectorUrl) || ip || "";
+}
+
 function normalizeAgentPath(path?: string) {
   return path
     ?.trim()
@@ -3126,14 +3149,50 @@ function mergeMachineSnapshots(previous: AgentSnapshot[] = [], incoming: AgentSn
   return incoming.map((snapshot) => mergeSnapshot(previousById.get(snapshot.agentId), snapshot));
 }
 
+function discoveredMachineIdentity(machine: DiscoveredMachine) {
+  return machineIdentityFromParts({
+    self: machine.device.self,
+    name: machine.device.name,
+    dnsName: machine.device.dnsName,
+    collectorUrl: machine.device.collectorUrl,
+    ip: machine.device.ip,
+  });
+}
+
+function discoveredMachineScore(machine: DiscoveredMachine) {
+  return (machine.device.self ? 10_000 : 0)
+    + (machine.collector === "ready" ? 1_000 : 0)
+    + (machine.agents.length * 10)
+    + (machine.device.online ? 5 : 0)
+    + (machine.lastSeenAt ? 1 : 0);
+}
+
+function dedupeDiscoveredMachines(machines: DiscoveredMachine[]) {
+  const byIdentity = new Map<string, DiscoveredMachine>();
+  for (const machine of machines) {
+    const key = discoveredMachineIdentity(machine);
+    const previous = byIdentity.get(key);
+    if (!previous) {
+      byIdentity.set(key, machine);
+      continue;
+    }
+    const preferred = discoveredMachineScore(machine) > discoveredMachineScore(previous) ? machine : previous;
+    const agents = [...previous.agents, ...machine.agents]
+      .filter((agent, index, all) => all.findIndex((item) => item.id === agent.id) === index);
+    const snapshots = mergeMachineSnapshots(previous.snapshots, machine.snapshots);
+    byIdentity.set(key, { ...preferred, agents, snapshots });
+  }
+  return [...byIdentity.values()];
+}
+
 function mergeDiscoveredMachines(current: DiscoveredMachine[], incoming: DiscoveredMachine[]) {
-  const currentByKey = new Map(current.map((machine) => [collectorKey(machine.device.collectorUrl) || machine.device.name, machine]));
-  const incomingKeys = new Set(incoming.map((machine) => collectorKey(machine.device.collectorUrl) || machine.device.name));
+  const currentByKey = new Map(current.map((machine) => [discoveredMachineIdentity(machine), machine]));
+  const incomingKeys = new Set(incoming.map((machine) => discoveredMachineIdentity(machine)));
   const incomingHasTailnetSelf = incoming.some((machine) => machine.device.self && !isLoopbackCollector(machine.device.collectorUrl));
   const now = Date.now();
 
   const merged = incoming.map((machine) => {
-    const key = collectorKey(machine.device.collectorUrl) || machine.device.name;
+    const key = discoveredMachineIdentity(machine);
     const previous = currentByKey.get(key);
     const hasFreshAgentData = machine.collector === "ready" && machine.agents.length > 0;
     const mergedSnapshots = mergeMachineSnapshots(previous?.snapshots, machine.snapshots);
@@ -3162,7 +3221,7 @@ function mergeDiscoveredMachines(current: DiscoveredMachine[], incoming: Discove
   });
 
   const preserved = current
-    .filter((machine) => !incomingKeys.has(collectorKey(machine.device.collectorUrl) || machine.device.name))
+    .filter((machine) => !incomingKeys.has(discoveredMachineIdentity(machine)))
     .filter((machine) => !(incomingHasTailnetSelf && machine.device.self && isLoopbackCollector(machine.device.collectorUrl)))
     .map((machine) => ({
       ...machine,
@@ -3170,7 +3229,7 @@ function mergeDiscoveredMachines(current: DiscoveredMachine[], incoming: Discove
       collector: machine.device.self ? machine.collector : "offline" as MachineGroup["collector"],
     }));
 
-  return [...merged, ...preserved];
+  return dedupeDiscoveredMachines([...merged, ...preserved]);
 }
 
 function machineVersionState(machine: MachineGroup, latestCommit?: string) {
@@ -5540,6 +5599,28 @@ export default function Home() {
         envSync: machine.envSync,
       });
     });
+    const dedupeMachineGroups = (items: MachineGroup[]) => {
+      const byIdentity = new Map<string, MachineGroup>();
+      const score = (machine: MachineGroup) => (
+        (machine.self ? 10_000 : 0)
+        + (machine.collector === "ready" ? 1_000 : 0)
+        + (machine.agents.length * 10)
+        + (machine.online ? 5 : 0)
+      );
+      for (const item of items) {
+        const key = machineIdentityFromParts(item);
+        const previous = byIdentity.get(key);
+        if (!previous) {
+          byIdentity.set(key, item);
+          continue;
+        }
+        const preferred = score(item) > score(previous) ? item : previous;
+        const agents = [...previous.agents, ...item.agents]
+          .filter((agent, index, all) => all.findIndex((candidate) => candidate.id === agent.id) === index);
+        byIdentity.set(key, { ...preferred, agents });
+      }
+      return [...byIdentity.values()];
+    };
     const unassigned: MachineGroup = {
       key: "unassigned",
       name: "Not connected yet",
@@ -5569,7 +5650,7 @@ export default function Home() {
       }
     }
 
-    return groups;
+    return dedupeMachineGroups(groups);
   }, [displayAgents, discoveredMachines, tailscaleDevices]);
 
   const kanbanMachineTargets = useMemo<KanbanMachineTarget[]>(() => machineGroups
