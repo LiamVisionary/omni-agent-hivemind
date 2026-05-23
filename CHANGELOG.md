@@ -3,6 +3,14 @@
 This file records user-visible changes before they are committed. New work should
 be added here first, then marked `Committed` or `Pushed` after the git action.
 
+## 2026-05-23 14:55 WITA - Prefer Managed Mac Tailscaled Setup
+
+- Status: Pushed
+- Areas changed: macOS setup, telemetry collector installer, changelog
+- Summary: Reframe the Homebrew `tailscaled` flow as the managed macOS Fleet backend, not just a Tailscale SSH fix, and offer to install/start/connect it from both setup and collector install when the sandboxed GUI backend blocks managed Tailscale features.
+- Verification: `bash -n setup.sh && bash -n scripts/install-telemetry-collector.sh`; `pnpm run test:fleet-local`; `git diff --check -- setup.sh scripts/install-telemetry-collector.sh CHANGELOG.md`.
+- Intended commit message: `Prefer managed Mac tailscaled setup`
+
 ## 2026-05-23 14:32 WITA - Classify Unreachable Tailnet Peers
 
 - Status: Pushed

@@ -399,14 +399,14 @@ homebrew_tailscaled_is_available() {
   [[ -n "$(homebrew_tailscaled_candidates | head -1)" ]]
 }
 
-setup_homebrew_tailscaled_for_ssh() {
+setup_homebrew_tailscaled_for_fleet() {
   [[ "$(uname -s)" == "Darwin" ]] || return 1
   setup_is_interactive || return 1
   command -v brew >/dev/null 2>&1 || ensure_homebrew || return 1
 
-  local prompt="Tailscale SSH needs the Homebrew/open-source tailscaled daemon on this Mac. Install and start it now?"
+  local prompt="Use the Homebrew/open-source Tailscale daemon for reliable Fleet reachability and Tailscale SSH on this Mac?"
   if homebrew_tailscaled_is_available; then
-    prompt="Tailscale SSH needs the Homebrew/open-source tailscaled daemon on this Mac. Start and connect the installed daemon now?"
+    prompt="Start and connect the installed Homebrew Tailscale daemon for reliable Fleet reachability and Tailscale SSH on this Mac?"
   fi
   if ! prompt_yes_no "$prompt" "yes"; then
     return 1
@@ -453,7 +453,7 @@ warn_tailscale_ssh_unavailable() {
 
 try_homebrew_tailscaled_for_ssh() {
   tailscale_ssh_error_is_sandboxed "$tailscale_ssh_error" || return 1
-  setup_homebrew_tailscaled_for_ssh || return 1
+  setup_homebrew_tailscaled_for_fleet || return 1
   tailscale_ssh_error=""
   run_tailscale_set_ssh false || run_tailscale_set_ssh_sudo_noninteractive || run_tailscale_set_ssh true
 }

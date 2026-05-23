@@ -53,6 +53,65 @@ install_syncthing_if_missing() {
   fi
 }
 
+load_homebrew_shellenv() {
+  local brew_bin=""
+  if command -v brew >/dev/null 2>&1; then
+    brew_bin="$(command -v brew)"
+  elif [[ -x /opt/homebrew/bin/brew ]]; then
+    brew_bin="/opt/homebrew/bin/brew"
+  elif [[ -x /usr/local/bin/brew ]]; then
+    brew_bin="/usr/local/bin/brew"
+  fi
+  if [[ -n "$brew_bin" ]]; then
+    eval "$("$brew_bin" shellenv)"
+    return 0
+  fi
+  return 1
+}
+
+homebrew_tailscale_cli() {
+  local prefix candidate
+  for candidate in /opt/homebrew/opt/tailscale/bin/tailscale /opt/homebrew/bin/tailscale /usr/local/opt/tailscale/bin/tailscale /usr/local/bin/tailscale; do
+    [[ -x "$candidate" ]] && printf "%s\n" "$candidate" && return
+  done
+  if command -v brew >/dev/null 2>&1; then
+    prefix="$(brew --prefix tailscale 2>/dev/null || true)"
+    [[ -n "$prefix" && -x "$prefix/bin/tailscale" ]] && printf "%s\n" "$prefix/bin/tailscale"
+  fi
+}
+
+setup_homebrew_tailscaled_for_fleet() {
+  [[ "$(uname -s)" == "Darwin" ]] || return 1
+  [[ -t 0 && -t 1 ]] || return 1
+  [[ "${HIVE_TAILSCALED_SWITCH_ATTEMPTED:-false}" != "true" ]] || return 1
+  export HIVE_TAILSCALED_SWITCH_ATTEMPTED="true"
+  load_homebrew_shellenv || return 1
+  if ! prompt_yes_no "Switch this Mac to the Homebrew Tailscale daemon so Fleet can manage Tailnet reachability reliably?" "yes"; then
+    echo "Leaving the current Tailscale backend active. If Fleet cannot reach this Mac, install/start the Homebrew tailscaled daemon later." >&2
+    return 1
+  fi
+  if ! command -v brew >/dev/null 2>&1; then
+    echo "Homebrew is required for the managed macOS tailscaled setup." >&2
+    return 1
+  fi
+  if [[ -z "$(homebrew_tailscale_cli)" ]]; then
+    echo "Installing Homebrew Tailscale CLI/daemon"
+    brew install --formula tailscale
+  fi
+  echo "Starting Homebrew tailscaled service"
+  sudo brew services start tailscale
+  local formula_cli
+  formula_cli="$(homebrew_tailscale_cli)"
+  if [[ -z "$formula_cli" ]]; then
+    echo "Homebrew tailscale CLI was not found after install/start." >&2
+    return 1
+  fi
+  echo "Connecting Homebrew tailscaled"
+  sudo "$formula_cli" up
+  "$formula_cli" status >/dev/null 2>&1 || sudo "$formula_cli" status >/dev/null 2>&1
+  echo "Homebrew tailscaled is active for this Mac"
+}
+
 enable_tailscale_ssh() {
   if ! command -v tailscale >/dev/null 2>&1 || ! tailscale status >/dev/null 2>&1; then
     return
@@ -81,6 +140,10 @@ enable_tailscale_ssh() {
     if [[ "$tailscale_ssh_error" == *"sandboxed Tailscale GUI builds"* ]]; then
       echo "This macOS Tailscale build cannot host Tailscale SSH. Shared-brain Syncthing can still work, but Tailscale SSH features from this Mac are disabled." >&2
       echo "Fleet collector discovery does not require Tailscale SSH; it uses normal Tailnet HTTP on port $PORT." >&2
+      echo "For the most reliable managed Fleet setup on macOS, use the Homebrew tailscaled daemon instead of the sandboxed GUI backend." >&2
+      if setup_homebrew_tailscaled_for_fleet; then
+        enable_tailscale_ssh
+      fi
     else
       echo "Run on this machine if prompted for admin rights: sudo tailscale set --ssh" >&2
     fi
