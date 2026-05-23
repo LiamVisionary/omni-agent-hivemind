@@ -53,6 +53,13 @@ type CollectorCapabilities = {
   defaultSyncPath?: string;
 };
 
+type CollectorEnvSync = {
+  ready?: boolean;
+  user?: string;
+  command?: string;
+  error?: string;
+};
+
 const QUEEN_RUNTIME_PRIORITY: AgentRuntime[] = ["hermes", "openclaw", "aeon"];
 
 function localDevice(): Device {
@@ -181,13 +188,16 @@ export async function GET() {
     let agents: AgentProfile[] = [];
     let version: CollectorVersion | undefined;
     let capabilities: CollectorCapabilities | undefined;
+    let envSync: CollectorEnvSync | undefined;
     try {
       const healthData = await fetchJson(`${device.collectorUrl}/health`).catch(() => null) as {
         version?: CollectorVersion;
         capabilities?: CollectorCapabilities;
+        envSync?: CollectorEnvSync;
       } | null;
       version = healthData?.version;
       capabilities = healthData?.capabilities ?? { chat: false, runtimes: [] };
+      envSync = healthData?.envSync;
       const agentData = await fetchJson(`${device.collectorUrl}/agents`) as { agents?: AgentProfile[] };
       agents = (agentData.agents ?? []).map((agent) => ({
         ...agent,
@@ -219,6 +229,7 @@ export async function GET() {
         collector: "ready",
         version,
         capabilities,
+        envSync,
         agents: visibleAgents,
         snapshots: snapshotData.snapshots ?? [],
       };
@@ -232,6 +243,7 @@ export async function GET() {
         collector: "ready",
         version,
         capabilities,
+        envSync,
         agents: visibleAgents,
         snapshots: [],
       };

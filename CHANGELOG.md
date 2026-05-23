@@ -3,6 +3,14 @@
 This file records user-visible changes before they are committed. New work should
 be added here first, then marked `Committed` or `Pushed` after the git action.
 
+## 2026-05-23 00:52 WITA - Add Fleet Network Fix Badges
+
+- Status: Pushed
+- Areas changed: Fleet roster status copy, Tailscale discovery data, Fleet machine issue modal, changelog
+- Summary: Replace the ambiguous Fleet local-mode message with `Tailscale not configured. Running locally.`, add per-machine roster Fix badges for Tailscale disconnected, collector unreachable, and env sync readiness issues, and show a modal with exact repair commands for each issue.
+- Verification: `pnpm exec tsc --noEmit --pretty false`; `pnpm exec eslint src/components/fleet/roster.tsx src/components/fleet/fleet-data.ts src/app/api/fleet/discover/route.ts src/app/page.tsx` (0 errors, existing page warnings only); `git diff --check -- src/components/fleet/roster.tsx src/components/fleet/fleet-data.ts src/app/api/fleet/discover/route.ts src/app/page.tsx CHANGELOG.md`.
+- Intended commit message: `Add Fleet network fix badges`
+
 ## 2026-05-22 22:57 WITA - Streamline Env And Sync Setup
 
 - Status: Pushed

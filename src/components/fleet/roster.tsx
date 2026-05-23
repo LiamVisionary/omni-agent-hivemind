@@ -2,7 +2,7 @@
 "use client";
 
 import * as React from "react";
-import { ChevronDown, ChevronRight, Copy, MessageSquare, Monitor, Plus, Settings2, Trash2, Wallet } from "lucide-react";
+import { AlertTriangle, ChevronDown, ChevronRight, Copy, MessageSquare, Monitor, Plus, Settings2, Trash2, Wallet, X } from "lucide-react";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { BeeIcon } from "./bee-icon";
 import { HexTile } from "./hex-tile";
@@ -27,6 +27,7 @@ interface RosterRowProps {
   onToggle: () => void;
   onAddAgent: () => void;
   onOpenChat?: (a: FleetAgent) => void;
+  onOpenNetworkIssue?: () => void;
   onOpenWallet?: (a: FleetAgent) => void;
   onEditSettings?: (a: FleetAgent) => void;
   onDuplicate?: (a: FleetAgent) => void;
@@ -36,7 +37,7 @@ interface RosterRowProps {
 function RosterRow({
   machine, selected, expanded, selectedAgentId,
   onSelectMachine, onSelectAgent, onToggle, onAddAgent,
-  onOpenChat, onOpenWallet, onEditSettings, onDuplicate, onRemove,
+  onOpenChat, onOpenNetworkIssue, onOpenWallet, onEditSettings, onDuplicate, onRemove,
 }: RosterRowProps) {
   const [expandedTaskIds, setExpandedTaskIds] = React.useState<Set<string>>(() => new Set());
   const roleIconDim = (state: AgentState) => state === "ready" || state === "setup" || state === "failed";
@@ -88,6 +89,33 @@ function RosterRow({
           <div style={{ fontFamily: "var(--f-mono)", fontSize: 10, color: "var(--muted)" }}>
             {machine.kind} · {machine.city}
           </div>
+          {machine.networkIssue ? (
+            <button
+              type="button"
+              onClick={(event) => {
+                event.stopPropagation();
+                onOpenNetworkIssue?.();
+              }}
+              className="mt-1 inline-flex items-center gap-1"
+              style={{
+                maxWidth: "100%",
+                height: 20,
+                padding: "0 6px",
+                borderRadius: 6,
+                border: "1px solid rgba(251,191,36,0.42)",
+                background: "rgba(251,191,36,0.12)",
+                color: "#fde68a",
+                fontFamily: "var(--f-mono)",
+                fontSize: 9,
+                fontWeight: 800,
+                letterSpacing: 0,
+                cursor: "pointer",
+              }}
+            >
+              <AlertTriangle size={10} aria-hidden="true" />
+              <span className="truncate">{machine.networkIssue.label}</span>
+            </button>
+          ) : null}
         </div>
         <span
           style={{
@@ -339,6 +367,8 @@ export function Roster({
   onSelectMachine, onSelectAgent, onToggleExpand, onAddAgent,
   onOpenChat, onOpenWallet, onEditSettings, onDuplicate, onRemove,
 }: RosterProps) {
+  const [activeIssueMachine, setActiveIssueMachine] = React.useState<FleetMachine | null>(null);
+  const activeIssue = activeIssueMachine?.networkIssue;
   return (
     <div className="grid gap-1.5">
       {machines.map((m) => (
@@ -353,12 +383,90 @@ export function Roster({
           onToggle={() => onToggleExpand(m.id)}
           onAddAgent={() => onAddAgent(m)}
           onOpenChat={(a) => onOpenChat?.(m, a)}
+          onOpenNetworkIssue={m.networkIssue ? () => setActiveIssueMachine(m) : undefined}
           onOpenWallet={(a) => onOpenWallet?.(m, a)}
           onEditSettings={(a) => onEditSettings?.(m, a)}
           onDuplicate={(a) => onDuplicate?.(m, a)}
           onRemove={(a) => onRemove?.(m, a)}
         />
       ))}
+      {activeIssue ? (
+        <div
+          role="presentation"
+          onClick={() => setActiveIssueMachine(null)}
+          style={{
+            position: "fixed",
+            inset: 0,
+            zIndex: 80,
+            display: "grid",
+            placeItems: "center",
+            padding: 16,
+            background: "rgba(2,6,23,0.72)",
+            backdropFilter: "blur(8px)",
+          }}
+        >
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-label={activeIssue.title}
+            onClick={(event) => event.stopPropagation()}
+            style={{
+              width: "min(560px, 100%)",
+              borderRadius: 8,
+              border: "1px solid rgba(148,163,184,0.22)",
+              background: "rgba(15,23,42,0.98)",
+              boxShadow: "0 24px 80px rgba(0,0,0,0.44)",
+              color: "var(--foreground)",
+              padding: 18,
+            }}
+          >
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <div className={styles.monoCap} style={{ color: "#fde68a", marginBottom: 8 }}>
+                  {activeIssueMachine?.name}
+                </div>
+                <h3 style={{ fontFamily: "var(--f-display)", fontSize: 20, margin: 0 }}>
+                  {activeIssue.title}
+                </h3>
+              </div>
+              <button
+                type="button"
+                aria-label="Close"
+                onClick={() => setActiveIssueMachine(null)}
+                className="grid place-items-center"
+                style={{
+                  width: 30,
+                  height: 30,
+                  borderRadius: 7,
+                  border: "1px solid rgba(148,163,184,0.22)",
+                  background: "rgba(15,23,42,0.78)",
+                  color: "var(--muted)",
+                  cursor: "pointer",
+                }}
+              >
+                <X size={15} aria-hidden="true" />
+              </button>
+            </div>
+            <p style={{ color: "var(--muted)", fontSize: 13, lineHeight: 1.55, margin: "12px 0 14px" }}>
+              {activeIssue.detail}
+            </p>
+            <pre
+              style={{
+                whiteSpace: "pre-wrap",
+                overflowX: "auto",
+                borderRadius: 7,
+                border: "1px solid rgba(148,163,184,0.18)",
+                background: "rgba(2,6,23,0.72)",
+                color: "#dbeafe",
+                padding: 12,
+                fontFamily: "var(--f-mono)",
+                fontSize: 11,
+                lineHeight: 1.5,
+              }}
+            >{activeIssue.commands.join("\n")}</pre>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }

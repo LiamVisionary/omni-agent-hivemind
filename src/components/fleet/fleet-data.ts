@@ -28,6 +28,13 @@ export function fleetAgentCanChat(agent: FleetAgent) {
 
 export type MachineVersionState = "current" | "stale" | "needs-setup";
 
+export interface FleetMachineNetworkIssue {
+  label: string;
+  title: string;
+  detail: string;
+  commands: string[];
+}
+
 export interface FleetMachine {
   id: string;
   name: string;
@@ -47,6 +54,7 @@ export interface FleetMachine {
   lat: number;
   lon: number;
   uptime: string;
+  networkIssue?: FleetMachineNetworkIssue;
   agents: FleetAgent[];
 }
 

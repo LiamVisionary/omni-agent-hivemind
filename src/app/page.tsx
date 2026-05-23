@@ -505,6 +505,12 @@ type MachineGroup = {
   agents: AgentProfile[];
   version?: AppVersion;
   capabilities?: AgentProfile["collectorCapabilities"];
+  envSync?: {
+    ready?: boolean;
+    user?: string;
+    command?: string;
+    error?: string;
+  };
 };
 
 type ChatTreeItem = {
@@ -542,6 +548,7 @@ type DiscoveredMachine = {
   snapshots: AgentSnapshot[];
   version?: AppVersion;
   capabilities?: AgentProfile["collectorCapabilities"];
+  envSync?: MachineGroup["envSync"];
   lastSeenAt?: number;
 };
 
@@ -2929,6 +2936,73 @@ function isCollectorAutoUpdateable(versionCopy: ReturnType<typeof machineVersion
   return Boolean(versionCopy && versionCopy.state !== "current");
 }
 
+function machineNetworkIssue(machine: MachineGroup, tailscaleStatus: string): FleetMachine["networkIssue"] {
+  if (machine.key === "unassigned") return undefined;
+  if (machine.self && (machine.ip === "127.0.0.1" || tailscaleStatus.startsWith("Tailscale not configured"))) {
+    return {
+      label: "Tailscale not configured. Fix?",
+      title: "Tailscale is not configured",
+      detail: "This dashboard is running locally. That is fine for single-machine use, but Fleet discovery, env sync, remote updates, and shared-brain pairing need this machine signed in to Tailscale.",
+      commands: [
+        "# macOS GUI/VPN only",
+        "brew install --cask tailscale",
+        "open -a Tailscale",
+        "",
+        "# macOS Tailscale SSH host",
+        "brew install --formula tailscale",
+        "sudo brew services start tailscale",
+        "sudo /opt/homebrew/opt/tailscale/bin/tailscale up",
+        "sudo /opt/homebrew/opt/tailscale/bin/tailscale set --ssh",
+        "",
+        "# Linux",
+        "curl -fsSL https://tailscale.com/install.sh | sh",
+        "sudo tailscale up",
+        "sudo tailscale set --ssh",
+      ],
+    };
+  }
+  if (!machine.online) {
+    return {
+      label: "Tailscale disconnected. Fix?",
+      title: "Machine is offline in Tailscale",
+      detail: "This machine is known to the Tailnet but is not online, so HivemindOS cannot reach its collector or update it remotely.",
+      commands: [
+        "tailscale status",
+        "sudo tailscale up",
+        "cd ~/hivemindos",
+        "./scripts/install-telemetry-collector.sh",
+      ],
+    };
+  }
+  if (machine.collector !== "ready") {
+    return {
+      label: "Collector not reachable. Fix?",
+      title: "HivemindOS collector is not reachable",
+      detail: "Tailscale can see this machine, but the HivemindOS collector is not responding on port 8787. Run the collector installer on that machine.",
+      commands: [
+        "cd ~/hivemindos",
+        "git pull --ff-only",
+        "./scripts/install-telemetry-collector.sh",
+        "curl http://127.0.0.1:8787/health",
+      ],
+    };
+  }
+  if (machine.envSync && machine.envSync.ready === false) {
+    return {
+      label: "Env sync not ready. Fix?",
+      title: "Tailscale SSH / env sync is not ready",
+      detail: machine.envSync.error || "The collector is online, but it does not report a working hive-env-add command for env reconciliation.",
+      commands: [
+        "cd ~/hivemindos",
+        "./setup.sh",
+        "sudo tailscale set --ssh",
+        "hive-env-add --reconcile",
+      ],
+    };
+  }
+  return undefined;
+}
+
 function machineNeedsChatBridgeRepair(machine: MachineGroup) {
   return machine.collector === "ready" && machine.capabilities?.chat === false;
 }
@@ -3963,7 +4037,7 @@ export default function Home() {
         error?: string;
       } | null;
       setTailscaleDevices(data?.devices ?? []);
-      setTailscaleStatus(data?.ok ? `Tailscale ${data.backendState}` : "Local mode; Tailscale optional");
+      setTailscaleStatus(data?.ok ? `Tailscale ${data.backendState}` : "Tailscale not configured. Running locally.");
     }
     refreshTailscaleDevices();
   }, []);
@@ -5353,6 +5427,7 @@ export default function Home() {
       agents: [] as AgentProfile[],
       version: discovered?.version,
       capabilities: discovered?.capabilities,
+      envSync: discovered?.envSync,
       };
     });
     discoveredMachines.forEach((machine) => {
@@ -5379,6 +5454,7 @@ export default function Home() {
         agents: [],
         version: machine.version,
         capabilities: machine.capabilities,
+        envSync: machine.envSync,
       });
     });
     const unassigned: MachineGroup = {
@@ -5459,6 +5535,7 @@ export default function Home() {
         lat: location.lat,
         lon: location.lon,
         uptime: machine.online ? "online" : "offline",
+        networkIssue: machineNetworkIssue(machine, tailscaleStatus),
         agents: machine.agents.map((agent) => {
           const agentWork = agentWorkById[agent.id] ?? [];
           const activeCount = agentWork.filter(isMeaningfulActive).length;
@@ -5559,7 +5636,7 @@ export default function Home() {
       edges,
       ticker: ticker.length ? ticker : ["Fleet telemetry is connected · waiting for agent activity"],
     };
-  }, [agentWorkById, displayAgents, fleetSnapshots, machineGroups, notifications, walletsByAgent]);
+  }, [agentWorkById, displayAgents, fleetSnapshots, machineGroups, notifications, tailscaleStatus, walletsByAgent]);
 
   const kanbanColumns = useMemo(
     () => groupKanbanTasks(kanbanBoard?.tasks ?? [], kanbanIncludeArchived),
