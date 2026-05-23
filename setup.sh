@@ -451,6 +451,59 @@ wait_for_tailscale_running() {
   return 1
 }
 
+tailscale_status_connected() {
+  local cli
+  if command -v tailscale >/dev/null 2>&1 && tailscale status >/dev/null 2>&1; then
+    return 0
+  fi
+  while IFS= read -r cli; do
+    [[ -n "$cli" ]] || continue
+    "$cli" status >/dev/null 2>&1 && return 0
+    sudo -n "$cli" status >/dev/null 2>&1 && return 0
+  done < <(tailscale_cli_candidates | awk '!seen[$0]++')
+  return 1
+}
+
+tailscale_ip4() {
+  local cli ip
+  if command -v tailscale >/dev/null 2>&1; then
+    ip="$(tailscale ip -4 2>/dev/null | head -1 || true)"
+    [[ -n "$ip" ]] && printf "%s\n" "$ip" && return 0
+  fi
+  while IFS= read -r cli; do
+    [[ -n "$cli" ]] || continue
+    ip="$("$cli" ip -4 2>/dev/null | head -1 || true)"
+    [[ -n "$ip" ]] && printf "%s\n" "$ip" && return 0
+    ip="$(sudo -n "$cli" ip -4 2>/dev/null | head -1 || true)"
+    [[ -n "$ip" ]] && printf "%s\n" "$ip" && return 0
+  done < <(tailscale_cli_candidates | awk '!seen[$0]++')
+  return 1
+}
+
+connect_existing_tailscale_cli() {
+  local cli="$1"
+  local output retry_args auth_url
+  output="$(run_with_timeout 45 sudo "$cli" up --timeout=30s 2>&1)" && return 0
+  retry_args="$(printf "%s\n" "$output" | tailscale_up_retry_args_from_error)"
+  if [[ -n "$retry_args" ]]; then
+    # shellcheck disable=SC2086
+    output="$(run_with_timeout 45 sudo "$cli" up $retry_args 2>&1)" && return 0
+  fi
+  auth_url="$(printf "%s\n" "$output" | tailscale_auth_url_from_output)"
+  if [[ -n "$auth_url" ]]; then
+    warn "Tailscale sign-in required."
+    printf "Open this URL on any device to sign in:\n  %s\n" "$auth_url"
+    if [[ "$(uname -s)" == "Darwin" ]] && setup_is_interactive && command -v open >/dev/null 2>&1 && prompt_yes_no "Open the Tailscale auth URL on this Mac?" "no"; then
+      open "$auth_url" >/dev/null 2>&1 || true
+    fi
+    if wait_for_tailscale_running "$cli" 180; then
+      return 0
+    fi
+  fi
+  printf "%s\n" "$output" >&2
+  return 1
+}
+
 connect_homebrew_tailscaled() {
   local formula_cli="$1"
   local output retry_args auth_url
@@ -521,7 +574,7 @@ setup_homebrew_tailscaled_for_fleet() {
   info "Connecting Homebrew tailscaled"
   if ! connect_homebrew_tailscaled "$formula_cli"; then
     warn "Homebrew tailscaled did not finish connecting"
-    warn "Open Tailscale auth if prompted, then rerun setup."
+    warn "Setup waited for Tailscale auth, but the daemon did not become reachable before the timeout."
     return 1
   fi
   if ! run_with_timeout 10 sudo "$formula_cli" status >/dev/null 2>&1; then
@@ -650,7 +703,7 @@ enable_tailscale_ssh() {
 }
 
 install_tailscale_if_missing() {
-  if command -v tailscale >/dev/null 2>&1; then
+  if tailscale_status_connected || command -v tailscale >/dev/null 2>&1 || [[ -n "$(tailscale_cli_candidates | head -1)" ]]; then
     return 0
   fi
 
@@ -663,10 +716,7 @@ install_tailscale_if_missing() {
 
   if [[ "$(uname -s)" == "Darwin" ]] && { command -v brew >/dev/null 2>&1 || ensure_homebrew; }; then
     warn "Tailscale is not installed; trying to install it for multi-machine sync"
-    brew install --cask tailscale || true
-    if ! command -v tailscale >/dev/null 2>&1; then
-      brew install tailscale || true
-    fi
+    HOMEBREW_NO_INSTALL_CLEANUP=1 brew install --formula tailscale || true
   elif command -v apt-get >/dev/null 2>&1 && command -v sudo >/dev/null 2>&1; then
     if command -v curl >/dev/null 2>&1; then
       warn "Tailscale is not installed; trying to install it for multi-machine sync"
@@ -678,13 +728,40 @@ install_tailscale_if_missing() {
     return 1
   fi
 
-  if command -v tailscale >/dev/null 2>&1; then
+  refresh_tool_paths
+  if command -v tailscale >/dev/null 2>&1 || [[ -n "$(tailscale_cli_candidates | head -1)" ]]; then
     ok "Tailscale installed"
     return 0
   fi
 
   warn "Tailscale install did not put the tailscale CLI on PATH"
   return 1
+}
+
+ensure_tailscale_connected() {
+  if tailscale_status_connected; then
+    return 0
+  fi
+  install_tailscale_if_missing || return 1
+  if tailscale_status_connected; then
+    return 0
+  fi
+
+  if [[ "$(uname -s)" == "Darwin" ]]; then
+    setup_homebrew_tailscaled_for_fleet || true
+    refresh_tool_paths
+    tailscale_status_connected && return 0
+  fi
+
+  local cli
+  cli="$(tailscale_cli_candidates | awk '!seen[$0]++ { print; exit }')"
+  if [[ -z "$cli" ]]; then
+    return 1
+  fi
+  if ! setup_is_interactive || ! prompt_yes_no "Tailscale is installed but not logged in. Start Tailscale login now and wait for it to finish?" "yes"; then
+    return 1
+  fi
+  connect_existing_tailscale_cli "$cli"
 }
 
 obsidian_is_installed() {
@@ -1102,26 +1179,18 @@ fi
 tailscale_ip=""
 tailnet_sync_enabled="false"
 env_tailnet_sync_enabled="false"
-install_tailscale_if_missing || true
-if command -v tailscale >/dev/null 2>&1; then
-  if tailscale status >/dev/null 2>&1; then
-    ok "Tailscale is running"
-    tailscale_ip="$(tailscale ip -4 2>/dev/null | head -1 || true)"
-    tailnet_sync_enabled="true"
-    prefer_homebrew_tailscaled_for_macos_fleet
-    if enable_tailscale_ssh; then
-      env_tailnet_sync_enabled="true"
-    fi
-  else
-    warn "Tailscale is installed but not connected"
-    warn "Multi-machine collaboration and shared memory sync are disabled until you open Tailscale and sign in, or run: tailscale up"
+if ensure_tailscale_connected; then
+  ok "Tailscale is running"
+  tailscale_ip="$(tailscale_ip4 || true)"
+  tailnet_sync_enabled="true"
+  prefer_homebrew_tailscaled_for_macos_fleet
+  tailscale_ip="$(tailscale_ip4 || true)"
+  if enable_tailscale_ssh; then
+    env_tailnet_sync_enabled="true"
   fi
 else
-  warn "Tailscale is optional and not installed."
-  warn "Multi-machine collaboration and shared memory sync are disabled. Local-only dashboard, agents, and local vault features will still work."
-  warn "To enable multi-machine sync later:"
-  warn "  macOS: brew install --cask tailscale"
-  warn "  Linux: curl -fsSL https://tailscale.com/install.sh | sh"
+  warn "Tailscale setup was not completed"
+  warn "Multi-machine collaboration and shared memory sync are disabled for this run. Local-only dashboard, agents, and local vault features will still work."
 fi
 
 if [[ "$tailnet_sync_enabled" == "true" ]]; then
@@ -1354,7 +1423,8 @@ if [[ "$tailnet_sync_enabled" == "true" ]]; then
   echo
   echo "The dashboard will discover collectors automatically. Realtime folder sync uses Syncthing over your Tailnet by default; Tailscale SSH + rsync remains an advanced fallback."
 else
-  echo "Local-only mode is ready. Install and log in to Tailscale later to enable multi-machine collaboration and shared memory sync."
+  echo "Local-only mode is ready because Tailscale setup was not completed during this run."
+  echo "Multi-machine collaboration and shared memory sync require completing the guided Tailscale step."
 fi
 echo
 if [[ "$dashboard_openable" == "true" ]]; then

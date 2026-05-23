@@ -3,6 +3,14 @@
 This file records user-visible changes before they are committed. New work should
 be added here first, then marked `Committed` or `Pushed` after the git action.
 
+## 2026-05-23 16:45 WITA - Complete Tailscale During Setup
+
+- Status: Pushed
+- Areas changed: setup script, telemetry collector installer, changelog
+- Summary: Make setup and the standalone collector installer run the guided Tailscale install/login flow instead of falling through to a passive install-later message, wait for auth completion, prefer the Homebrew/open-source macOS daemon, and only report local-only mode when Tailscale setup was not completed during the run.
+- Verification: `bash -n setup.sh && bash -n scripts/install-telemetry-collector.sh`; `pnpm run test:fleet-local`; `git diff --check -- setup.sh scripts/install-telemetry-collector.sh CHANGELOG.md`; stale install-later wording search.
+- Intended commit message: `Complete Tailscale during setup`
+
 ## 2026-05-23 16:18 WITA - Make Tailscale Auth Headless Friendly
 
 - Status: Pushed

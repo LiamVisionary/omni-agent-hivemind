@@ -84,6 +84,11 @@ homebrew_tailscale_formula_installed() {
   command -v brew >/dev/null 2>&1 && brew list --formula tailscale >/dev/null 2>&1
 }
 
+tailscale_cli_candidates() {
+  homebrew_tailscale_cli
+  command -v tailscale 2>/dev/null || true
+}
+
 tailscale_up_retry_args_from_error() {
   awk '
     /^[[:space:]]*tailscale up[[:space:]]/ {
@@ -112,6 +117,19 @@ wait_for_tailscale_running() {
   return 1
 }
 
+tailscale_status_connected() {
+  local cli
+  if command -v tailscale >/dev/null 2>&1 && tailscale status >/dev/null 2>&1; then
+    return 0
+  fi
+  while IFS= read -r cli; do
+    [[ -n "$cli" ]] || continue
+    "$cli" status >/dev/null 2>&1 && return 0
+    sudo -n "$cli" status >/dev/null 2>&1 && return 0
+  done < <(tailscale_cli_candidates | awk '!seen[$0]++')
+  return 1
+}
+
 connect_homebrew_tailscaled() {
   local formula_cli="$1"
   local output retry_args auth_url
@@ -134,6 +152,53 @@ connect_homebrew_tailscaled() {
   fi
   printf "%s\n" "$output" >&2
   return 1
+}
+
+install_tailscale_if_missing() {
+  if command -v tailscale >/dev/null 2>&1 || [[ -n "$(tailscale_cli_candidates | head -1)" ]]; then
+    return 0
+  fi
+  if ! prompt_yes_no "Tailscale is missing. Install it for Fleet discovery and shared-memory sync?" "yes"; then
+    return 1
+  fi
+  if [[ "$(uname -s)" == "Darwin" ]]; then
+    setup_homebrew_tailscaled_for_fleet
+    return
+  elif command -v apt-get >/dev/null 2>&1 && command -v sudo >/dev/null 2>&1 && command -v curl >/dev/null 2>&1; then
+    curl -fsSL https://tailscale.com/install.sh | sh
+  elif command -v dnf >/dev/null 2>&1 && command -v sudo >/dev/null 2>&1; then
+    sudo dnf install -y tailscale
+    sudo systemctl enable --now tailscaled || true
+  elif command -v yum >/dev/null 2>&1 && command -v sudo >/dev/null 2>&1; then
+    sudo yum install -y tailscale
+    sudo systemctl enable --now tailscaled || true
+  else
+    echo "No automatic Tailscale installer found for this OS." >&2
+    return 1
+  fi
+}
+
+ensure_tailscale_connected() {
+  local cli
+  if tailscale_status_connected; then
+    return 0
+  fi
+  install_tailscale_if_missing || return 1
+  if tailscale_status_connected; then
+    return 0
+  fi
+  if [[ "$(uname -s)" == "Darwin" ]]; then
+    setup_homebrew_tailscaled_for_fleet || true
+    tailscale_status_connected && return 0
+  fi
+  cli="$(tailscale_cli_candidates | awk '!seen[$0]++ { print; exit }')"
+  if [[ -z "$cli" ]]; then
+    return 1
+  fi
+  if ! prompt_yes_no "Tailscale is installed but not logged in. Start Tailscale login now and wait for it to finish?" "yes"; then
+    return 1
+  fi
+  connect_homebrew_tailscaled "$cli"
 }
 
 quit_macos_tailscale_gui() {
@@ -174,7 +239,7 @@ setup_homebrew_tailscaled_for_fleet() {
   fi
   echo "Connecting Homebrew tailscaled"
   if ! connect_homebrew_tailscaled "$formula_cli"; then
-    echo "Homebrew tailscaled did not finish connecting. Open Tailscale auth if prompted, then rerun setup." >&2
+    echo "Homebrew tailscaled did not finish connecting before the auth wait timed out." >&2
     return 1
   fi
   if ! run_with_timeout 10 sudo "$formula_cli" status >/dev/null 2>&1; then
@@ -430,10 +495,10 @@ configure_hermes_api_server() {
 configure_hermes_api_server
 
 TAILNET_SYNC_ENABLED="false"
-if command -v tailscale >/dev/null 2>&1 && tailscale status >/dev/null 2>&1; then
+if ensure_tailscale_connected; then
   TAILNET_SYNC_ENABLED="true"
 else
-  echo "Tailscale is not installed and logged in; multi-machine collaboration and shared memory sync are disabled. Local collector features will still work." >&2
+  echo "Tailscale setup was not completed; multi-machine collaboration and shared memory sync are disabled for this run. Local collector features will still work." >&2
 fi
 
 if [[ "$(uname -s)" == "Darwin" ]]; then
