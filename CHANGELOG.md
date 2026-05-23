@@ -3,6 +3,14 @@
 This file records user-visible changes before they are committed. New work should
 be added here first, then marked `Committed` or `Pushed` after the git action.
 
+## 2026-05-23 15:48 WITA - Quiet Managed Tailscale Retries
+
+- Status: Pushed
+- Areas changed: macOS setup, telemetry collector installer, changelog
+- Summary: Hide the internal `tailscale up` retry when preserving non-default flags, quit the macOS Tailscale GUI before restarting the Homebrew daemon so the CLI is less likely to keep talking to the stale GUI Network Extension, and simplify the final failure copy.
+- Verification: `bash -n setup.sh && bash -n scripts/install-telemetry-collector.sh`; `pnpm run test:fleet-local`; `git diff --check -- setup.sh scripts/install-telemetry-collector.sh CHANGELOG.md`.
+- Intended commit message: `Quiet managed Tailscale retries`
+
 ## 2026-05-23 15:35 WITA - Retry Tailscale Up With Existing Flags
 
 - Status: Pushed

@@ -100,12 +100,17 @@ connect_homebrew_tailscaled() {
   output="$(run_with_timeout 45 sudo "$formula_cli" up --timeout=30s 2>&1)" && return 0
   retry_args="$(printf "%s\n" "$output" | tailscale_up_retry_args_from_error)"
   if [[ -n "$retry_args" ]]; then
-    echo "Tailscale requires existing non-default settings; retrying with: tailscale up $retry_args"
     # shellcheck disable=SC2086
     output="$(run_with_timeout 45 sudo "$formula_cli" up $retry_args 2>&1)" && return 0
   fi
   printf "%s\n" "$output" >&2
   return 1
+}
+
+quit_macos_tailscale_gui() {
+  [[ "$(uname -s)" == "Darwin" ]] || return 0
+  osascript -e 'quit app "Tailscale"' >/dev/null 2>&1 || true
+  sleep 2
 }
 
 setup_homebrew_tailscaled_for_fleet() {
@@ -127,6 +132,7 @@ setup_homebrew_tailscaled_for_fleet() {
     HOMEBREW_NO_INSTALL_CLEANUP=1 brew install --formula tailscale
   fi
   echo "Restarting Homebrew tailscaled service"
+  quit_macos_tailscale_gui
   if ! sudo brew services restart tailscale; then
     echo "Could not restart the Homebrew tailscaled service." >&2
     return 1
@@ -139,7 +145,7 @@ setup_homebrew_tailscaled_for_fleet() {
   fi
   echo "Connecting Homebrew tailscaled"
   if ! connect_homebrew_tailscaled "$formula_cli"; then
-    echo "Homebrew tailscaled did not finish connecting within 45 seconds. Open Tailscale auth if prompted, then rerun setup." >&2
+    echo "Homebrew tailscaled did not finish connecting. Open Tailscale auth if prompted, then rerun setup." >&2
     return 1
   fi
   if ! run_with_timeout 10 sudo "$formula_cli" status >/dev/null 2>&1; then
