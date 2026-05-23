@@ -3,6 +3,14 @@
 This file records user-visible changes before they are committed. New work should
 be added here first, then marked `Committed` or `Pushed` after the git action.
 
+## 2026-05-23 14:32 WITA - Classify Unreachable Tailnet Peers
+
+- Status: Pushed
+- Areas changed: Fleet Tailscale diagnostics, Fleet repair modal, collector installer output, changelog
+- Summary: Carry Tailscale handshake/traffic metadata into Fleet, show `Tailnet unreachable` when a peer is listed online but has no handshake or received traffic, and keep setup/dashboard guidance focused on automatic classification plus direct Tailscale recovery steps instead of project-side doctor commands.
+- Verification: `pnpm run test:fleet-local`; `bash -n setup.sh && bash -n scripts/install-telemetry-collector.sh`; `pnpm exec tsc --noEmit --pretty false`; `pnpm exec eslint src/app/page.tsx src/app/api/tailscale/devices/route.ts src/app/api/fleet/discover/route.ts` (0 errors, existing page warnings only); `git diff --check -- src/app/api/tailscale/devices/route.ts src/app/api/fleet/discover/route.ts src/app/page.tsx scripts/install-telemetry-collector.sh package.json CHANGELOG.md`.
+- Intended commit message: `Classify unreachable Tailnet peers`
+
 ## 2026-05-23 14:15 WITA - Diagnose Tailnet Collector Reachability
 
 - Status: Pushed

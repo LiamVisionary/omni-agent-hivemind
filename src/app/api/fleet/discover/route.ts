@@ -14,6 +14,11 @@ type TailscalePeer = {
   Online?: boolean;
   TailscaleIPs?: string[];
   LastSeen?: string;
+  LastHandshake?: string;
+  CurAddr?: string;
+  RxBytes?: number;
+  TxBytes?: number;
+  Active?: boolean;
   Relay?: string;
 };
 
@@ -32,6 +37,11 @@ type Device = {
   ip: string;
   collectorUrl: string;
   lastSeen?: string;
+  lastHandshake?: string;
+  curAddr?: string;
+  rxBytes?: number;
+  txBytes?: number;
+  active?: boolean;
   relay?: string;
 };
 
@@ -113,6 +123,11 @@ function simplifyDevice(peer: TailscalePeer, self = false): Device {
     ip,
     collectorUrl: self ? "http://127.0.0.1:8787" : ip ? `http://${ip}:8787` : "",
     lastSeen: peer.LastSeen,
+    lastHandshake: peer.LastHandshake,
+    curAddr: peer.CurAddr ?? "",
+    rxBytes: peer.RxBytes ?? 0,
+    txBytes: peer.TxBytes ?? 0,
+    active: Boolean(peer.Active),
     relay: peer.Relay ?? "",
   };
 }

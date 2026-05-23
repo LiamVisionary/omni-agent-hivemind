@@ -488,6 +488,11 @@ type TailscaleDevice = {
   online: boolean;
   ip: string;
   collectorUrl: string;
+  lastHandshake?: string;
+  curAddr?: string;
+  rxBytes?: number;
+  txBytes?: number;
+  active?: boolean;
   relay?: string;
 };
 
@@ -499,6 +504,11 @@ type MachineGroup = {
   dnsName?: string;
   ip?: string;
   relay?: string;
+  lastHandshake?: string;
+  curAddr?: string;
+  rxBytes?: number;
+  txBytes?: number;
+  active?: boolean;
   online: boolean;
   self: boolean;
   collector: "ready" | "not-installed" | "offline" | "missing" | "unknown";
@@ -2936,6 +2946,18 @@ function isCollectorAutoUpdateable(versionCopy: ReturnType<typeof machineVersion
   return Boolean(versionCopy && versionCopy.state !== "current");
 }
 
+function hasNeverHandshake(value?: string) {
+  return !value || value.startsWith("0001-01-01");
+}
+
+function tailnetPeerLooksUnreachable(machine: MachineGroup) {
+  return !machine.self
+    && machine.online
+    && !machine.curAddr
+    && hasNeverHandshake(machine.lastHandshake)
+    && (machine.rxBytes ?? 0) === 0;
+}
+
 function machineNetworkIssue(machine: MachineGroup, tailscaleStatus: string): FleetMachine["networkIssue"] {
   if (machine.key === "unassigned") return undefined;
   if (machine.self && (machine.ip === "127.0.0.1" || tailscaleStatus.startsWith("Tailscale not configured"))) {
@@ -2986,6 +3008,28 @@ function machineNetworkIssue(machine: MachineGroup, tailscaleStatus: string): Fl
           "git pull --ff-only",
           "./scripts/install-telemetry-collector.sh",
           "curl http://127.0.0.1:8787/health",
+        ],
+      };
+    }
+    if (tailnetPeerLooksUnreachable(machine)) {
+      const tailnetTarget = machine.dnsName || machine.ip || "<tailnet-ip>";
+      return {
+        label: "Tailnet unreachable. Fix?",
+        title: "Tailnet peer is not reachable",
+        detail: "Tailscale lists this machine as online, but this dashboard has never completed a peer handshake with it. Restart or reconnect Tailscale on both Macs before reinstalling the collector.",
+        commands: [
+          "# From this dashboard machine",
+          `tailscale ping ${tailnetTarget}`,
+          "",
+          "# On the other machine",
+          "tailscale status",
+          "tailscale debug prefs | grep ShieldsUp",
+          "tailscale set --shields-up=false",
+          "sudo tailscale down",
+          "sudo tailscale up",
+          "",
+          "# Then retry from this dashboard machine",
+          `curl --max-time 5 http://${machine.ip || tailnetTarget}:8787/health`,
         ],
       };
     }
@@ -5450,6 +5494,11 @@ export default function Home() {
       dnsName: device.dnsName,
       ip: device.ip,
       relay: device.relay,
+      lastHandshake: device.lastHandshake,
+      curAddr: device.curAddr,
+      rxBytes: device.rxBytes,
+      txBytes: device.txBytes,
+      active: device.active,
       online: device.online,
       self: device.self,
       collector: (discovered?.collector ?? "unknown") as MachineGroup["collector"],
@@ -5477,6 +5526,11 @@ export default function Home() {
         dnsName: machine.device.dnsName,
         ip: machine.device.ip,
         relay: machine.device.relay,
+        lastHandshake: machine.device.lastHandshake,
+        curAddr: machine.device.curAddr,
+        rxBytes: machine.device.rxBytes,
+        txBytes: machine.device.txBytes,
+        active: machine.device.active,
         online: machine.device.online,
         self: machine.device.self,
         collector: machine.collector,
