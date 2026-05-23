@@ -61,6 +61,7 @@ type CollectorEnvSync = {
 };
 
 const QUEEN_RUNTIME_PRIORITY: AgentRuntime[] = ["hermes", "openclaw", "aeon"];
+const COLLECTOR_FETCH_TIMEOUT_MS = 2_500;
 
 function localDevice(): Device {
   return {
@@ -110,7 +111,7 @@ function simplifyDevice(peer: TailscalePeer, self = false): Device {
     os: peer.OS ?? "unknown",
     online: Boolean(peer.Online),
     ip,
-    collectorUrl: ip ? `http://${ip}:8787` : "",
+    collectorUrl: self ? "http://127.0.0.1:8787" : ip ? `http://${ip}:8787` : "",
     lastSeen: peer.LastSeen,
     relay: peer.Relay ?? "",
   };
@@ -134,7 +135,7 @@ async function tailscaleDevices() {
 async function fetchJson(url: string, init?: RequestInit) {
   const response = await fetch(url, {
     ...init,
-    signal: AbortSignal.timeout(6_000),
+    signal: AbortSignal.timeout(COLLECTOR_FETCH_TIMEOUT_MS),
     cache: "no-store",
   });
   if (!response.ok) throw new Error(`${response.status} ${response.statusText}`);
@@ -190,14 +191,14 @@ export async function GET() {
     let capabilities: CollectorCapabilities | undefined;
     let envSync: CollectorEnvSync | undefined;
     try {
-      const healthData = await fetchJson(`${device.collectorUrl}/health`).catch(() => null) as {
+      const healthData = await fetchJson(`${device.collectorUrl}/health`) as {
         version?: CollectorVersion;
         capabilities?: CollectorCapabilities;
         envSync?: CollectorEnvSync;
-      } | null;
-      version = healthData?.version;
-      capabilities = healthData?.capabilities ?? { chat: false, runtimes: [] };
-      envSync = healthData?.envSync;
+      };
+      version = healthData.version;
+      capabilities = healthData.capabilities ?? { chat: false, runtimes: [] };
+      envSync = healthData.envSync;
       const agentData = await fetchJson(`${device.collectorUrl}/agents`) as { agents?: AgentProfile[] };
       agents = (agentData.agents ?? []).map((agent) => ({
         ...agent,

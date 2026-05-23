@@ -2975,6 +2975,20 @@ function machineNetworkIssue(machine: MachineGroup, tailscaleStatus: string): Fl
     };
   }
   if (machine.collector !== "ready") {
+    if (machine.self) {
+      return {
+        label: "Collector not reachable. Fix?",
+        title: "Local HivemindOS collector is not reachable",
+        detail: "This dashboard cannot reach the collector on this Mac at localhost:8787. Start or reinstall the local collector, then refresh Fleet.",
+        commands: [
+          "# On this Mac",
+          "cd ~/hivemindos",
+          "git pull --ff-only",
+          "./scripts/install-telemetry-collector.sh",
+          "curl http://127.0.0.1:8787/health",
+        ],
+      };
+    }
     const tailnetTarget = machine.dnsName || machine.ip || "<tailnet-ip>";
     return {
       label: "Collector not reachable. Fix?",

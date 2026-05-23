@@ -3,6 +3,14 @@
 This file records user-visible changes before they are committed. New work should
 be added here first, then marked `Committed` or `Pushed` after the git action.
 
+## 2026-05-23 13:45 WITA - Fix Local Fleet Collector Detection
+
+- Status: Pushed
+- Areas changed: Fleet discovery API, Fleet machine issue modal, Fleet local collector e2e test, changelog
+- Summary: Make Fleet discovery use `127.0.0.1` for the current machine's collector, fail unreachable peer collectors after a bounded timeout, show local collector repair commands for `This Mac` instead of remote Tailnet/firewall instructions, and add a live HTTP e2e smoke test for the local collector path.
+- Verification: `pnpm run test:fleet-local`; `pnpm exec tsc --noEmit --pretty false`; `node --check scripts/test-fleet-local-collector.mjs`; `pnpm exec eslint src/app/api/fleet/discover/route.ts src/app/page.tsx scripts/test-fleet-local-collector.mjs` (0 errors, existing page warnings only); `git diff --check -- src/app/api/fleet/discover/route.ts src/app/page.tsx package.json scripts/test-fleet-local-collector.mjs CHANGELOG.md`.
+- Intended commit message: `Fix local Fleet collector detection`
+
 ## 2026-05-23 13:30 WITA - Clarify Fleet Peer Reachability Fixes
 
 - Status: Pushed
