@@ -3,6 +3,14 @@
 This file records user-visible changes before they are committed. New work should
 be added here first, then marked `Committed` or `Pushed` after the git action.
 
+## 2026-05-23 13:30 WITA - Clarify Fleet Peer Reachability Fixes
+
+- Status: Pushed
+- Areas changed: Fleet machine issue modal, Tailscale collector URL discovery, changelog
+- Summary: Use localhost for the current machine's collector URL and expand the remote collector Fix modal so duplicate machine names and stale Tailnet reachability are diagnosed with `tailscale ping`, dashboard-side curl, remote local health, and macOS firewall commands before assuming the collector installer is missing.
+- Verification: `pnpm exec tsc --noEmit --pretty false`; `pnpm exec eslint src/app/page.tsx src/app/api/tailscale/devices/route.ts` (0 errors, existing page warnings only); `git diff --check -- src/app/page.tsx src/app/api/tailscale/devices/route.ts CHANGELOG.md`; local diagnostics confirmed `tailscale ping 100.122.112.114`, `curl http://100.122.112.114:8787/health`, and `tailscale ssh liam@liams-macbook-pro.tail629894.ts.net` time out from this dashboard machine.
+- Intended commit message: `Clarify Fleet peer reachability fixes`
+
 ## 2026-05-23 00:52 WITA - Add Fleet Network Fix Badges
 
 - Status: Pushed

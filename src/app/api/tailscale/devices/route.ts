@@ -74,7 +74,7 @@ function simplifyDevice(peer: TailscalePeer, self = false) {
     os: peer.OS ?? "unknown",
     online: Boolean(peer.Online),
     ip,
-    collectorUrl: ip ? `http://${ip}:8787` : "",
+    collectorUrl: self ? "http://127.0.0.1:8787" : ip ? `http://${ip}:8787` : "",
     lastSeen: peer.LastSeen,
     relay: peer.Relay ?? "",
   };
