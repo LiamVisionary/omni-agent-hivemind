@@ -3,6 +3,14 @@
 This file records user-visible changes before they are committed. New work should
 be added here first, then marked `Committed` or `Pushed` after the git action.
 
+## 2026-05-23 17:18 WITA - Make Tailscale Auth User-Opened
+
+- Status: Pushed
+- Areas changed: setup script, telemetry collector installer, changelog
+- Summary: Stop asking to open the Tailscale auth URL locally; setup now prints the URL, asks the user to press Enter after logging in wherever they choose, and then verifies Tailscale is running.
+- Verification: `bash -n setup.sh && bash -n scripts/install-telemetry-collector.sh`; auth-open prompt removal search; `git diff --check -- setup.sh scripts/install-telemetry-collector.sh CHANGELOG.md`.
+- Intended commit message: `Make Tailscale auth user-opened`
+
 ## 2026-05-23 17:07 WITA - Keep Tailscale Setup In One Phase
 
 - Status: Pushed

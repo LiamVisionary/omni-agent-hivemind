@@ -518,6 +518,12 @@ wait_for_tailscale_running() {
   return 1
 }
 
+wait_for_tailscale_auth_confirmation() {
+  setup_is_interactive || return 0
+  printf "Press Enter once you've logged in at the above URL. "
+  read -r _ || true
+}
+
 tailscale_status_connected() {
   local cli
   if [[ -z "${HIVE_TAILSCALE_CLI:-}" ]] && command -v tailscale >/dev/null 2>&1 && tailscale status >/dev/null 2>&1; then
@@ -560,9 +566,7 @@ connect_existing_tailscale_cli() {
   if [[ -n "$auth_url" ]]; then
     warn "Tailscale sign-in required."
     printf "Open this URL on any device to sign in:\n  %s\n" "$auth_url"
-    if [[ "$(uname -s)" == "Darwin" ]] && setup_is_interactive && command -v open >/dev/null 2>&1 && prompt_yes_no "Open the Tailscale auth URL on this Mac?" "no"; then
-      open "$auth_url" >/dev/null 2>&1 || true
-    fi
+    wait_for_tailscale_auth_confirmation
     if wait_for_tailscale_running "$cli" 180; then
       return 0
     fi
@@ -584,9 +588,7 @@ connect_homebrew_tailscaled() {
   if [[ -n "$auth_url" ]]; then
     warn "Tailscale sign-in required."
     printf "Open this URL on any device to sign in:\n  %s\n" "$auth_url"
-    if [[ "$(uname -s)" == "Darwin" ]] && setup_is_interactive && command -v open >/dev/null 2>&1 && prompt_yes_no "Open the Tailscale auth URL on this Mac?" "no"; then
-      open "$auth_url" >/dev/null 2>&1 || true
-    fi
+    wait_for_tailscale_auth_confirmation
     if wait_for_tailscale_running "$formula_cli" 180; then
       return 0
     fi
