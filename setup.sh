@@ -1386,7 +1386,7 @@ else
   if setup_is_interactive; then
     hermes_restart_mode="ask"
   fi
-  AGENT_TELEMETRY_PORT="$COLLECTOR_PORT" AGENT_TELEMETRY_HERMES_RESTART="${AGENT_TELEMETRY_HERMES_RESTART:-$hermes_restart_mode}" ./scripts/install-telemetry-collector.sh
+  HIVE_SETUP_NETWORK_MANAGED="true" HIVE_SETUP_TAILNET_SYNC_ENABLED="$tailnet_sync_enabled" AGENT_TELEMETRY_PORT="$COLLECTOR_PORT" AGENT_TELEMETRY_HERMES_RESTART="${AGENT_TELEMETRY_HERMES_RESTART:-$hermes_restart_mode}" ./scripts/install-telemetry-collector.sh
   if wait_for_local_collector; then
     ok "Collector installed and healthy locally"
     configure_env_reconciliation

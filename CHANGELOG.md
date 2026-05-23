@@ -3,6 +3,14 @@
 This file records user-visible changes before they are committed. New work should
 be added here first, then marked `Committed` or `Pushed` after the git action.
 
+## 2026-05-23 17:07 WITA - Keep Tailscale Setup In One Phase
+
+- Status: Pushed
+- Areas changed: setup script, telemetry collector installer, changelog
+- Summary: Make top-level setup own the visible Tailscale/Fleet network phase, pass the resolved Tailnet state into the collector installer, and suppress repeated late Tailscale/SSH/Shields Up status output during the collector service install.
+- Verification: `bash -n setup.sh && bash -n scripts/install-telemetry-collector.sh`; static env handoff smoke; `git diff --check -- setup.sh scripts/install-telemetry-collector.sh CHANGELOG.md`. `pnpm run test:fleet-local` was not used because no dashboard was listening on `127.0.0.1:5020`.
+- Intended commit message: `Keep Tailscale setup in one phase`
+
 ## 2026-05-23 16:58 WITA - Pin Tailscale SSH To Managed Daemon
 
 - Status: Pushed

@@ -5,6 +5,8 @@ PORT="${AGENT_TELEMETRY_PORT:-8787}"
 HERMES_API_HOST="${AGENT_TELEMETRY_HERMES_API_HOST:-127.0.0.1}"
 HERMES_API_PORT="${AGENT_TELEMETRY_HERMES_API_PORT:-8642}"
 HERMES_RESTART_MODE="${AGENT_TELEMETRY_HERMES_RESTART:-now}"
+NETWORK_MANAGED_BY_SETUP="${HIVE_SETUP_NETWORK_MANAGED:-false}"
+SETUP_TAILNET_SYNC_ENABLED="${HIVE_SETUP_TAILNET_SYNC_ENABLED:-false}"
 APP_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 COLLECTOR="$APP_DIR/scripts/agent-telemetry-collector.mjs"
 SYNCTHING_RUNNER="$APP_DIR/scripts/run-syncthing.sh"
@@ -572,7 +574,9 @@ configure_hermes_api_server() {
 configure_hermes_api_server
 
 TAILNET_SYNC_ENABLED="false"
-if ensure_tailscale_connected; then
+if [[ "$NETWORK_MANAGED_BY_SETUP" == "true" ]]; then
+  TAILNET_SYNC_ENABLED="$SETUP_TAILNET_SYNC_ENABLED"
+elif ensure_tailscale_connected; then
   TAILNET_SYNC_ENABLED="true"
 else
   echo "Tailscale setup was not completed; multi-machine collaboration and shared memory sync are disabled for this run. Local collector features will still work." >&2
@@ -704,13 +708,13 @@ SERVICE
   echo "Installed systemd user service on port $PORT"
 fi
 
-if [[ "$TAILNET_SYNC_ENABLED" == "true" ]]; then
+if [[ "$TAILNET_SYNC_ENABLED" == "true" && "$NETWORK_MANAGED_BY_SETUP" != "true" ]]; then
   install_rsync_if_missing
   maybe_disable_tailscale_shields_up
   enable_tailscale_ssh
 fi
 
-if tailscale_status_connected; then
+if [[ "$NETWORK_MANAGED_BY_SETUP" != "true" ]] && tailscale_status_connected; then
   TAILSCALE_CLI="$(tailscale_cli_candidates | awk '!seen[$0]++ { print; exit }')"
   if [[ -n "$TAILSCALE_CLI" ]]; then
     IP="$(run_tailscale_cli "$TAILSCALE_CLI" ip -4 2>/dev/null | head -1 || true)"
@@ -728,7 +732,7 @@ if wait_for_local_collector 10; then
 else
   echo "Local collector health did not respond yet. Check logs and retry: curl http://127.0.0.1:$PORT/health" >&2
 fi
-if [[ -n "${IP:-}" ]]; then
+if [[ "$NETWORK_MANAGED_BY_SETUP" != "true" && -n "${IP:-}" ]]; then
   echo "Tailnet reachability check from another dashboard machine:"
   echo "  curl --max-time 5 http://$IP:$PORT/health"
 fi
