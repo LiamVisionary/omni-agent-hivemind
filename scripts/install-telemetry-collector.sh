@@ -80,6 +80,10 @@ homebrew_tailscale_cli() {
   fi
 }
 
+homebrew_tailscale_formula_installed() {
+  command -v brew >/dev/null 2>&1 && brew list --formula tailscale >/dev/null 2>&1
+}
+
 setup_homebrew_tailscaled_for_fleet() {
   [[ "$(uname -s)" == "Darwin" ]] || return 1
   [[ -t 0 && -t 1 ]] || return 1
@@ -94,12 +98,15 @@ setup_homebrew_tailscaled_for_fleet() {
     echo "Homebrew is required for the managed macOS tailscaled setup." >&2
     return 1
   fi
-  if [[ -z "$(homebrew_tailscale_cli)" ]]; then
+  if ! homebrew_tailscale_formula_installed; then
     echo "Installing Homebrew Tailscale CLI/daemon"
     brew install --formula tailscale
   fi
   echo "Starting Homebrew tailscaled service"
-  sudo brew services start tailscale
+  if ! sudo brew services start tailscale; then
+    echo "Could not start the Homebrew tailscaled service." >&2
+    return 1
+  fi
   local formula_cli
   formula_cli="$(homebrew_tailscale_cli)"
   if [[ -z "$formula_cli" ]]; then

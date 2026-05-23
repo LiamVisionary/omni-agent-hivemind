@@ -399,9 +399,15 @@ homebrew_tailscaled_is_available() {
   [[ -n "$(homebrew_tailscaled_candidates | head -1)" ]]
 }
 
+homebrew_tailscale_formula_installed() {
+  command -v brew >/dev/null 2>&1 && brew list --formula tailscale >/dev/null 2>&1
+}
+
 setup_homebrew_tailscaled_for_fleet() {
   [[ "$(uname -s)" == "Darwin" ]] || return 1
   setup_is_interactive || return 1
+  [[ "${HIVE_TAILSCALED_SWITCH_ATTEMPTED:-false}" != "true" ]] || return 1
+  export HIVE_TAILSCALED_SWITCH_ATTEMPTED="true"
   command -v brew >/dev/null 2>&1 || ensure_homebrew || return 1
 
   local prompt="Use the Homebrew/open-source Tailscale daemon for reliable Fleet reachability and Tailscale SSH on this Mac?"
@@ -412,15 +418,18 @@ setup_homebrew_tailscaled_for_fleet() {
     return 1
   fi
 
-  if ! homebrew_tailscaled_is_available; then
+  if ! homebrew_tailscale_formula_installed; then
     info "Installing Homebrew Tailscale CLI/daemon"
     brew install --formula tailscale
-  else
+  elif homebrew_tailscaled_is_available; then
     ok "Homebrew tailscaled found: $(homebrew_tailscaled_candidates | head -1)"
   fi
 
   info "Starting Homebrew tailscaled service"
-  sudo brew services start tailscale
+  if ! sudo brew services start tailscale; then
+    warn "Could not start the Homebrew tailscaled service"
+    return 1
+  fi
   refresh_tool_paths
 
   local formula_cli
@@ -433,6 +442,16 @@ setup_homebrew_tailscaled_for_fleet() {
   info "Connecting Homebrew tailscaled"
   sudo "$formula_cli" up
   sudo "$formula_cli" status >/dev/null 2>&1
+}
+
+prefer_homebrew_tailscaled_for_macos_fleet() {
+  [[ "$(uname -s)" == "Darwin" ]] || return 0
+  setup_is_interactive || return 0
+  if tailscale debug prefs 2>/dev/null | grep -q '"RunSSH": true'; then
+    return 0
+  fi
+  setup_homebrew_tailscaled_for_fleet || true
+  refresh_tool_paths
 }
 
 warn_tailscale_ssh_unavailable() {
@@ -523,16 +542,16 @@ enable_tailscale_ssh() {
     fi
   elif command -v sudo >/dev/null 2>&1 && run_tailscale_set_ssh_sudo_noninteractive; then
     ok "Tailscale SSH advertised by this machine"
-  elif command -v sudo >/dev/null 2>&1 && setup_is_interactive && prompt_yes_no "Tailscale SSH needs admin privileges. Run sudo tailscale set --ssh now?" "yes"; then
+  elif command -v sudo >/dev/null 2>&1 && setup_is_interactive && prompt_yes_no "Enable optional env sync over Tailscale SSH now?" "yes"; then
     if run_tailscale_set_ssh true; then
       ok "Tailscale SSH advertised by this machine"
     else
-      warn "Could not advertise Tailscale SSH automatically"
+      warn "Tailscale SSH was not enabled; Fleet HTTP and Syncthing can still work"
       warn_tailscale_ssh_unavailable
       return 1
     fi
   else
-    warn "Could not advertise Tailscale SSH automatically"
+    warn "Tailscale SSH was not enabled; Fleet HTTP and Syncthing can still work"
     warn_tailscale_ssh_unavailable
     return 1
   fi
@@ -1002,6 +1021,7 @@ if command -v tailscale >/dev/null 2>&1; then
     ok "Tailscale is running"
     tailscale_ip="$(tailscale ip -4 2>/dev/null | head -1 || true)"
     tailnet_sync_enabled="true"
+    prefer_homebrew_tailscaled_for_macos_fleet
     if enable_tailscale_ssh; then
       env_tailnet_sync_enabled="true"
     fi

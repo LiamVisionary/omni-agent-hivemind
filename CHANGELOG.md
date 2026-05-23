@@ -3,6 +3,14 @@
 This file records user-visible changes before they are committed. New work should
 be added here first, then marked `Committed` or `Pushed` after the git action.
 
+## 2026-05-23 15:08 WITA - Prefer Managed Tailscaled Before SSH
+
+- Status: Pushed
+- Areas changed: macOS setup, changelog
+- Summary: Offer the Homebrew `tailscaled` managed Fleet backend before attempting to advertise Tailscale SSH on macOS, install the actual Homebrew formula before starting its service, prevent repeated daemon prompts in the same run, and make SSH enablement copy clear that Fleet HTTP and Syncthing can still work if optional SSH env sync is unavailable.
+- Verification: `bash -n setup.sh && bash -n scripts/install-telemetry-collector.sh`; `pnpm run test:fleet-local`; `git diff --check -- setup.sh scripts/install-telemetry-collector.sh CHANGELOG.md`.
+- Intended commit message: `Prefer managed tailscaled before SSH`
+
 ## 2026-05-23 14:55 WITA - Prefer Managed Mac Tailscaled Setup
 
 - Status: Pushed
