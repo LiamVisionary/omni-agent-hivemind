@@ -433,14 +433,44 @@ tailscale_up_retry_args_from_error() {
   '
 }
 
+tailscale_auth_url_from_output() {
+  awk '/https:\/\/login\.tailscale\.com\/a\// { print $1; exit }'
+}
+
+wait_for_tailscale_running() {
+  local formula_cli="$1"
+  local seconds="${2:-180}"
+  local elapsed=0
+  while (( elapsed < seconds )); do
+    if sudo "$formula_cli" status >/dev/null 2>&1; then
+      return 0
+    fi
+    sleep 3
+    elapsed=$((elapsed + 3))
+  done
+  return 1
+}
+
 connect_homebrew_tailscaled() {
   local formula_cli="$1"
-  local output retry_args
+  local output retry_args auth_url
   output="$(run_with_timeout 45 sudo "$formula_cli" up --timeout=30s 2>&1)" && return 0
   retry_args="$(printf "%s\n" "$output" | tailscale_up_retry_args_from_error)"
   if [[ -n "$retry_args" ]]; then
     # shellcheck disable=SC2086
     output="$(run_with_timeout 45 sudo "$formula_cli" up $retry_args 2>&1)" && return 0
+  fi
+  auth_url="$(printf "%s\n" "$output" | tailscale_auth_url_from_output)"
+  if [[ -n "$auth_url" ]]; then
+    warn "Tailscale sign-in required. Opening auth URL."
+    if command -v open >/dev/null 2>&1; then
+      open "$auth_url" >/dev/null 2>&1 || true
+    else
+      printf "Open this URL to sign in: %s\n" "$auth_url"
+    fi
+    if wait_for_tailscale_running "$formula_cli" 180; then
+      return 0
+    fi
   fi
   printf "%s\n" "$output" >&2
   return 1

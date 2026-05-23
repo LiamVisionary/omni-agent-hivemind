@@ -3,6 +3,14 @@
 This file records user-visible changes before they are committed. New work should
 be added here first, then marked `Committed` or `Pushed` after the git action.
 
+## 2026-05-23 16:05 WITA - Await Managed Tailscale Login
+
+- Status: Pushed
+- Areas changed: macOS setup, telemetry collector installer, changelog
+- Summary: Detect Tailscale auth URLs during managed Homebrew daemon connection, open the sign-in page automatically, and poll for the daemon to become usable instead of timing out immediately and asking the user to rerun setup.
+- Verification: `bash -n setup.sh && bash -n scripts/install-telemetry-collector.sh`; auth URL parser smoke extracted `https://login.tailscale.com/a/9da20e501da0d`; `pnpm run test:fleet-local`; `git diff --check -- setup.sh scripts/install-telemetry-collector.sh CHANGELOG.md`.
+- Intended commit message: `Await managed Tailscale login`
+
 ## 2026-05-23 15:48 WITA - Quiet Managed Tailscale Retries
 
 - Status: Pushed
