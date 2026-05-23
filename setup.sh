@@ -110,6 +110,26 @@ refresh_tool_paths() {
   hash -r 2>/dev/null || true
 }
 
+run_with_timeout() {
+  local seconds="$1"
+  shift
+  "$@" &
+  local pid="$!"
+  local elapsed=0
+  while kill -0 "$pid" >/dev/null 2>&1; do
+    if (( elapsed >= seconds )); then
+      kill "$pid" >/dev/null 2>&1 || true
+      sleep 1
+      kill -9 "$pid" >/dev/null 2>&1 || true
+      wait "$pid" >/dev/null 2>&1 || true
+      return 124
+    fi
+    sleep 1
+    elapsed=$((elapsed + 1))
+  done
+  wait "$pid"
+}
+
 pnpm_version() {
   refresh_tool_paths
   if command -v pnpm >/dev/null 2>&1; then
@@ -420,14 +440,14 @@ setup_homebrew_tailscaled_for_fleet() {
 
   if ! homebrew_tailscale_formula_installed; then
     info "Installing Homebrew Tailscale CLI/daemon"
-    brew install --formula tailscale
+    HOMEBREW_NO_INSTALL_CLEANUP=1 brew install --formula tailscale
   elif homebrew_tailscaled_is_available; then
     ok "Homebrew tailscaled found: $(homebrew_tailscaled_candidates | head -1)"
   fi
 
-  info "Starting Homebrew tailscaled service"
-  if ! sudo brew services start tailscale; then
-    warn "Could not start the Homebrew tailscaled service"
+  info "Restarting Homebrew tailscaled service"
+  if ! sudo brew services restart tailscale; then
+    warn "Could not restart the Homebrew tailscaled service"
     return 1
   fi
   refresh_tool_paths
@@ -440,8 +460,16 @@ setup_homebrew_tailscaled_for_fleet() {
   fi
 
   info "Connecting Homebrew tailscaled"
-  sudo "$formula_cli" up
-  sudo "$formula_cli" status >/dev/null 2>&1
+  if ! run_with_timeout 45 sudo "$formula_cli" up --timeout=30s; then
+    warn "Homebrew tailscaled did not finish connecting within 45 seconds"
+    warn "Open Tailscale auth if prompted, then rerun setup."
+    return 1
+  fi
+  if ! run_with_timeout 10 sudo "$formula_cli" status >/dev/null 2>&1; then
+    warn "Homebrew tailscaled started, but status did not respond quickly"
+    return 1
+  fi
+  ok "Homebrew tailscaled is connected"
 }
 
 prefer_homebrew_tailscaled_for_macos_fleet() {

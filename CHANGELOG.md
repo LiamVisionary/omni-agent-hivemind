@@ -3,6 +3,14 @@
 This file records user-visible changes before they are committed. New work should
 be added here first, then marked `Committed` or `Pushed` after the git action.
 
+## 2026-05-23 15:20 WITA - Bound Managed Tailscaled Connection
+
+- Status: Pushed
+- Areas changed: macOS setup, telemetry collector installer, changelog
+- Summary: Restart the Homebrew Tailscale service after install/upgrade, skip Homebrew cleanup during setup installs, bound `tailscale up` and status checks with timeouts, and stop with clear auth/retry guidance instead of hanging after client/server version mismatch warnings.
+- Verification: `bash -n setup.sh && bash -n scripts/install-telemetry-collector.sh`; `pnpm run test:fleet-local`; `git diff --check -- setup.sh scripts/install-telemetry-collector.sh CHANGELOG.md`.
+- Intended commit message: `Bound managed tailscaled connection`
+
 ## 2026-05-23 15:08 WITA - Prefer Managed Tailscaled Before SSH
 
 - Status: Pushed

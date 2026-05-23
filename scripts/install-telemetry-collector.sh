@@ -100,11 +100,11 @@ setup_homebrew_tailscaled_for_fleet() {
   fi
   if ! homebrew_tailscale_formula_installed; then
     echo "Installing Homebrew Tailscale CLI/daemon"
-    brew install --formula tailscale
+    HOMEBREW_NO_INSTALL_CLEANUP=1 brew install --formula tailscale
   fi
-  echo "Starting Homebrew tailscaled service"
-  if ! sudo brew services start tailscale; then
-    echo "Could not start the Homebrew tailscaled service." >&2
+  echo "Restarting Homebrew tailscaled service"
+  if ! sudo brew services restart tailscale; then
+    echo "Could not restart the Homebrew tailscaled service." >&2
     return 1
   fi
   local formula_cli
@@ -114,9 +114,15 @@ setup_homebrew_tailscaled_for_fleet() {
     return 1
   fi
   echo "Connecting Homebrew tailscaled"
-  sudo "$formula_cli" up
-  "$formula_cli" status >/dev/null 2>&1 || sudo "$formula_cli" status >/dev/null 2>&1
-  echo "Homebrew tailscaled is active for this Mac"
+  if ! run_with_timeout 45 sudo "$formula_cli" up --timeout=30s; then
+    echo "Homebrew tailscaled did not finish connecting within 45 seconds. Open Tailscale auth if prompted, then rerun setup." >&2
+    return 1
+  fi
+  if ! run_with_timeout 10 sudo "$formula_cli" status >/dev/null 2>&1; then
+    echo "Homebrew tailscaled started, but status did not respond quickly." >&2
+    return 1
+  fi
+  echo "Homebrew tailscaled is connected"
 }
 
 enable_tailscale_ssh() {
