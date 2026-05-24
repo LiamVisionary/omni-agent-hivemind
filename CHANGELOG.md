@@ -3,6 +3,14 @@
 This file records user-visible changes before they are committed. New work should
 be added here first, then marked `Committed` or `Pushed` after the git action.
 
+## 2026-05-24 19:36 WITA - Quiet Hivemind Link Setup
+
+- Status: Pushed
+- Areas changed: telemetry collector installer, changelog
+- Summary: Replace verbose Hivemind Link setup internals with a short user-facing flow, remove repeated wait messages, and stop launching an extra direct sidecar fallback while setup waits for Link.
+- Verification: `bash -n scripts/install-telemetry-collector.sh`; `pnpm exec tsc --noEmit --pretty false`; `git diff --check -- scripts/install-telemetry-collector.sh CHANGELOG.md`.
+- Intended commit message: `Quiet Hivemind Link setup`
+
 ## 2026-05-24 19:28 WITA - Auto-Select Link Control Port
 
 - Status: Pushed

@@ -494,8 +494,6 @@ choose_link_local_collector_port() {
   local candidate
   for candidate in 18787 18788 18789 28787 28788 28789; do
     if [[ -z "$(port_listener_pids "$candidate")" ]]; then
-      echo "Port $PORT is already used by another local service, so HivemindOS will run its private collector on 127.0.0.1:$candidate."
-      echo "Hivemind Link will still expose this machine to the Tailnet on port $LINK_TAILNET_PORT."
       PORT="$candidate"
       return
     fi
@@ -525,7 +523,6 @@ choose_link_control_port() {
   local candidate
   for candidate in 18788 18789 28788 28789 38788 38789; do
     if [[ -z "$(port_listener_pids "$candidate")" ]]; then
-      echo "Port $port is already used by another local service, so Hivemind Link control will run on $host:$candidate."
       LINK_CONTROL="$host:$candidate"
       return
     fi
@@ -588,22 +585,18 @@ wait_for_hivemind_link_auth_confirmation() {
   fi
   printf "Press Enter once you've signed in to Hivemind Link. "
   read -r _ || true
-  echo "Verifying Hivemind Link connection; this can take up to 2 minutes."
-  for attempt in $(seq 1 60); do
-    local status connected_name backend_state
+  echo "Checking the connection..."
+  for _ in $(seq 1 12); do
+    local status connected_name
     status="$(curl -fsS --max-time 3 "http://$LINK_CONTROL/status" 2>/dev/null || true)"
     connected_name="$(printf "%s" "$status" | node -e 'let d="";process.stdin.on("data",c=>d+=c);process.stdin.on("end",()=>{try{const j=JSON.parse(d); if(j.ok) console.log(j.self?.DNSName || j.self?.HostName || "connected")}catch{}})' 2>/dev/null || true)"
     if [[ -n "$connected_name" ]]; then
       echo "Hivemind Link connected: $connected_name"
       return 0
     fi
-    if (( attempt == 1 || attempt % 5 == 0 )); then
-      backend_state="$(printf "%s" "$status" | node -e 'let d="";process.stdin.on("data",c=>d+=c);process.stdin.on("end",()=>{try{const j=JSON.parse(d); console.log(j.backendState || "starting")}catch{console.log("starting")}})' 2>/dev/null || true)"
-      echo "Still waiting for Hivemind Link to connect: ${backend_state:-starting}"
-    fi
     sleep 2
   done
-  echo "Hivemind Link has not reported connected yet. The dashboard will keep checking http://$LINK_CONTROL/status." >&2
+  echo "Hivemind Link is still connecting. You can continue; the dashboard will pick it up automatically." >&2
 }
 
 collector_local_health() {
@@ -754,7 +747,6 @@ configure_hermes_api_server
 LINK_ACTIVE="false"
 if build_hivemind_linkd_if_enabled; then
   LINK_ACTIVE="true"
-  echo "Hivemind Link sidecar is ready: $LINK_BIN"
 elif [[ "$LINK_ENABLED" == "true" ]]; then
   echo "Hivemind Link was requested but could not be built; falling back to the normal collector network mode." >&2
 fi
@@ -762,7 +754,6 @@ fi
 TAILNET_SYNC_ENABLED="false"
 if [[ "$LINK_ACTIVE" == "true" ]]; then
   TAILNET_SYNC_ENABLED="false"
-  echo "Hivemind Link keeps the collector localhost-only and exposes it through the embedded Tailscale sidecar."
   choose_link_local_collector_port
   choose_link_control_port
 elif [[ "$NETWORK_MANAGED_BY_SETUP" == "true" ]]; then
@@ -847,7 +838,6 @@ PLIST
   launchctl_bounded 5 bootout "gui/$(id -u)/com.agent-control-room.telemetry" >/dev/null 2>&1 || launchctl_bounded 5 unload "$PLIST" >/dev/null 2>&1 || true
   launchctl_bounded 5 bootstrap "gui/$(id -u)" "$PLIST" >/dev/null 2>&1 || launchctl_bounded 5 load "$PLIST"
   launchctl_bounded 5 kickstart -k "gui/$(id -u)/com.agent-control-room.telemetry" >/dev/null 2>&1 || true
-  echo "Installed macOS LaunchAgent on port $PORT"
   if [[ "$LINK_ACTIVE" == "true" ]]; then
     LINK_PLIST="$HOME/Library/LaunchAgents/com.hivemindos.linkd.plist"
     cat > "$LINK_PLIST" <<PLIST
@@ -878,8 +868,8 @@ PLIST
     pkill -f "$LINK_BIN" >/dev/null 2>&1 || true
     launchctl_bounded 5 bootstrap "gui/$(id -u)" "$LINK_PLIST" >/dev/null 2>&1 || launchctl_bounded 5 load "$LINK_PLIST"
     launchctl_bounded 5 kickstart -k "gui/$(id -u)/com.hivemindos.linkd" >/dev/null 2>&1 || true
-    echo "Installed Hivemind Link macOS LaunchAgent"
   else
+    echo "HivemindOS collector installed."
     maybe_allow_node_through_macos_firewall
   fi
 else
@@ -931,7 +921,6 @@ SERVICE
   systemctl --user daemon-reload
   systemctl --user enable agent-telemetry.service
   systemctl --user restart agent-telemetry.service
-  echo "Installed systemd user service on port $PORT"
   if [[ "$LINK_ACTIVE" == "true" ]]; then
     LINK_SERVICE="$HOME/.config/systemd/user/hivemindos-linkd.service"
     cat > "$LINK_SERVICE" <<SERVICE
@@ -952,7 +941,8 @@ SERVICE
     systemctl --user daemon-reload
     systemctl --user enable hivemindos-linkd.service
     systemctl --user restart hivemindos-linkd.service
-    echo "Installed Hivemind Link systemd user service"
+  else
+    echo "HivemindOS collector installed."
   fi
 fi
 
@@ -970,7 +960,7 @@ if [[ "$TAILNET_SYNC_ENABLED" == "true" && "$NETWORK_MANAGED_BY_SETUP" != "true"
   enable_tailscale_ssh
 fi
 
-if [[ "$NETWORK_MANAGED_BY_SETUP" != "true" ]] && tailscale_status_connected; then
+if [[ "$NETWORK_MANAGED_BY_SETUP" != "true" && "$LINK_ACTIVE" != "true" ]] && tailscale_status_connected; then
   TAILSCALE_CLI="$(tailscale_cli_candidates | awk '!seen[$0]++ { print; exit }')"
   if [[ -n "$TAILSCALE_CLI" ]]; then
     IP="$(run_tailscale_cli "$TAILSCALE_CLI" ip -4 2>/dev/null | head -1 || true)"
@@ -982,30 +972,13 @@ if [[ "$NETWORK_MANAGED_BY_SETUP" != "true" ]] && tailscale_status_connected; th
     fi
   fi
 fi
-echo "Local collector URL: http://127.0.0.1:$PORT"
 if [[ "$LINK_ACTIVE" == "true" ]]; then
-  if [[ "$PORT" != "$REQUESTED_PORT" ]]; then
-    echo "Hivemind Link Tailnet collector URL remains: http://<this-link-node>:$LINK_TAILNET_PORT"
-  fi
-  echo "Hivemind Link control URL: http://$LINK_CONTROL/status"
-  echo "Waiting for Hivemind Link to start and return a sign-in or connected state..."
+  echo "Hivemind Link is starting..."
   LINK_STATUS=""
-  for attempt in $(seq 1 60); do
+  for _ in $(seq 1 12); do
     LINK_STATUS="$(curl -fsS --max-time 3 "http://$LINK_CONTROL/status" 2>/dev/null || true)"
     if printf "%s" "$LINK_STATUS" | node -e 'let d="";process.stdin.on("data",c=>d+=c);process.stdin.on("end",()=>{try{const j=JSON.parse(d); process.exit(j.authUrl || j.ok || (j.backendState && j.backendState !== "NeedsLogin") ? 0 : 1)}catch{process.exit(1)}})' 2>/dev/null; then
       break
-    fi
-    if [[ "$attempt" == "15" && -x "$LINK_BIN" ]]; then
-      echo "Hivemind Link has not answered yet; starting the sidecar directly as a fallback..."
-      pkill -f hivemind-linkd >/dev/null 2>&1 || true
-      pkill -f "$LINK_BIN" >/dev/null 2>&1 || true
-      HIVE_LINK_TARGET="http://127.0.0.1:$PORT" \
-        HIVE_LINK_LISTEN=":$LINK_TAILNET_PORT" \
-        HIVE_LINK_CONTROL="$LINK_CONTROL" \
-        nohup "$LINK_BIN" >>"$HOME/Library/Logs/hivemindos-linkd.log" 2>>"$HOME/Library/Logs/hivemindos-linkd.err.log" &
-      sleep 2
-    elif (( attempt == 5 || attempt == 10 || attempt == 30 || attempt == 45 )); then
-      echo "Still waiting for Hivemind Link status..."
     fi
     sleep 1
   done
@@ -1019,26 +992,25 @@ if [[ "$LINK_ACTIVE" == "true" ]]; then
   LINK_CONNECTED_NAME="$(printf "%s" "$LINK_STATUS" | node -e 'let d="";process.stdin.on("data",c=>d+=c);process.stdin.on("end",()=>{try{const j=JSON.parse(d); if(j.ok) console.log(j.self?.DNSName || j.self?.HostName || "connected")}catch{}})' 2>/dev/null || true)"
   LINK_BACKEND_STATE="$(printf "%s" "$LINK_STATUS" | node -e 'let d="";process.stdin.on("data",c=>d+=c);process.stdin.on("end",()=>{try{const j=JSON.parse(d); if(j.backendState) console.log(j.backendState)}catch{}})' 2>/dev/null || true)"
   if [[ -n "$LINK_AUTH_URL" ]]; then
-    echo "Hivemind Link sign-in required."
-    echo "Open this URL on any device to connect this app-managed node to your Tailscale account:"
+    echo "Sign in to Hivemind Link:"
     echo "  $LINK_AUTH_URL"
     wait_for_hivemind_link_auth_confirmation
   elif [[ -n "$LINK_CONNECTED_NAME" ]]; then
-    echo "Hivemind Link is already connected: $LINK_CONNECTED_NAME"
-    echo "To force a first-time sign-in test, stop the Hivemind Link service, remove ~/.hivemindos/link, then reinstall."
+    echo "Hivemind Link connected."
   elif [[ -n "$LINK_BACKEND_STATE" ]]; then
-    echo "Hivemind Link is starting: $LINK_BACKEND_STATE"
-    echo "Open the dashboard or retry this status URL in a few seconds if sign-in is needed."
+    echo "Hivemind Link is still starting. You can continue; the dashboard will pick it up automatically."
   else
-    echo "Hivemind Link status is not ready yet. Retry: curl http://$LINK_CONTROL/status"
+    echo "Hivemind Link is still starting. You can continue; the dashboard will pick it up automatically."
   fi
 fi
 if wait_for_local_collector 10; then
-  echo "Local collector health: ok"
+  if [[ "$LINK_ACTIVE" != "true" ]]; then
+    echo "Local collector ready: http://127.0.0.1:$PORT"
+  fi
 else
-  echo "Local collector health did not respond yet. Check logs and retry: curl http://127.0.0.1:$PORT/health" >&2
+  echo "The local collector is still starting. The dashboard will keep checking it." >&2
 fi
-if [[ "$NETWORK_MANAGED_BY_SETUP" != "true" && -n "${IP:-}" ]]; then
+if [[ "$LINK_ACTIVE" != "true" && "$NETWORK_MANAGED_BY_SETUP" != "true" && -n "${IP:-}" ]]; then
   echo "Tailnet reachability check from another dashboard machine:"
   echo "  curl --max-time 5 http://$IP:$PORT/health"
 fi
