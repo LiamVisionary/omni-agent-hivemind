@@ -166,6 +166,32 @@ if ask "Remove HivemindOS telemetry collector service?" "yes"; then
   fi
 fi
 
+if ask "Stop and remove the HivemindOS Link sidecar service?" "yes"; then
+  if [[ "$(uname -s)" == "Darwin" ]]; then
+    plist="$HOME/Library/LaunchAgents/com.hivemindos.linkd.plist"
+    if [[ -f "$plist" ]]; then
+      launchctl bootout "gui/$(id -u)/com.hivemindos.linkd" >/dev/null 2>&1 || launchctl unload "$plist" >/dev/null 2>&1 || true
+      rm -f "$plist"
+      ok "Removed HivemindOS Link LaunchAgent"
+    fi
+  elif run_if_exists systemctl; then
+    systemctl --user disable --now hivemindos-linkd.service >/dev/null 2>&1 || true
+    rm -f "$HOME/.config/systemd/user/hivemindos-linkd.service"
+    systemctl --user daemon-reload >/dev/null 2>&1 || true
+    ok "Removed HivemindOS Link systemd service"
+  fi
+fi
+
+if ask "Remove the built hivemind-linkd binary from this checkout?" "yes"; then
+  rm -f "$ROOT/bin/hivemind-linkd"
+  ok "Removed $ROOT/bin/hivemind-linkd"
+fi
+
+if ask "Remove local Hivemind Link Tailscale state from ~/.hivemindos/link?" "no"; then
+  rm -rf "$HOME/.hivemindos/link"
+  ok "Removed ~/.hivemindos/link"
+fi
+
 if ask "Stop and remove the HivemindOS Syncthing service wrapper?" "yes"; then
   if [[ "$(uname -s)" == "Darwin" ]]; then
     plist="$HOME/Library/LaunchAgents/com.hivemindos.syncthing.plist"
@@ -293,6 +319,20 @@ if ask "Uninstall Tailscale itself from this machine?" "no"; then
     sudo dnf remove -y tailscale || true
   elif run_if_exists yum && run_if_exists sudo; then
     sudo yum remove -y tailscale || true
+  fi
+fi
+
+if ask "Uninstall Go itself from this machine?" "no"; then
+  if [[ "$(uname -s)" == "Darwin" ]] && command -v brew >/dev/null 2>&1; then
+    brew uninstall go || true
+  elif command -v apt-get >/dev/null 2>&1 && command -v sudo >/dev/null 2>&1; then
+    sudo apt-get remove -y golang-go || true
+  elif command -v dnf >/dev/null 2>&1 && command -v sudo >/dev/null 2>&1; then
+    sudo dnf remove -y golang || true
+  elif command -v yum >/dev/null 2>&1 && command -v sudo >/dev/null 2>&1; then
+    sudo yum remove -y golang || true
+  else
+    warn "No automatic Go uninstaller found for this OS"
   fi
 fi
 

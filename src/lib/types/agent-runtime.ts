@@ -19,6 +19,7 @@ export interface RuntimeCapabilities {
   notifications?: boolean;
   setup?: boolean;
   walletTools?: boolean;
+  modelSelection?: boolean;
 }
 
 export type BeeAgentRole = "queen" | "worker" | "observer" | "human";
@@ -38,6 +39,8 @@ export interface AgentProfile {
   runtime: AgentRuntime;
   gatewayUrl: string;
   token?: string;
+  provider?: string;
+  model?: string;
   agentId?: string;
   sessionKey?: string;
   chatPath?: string;
@@ -48,6 +51,7 @@ export interface AgentProfile {
   telemetryUrl?: string;
   collectorCapabilities?: {
     chat?: boolean;
+    directoryBrowsing?: boolean;
     runtimes?: string[];
     syncthing?: boolean;
     defaultSyncPath?: string;
@@ -71,10 +75,11 @@ export interface AgentProfile {
 export interface SharedVaultConfig {
   enabled: boolean;
   vaultPath: string;
+  syncProvider: "external" | "syncthing" | "manual";
   tailnetSyncHost: string;
   tailnetSyncPath: string;
   tailnetSyncDirection: "bidirectional" | "push" | "pull";
-  tailnetSyncEnabled: boolean;
+  syncthingAutoPairEnabled: boolean;
   tailnetSyncIntervalSeconds: number;
   inboxFolder: string;
   sharedNotePath: string;
@@ -87,15 +92,16 @@ export interface SharedVaultConfig {
   instructions: string;
 }
 
-const DEFAULT_TAILNET_SYNC_ENABLED = process.env.NEXT_PUBLIC_TAILNET_SYNC_ENABLED === "true";
+const DEFAULT_SYNCTHING_AUTO_PAIR_ENABLED = process.env.NEXT_PUBLIC_TAILNET_SYNC_ENABLED === "true";
 
 export const DEFAULT_SHARED_VAULT: SharedVaultConfig = {
   enabled: true,
   vaultPath: process.env.NEXT_PUBLIC_OBSIDIAN_VAULT_PATH ?? "~/Documents/Obsidian/hivemindos-vault",
+  syncProvider: DEFAULT_SYNCTHING_AUTO_PAIR_ENABLED ? "syncthing" : "external",
   tailnetSyncHost: "",
   tailnetSyncPath: "",
   tailnetSyncDirection: "bidirectional",
-  tailnetSyncEnabled: DEFAULT_TAILNET_SYNC_ENABLED,
+  syncthingAutoPairEnabled: DEFAULT_SYNCTHING_AUTO_PAIR_ENABLED,
   tailnetSyncIntervalSeconds: 20,
   inboxFolder: "Agent Inbox",
   sharedNotePath: "HivemindOS/Shared Context.md",
@@ -163,6 +169,7 @@ export const RUNTIME_CAPABILITIES: Record<AgentRuntime, RuntimeCapabilities> = {
     kanbanDecompose: true,
     setup: true,
     walletTools: true,
+    modelSelection: true,
   },
   aeon: {
     status: true,
@@ -193,6 +200,8 @@ export function createAgentProfile(runtime: AgentRuntime, index = 1): AgentProfi
     chatPath: defaults.chatPath,
     statusPath: defaults.statusPath,
     agentId: runtime === "openclaw" ? "main" : "",
+    provider: runtime === "hermes" ? "openai-codex" : "",
+    model: "",
     localDataDir: runtime === "hermes" && index === 1 ? "~/.hermes" : "",
     machineName: "local",
     telemetryUrl: "",

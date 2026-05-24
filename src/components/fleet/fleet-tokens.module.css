@@ -111,6 +111,27 @@
   background: rgba(45, 212, 191, 0.22) !important;
 }
 
+.rosterUpdateButton {
+  transition:
+    border-color 160ms ease,
+    background 160ms ease,
+    color 160ms ease,
+    filter 160ms ease,
+    transform 160ms ease;
+}
+
+.rosterUpdateButton:hover:not(:disabled) {
+  border-color: rgba(255, 212, 90, 0.76) !important;
+  background: rgba(255, 212, 90, 0.22) !important;
+  color: var(--foreground) !important;
+  transform: translateY(-1px);
+  filter: drop-shadow(0 0 12px rgba(255, 212, 90, 0.18));
+}
+
+.rosterUpdateButton:disabled {
+  opacity: 1;
+}
+
 .rosterTaskPreview {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;

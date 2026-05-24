@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent, type PointerEvent, type ReactNode, type RefObject } from "react";
+import { FormEvent, useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent, type MouseEvent as ReactMouseEvent, type PointerEvent, type ReactNode, type RefObject } from "react";
 import Image from "next/image";
 import { motion } from "motion/react";
 import {
@@ -40,6 +40,7 @@ import {
   MessageSquare,
   Monitor,
   Network,
+  Minus,
   Plus,
   PlugZap,
   RefreshCcw,
@@ -65,6 +66,8 @@ import type { AgentNotification, AgentNotificationSettings, AgentNotificationSum
 import { createAgentProfile, DEFAULT_SHARED_VAULT, RUNTIME_CAPABILITIES, RUNTIME_DEFAULTS, RUNTIME_KINDS, RUNTIME_LABELS } from "@/lib/types/agent-runtime";
 import type { AgentPaymentProvider, AgentWalletConfig, HoneyTreasuryConfig } from "@/lib/types/agent-wallet";
 import type { KanbanBoard, KanbanLinkedDirectory, KanbanMachineTarget, KanbanStatus, KanbanTask, KanbanTaskAttachment } from "@/lib/types/kanban";
+import type { RecentDirectory } from "@/lib/types/recent-directories";
+import type { MiroSharkAnalysisMode, MiroSharkIntelligence } from "@/lib/services/miroshark/run-intelligence";
 import { KANBAN_COLUMNS } from "@/lib/types/kanban";
 import { AGENT_PAYMENT_PROVIDER_COPY } from "@/lib/config/agent-payments";
 import { beeRoleIconPath } from "@/lib/config/bee-role-icons";
@@ -146,6 +149,19 @@ type RuntimeIntegrationStatus = {
     detail: string;
   }>;
   diagnostics: string[];
+  modelSelection?: {
+    provider: string;
+    model: string;
+    providers: Array<{
+      slug: string;
+      name: string;
+      models: Array<{ id: string; name?: string }>;
+      totalModels: number;
+      isCurrent?: boolean;
+      isUserDefined?: boolean;
+      source?: string;
+    }>;
+  };
 };
 
 type RuntimeSessionSearchResult = {
@@ -188,6 +204,10 @@ type VaultSyncStatus = {
   exitCode?: number | null;
   conflicts?: string[];
   changedFiles?: string[];
+};
+
+type StoredSharedVaultConfig = Partial<SharedVaultConfig> & {
+  tailnetSyncEnabled?: boolean;
 };
 
 type ChatMessage = {
@@ -521,6 +541,24 @@ type MachineGroup = {
     command?: string;
     error?: string;
   };
+};
+
+type MachineDirectoryEntry = {
+  name: string;
+  path: string;
+  kind: "directory";
+};
+
+type MachineDirectoryBrowser = {
+  open: boolean;
+  machine: KanbanMachineTarget;
+  path: string;
+  parentPath?: string;
+  directories: MachineDirectoryEntry[];
+  selectedDirectory?: MachineDirectoryEntry | null;
+  loading: boolean;
+  error: string;
+  onChoose?: (directory: LinkedDirectory) => void;
 };
 
 type ChatTreeItem = {
@@ -1205,6 +1243,21 @@ function payloadCount(value: unknown): number {
   return Array.isArray(firstArray) ? firstArray.length : Object.keys(record).length;
 }
 
+function isEmptyIntegrationPayload(value: unknown): boolean {
+  if (value === null || value === undefined) return true;
+  const data = payloadData(value);
+  if (Array.isArray(data)) return data.length === 0;
+  if (typeof data !== "object" || data === null) return false;
+  return payloadCount(value) === 0;
+}
+
+function isUnpublishedSimulationPayload(value: unknown): boolean {
+  const record = asRecord(value);
+  return record.success === false
+    && typeof record.error === "string"
+    && record.error.toLowerCase().includes("simulation is not published");
+}
+
 function payloadPreview(value: unknown, max = 6): Array<[string, string]> {
   const data = payloadData(value);
   if (Array.isArray(data)) {
@@ -1307,7 +1360,7 @@ function swarmRunState(run: MiroSharkRunResult | null, runnerStatus?: string): S
 
 function numericRecordValue(record: Record<string, unknown>, keys: string[], fallback = 0) {
   for (const key of keys) {
-    const value = record[key];
+    const value = key.split(".").reduce<unknown>((current, part) => asRecord(current)[part], record);
     const parsed = typeof value === "number" ? value : typeof value === "string" ? Number(value) : NaN;
     if (Number.isFinite(parsed)) return parsed;
   }
@@ -1370,19 +1423,48 @@ function swarmMarketPriceEventItem(value: unknown, index: number): ReturnType<ty
   };
 }
 
-function swarmMarketFromItems(items: Record<string, unknown>[], timelineItems: ReturnType<typeof swarmEventItem>[]): SwarmMarket {
-  const ticks = items
-    .map((item) => numericRecordValue(item, ["price", "odds", "probability", "yes_price", "value"], Number.NaN))
+function swarmMarketFromItems(items: Record<string, unknown>[], timelineItems: ReturnType<typeof swarmEventItem>[], pricePayloads: unknown[] = []): SwarmMarket {
+  const priceRecords = pricePayloads.flatMap((value) => {
+    const record = asRecord(value);
+    const data = asRecord(record.data ?? value);
+    const market = asRecord(data.market);
+    const prices = Array.isArray(data.prices) ? data.prices : [];
+    return [
+      ...prices,
+      Object.keys(market).length ? market : null,
+      Object.keys(data).length ? data : null,
+      Object.keys(record).length ? record : null,
+    ].filter((item): item is unknown => item !== null);
+  });
+  const ticks = [...items, ...priceRecords]
+    .map((item) => numericRecordValue(asRecord(item), [
+      "price", "odds", "probability", "yes_price", "price_yes", "value",
+      "market.price_yes", "market.yes_price", "market.price", "market.probability",
+    ], Number.NaN))
     .filter(Number.isFinite);
+  const firstPriceRecord = asRecord(pricePayloads[0]);
+  const firstPriceData = asRecord(firstPriceRecord.data ?? firstPriceRecord);
+  const firstPriceMarket = asRecord(firstPriceData.market);
   return {
-    symbol: String(items[0]?.question ?? items[0]?.title ?? items[0]?.name ?? "MiroShark markets"),
-    ticks,
-    ladder: items.slice(0, 9).map((item, index) => {
-      const px = numericRecordValue(item, ["price", "odds", "probability", "yes_price", "value"], index + 1);
+    symbol: String(
+      items[0]?.question
+        ?? items[0]?.title
+        ?? items[0]?.name
+        ?? firstPriceMarket.question
+        ?? firstPriceRecord.question
+        ?? "MiroShark markets"
+    ),
+    ticks: ticks.map((tick) => tick > 1 ? tick / 100 : tick),
+    ladder: [...items, ...priceRecords].slice(0, 9).map((item, index) => {
+      const record = asRecord(item);
+      const px = numericRecordValue(record, [
+        "price", "odds", "probability", "yes_price", "price_yes", "value",
+        "market.price_yes", "market.yes_price", "market.price", "market.probability",
+      ], index + 1);
       return {
-        px,
-        bid: numericRecordValue(item, ["bid", "yes", "volume", "liquidity"], 0) || null,
-        ask: numericRecordValue(item, ["ask", "no"], 0) || null,
+        px: px > 1 ? px / 100 : px,
+        bid: numericRecordValue(record, ["bid", "yes", "volume", "liquidity"], 0) || null,
+        ask: numericRecordValue(record, ["ask", "no"], numericRecordValue(record, ["price_no", "no_price"], 0)) || null,
       };
     }),
     headlines: timelineItems.slice(0, 6).map((item) => ({
@@ -1632,23 +1714,31 @@ function parseStoredVault(): SharedVaultConfig {
   const raw = readStoredValue(VAULT_STORAGE_KEY, STORAGE_SUFFIXES.vault);
   if (!raw) return DEFAULT_SHARED_VAULT;
   try {
-    const parsed = JSON.parse(raw) as Partial<SharedVaultConfig>;
-    const storedVaultPath = parsed.vaultPath?.trim();
+    const parsed = JSON.parse(raw) as StoredSharedVaultConfig;
+    const { tailnetSyncEnabled: legacyTailnetSyncEnabled, ...storedVault } = parsed;
+    const storedVaultPath = storedVault.vaultPath?.trim();
     const migratedVaultPath = storedVaultPath
       && /\/[^/]*(hivemind|vault)[^/]*$/i.test(storedVaultPath)
       && !storedVaultPath.endsWith("/hivemindos-vault")
       ? DEFAULT_SHARED_VAULT.vaultPath
       : storedVaultPath;
-    const storedKanbanFolder = parsed.kanbanFolder?.trim();
+    const storedKanbanFolder = storedVault.kanbanFolder?.trim();
     const migratedKanbanFolder = storedKanbanFolder && /^kanban$/i.test(storedKanbanFolder)
       ? DEFAULT_SHARED_VAULT.kanbanFolder
       : storedKanbanFolder;
+    const syncProvider = storedVault.syncProvider === "syncthing" || storedVault.syncProvider === "manual" || storedVault.syncProvider === "external"
+      ? storedVault.syncProvider
+      : legacyTailnetSyncEnabled === true
+        ? "syncthing"
+        : DEFAULT_SHARED_VAULT.syncProvider;
     return {
       ...DEFAULT_SHARED_VAULT,
-      ...parsed,
+      ...storedVault,
+      syncProvider,
+      syncthingAutoPairEnabled: storedVault.syncthingAutoPairEnabled ?? legacyTailnetSyncEnabled ?? DEFAULT_SHARED_VAULT.syncthingAutoPairEnabled,
       vaultPath: migratedVaultPath || DEFAULT_SHARED_VAULT.vaultPath,
       kanbanFolder: migratedKanbanFolder || DEFAULT_SHARED_VAULT.kanbanFolder,
-      scheduledFolder: parsed.scheduledFolder?.trim() || DEFAULT_SHARED_VAULT.scheduledFolder,
+      scheduledFolder: storedVault.scheduledFolder?.trim() || DEFAULT_SHARED_VAULT.scheduledFolder,
     };
   } catch {
     return DEFAULT_SHARED_VAULT;
@@ -2342,7 +2432,7 @@ function kanbanEventLabel(kind: string) {
 
 function kanbanTaskDispatchPrompt(task: KanbanTask, assignment: ReturnType<typeof chooseBeeAssignment>) {
   const attachmentDetails = [
-    task.linkedDirectories?.length ? ["Linked directories:", ...task.linkedDirectories.map((directory) => `- ${directory.name}`)].join("\n") : "",
+    task.linkedDirectories?.length ? ["Linked directories:", ...task.linkedDirectories.map((directory) => `- ${linkedDirectoryLabel(directory)}`)].join("\n") : "",
     task.attachments?.length ? [
       "Attached files/images:",
       ...task.attachments.map((attachment) => `- ${attachment.kind}: ${attachment.name} (${attachment.mimeType || "unknown"}, ${attachmentSizeLabel(attachment.size)})`),
@@ -2536,6 +2626,38 @@ function isMeaningfulActive(task: AgentTask) {
 
 function isChatSidebarTask(task: AgentTask) {
   return task.source === "hermes-state" || task.source === "dashboard-chat";
+}
+
+function chatSeedMessagesForTask(task: AgentTask): ChatMessage[] {
+  return task.messages?.some((message) => message.content.trim())
+    ? task.messages
+    : [
+      { role: "system" as const, content: `Resuming ${task.title || "previous chat"} from recent collector metadata.` },
+      { role: "assistant" as const, content: task.lastMessage || task.title || "Recent chat metadata is available, but the full transcript was not cached locally." },
+    ];
+}
+
+function taskChatLeafKey(agentId: string, task: AgentTask, taskIndex = 0) {
+  return `task-${agentId}-${task.id}-${task.source ?? "unknown"}-${task.updatedAt || task.startedAt || taskIndex}`;
+}
+
+function chatTaskMatchKey(value: string) {
+  return cleanActivityTitle(value).toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+}
+
+function findRosterChatTask(agentWork: AgentTask[], displayedTask?: string) {
+  const displayedKey = chatTaskMatchKey(displayedTask ?? "");
+  const indexedTasks = agentWork.map((task, index) => ({ task, index }));
+  const chatTasks = indexedTasks.filter(({ task }) => isChatSidebarTask(task));
+  const matchingTask = displayedKey
+    ? chatTasks.find(({ task }) => chatTaskMatchKey(task.title) === displayedKey)
+      ?? chatTasks.find(({ task }) => chatTaskMatchKey(task.title).includes(displayedKey) || displayedKey.includes(chatTaskMatchKey(task.title)))
+    : undefined;
+  if (matchingTask) return matchingTask;
+  return chatTasks.find(({ task }) => task.source === "hermes-state")
+    ?? chatTasks.find(({ task }) => task.source !== "dashboard-chat")
+    ?? chatTasks[0]
+    ?? null;
 }
 
 function cleanActivityTitle(title: string) {
@@ -2733,11 +2855,39 @@ async function pickLinkedDirectory(): Promise<LinkedDirectory | null> {
   try {
     const handle = await picker();
     const name = handle.name?.trim();
-    return name ? { id: `${name}-${crypto.randomUUID()}`, name } : null;
+    return name ? { id: `${name}-${crypto.randomUUID()}`, name, lastUsedAt: Date.now() } : null;
   } catch (error) {
     if (error instanceof DOMException && error.name === "AbortError") return null;
     throw error;
   }
+}
+
+function linkedDirectoryLabel(directory: Pick<LinkedDirectory, "name" | "path" | "machineName">) {
+  return [
+    directory.path?.trim() || directory.name,
+    directory.machineName?.trim() ? `on ${directory.machineName.trim()}` : "",
+  ].filter(Boolean).join(" ");
+}
+
+function recentDirectoryToLinkedDirectory(directory: RecentDirectory): LinkedDirectory {
+  return {
+    id: `${directory.name}-${directory.lastUsedAt}-${crypto.randomUUID()}`,
+    name: directory.name,
+    path: directory.path,
+    machineName: directory.machineName,
+    machineKey: directory.machineKey,
+    lastUsedAt: Date.now(),
+  };
+}
+
+function recentDirectorySubtitle(directory: RecentDirectory) {
+  if (directory.path?.trim()) return directory.machineName?.trim()
+    ? `${directory.path.trim()} on ${directory.machineName.trim()}`
+    : directory.path.trim();
+  if (directory.machineName?.trim()) return directory.machineName.trim();
+  if (directory.source === "kanban") return "Kanban history";
+  if (directory.source === "chat") return "Chat history";
+  return "No path saved yet";
 }
 
 function attachmentSizeLabel(size: number) {
@@ -2752,6 +2902,160 @@ function speechRecognitionConstructor(): SpeechRecognitionConstructor | null {
     webkitSpeechRecognition?: SpeechRecognitionConstructor;
   };
   return speechWindow.SpeechRecognition ?? speechWindow.webkitSpeechRecognition ?? null;
+}
+
+function AttachmentMenuContent({
+  placement = "above",
+  onAttachImages,
+  onAttachFiles,
+  onAttachDirectory,
+  directoryPickerDisabled = false,
+  directoryPickerDisabledReason,
+  recentDirectories = [],
+  recentDirectoriesExpanded,
+  setRecentDirectoriesExpanded,
+  onAttachRecentDirectory,
+  stopPropagation = false,
+}: {
+  placement?: "above" | "below";
+  onAttachImages: () => void;
+  onAttachFiles: () => void;
+  onAttachDirectory?: () => void;
+  directoryPickerDisabled?: boolean;
+  directoryPickerDisabledReason?: string;
+  recentDirectories?: RecentDirectory[];
+  recentDirectoriesExpanded?: boolean;
+  setRecentDirectoriesExpanded?: (open: boolean | ((current: boolean) => boolean)) => void;
+  onAttachRecentDirectory?: (directory: LinkedDirectory) => void;
+  stopPropagation?: boolean;
+}) {
+  const run = (event: ReactMouseEvent<HTMLButtonElement>, action: () => void) => {
+    if (stopPropagation) event.stopPropagation();
+    action();
+  };
+  return (
+    <div className={chatClass("attachmentMenu", placement === "below" && "attachmentMenuBelow")} role="menu">
+      <button type="button" role="menuitem" onClick={(event) => run(event, onAttachImages)}>
+        <Paperclip aria-hidden="true" />
+        Images
+      </button>
+      <button type="button" role="menuitem" onClick={(event) => run(event, onAttachFiles)}>
+        <FileUp aria-hidden="true" />
+        Files
+      </button>
+      {onAttachDirectory ? (
+        <button
+          type="button"
+          role="menuitem"
+          onClick={(event) => run(event, onAttachDirectory)}
+          disabled={directoryPickerDisabled}
+          title={directoryPickerDisabledReason}
+        >
+          <FolderOpen aria-hidden="true" />
+          Directories
+        </button>
+      ) : null}
+      {onAttachRecentDirectory && setRecentDirectoriesExpanded ? (
+        <div className={chatClass("attachmentRecents")}>
+          <button
+            type="button"
+            role="menuitem"
+            aria-expanded={Boolean(recentDirectoriesExpanded)}
+            disabled={directoryPickerDisabled}
+            title={directoryPickerDisabledReason}
+            onClick={(event) => run(event, () => setRecentDirectoriesExpanded((open) => !open))}
+          >
+            <Clock3 aria-hidden="true" />
+            Recents
+            <ChevronDown aria-hidden="true" />
+          </button>
+          {recentDirectoriesExpanded ? (
+            <div className={chatClass("attachmentRecentList")}>
+              {recentDirectories.length > 0 ? recentDirectories.slice(0, 8).map((directory) => (
+                <button
+                  type="button"
+                  role="menuitem"
+                  key={directory.id}
+                  disabled={directoryPickerDisabled}
+                  onClick={(event) => run(event, () => onAttachRecentDirectory(recentDirectoryToLinkedDirectory(directory)))}
+                >
+                  <FolderOpen aria-hidden="true" />
+                  <span>
+                    <strong>{directory.name}</strong>
+                    <small>{recentDirectorySubtitle(directory)}</small>
+                  </span>
+                </button>
+              )) : (
+                <p>No recent folders yet.</p>
+              )}
+            </div>
+          ) : null}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function AttachmentListMenuContent({
+  attachments,
+  directories,
+  onRemoveAttachment,
+  onRemoveDirectory,
+}: {
+  attachments: KanbanTaskAttachment[];
+  directories: LinkedDirectory[];
+  onRemoveAttachment: (id: string) => void;
+  onRemoveDirectory: (id: string) => void;
+}) {
+  const hasItems = attachments.length > 0 || directories.length > 0;
+  return (
+    <div className={kanbanClass("kanbanAttachmentListMenu")} role="menu">
+      {hasItems ? (
+        <>
+          {directories.map((directory) => (
+            <div className={kanbanClass("kanbanAttachmentListItem")} key={directory.id}>
+              <FolderOpen aria-hidden="true" />
+              <span>
+                <strong>{directory.name}</strong>
+                <small>{linkedDirectoryLabel(directory)}</small>
+              </span>
+              <button
+                type="button"
+                aria-label={`Remove ${directory.name}`}
+                onClick={(event) => {
+                  event.stopPropagation();
+                  onRemoveDirectory(directory.id);
+                }}
+              >
+                <Minus aria-hidden="true" />
+              </button>
+            </div>
+          ))}
+          {attachments.map((attachment) => (
+            <div className={kanbanClass("kanbanAttachmentListItem")} key={attachment.id}>
+              <Paperclip aria-hidden="true" />
+              <span>
+                <strong>{attachment.name}</strong>
+                <small>{attachment.kind === "image" ? "Image" : "File"} · {attachmentSizeLabel(attachment.size)}</small>
+              </span>
+              <button
+                type="button"
+                aria-label={`Remove ${attachment.name}`}
+                onClick={(event) => {
+                  event.stopPropagation();
+                  onRemoveAttachment(attachment.id);
+                }}
+              >
+                <Minus aria-hidden="true" />
+              </button>
+            </div>
+          ))}
+        </>
+      ) : (
+        <p>No attachments yet.</p>
+      )}
+    </div>
+  );
 }
 
 function ComposerField({
@@ -2773,6 +3077,12 @@ function ComposerField({
   onImageChange,
   onRemoveAttachment,
   onAttachDirectory,
+  directoryPickerDisabled = false,
+  directoryPickerDisabledReason,
+  recentDirectories = [],
+  recentDirectoriesExpanded,
+  setRecentDirectoriesExpanded,
+  onAttachRecentDirectory,
   onRemoveDirectory,
   recording,
   voiceBands,
@@ -2800,6 +3110,12 @@ function ComposerField({
   onImageChange: (event: ChangeEvent<HTMLInputElement>) => void;
   onRemoveAttachment: (id: string) => void;
   onAttachDirectory?: () => void;
+  directoryPickerDisabled?: boolean;
+  directoryPickerDisabledReason?: string;
+  recentDirectories?: RecentDirectory[];
+  recentDirectoriesExpanded?: boolean;
+  setRecentDirectoriesExpanded?: (open: boolean | ((current: boolean) => boolean)) => void;
+  onAttachRecentDirectory?: (directory: LinkedDirectory) => void;
   onRemoveDirectory?: (id: string) => void;
   recording?: boolean;
   voiceBands: number[];
@@ -2883,22 +3199,17 @@ function ComposerField({
             <Plus aria-hidden="true" />
           </button>
           {attachmentMenuOpen ? (
-            <div className={chatClass("attachmentMenu")} role="menu">
-              <button type="button" role="menuitem" onClick={() => imageInputRef.current?.click()}>
-                <Paperclip aria-hidden="true" />
-                Images
-              </button>
-              <button type="button" role="menuitem" onClick={() => fileInputRef.current?.click()}>
-                <FileUp aria-hidden="true" />
-                Files
-              </button>
-              {onAttachDirectory ? (
-                <button type="button" role="menuitem" onClick={onAttachDirectory}>
-                  <FolderOpen aria-hidden="true" />
-                  Directory
-                </button>
-              ) : null}
-            </div>
+            <AttachmentMenuContent
+              onAttachImages={() => imageInputRef.current?.click()}
+              onAttachFiles={() => fileInputRef.current?.click()}
+              onAttachDirectory={onAttachDirectory}
+              directoryPickerDisabled={directoryPickerDisabled}
+              directoryPickerDisabledReason={directoryPickerDisabledReason}
+              recentDirectories={recentDirectories}
+              recentDirectoriesExpanded={recentDirectoriesExpanded}
+              setRecentDirectoriesExpanded={setRecentDirectoriesExpanded}
+              onAttachRecentDirectory={onAttachRecentDirectory}
+            />
           ) : null}
         </div>
         {attachmentError ? <span role="status">{attachmentError}</span> : null}
@@ -3215,7 +3526,6 @@ function mergeDiscoveredMachines(current: DiscoveredMachine[], incoming: Discove
       collector: previous.collector === "ready" ? "ready" : machine.collector,
       agents: previous.agents,
       snapshots: previous.snapshots,
-      version: previous.version,
       lastSeenAt: previous.lastSeenAt,
     };
   });
@@ -3238,8 +3548,8 @@ function machineVersionState(machine: MachineGroup, latestCommit?: string) {
   const commit = version?.commit;
   const target = latestCommit || version?.latestCommit;
   if (!commit) return { state: "unknown", label: "Update collector", detail: "This machine has an older collector that does not report its version yet." };
-  if (version?.dirty) return { state: "current", label: "Up to date", detail: `Running ${version.shortCommit ?? commit.slice(0, 7)} with local changes present.` };
   if (target && commit !== target) return { state: "stale", label: "Update available", detail: `${version?.shortCommit ?? commit.slice(0, 7)} -> ${version?.latestShortCommit ?? target.slice(0, 7)}` };
+  if (version?.dirty) return { state: "current", label: "Up to date", detail: `Running ${version.shortCommit ?? commit.slice(0, 7)} with local changes present.` };
   return { state: "current", label: "Up to date", detail: version?.shortCommit ?? commit.slice(0, 7) };
 }
 
@@ -3607,8 +3917,11 @@ export default function Home() {
   const [walletExpanded, setWalletExpanded] = useState(false);
   const [text, setText] = useState("");
   const [chatAttachments, setChatAttachments] = useState<ChatAttachment[]>([]);
+  const [chatDirectories, setChatDirectories] = useState<LinkedDirectory[]>([]);
   const [attachmentError, setAttachmentError] = useState("");
   const [attachmentMenuOpen, setAttachmentMenuOpen] = useState(false);
+  const [recentDirectories, setRecentDirectories] = useState<RecentDirectory[]>([]);
+  const [recentDirectoriesExpanded, setRecentDirectoriesExpanded] = useState(false);
   const [recording, setRecording] = useState(false);
   const [voiceTarget, setVoiceTarget] = useState<"chat" | "kanban-steer" | KanbanStatus>("chat");
   const [voiceTranscript, setVoiceTranscript] = useState("");
@@ -3703,6 +4016,8 @@ export default function Home() {
   const [agentCreateDraft, setAgentCreateDraft] = useState<{
     name: string;
     runtime: AgentRuntime;
+    provider?: string;
+    model?: string;
     workerClass: BeeWorkerClass;
     customWorkerClass?: CustomWorkerClassProfile;
     customWorkerClasses: CustomWorkerClassProfile[];
@@ -3713,6 +4028,8 @@ export default function Home() {
   }>({
     name: "",
     runtime: "hermes",
+    provider: "openai-codex",
+    model: "",
     workerClass: "general",
     customWorkerClass: undefined,
     customWorkerClasses: [],
@@ -3728,6 +4045,7 @@ export default function Home() {
   const [agentRuntimeFolderStatus, setAgentRuntimeFolderStatus] = useState("");
   const [agentRuntimeAdvancedOpen, setAgentRuntimeAdvancedOpen] = useState(false);
   const [runtimeIntegrationStatus, setRuntimeIntegrationStatus] = useState<RuntimeIntegrationStatus | null>(null);
+  const [runtimeModelSelectionsByRuntime, setRuntimeModelSelectionsByRuntime] = useState<Partial<Record<AgentRuntime, NonNullable<RuntimeIntegrationStatus["modelSelection"]>>>>({});
   const [runtimeIntegrationBusy, setRuntimeIntegrationBusy] = useState("");
   const [runtimeIntegrationMessage, setRuntimeIntegrationMessage] = useState("");
   const [runtimeUpdateConfirmKey, setRuntimeUpdateConfirmKey] = useState<RuntimeIntegrationKey | "">("");
@@ -3735,6 +4053,8 @@ export default function Home() {
   const [runtimeSessionQuery, setRuntimeSessionQuery] = useState("");
   const [runtimeSessionResults, setRuntimeSessionResults] = useState<RuntimeSessionSearchResult[]>([]);
   const [runtimeBackgroundPrompt, setRuntimeBackgroundPrompt] = useState("");
+  const [runtimeModelSetupMode, setRuntimeModelSetupMode] = useState<"provider" | "model" | null>(null);
+  const [runtimeModelDraft, setRuntimeModelDraft] = useState({ provider: "", model: "", contextLength: "" });
   const [agentWorkerClassView, setAgentWorkerClassView] = useState<"presets" | "create">("presets");
   const [customWorkerDraft, setCustomWorkerDraft] = useState<WorkerClassDraft>(() => defaultWorkerClassDraft());
   const [customWorkerSkillSearch, setCustomWorkerSkillSearch] = useState("");
@@ -3782,9 +4102,12 @@ export default function Home() {
   const [quickAddMachineMenuOpen, setQuickAddMachineMenuOpen] = useState<Record<string, boolean>>({});
   const [kanbanCardMachineMenuOpen, setKanbanCardMachineMenuOpen] = useState<Record<string, boolean>>({});
   const [kanbanCardAttachmentMenuOpen, setKanbanCardAttachmentMenuOpen] = useState<Record<string, boolean>>({});
+  const [kanbanCardAttachmentListOpen, setKanbanCardAttachmentListOpen] = useState<Record<string, boolean>>({});
   const [kanbanCardAttachmentTargetId, setKanbanCardAttachmentTargetId] = useState("");
   const [quickAddAttachmentError, setQuickAddAttachmentError] = useState("");
   const [quickAddAttachmentMenuOpen, setQuickAddAttachmentMenuOpen] = useState(false);
+  const [kanbanCardRecentsExpanded, setKanbanCardRecentsExpanded] = useState<Record<string, boolean>>({});
+  const [machineDirectoryBrowser, setMachineDirectoryBrowser] = useState<MachineDirectoryBrowser | null>(null);
   const [kanbanBoardScrollState, setKanbanBoardScrollState] = useState({ canScrollLeft: false, canScrollRight: false });
   const [newBoardDraft, setNewBoardDraft] = useState({ slug: "", name: "" });
   const [commentDraft, setCommentDraft] = useState("");
@@ -3808,6 +4131,14 @@ export default function Home() {
   const [mirosharkExperimentEvent, setMirosharkExperimentEvent] = useState("A city health official issues a public warning and demands proof of food handling compliance.");
   const [mirosharkExperimentStatus, setMirosharkExperimentStatus] = useState("");
   const [mirosharkExperimentPending, setMirosharkExperimentPending] = useState("");
+  const [mirosharkAnalysisAgentId, setMirosharkAnalysisAgentId] = useState("");
+  const [mirosharkAnalysisPending, setMirosharkAnalysisPending] = useState<MiroSharkAnalysisMode | "">("");
+  const [mirosharkAnalysisStatus, setMirosharkAnalysisStatus] = useState("");
+  const [mirosharkAnalysisResult, setMirosharkAnalysisResult] = useState<{
+    message?: string;
+    notePath?: string;
+    intelligence?: MiroSharkIntelligence;
+  } | null>(null);
   const [mirosharkHelperPending, setMirosharkHelperPending] = useState<"ask" | "suggest" | "">("");
   const [mirosharkHelperStatus, setMirosharkHelperStatus] = useState("");
   const [activeView, setActiveView] = useState<DashboardView>("agents");
@@ -4057,6 +4388,7 @@ export default function Home() {
       && !Object.values(quickAddMachineMenuOpen).some(Boolean)
       && !Object.values(kanbanCardMachineMenuOpen).some(Boolean)
       && !Object.values(kanbanCardAttachmentMenuOpen).some(Boolean)
+      && !Object.values(kanbanCardAttachmentListOpen).some(Boolean)
     ) return;
     function closeAttachmentMenu(event: MouseEvent | TouchEvent) {
       const target = event.target;
@@ -4071,6 +4403,7 @@ export default function Home() {
       setQuickAddMachineMenuOpen({});
       setKanbanCardMachineMenuOpen({});
       setKanbanCardAttachmentMenuOpen({});
+      setKanbanCardAttachmentListOpen({});
       setKanbanSteerAttachmentMenuOpen(false);
     }
     function closeAttachmentMenuOnEscape(event: KeyboardEvent) {
@@ -4080,6 +4413,7 @@ export default function Home() {
         setQuickAddMachineMenuOpen({});
         setKanbanCardMachineMenuOpen({});
         setKanbanCardAttachmentMenuOpen({});
+        setKanbanCardAttachmentListOpen({});
         setKanbanSteerAttachmentMenuOpen(false);
       }
     }
@@ -4091,7 +4425,7 @@ export default function Home() {
       document.removeEventListener("touchstart", closeAttachmentMenu);
       document.removeEventListener("keydown", closeAttachmentMenuOnEscape);
     };
-  }, [attachmentMenuOpen, kanbanCardAttachmentMenuOpen, kanbanCardMachineMenuOpen, quickAddAttachmentMenuOpen, quickAddMachineMenuOpen, kanbanSteerAttachmentMenuOpen]);
+  }, [attachmentMenuOpen, kanbanCardAttachmentListOpen, kanbanCardAttachmentMenuOpen, kanbanCardMachineMenuOpen, quickAddAttachmentMenuOpen, quickAddMachineMenuOpen, kanbanSteerAttachmentMenuOpen]);
 
   useEffect(() => {
     if (!kanbanSteerTargetMenuOpen) return;
@@ -4368,8 +4702,12 @@ export default function Home() {
     await launchMirosharkSwarm();
   }
 
-  async function runMirosharkExperiment(action: "stop" | "inject" | "fork" | "branch" | "publish") {
-    if (!mirosharkRun?.simulationId) return;
+  async function runMirosharkExperiment(action: "stop" | "inject" | "fork" | "branch" | "publish", selectedSimulationId?: string) {
+    const simulationId = selectedSimulationId ?? mirosharkRun?.simulationId;
+    if (!simulationId) {
+      setMirosharkExperimentStatus("No simulation selected to publish.");
+      return;
+    }
     setMirosharkExperimentPending(action);
     setMirosharkExperimentStatus("");
     const response = await fetch("/api/miroshark/swarm", {
@@ -4377,7 +4715,7 @@ export default function Home() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         action,
-        simulationId: mirosharkRun.simulationId,
+        simulationId,
         event: mirosharkExperimentEvent,
       }),
     }).catch(() => null);
@@ -4389,6 +4727,108 @@ export default function Home() {
     }
     setMirosharkExperimentStatus(`${action} sent to MiroShark`);
     if (action === "stop" || action === "inject" || action === "publish") void refreshMirosharkRun();
+  }
+
+  async function analyzeMirosharkRun(run: SwarmRun, mode: MiroSharkAnalysisMode) {
+    const agent = displayAgents.find((item) => item.id === (mirosharkAnalysisAgentId || selectedAgent?.id)) ?? displayAgents[0];
+    setMirosharkAnalysisPending(mode);
+    setMirosharkAnalysisStatus(agent ? `Asking ${agent.name} for a ${mode.replace(/-/g, " ")} verdict...` : "");
+    setMirosharkAnalysisResult(null);
+    let agentVerdict = "";
+    if (agent) {
+      try {
+        const analysisPrompt = [
+          `You are ${agent.name}. Analyze this MiroShark simulation result for the "${mode.replace(/-/g, " ")}" view.`,
+          "Give a decision-useful verdict. Be specific about what the user should trust, what is weak, what to inspect next, and whether the simulation is ready to publish.",
+          "Keep the answer structured and concise: Verdict, Strongest signals, Weak spots, Recommended next action.",
+          "Simulation data:",
+          JSON.stringify({ run, market: swarmMarket, rawRun: mirosharkRun }, null, 2).slice(0, 24_000),
+        ].join("\n\n");
+        const agentResponse = await fetch("/api/chat/agent-runtime", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "X-Hivemind-Run-Type": "miroshark-analysis",
+          },
+          body: JSON.stringify({
+            agent,
+            sharedVault,
+            workingDirectory: appVersion?.appDir ?? agent.localDataDir ?? "",
+            wallet: walletsByAgent[agent.id] ?? createDefaultAgentWallet(agent.id),
+            honeyLedgerEnabled,
+            messages: [{ role: "user", content: analysisPrompt }],
+          }),
+        }).catch(() => null);
+        if (agentResponse?.ok && agentResponse.body) {
+          const reader = agentResponse.body.getReader();
+          const decoder = new TextDecoder();
+          let buffer = "";
+          while (true) {
+            const { value, done } = await reader.read();
+            if (done) break;
+            buffer += decoder.decode(value, { stream: true });
+            const events = buffer.split("\n\n");
+            buffer = events.pop() ?? "";
+            for (const eventText of events) {
+              const line = eventText.split("\n").find((entry) => entry.startsWith("data: "));
+              if (!line) continue;
+              const payload = line.slice(6);
+              if (payload === "[DONE]") continue;
+              const parsed = JSON.parse(payload) as { choices?: Array<{ delta?: { content?: string } }>; error?: string };
+              if (parsed.error) throw new Error(parsed.error);
+              agentVerdict += parsed.choices?.[0]?.delta?.content ?? "";
+            }
+          }
+        } else if (agentResponse) {
+          const data = await agentResponse.json().catch(() => ({}));
+          setMirosharkAnalysisStatus(
+            typeof data.error === "string"
+              ? `${agent.name} could not run (${data.error}). Saving the local intelligence packet instead.`
+              : `Could not run ${agent.name}. Saving the local intelligence packet instead.`,
+          );
+        }
+      } catch (error) {
+        setMirosharkAnalysisStatus(
+          `${agent.name} could not finish analysis (${error instanceof Error ? error.message : "runtime error"}). Saving the local intelligence packet instead.`,
+        );
+      }
+    }
+    const response = await fetch("/api/miroshark/analysis", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        vaultPath: sharedVault.vaultPath.trim() || undefined,
+        mode,
+        run,
+        rawRun: mirosharkRun,
+        market: swarmMarket,
+        agent: agent ? {
+          id: agent.id,
+          name: agent.name,
+          runtime: agent.runtime,
+        } : undefined,
+        agentVerdict: agentVerdict.trim() || undefined,
+      }),
+    }).catch(() => null);
+    const data = await response?.json().catch(() => null) as {
+      ok?: boolean;
+      message?: string;
+      notePath?: string;
+      intelligence?: MiroSharkIntelligence;
+      error?: string;
+    } | null;
+    setMirosharkAnalysisPending("");
+    if (!data?.ok) {
+      setMirosharkAnalysisStatus(data?.error ?? "Could not save MiroShark analysis.");
+      return;
+    }
+    setMirosharkAnalysisResult({
+      message: data.message,
+      notePath: data.notePath,
+      intelligence: data.intelligence,
+    });
+    setMirosharkAnalysisStatus(data.message ?? "Saved analysis to Obsidian.");
+    void refreshMirosharkArchive();
   }
 
   const refreshMirosharkArchive = useCallback(async () => {
@@ -4447,6 +4887,98 @@ export default function Home() {
       ? `Loaded first ${noteCount} notes, ${data.graph.nodes.length} cells, and ${data.graph.links.length} links.`
       : `Loaded ${noteCount} notes, ${data.graph.nodes.length} cells, and ${data.graph.links.length} links.`);
   }, [brainGraph, sharedVault.enabled, sharedVault.vaultPath]);
+
+  const refreshRecentDirectories = useCallback(async () => {
+    if (!sharedVault.enabled) {
+      setRecentDirectories([]);
+      return;
+    }
+    const params = new URLSearchParams();
+    if (sharedVault.vaultPath.trim()) params.set("vaultPath", sharedVault.vaultPath.trim());
+    const response = await fetch(`/api/obsidian/recent-directories?${params.toString()}`).catch(() => null);
+    const data = await response?.json().catch(() => null) as { ok?: boolean; directories?: RecentDirectory[] } | null;
+    if (response?.ok && data?.ok && Array.isArray(data.directories)) setRecentDirectories(data.directories);
+  }, [sharedVault.enabled, sharedVault.vaultPath]);
+
+  const recordRecentDirectory = useCallback(async (
+    directory: LinkedDirectory,
+    context: { machineName?: string; machineKey?: string; source?: RecentDirectory["source"] } = {},
+  ) => {
+    if (!sharedVault.enabled || !directory.name.trim()) return;
+    const response = await fetch("/api/obsidian/recent-directories", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        vaultPath: sharedVault.vaultPath.trim() || undefined,
+        directory,
+        machineName: context.machineName,
+        machineKey: context.machineKey,
+        source: context.source,
+      }),
+    }).catch(() => null);
+    const data = await response?.json().catch(() => null) as { ok?: boolean; directories?: RecentDirectory[] } | null;
+    if (response?.ok && data?.ok && Array.isArray(data.directories)) setRecentDirectories(data.directories);
+  }, [sharedVault.enabled, sharedVault.vaultPath]);
+
+  const loadMachineDirectories = useCallback(async (
+    machine: KanbanMachineTarget,
+    path = "~",
+    onChoose?: (directory: LinkedDirectory) => void,
+  ) => {
+    setMachineDirectoryBrowser((current) => ({
+      open: true,
+      machine,
+      path,
+      parentPath: current?.machine.key === machine.key ? current.parentPath : "",
+      directories: current?.machine.key === machine.key ? current.directories : [],
+      selectedDirectory: null,
+      loading: true,
+      error: "",
+      onChoose,
+    }));
+    const params = new URLSearchParams({ path });
+    if (machine.collectorUrl) params.set("collectorUrl", machine.collectorUrl);
+    const response = await fetch(`/api/machines/directories?${params.toString()}`).catch(() => null);
+    const data = await response?.json().catch(() => null) as {
+      ok?: boolean;
+      path?: string;
+      parentPath?: string;
+      directories?: MachineDirectoryEntry[];
+      error?: string;
+    } | null;
+    setMachineDirectoryBrowser((current) => {
+      if (!current || current.machine.key !== machine.key) return current;
+      if (!response?.ok || !data?.ok) {
+        return { ...current, loading: false, error: data?.error ?? "Could not list directories." };
+      }
+      return {
+        ...current,
+        path: data.path ?? path,
+        parentPath: data.parentPath,
+        directories: Array.isArray(data.directories) ? data.directories : [],
+        selectedDirectory: null,
+        loading: false,
+        error: "",
+        onChoose,
+      };
+    });
+  }, []);
+
+  async function chooseDirectoryForMachine(
+    machine: KanbanMachineTarget | null,
+    onChoose: (directory: LinkedDirectory) => void,
+  ) {
+    if (!machine) return;
+    const isLocalMachine = machine.name === "This Mac"
+      || isLoopbackCollector(machine.collectorUrl)
+      || (localKanbanMachineTarget?.key === machine.key);
+    if (isLocalMachine) {
+      const directory = await pickLinkedDirectory();
+      if (directory) onChoose({ ...directory, machineName: machine.name, machineKey: machine.key });
+      return;
+    }
+    await loadMachineDirectories(machine, "~", onChoose);
+  }
 
   const refreshHermesUpdateRequirement = useCallback(async () => {
     const hermesAgent = agents.find((agent) => agent.runtime === "hermes");
@@ -4959,9 +5491,12 @@ export default function Home() {
       };
     })
   ), [swarmAgents, swarmThreadPosts]);
+  const mirosharkMarketPricePayloads = useMemo(() => (
+    Array.isArray(mirosharkRun?.marketPrices) ? mirosharkRun.marketPrices : []
+  ), [mirosharkRun?.marketPrices]);
   const swarmMarket = useMemo<SwarmMarket>(() => (
-    swarmMarketFromItems(mirosharkMarketItems, swarmTimelineItems)
-  ), [mirosharkMarketItems, swarmTimelineItems]);
+    swarmMarketFromItems(mirosharkMarketItems, swarmTimelineItems, mirosharkMarketPricePayloads)
+  ), [mirosharkMarketItems, mirosharkMarketPricePayloads, swarmTimelineItems]);
   const swarmIntegrationItems = useMemo(() => {
     const sections: Array<[string, unknown]> = [
       ["Run detail", mirosharkRun?.runStatusDetail],
@@ -4982,7 +5517,17 @@ export default function Home() {
       ["MCP", mirosharkMetadata?.mcpStatus],
       ["Push", mirosharkMetadata?.pushVapidKey],
     ];
-    return sections.map(([title, payload], index) => ({
+    const surfaceStats = mirosharkRun?.surfaceStats;
+    if (isUnpublishedSimulationPayload(surfaceStats)) {
+      return [{
+        id: "miroshark-integration-draft",
+        title: "Review mode",
+        body: "The generated posts are ready to inspect. Publish this simulation when you want to make reports, embeds, gallery, and stats available.",
+        meta: "Not published yet",
+        level: "warn" as const,
+      }];
+    }
+    return sections.filter(([, payload]) => !isEmptyIntegrationPayload(payload)).map(([title, payload], index) => ({
       id: `miroshark-integration-${index}`,
       title,
       body: payloadPreview(payload, 3).map(([key, value]) => `${key}: ${value}`).join(" · ") || compactValue(payload),
@@ -5010,8 +5555,8 @@ export default function Home() {
     mirosharkRun?.webhookLog,
   ]);
   const swarmMarketPriceItems = useMemo(() => (
-    (Array.isArray(mirosharkRun?.marketPrices) ? mirosharkRun.marketPrices : []).map(swarmMarketPriceEventItem)
-  ), [mirosharkRun?.marketPrices]);
+    mirosharkMarketPricePayloads.map(swarmMarketPriceEventItem)
+  ), [mirosharkMarketPricePayloads]);
   const swarmExportLinks = useMemo(() => (
     Object.entries(mirosharkRun?.links ?? {})
       .filter(([key]) => /shareCard|replayGif|transcript|trajectory|chartSvg|threadTxt|threadJson|reproduceJson|notebook|embedSummary|webhookLog|dkgCitation|report|export/.test(key))
@@ -5138,6 +5683,14 @@ export default function Home() {
       window.clearTimeout(skillsTimer);
     };
   }, [activeView, hydrated, refreshBrainGraph, refreshBrainSkills]);
+
+  useEffect(() => {
+    if (!hydrated || !sharedVault.enabled) return;
+    const timer = window.setTimeout(() => {
+      void refreshRecentDirectories();
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, [hydrated, refreshRecentDirectories, sharedVault.enabled]);
 
   useEffect(() => {
     if (!hydrated || activeView !== "scheduler" || brainSkills || brainSkillsLoading) return;
@@ -5383,7 +5936,7 @@ export default function Home() {
           source: "dashboard-chat",
         }
         : null;
-      const work = [...agentTasks, ...observedTasks, ...(transcriptTask && agentTasks.length === 0 ? [transcriptTask] : [])]
+      const work = [...agentTasks, ...observedTasks, ...(transcriptTask && agentTasks.length === 0 && observedTasks.length === 0 ? [transcriptTask] : [])]
         .filter((task, index, list) => list.findIndex((item) => item.id === task.id) === index)
         .sort((a, b) => workPriority(b) - workPriority(a) || b.updatedAt - a.updatedAt);
       return [agent.id, work];
@@ -5411,6 +5964,16 @@ export default function Home() {
     () => displayAgents.find((agent) => agent.id === effectiveSelectedAgentId) ?? displayAgents[0],
     [displayAgents, effectiveSelectedAgentId],
   );
+
+  useEffect(() => {
+    if (!hydrated || activeView !== "swarm") return;
+    const agentId = mirosharkAnalysisAgentId || selectedAgent?.id;
+    const agent = displayAgents.find((item) => item.id === agentId) ?? selectedAgent;
+    if (!agent || !runtimeCan(agent, "modelSelection")) return;
+    if (runtimeModelSelectionsByRuntime[agent.runtime]) return;
+    void refreshRuntimeIntegrations(agent);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeView, displayAgents, hydrated, mirosharkAnalysisAgentId, selectedAgent?.id, runtimeModelSelectionsByRuntime]);
 
   const sharedSkillOptions = useMemo(() => {
     const deduped = new Map<string, { slug: string; name: string; description: string }>();
@@ -5562,10 +6125,10 @@ export default function Home() {
       self: device.self,
       collector: (discovered?.collector ?? "unknown") as MachineGroup["collector"],
       agents: [] as AgentProfile[],
-      version: discovered?.version,
-      capabilities: discovered?.capabilities,
-      envSync: discovered?.envSync,
-      };
+	      version: discovered?.version,
+	      capabilities: discovered?.capabilities,
+	      envSync: discovered?.envSync,
+	      };
     });
     discoveredMachines.forEach((machine) => {
       const key = collectorKey(machine.device.collectorUrl);
@@ -5594,9 +6157,9 @@ export default function Home() {
         self: machine.device.self,
         collector: machine.collector,
         agents: [],
-        version: machine.version,
-        capabilities: machine.capabilities,
-        envSync: machine.envSync,
+	        version: machine.version,
+	        capabilities: machine.capabilities,
+	        envSync: machine.envSync,
       });
     });
     const dedupeMachineGroups = (items: MachineGroup[]) => {
@@ -5661,6 +6224,17 @@ export default function Home() {
       collectorUrl: machine.collectorUrl,
     })), [machineGroups]);
 
+  const localKanbanMachineTarget = useMemo(
+    () => kanbanMachineTargets.find((machine) => machine.name === "This Mac" || isLoopbackCollector(machine.collectorUrl)) ?? null,
+    [kanbanMachineTargets],
+  );
+
+  const quickAddMachineTarget = useCallback((status: KanbanStatus) => (
+    Object.prototype.hasOwnProperty.call(quickAddMachineTargets, status)
+      ? quickAddMachineTargets[status] ?? null
+      : localKanbanMachineTarget
+  ), [localKanbanMachineTarget, quickAddMachineTargets]);
+
   const agentsForKanbanTask = useCallback((task: KanbanTask) => {
     const target = task.targetMachine;
     if (!target?.key) return displayAgents;
@@ -5697,10 +6271,10 @@ export default function Home() {
         location: location.location,
         city: location.city,
         lat: location.lat,
-        lon: location.lon,
-        uptime: machine.online ? "online" : "offline",
-        networkIssue: machineNetworkIssue(machine, tailscaleStatus),
-        agents: machine.agents.map((agent) => {
+	        lon: location.lon,
+	        uptime: machine.online ? "online" : "offline",
+	        networkIssue: machineNetworkIssue(machine, tailscaleStatus),
+	        agents: machine.agents.map((agent) => {
           const agentWork = agentWorkById[agent.id] ?? [];
           const activeCount = agentWork.filter(isMeaningfulActive).length;
           const snapshot = fleetSnapshots[agent.id];
@@ -5801,6 +6375,13 @@ export default function Home() {
       ticker: ticker.length ? ticker : ["Fleet telemetry is connected · waiting for agent activity"],
     };
   }, [agentWorkById, displayAgents, fleetSnapshots, machineGroups, notifications, tailscaleStatus, walletsByAgent]);
+
+  const fleetUpdateStatusByMachine = useMemo<Record<string, "updating" | "updated" | "failed">>(() => {
+    return Object.fromEntries(Object.entries(updateStatusByMachine).map(([key, status]) => [
+      key,
+      status.tone === "working" ? "updating" : status.tone === "success" ? "updated" : "failed",
+    ]));
+  }, [updateStatusByMachine]);
 
   const kanbanColumns = useMemo(
     () => groupKanbanTasks(kanbanBoard?.tasks ?? [], kanbanIncludeArchived),
@@ -6037,10 +6618,19 @@ export default function Home() {
     [agentRoleModalId, displayAgents],
   );
   useEffect(() => {
-    if (!roleModalAgent || agentSettingsPanel !== "tools") return;
-    void refreshRuntimeIntegrations(roleModalAgent);
+    if (agentSettingsPanel !== "role" && agentSettingsPanel !== "tools") return;
+    const draftAgent = agentCreateMachine
+      ? createAgentProfile(agentCreateDraft.runtime, runtimeCount(agents, agentCreateDraft.runtime) + 1)
+      : roleModalAgent;
+    if (!draftAgent || !runtimeCan(draftAgent, "modelSelection") && agentSettingsPanel !== "tools") return;
+    void refreshRuntimeIntegrations({
+      ...draftAgent,
+      provider: agentCreateMachine ? agentCreateDraft.provider : draftAgent.provider,
+      model: agentCreateMachine ? agentCreateDraft.model : draftAgent.model,
+      telemetryUrl: agentCreateMachine?.collectorUrl ?? draftAgent.telemetryUrl,
+    });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [agentSettingsPanel, roleModalAgent?.id, roleModalAgent?.runtime]);
+  }, [agentSettingsPanel, roleModalAgent?.id, roleModalAgent?.runtime, agentCreateMachineKey, agentCreateDraft.runtime]);
   const agentCreateMachine = useMemo(
     () => machineGroups.find((machine) => machine.key === agentCreateMachineKey) ?? null,
     [agentCreateMachineKey, machineGroups],
@@ -6114,6 +6704,8 @@ export default function Home() {
     setRuntimeSessionQuery("");
     setRuntimeSessionResults([]);
     setRuntimeBackgroundPrompt("");
+    setRuntimeModelSetupMode(null);
+    setRuntimeModelDraft({ provider: "", model: "", contextLength: "" });
     setAgentWorkerClassView("presets");
     setCustomWorkerDraft(defaultWorkerClassDraft());
     setCustomWorkerSkillSearch("");
@@ -6123,6 +6715,8 @@ export default function Home() {
     setAgentCreateDraft({
       name,
       runtime,
+      provider: runtime === "hermes" ? "openai-codex" : "",
+      model: "",
       workerClass: "general",
       customWorkerClass: undefined,
       customWorkerClasses: [],
@@ -6143,6 +6737,8 @@ export default function Home() {
     setAgentRuntimeFolderBrowsing(false);
     setAgentRuntimeFolderStatus("");
     setAgentRuntimeAdvancedOpen(false);
+    setRuntimeModelSetupMode(null);
+    setRuntimeModelDraft({ provider: "", model: "", contextLength: "" });
     setAgentWorkerClassView("presets");
     setCustomWorkerDraft(defaultWorkerClassDraft());
     setCustomWorkerSkillSearch("");
@@ -6191,19 +6787,26 @@ export default function Home() {
       return;
     }
     setRuntimeIntegrationStatus(data.status);
+    if (data.status.modelSelection) {
+      setRuntimeModelSelectionsByRuntime((current) => ({
+        ...current,
+        [data.status!.runtime]: data.status!.modelSelection,
+      }));
+    }
     if (data.status.runtime === "hermes") {
       setHermesUpdateRequiredDetail(hermesUpdateDetail(data.status));
     }
   }
 
-  async function runRuntimeIntegrationAction(action: string, input: Record<string, unknown> = {}) {
-    if (!roleModalAgent) return;
+  async function runRuntimeIntegrationAction(action: string, input: Record<string, unknown> = {}, agentOverride?: AgentProfile) {
+    const targetAgent = agentOverride ?? roleModalAgent;
+    if (!targetAgent) return;
     setRuntimeIntegrationBusy(action);
     setRuntimeIntegrationMessage("");
-    const response = await fetch(`/api/runtimes/${roleModalAgent.runtime}/integrations`, {
+    const response = await fetch(`/api/runtimes/${targetAgent.runtime}/integrations`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ agent: roleModalAgent, action, input }),
+      body: JSON.stringify({ agent: targetAgent, action, input }),
     }).catch(() => null);
     const data = await response?.json().catch(() => null) as { ok?: boolean; message?: string; error?: string; logPath?: string; output?: string } | null;
     setRuntimeIntegrationBusy("");
@@ -6212,7 +6815,7 @@ export default function Home() {
       return;
     }
     setRuntimeIntegrationMessage(data.message ?? data.output ?? "Runtime action completed.");
-    await refreshRuntimeIntegrations(roleModalAgent);
+    await refreshRuntimeIntegrations(targetAgent);
   }
 
   async function searchRuntimeSessionsForAgent() {
@@ -6239,6 +6842,8 @@ export default function Home() {
       telemetryUrl: agentCreateMachine.collectorUrl,
       machineName: agentCreateMachine.name,
       agentId: runtime === "hermes" ? "local-hermes" : runtime === "openclaw" ? "main" : "",
+      provider: agentCreateDraft.provider,
+      model: agentCreateDraft.model,
       localDataDir: runtime === "hermes" ? "~/.hermes" : "",
       beeRole: "worker",
       workerClass: agentCreateDraft.workerClass,
@@ -7915,6 +8520,22 @@ export default function Home() {
     }
   }, [displayAgents, machineGroups]);
 
+  const startAgentWorkChat = useCallback((agentId: string, displayedTask?: string) => {
+    const agentWork = agentWorkById[agentId] ?? [];
+    const match = findRosterChatTask(agentWork, displayedTask);
+    if (!match) {
+      startAgentChat(agentId);
+      return;
+    }
+    const { task, index: taskIndex } = match;
+    startAgentChat(agentId, {
+      messageLimit: 5,
+      seedMessages: chatSeedMessagesForTask(task),
+      chatLeafKey: taskChatLeafKey(agentId, task, taskIndex),
+      workingDirectoryPath: task.workingDirectory,
+    });
+  }, [agentWorkById, startAgentChat]);
+
   function openChatFolderCreator(machine: MachineGroup) {
     const chatAgents = machine.agents.filter((agent) => runtimeCan(agent, "chat"));
     const defaultPath = machine.version?.appDir
@@ -8023,13 +8644,8 @@ export default function Home() {
 
         for (const [taskIndex, task] of agentWork.entries()) {
           if (task.source === "dashboard-chat" && hasDirectConversation) continue;
-          const seedMessages = task.messages?.some((message) => message.content.trim())
-            ? task.messages
-            : [
-              { role: "system" as const, content: `Resuming ${task.title || "previous chat"} from recent collector metadata.` },
-              { role: "assistant" as const, content: task.lastMessage || task.title || "Recent chat metadata is available, but the full transcript was not cached locally." },
-            ];
-          const taskChatKey = `task-${agent.id}-${task.id}-${task.source ?? "unknown"}-${task.updatedAt || task.startedAt || taskIndex}`;
+          const seedMessages = chatSeedMessagesForTask(task);
+          const taskChatKey = taskChatLeafKey(agent.id, task, taskIndex);
           const taskWorkingDirectory = task.workingDirectory;
           const taskFolder = taskWorkingDirectory
             ? ensureFolder(workspaceLabelFromPath(taskWorkingDirectory), () => startAgentChat(agent.id, {
@@ -8268,6 +8884,7 @@ export default function Home() {
         ip: machine.ip || machine.address,
         appDir: machine.version?.appDir,
         updateCommand: machine.version?.updateCommand,
+        expectedCommit: machine.version?.latestCommit || appVersion?.latestCommit,
         requiredCapabilities: {
           chat: needsChatBridgeRepair || undefined,
         },
@@ -8280,18 +8897,19 @@ export default function Home() {
       verified?: boolean;
       fallbackCommand?: string;
     } | null;
-    const detail = data?.ok
+    const verified = Boolean(data?.ok && data.verified);
+    const detail = verified
       ? "The update command finished. The machine pulled the latest changes, installed dependencies, and restarted the collector."
       : [data?.error ?? "Update failed", data?.fallbackCommand ? `Fallback script:\n${data.fallbackCommand}` : ""].filter(Boolean).join("\n\n");
     setUpdateStatusByMachine((current) => ({
       ...current,
       [machine.key]: {
-        label: data?.ok ? "Updated!" : "Update failed",
+        label: verified ? "Updated!" : "Update failed",
         detail,
-        tone: data?.ok ? "success" : "error",
+        tone: verified ? "success" : "error",
       },
     }));
-    if (data?.ok) {
+    if (verified) {
       void refreshAppVersionNow();
       void refreshDiscoveryNow();
     }
@@ -8580,10 +9198,10 @@ export default function Home() {
     const title = quickAddDrafts[status]?.trim();
     const attachments = quickAddAttachments[status] ?? [];
     const directories = quickAddDirectories[status] ?? [];
-    const targetMachine = quickAddMachineTargets[status] ?? null;
+    const targetMachine = quickAddMachineTarget(status);
     if (!title && attachments.length === 0 && directories.length === 0) return;
     const body = [
-      directories.length ? ["Linked directories:", ...directories.map((directory) => `- ${directory.name}`)].join("\n") : "",
+      directories.length ? ["Linked directories:", ...directories.map((directory) => `- ${linkedDirectoryLabel(directory)}`)].join("\n") : "",
       attachments.length ? [
         "Attached context:",
         ...attachments.map((attachment) => `- ${attachment.kind}: ${attachment.name} (${attachment.mimeType || "unknown"}, ${attachmentSizeLabel(attachment.size)})`),
@@ -8610,6 +9228,13 @@ export default function Home() {
       setKanbanError(data?.error ?? "Could not create task.");
       return;
     }
+    directories.forEach((directory) => {
+      void recordRecentDirectory(directory, {
+        machineName: targetMachine?.name,
+        machineKey: targetMachine?.key,
+        source: "kanban",
+      });
+    });
     setQuickAddDrafts((current) => ({ ...current, [status]: "" }));
     setQuickAddAttachments((current) => ({ ...current, [status]: [] }));
     setQuickAddDirectories((current) => ({ ...current, [status]: [] }));
@@ -8756,15 +9381,46 @@ export default function Home() {
 
   async function attachKanbanCardDirectory(task: KanbanTask) {
     try {
-      const directory = await pickLinkedDirectory();
-      if (!directory) return;
-      setKanbanCardAttachmentMenuOpen((current) => ({ ...current, [task.id]: false }));
-      await patchKanbanTask(task.id, {
-        linkedDirectories: [...(task.linkedDirectories ?? []), directory],
+      if (!task.targetMachine) return;
+      await chooseDirectoryForMachine(task.targetMachine, (directory) => {
+        setKanbanCardAttachmentMenuOpen((current) => ({ ...current, [task.id]: false }));
+        void patchKanbanTask(task.id, {
+          linkedDirectories: [...(task.linkedDirectories ?? []), directory],
+        });
+        void recordRecentDirectory(directory, {
+          machineName: task.targetMachine?.name,
+          machineKey: task.targetMachine?.key,
+          source: "kanban",
+        });
       });
     } catch (error) {
       setKanbanError(error instanceof Error ? error.message : "Could not link that directory.");
     }
+  }
+
+  async function attachKanbanCardRecentDirectory(task: KanbanTask, directory: LinkedDirectory) {
+    setKanbanCardAttachmentMenuOpen((current) => ({ ...current, [task.id]: false }));
+    setKanbanCardRecentsExpanded((current) => ({ ...current, [task.id]: false }));
+    await patchKanbanTask(task.id, {
+      linkedDirectories: [...(task.linkedDirectories ?? []), directory],
+    });
+    void recordRecentDirectory(directory, {
+      machineName: task.targetMachine?.name ?? directory.machineName,
+      machineKey: task.targetMachine?.key ?? directory.machineKey,
+      source: "recent",
+    });
+  }
+
+  async function removeKanbanCardAttachment(task: KanbanTask, attachmentId: string) {
+    await patchKanbanTask(task.id, {
+      attachments: (task.attachments ?? []).filter((attachment) => attachment.id !== attachmentId),
+    });
+  }
+
+  async function removeKanbanCardDirectory(task: KanbanTask, directoryId: string) {
+    await patchKanbanTask(task.id, {
+      linkedDirectories: (task.linkedDirectories ?? []).filter((directory) => directory.id !== directoryId),
+    });
   }
 
   async function moveKanbanTask(taskId: string, status: KanbanStatus) {
@@ -10238,7 +10894,13 @@ export default function Home() {
   ]);
 
   useEffect(() => {
-    if (!hydrated || !sharedVault.enabled || !sharedVault.tailnetSyncEnabled || !sharedVault.vaultPath.trim()) return;
+    if (
+      !hydrated
+      || !sharedVault.enabled
+      || sharedVault.syncProvider !== "syncthing"
+      || !sharedVault.syncthingAutoPairEnabled
+      || !sharedVault.vaultPath.trim()
+    ) return;
     const candidates = discoveredMachines.filter((machine) => (
       machine.collector === "ready"
       && machine.device.online
@@ -10281,8 +10943,9 @@ export default function Home() {
     hydrated,
     pairSyncthingCollector,
     sharedVault.enabled,
-    sharedVault.tailnetSyncEnabled,
+    sharedVault.syncthingAutoPairEnabled,
     sharedVault.tailnetSyncPath,
+    sharedVault.syncProvider,
     sharedVault.vaultPath,
   ]);
 
@@ -10415,6 +11078,43 @@ export default function Home() {
     setChatAttachments((current) => current.filter((attachment) => attachment.id !== id));
   }
 
+  async function attachChatDirectory() {
+    try {
+      const machine = selectedAgent
+        ? machineGroups.find((group) => group.agents.some((agent) => agent.id === selectedAgent.id))
+        : null;
+      const target = machine ? { key: machine.key, name: machine.self ? "This Mac" : machine.name, collectorUrl: machine.collectorUrl } : localKanbanMachineTarget;
+      await chooseDirectoryForMachine(target, (directory) => {
+        setChatDirectories((current) => [...current, directory]);
+        setAttachmentError("");
+        setAttachmentMenuOpen(false);
+        void recordRecentDirectory(directory, {
+          machineName: target?.name ?? selectedAgent?.machineName,
+          machineKey: target?.key ?? (selectedAgent ? collectorKey(selectedAgent.telemetryUrl) || selectedAgent.id : undefined),
+          source: "chat",
+        });
+      });
+    } catch (error) {
+      setAttachmentError(error instanceof Error ? error.message : "Could not link that directory.");
+    }
+  }
+
+  function attachChatRecentDirectory(directory: LinkedDirectory) {
+    setChatDirectories((current) => [...current, directory]);
+    setAttachmentError("");
+    setAttachmentMenuOpen(false);
+    setRecentDirectoriesExpanded(false);
+    void recordRecentDirectory(directory, {
+      machineName: selectedAgent?.machineName ?? directory.machineName,
+      machineKey: selectedAgent ? collectorKey(selectedAgent.telemetryUrl) || selectedAgent.id : directory.machineKey,
+      source: "recent",
+    });
+  }
+
+  function removeChatDirectory(id: string) {
+    setChatDirectories((current) => current.filter((directory) => directory.id !== id));
+  }
+
   async function addQuickAddFiles(status: KanbanStatus, files: FileList | File[], kind: "image" | "file") {
     try {
       const next = await readComposerFiles(files, kind);
@@ -10445,17 +11145,39 @@ export default function Home() {
 
   async function attachQuickAddDirectory(status: KanbanStatus) {
     try {
-      const directory = await pickLinkedDirectory();
-      if (!directory) return;
-      setQuickAddDirectories((current) => ({
-        ...current,
-        [status]: [...(current[status] ?? []), directory],
-      }));
-      setQuickAddAttachmentError("");
-      setQuickAddAttachmentMenuOpen(false);
+      const targetMachine = quickAddMachineTarget(status);
+      await chooseDirectoryForMachine(targetMachine, (directory) => {
+        setQuickAddDirectories((current) => ({
+          ...current,
+          [status]: [...(current[status] ?? []), directory],
+        }));
+        setQuickAddAttachmentError("");
+        setQuickAddAttachmentMenuOpen(false);
+        void recordRecentDirectory(directory, {
+          machineName: targetMachine?.name,
+          machineKey: targetMachine?.key,
+          source: "kanban",
+        });
+      });
     } catch (error) {
       setQuickAddAttachmentError(error instanceof Error ? error.message : "Could not link that directory.");
     }
+  }
+
+  function attachQuickAddRecentDirectory(status: KanbanStatus, directory: LinkedDirectory) {
+    setQuickAddDirectories((current) => ({
+      ...current,
+      [status]: [...(current[status] ?? []), directory],
+    }));
+    setQuickAddAttachmentError("");
+    setQuickAddAttachmentMenuOpen(false);
+    setRecentDirectoriesExpanded(false);
+    const targetMachine = quickAddMachineTargets[status] ?? null;
+    void recordRecentDirectory(directory, {
+      machineName: targetMachine?.name ?? directory.machineName,
+      machineKey: targetMachine?.key ?? directory.machineKey,
+      source: "recent",
+    });
   }
 
   function removeQuickAddDirectory(status: KanbanStatus, id: string) {
@@ -10489,14 +11211,36 @@ export default function Home() {
 
   async function attachKanbanSteerDirectory() {
     try {
-      const directory = await pickLinkedDirectory();
-      if (!directory) return;
-      setKanbanSteerDirectories((current) => [...current, directory]);
-      setKanbanSteerAttachmentError("");
-      setKanbanSteerAttachmentMenuOpen(false);
+      const agentMachine = selectedKanbanAgent
+        ? machineGroups.find((group) => group.agents.some((agent) => agent.id === selectedKanbanAgent.id))
+        : null;
+      const target = selectedKanbanTask?.targetMachine
+        ?? (agentMachine ? { key: agentMachine.key, name: agentMachine.self ? "This Mac" : agentMachine.name, collectorUrl: agentMachine.collectorUrl } : localKanbanMachineTarget);
+      await chooseDirectoryForMachine(target, (directory) => {
+        setKanbanSteerDirectories((current) => [...current, directory]);
+        setKanbanSteerAttachmentError("");
+        setKanbanSteerAttachmentMenuOpen(false);
+        void recordRecentDirectory(directory, {
+          machineName: target?.name ?? selectedKanbanAgent?.machineName,
+          machineKey: target?.key ?? (selectedKanbanAgent ? collectorKey(selectedKanbanAgent.telemetryUrl) || selectedKanbanAgent.id : undefined),
+          source: "kanban",
+        });
+      });
     } catch (error) {
       setKanbanSteerAttachmentError(error instanceof Error ? error.message : "Could not link that directory.");
     }
+  }
+
+  function attachKanbanSteerRecentDirectory(directory: LinkedDirectory) {
+    setKanbanSteerDirectories((current) => [...current, directory]);
+    setKanbanSteerAttachmentError("");
+    setKanbanSteerAttachmentMenuOpen(false);
+    setRecentDirectoriesExpanded(false);
+    void recordRecentDirectory(directory, {
+      machineName: selectedKanbanTask?.targetMachine?.name ?? selectedKanbanAgent?.machineName ?? directory.machineName,
+      machineKey: selectedKanbanTask?.targetMachine?.key ?? (selectedKanbanAgent ? collectorKey(selectedKanbanAgent.telemetryUrl) || selectedKanbanAgent.id : directory.machineKey),
+      source: "recent",
+    });
   }
 
   function removeKanbanSteerDirectory(id: string) {
@@ -10635,8 +11379,12 @@ export default function Home() {
     }
     const prompt = text.trim();
     const outgoingAttachments = chatAttachments;
-    if (!selectedAgent || busy || (!prompt && outgoingAttachments.length === 0)) return;
-    const outgoingLabel = prompt || attachmentSummary(outgoingAttachments) || "Media message";
+    const outgoingDirectories = chatDirectories;
+    if (!selectedAgent || busy || (!prompt && outgoingAttachments.length === 0 && outgoingDirectories.length === 0)) return;
+    const outgoingDirectorySummary = outgoingDirectories.length
+      ? `Linked directories:\n${outgoingDirectories.map((directory) => `- ${linkedDirectoryLabel(directory)}`).join("\n")}`
+      : "";
+    const outgoingLabel = prompt || attachmentSummary(outgoingAttachments) || (outgoingDirectories.length ? `Linked ${outgoingDirectories.length} director${outgoingDirectories.length === 1 ? "y" : "ies"}` : "Media message");
     const setupIssue = chatSetupIssue(selectedAgent);
     if (setupIssue) {
       appendMessage(selectedAgent.id, { role: "user", content: outgoingLabel, attachments: outgoingAttachments, surface: "chat" });
@@ -10650,6 +11398,7 @@ export default function Home() {
     setSelectedChatPreview(null);
     setText("");
     setChatAttachments([]);
+    setChatDirectories([]);
     setAttachmentError("");
     setAttachmentMenuOpen(false);
     const taskId = `${selectedAgent.id}-${Date.now()}`;
@@ -10661,7 +11410,7 @@ export default function Home() {
         && (message.content.trim() || message.attachments?.length)
       ))
       .slice(-5);
-    const outgoingContent = messageContentParts(prompt, outgoingAttachments);
+    const outgoingContent = messageContentParts([prompt, outgoingDirectorySummary].filter(Boolean).join("\n\n"), outgoingAttachments);
     upsertTask({
       id: taskId,
       agentId: selectedAgent.id,
@@ -10780,6 +11529,43 @@ export default function Home() {
   const agentSettingsPreferredSkills = agentCreateMachine
     ? agentCreateDraft.preferredSkillSlugs
     : roleModalAgent?.preferredSkillSlugs ?? agentSettingsWorkerPreset.skillSlugs;
+  const agentSettingsRuntime = agentCreateMachine ? agentCreateDraft.runtime : roleModalAgent?.runtime ?? "hermes";
+  const agentSettingsProvider = agentCreateMachine ? agentCreateDraft.provider ?? "" : roleModalAgent?.provider ?? "";
+  const agentSettingsModel = agentCreateMachine ? agentCreateDraft.model ?? "" : roleModalAgent?.model ?? "";
+  const runtimeModelSelection = runtimeIntegrationStatus?.runtime === agentSettingsRuntime ? runtimeIntegrationStatus.modelSelection : undefined;
+  const runtimeModelProviders = runtimeModelSelection?.providers ?? [];
+  const selectedRuntimeProvider = runtimeModelProviders.find((provider) => provider.slug === agentSettingsProvider)
+    ?? runtimeModelProviders.find((provider) => provider.slug === runtimeModelSelection?.provider)
+    ?? runtimeModelProviders[0];
+  const selectedRuntimeModels = selectedRuntimeProvider?.models ?? [];
+  const selectedRuntimeModelId = agentSettingsModel || runtimeModelSelection?.model || selectedRuntimeModels[0]?.id || "";
+  const selectedRuntimeModel = selectedRuntimeModels.find((model) => model.id === selectedRuntimeModelId);
+  const updateAgentRuntimeModel = (provider: string, model: string) => {
+    const patch = { provider, model };
+    if (agentCreateMachine) setAgentCreateDraft((current) => ({ ...current, ...patch }));
+    else if (roleModalAgent) updateAgentProfile(roleModalAgent.id, patch);
+  };
+  const agentSettingsIntegrationTarget = agentCreateMachine
+    ? {
+      ...createAgentProfile(agentCreateDraft.runtime, runtimeCount(agents, agentCreateDraft.runtime) + 1),
+      provider: agentCreateDraft.provider,
+      model: agentCreateDraft.model,
+      telemetryUrl: agentCreateMachine.collectorUrl,
+      machineName: agentCreateMachine.name,
+    }
+    : roleModalAgent;
+  const addHermesModelFromDraft = async () => {
+    const provider = runtimeModelDraft.provider.trim() || selectedRuntimeProvider?.slug || "";
+    const model = runtimeModelDraft.model.trim();
+    if (!provider || !model || !agentSettingsIntegrationTarget) return;
+    await runRuntimeIntegrationAction("add-model", {
+      provider,
+      model,
+      contextLength: runtimeModelDraft.contextLength.trim() ? Number(runtimeModelDraft.contextLength) : undefined,
+    }, agentSettingsIntegrationTarget);
+    updateAgentRuntimeModel(provider, model);
+    setRuntimeModelDraft({ provider: "", model: "", contextLength: "" });
+  };
   const selectAgentWorkerClass = (workerClass: BeeWorkerClass) => {
     const preset = beeWorkerPreset(workerClass);
     const patch = {
@@ -10977,7 +11763,12 @@ export default function Home() {
             if (group) addAgentToMachine(group);
           }}
           onAddMachine={openMachineInitModal}
-          onOpenChat={(_, agent) => startAgentChat(agent.id)}
+          updateStatusByMachine={fleetUpdateStatusByMachine}
+          onUpdateMachine={(machine) => {
+            const group = machineGroups.find((item) => item.key === machine.id);
+            if (group) void runMachineUpdate(group);
+          }}
+          onOpenChat={(_, agent) => startAgentWorkChat(agent.id, agent.task)}
           onOpenWallet={(_, agent) => {
             setSelectedAgentId(agent.id);
             setActiveView("wallet");
@@ -11450,7 +12241,7 @@ export default function Home() {
                               aria-expanded={Boolean(quickAddMachineMenuOpen[column.id])}
                               onClick={() => setQuickAddMachineMenuOpen((current) => ({ ...current, [column.id]: !current[column.id] }))}
                             >
-                              {quickAddMachineTargets[column.id]?.name ?? "Any machine"}
+                              {quickAddMachineTarget(column.id)?.name ?? "Any machine"}
                               <ChevronDown aria-hidden="true" />
                             </button>
                             {quickAddMachineMenuOpen[column.id] ? (
@@ -11458,7 +12249,7 @@ export default function Home() {
                                 <button
                                   type="button"
                                   role="menuitemradio"
-                                  aria-checked={!quickAddMachineTargets[column.id]}
+                                  aria-checked={Object.prototype.hasOwnProperty.call(quickAddMachineTargets, column.id) && !quickAddMachineTargets[column.id]}
                                   onClick={() => {
                                     setQuickAddMachineTargets((current) => ({ ...current, [column.id]: null }));
                                     setQuickAddMachineMenuOpen((current) => ({ ...current, [column.id]: false }));
@@ -11470,7 +12261,7 @@ export default function Home() {
                                   <button
                                     type="button"
                                     role="menuitemradio"
-                                    aria-checked={quickAddMachineTargets[column.id]?.key === machine.key}
+                                    aria-checked={quickAddMachineTarget(column.id)?.key === machine.key}
                                     key={machine.key}
                                     onClick={() => {
                                       setQuickAddMachineTargets((current) => ({ ...current, [column.id]: machine }));
@@ -11501,6 +12292,12 @@ export default function Home() {
                           onImageChange={(event) => handleQuickAddImageChange(column.id, event)}
                           onRemoveAttachment={(id) => removeQuickAddAttachment(column.id, id)}
                           onAttachDirectory={() => void attachQuickAddDirectory(column.id)}
+                          directoryPickerDisabled={!quickAddMachineTarget(column.id)}
+                          directoryPickerDisabledReason="Choose a specific machine before selecting a directory."
+                          recentDirectories={recentDirectories}
+                          recentDirectoriesExpanded={recentDirectoriesExpanded}
+                          setRecentDirectoriesExpanded={setRecentDirectoriesExpanded}
+                          onAttachRecentDirectory={(directory) => attachQuickAddRecentDirectory(column.id, directory)}
                           onRemoveDirectory={(id) => removeQuickAddDirectory(column.id, id)}
                           recording={recording && voiceTarget === column.id}
                           voiceBands={voiceBands}
@@ -11615,63 +12412,63 @@ export default function Home() {
                                 ) : null}
                               </div>
                               <div className={kanbanClass("kanbanCardAttachmentPicker")} data-kanban-card-attachment-menu="true">
-                                <button
-                                  type="button"
-                                  className={kanbanClass("kanbanCardAttachmentButton")}
-                                  aria-label={`Add attachments to ${task.title}`}
-                                  title="Add attachments"
-                                  aria-expanded={Boolean(kanbanCardAttachmentMenuOpen[task.id])}
-                                  onClick={(event) => {
-                                    event.stopPropagation();
-                                    setKanbanCardAttachmentMenuOpen((current) => ({ ...current, [task.id]: !current[task.id] }));
-                                  }}
-                                >
-                                  <Plus aria-hidden="true" />
-                                </button>
+                                <div className={kanbanClass("kanbanCardAttachmentButton", taskAttachmentCount > 0 && "hasAttachments")}>
+                                  <button
+                                    type="button"
+                                    className={kanbanClass("kanbanAttachmentListTrigger")}
+                                    aria-label={`${taskAttachmentCount} attachment${taskAttachmentCount === 1 ? "" : "s"} on ${task.title}`}
+                                    title={taskAttachmentCount > 0 ? `${taskAttachmentCount} attachment${taskAttachmentCount === 1 ? "" : "s"}` : "No attachments"}
+                                    aria-expanded={Boolean(kanbanCardAttachmentListOpen[task.id])}
+                                    onClick={(event) => {
+                                      event.stopPropagation();
+                                      setKanbanCardAttachmentMenuOpen((current) => ({ ...current, [task.id]: false }));
+                                      setKanbanCardAttachmentListOpen((current) => ({ ...current, [task.id]: !current[task.id] }));
+                                    }}
+                                  >
+                                    <Paperclip aria-hidden="true" />
+                                    {taskAttachmentCount}
+                                  </button>
+                                  <button
+                                    type="button"
+                                    className={kanbanClass("kanbanAttachmentAddTrigger")}
+                                    aria-label={`Add attachments to ${task.title}`}
+                                    aria-expanded={Boolean(kanbanCardAttachmentMenuOpen[task.id])}
+                                    onClick={(event) => {
+                                      event.stopPropagation();
+                                      setKanbanCardAttachmentListOpen((current) => ({ ...current, [task.id]: false }));
+                                      setKanbanCardAttachmentMenuOpen((current) => ({ ...current, [task.id]: !current[task.id] }));
+                                    }}
+                                  >
+                                    <Plus aria-hidden="true" />
+                                  </button>
+                                </div>
+                                {kanbanCardAttachmentListOpen[task.id] ? (
+                                  <AttachmentListMenuContent
+                                    attachments={task.attachments ?? []}
+                                    directories={task.linkedDirectories ?? []}
+                                    onRemoveAttachment={(attachmentId) => void removeKanbanCardAttachment(task, attachmentId)}
+                                    onRemoveDirectory={(directoryId) => void removeKanbanCardDirectory(task, directoryId)}
+                                  />
+                                ) : null}
                                 {kanbanCardAttachmentMenuOpen[task.id] ? (
-                                  <div className={kanbanClass("kanbanAttachmentMenu")} role="menu">
-                                    <button
-                                      type="button"
-                                      role="menuitem"
-                                      onClick={(event) => {
-                                        event.stopPropagation();
-                                        openKanbanCardFilePicker(task.id, "image");
-                                      }}
-                                    >
-                                      <Paperclip aria-hidden="true" />
-                                      Images
-                                    </button>
-                                    <button
-                                      type="button"
-                                      role="menuitem"
-                                      onClick={(event) => {
-                                        event.stopPropagation();
-                                        openKanbanCardFilePicker(task.id, "file");
-                                      }}
-                                    >
-                                      <FileUp aria-hidden="true" />
-                                      Files
-                                    </button>
-                                    <button
-                                      type="button"
-                                      role="menuitem"
-                                      onClick={(event) => {
-                                        event.stopPropagation();
-                                        void attachKanbanCardDirectory(task);
-                                      }}
-                                    >
-                                      <FolderOpen aria-hidden="true" />
-                                      Directory
-                                    </button>
-                                  </div>
+                                  <AttachmentMenuContent
+                                    placement="below"
+                                    stopPropagation
+                                    onAttachImages={() => openKanbanCardFilePicker(task.id, "image")}
+                                    onAttachFiles={() => openKanbanCardFilePicker(task.id, "file")}
+                                    onAttachDirectory={() => void attachKanbanCardDirectory(task)}
+                                    directoryPickerDisabled={!task.targetMachine}
+                                    directoryPickerDisabledReason="Choose a specific machine before selecting a directory."
+                                    recentDirectories={recentDirectories}
+                                    recentDirectoriesExpanded={Boolean(kanbanCardRecentsExpanded[task.id])}
+                                    setRecentDirectoriesExpanded={(value) => setKanbanCardRecentsExpanded((current) => ({
+                                      ...current,
+                                      [task.id]: typeof value === "function" ? value(Boolean(current[task.id])) : value,
+                                    }))}
+                                    onAttachRecentDirectory={(directory) => void attachKanbanCardRecentDirectory(task, directory)}
+                                  />
                                 ) : null}
                               </div>
-                              {taskAttachmentCount > 0 ? (
-                                <span className={kanbanClass("kanbanAttachmentCount")}>
-                                  <Paperclip aria-hidden="true" />
-                                  {taskAttachmentCount}
-                                </span>
-                              ) : null}
                             </div>
                             <div className={kanbanClass("kanbanMessageRow")}>
                               {terminalMessage ? (
@@ -11939,6 +12736,10 @@ export default function Home() {
                     onImageChange={handleKanbanSteerImageChange}
                     onRemoveAttachment={removeKanbanSteerAttachment}
                     onAttachDirectory={() => void attachKanbanSteerDirectory()}
+                    recentDirectories={recentDirectories}
+                    recentDirectoriesExpanded={recentDirectoriesExpanded}
+                    setRecentDirectoriesExpanded={setRecentDirectoriesExpanded}
+                    onAttachRecentDirectory={attachKanbanSteerRecentDirectory}
                     onRemoveDirectory={removeKanbanSteerDirectory}
                     recording={recording && voiceTarget === "kanban-steer"}
                     voiceBands={voiceBands}
@@ -12647,6 +13448,17 @@ export default function Home() {
           helperStatus={mirosharkHelperStatus}
           loading={mirosharkRunPending || mirosharkArchiveStatus === "Loading saved run..."}
           loadingLabel={mirosharkArchiveStatus === "Loading saved run..." ? "Loading saved run" : mirosharkProgressLabel}
+          onPublishX={(run) => void runMirosharkExperiment("publish", run.id)}
+          publishPending={mirosharkExperimentPending === "publish"}
+          publishStatus={mirosharkExperimentStatus}
+          analysisAgents={displayAgents}
+          analysisRuntimeModels={runtimeModelSelectionsByRuntime}
+          selectedAnalysisAgentId={mirosharkAnalysisAgentId || selectedAgent?.id}
+          analysisPending={mirosharkAnalysisPending}
+          analysisStatus={mirosharkAnalysisStatus}
+          analysisResult={mirosharkAnalysisResult}
+          onAnalysisAgentChange={setMirosharkAnalysisAgentId}
+          onAnalyzeRun={(run, mode) => void analyzeMirosharkRun(run, mode)}
         />
       </section>
       ) : null}
@@ -13169,15 +13981,44 @@ export default function Home() {
                 </label>
                 <div className="rounded-lg border border-[rgba(148,163,184,0.14)] bg-[rgba(10,14,21,0.45)] p-3">
                   <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-	                    <div>
-	                      <strong className="block text-xs text-[var(--foreground)]">Realtime Tailnet folder sync</strong>
-	                      <small className="text-[var(--muted)]">No Obsidian Sync subscription required. Setup starts Syncthing and this dashboard auto-pairs reachable Tailnet collectors; rsync is only the fallback.</small>
-	                    </div>
-	                    <span className="rounded-full border border-[rgba(20,184,166,0.3)] px-2 py-0.5 text-[10px] font-bold uppercase tracking-[0.12em] text-[#99f6e4]">Free over Tailscale</span>
-                  </div>
-                  <div className="grid gap-3 sm:grid-cols-2">
-                    <label className="flex flex-col gap-1 text-xs text-[var(--muted)]">
-                      Tailscale machine
+		                    <div>
+		                      <strong className="block text-xs text-[var(--foreground)]">Vault sync provider</strong>
+		                      <small className="text-[var(--muted)]">Choose one owner for realtime vault syncing. Manual repair uses rsync and writes explicit conflict copies.</small>
+		                    </div>
+		                    <span className="rounded-full border border-[rgba(20,184,166,0.3)] px-2 py-0.5 text-[10px] font-bold uppercase tracking-[0.12em] text-[#99f6e4]">
+		                      {sharedVault.syncProvider === "syncthing" ? "Syncthing" : sharedVault.syncProvider === "manual" ? "Manual repair" : "External sync"}
+		                    </span>
+	                  </div>
+	                  <label className="mb-3 flex flex-col gap-1 text-xs text-[var(--muted)]">
+	                    Sync owner
+	                    <select
+	                      value={sharedVault.syncProvider}
+	                      onChange={(event) => {
+	                        const syncProvider = event.target.value as SharedVaultConfig["syncProvider"];
+	                        updateSharedVault({
+	                          syncProvider,
+	                          syncthingAutoPairEnabled: syncProvider === "syncthing"
+	                            ? sharedVault.syncthingAutoPairEnabled
+	                            : false,
+	                        });
+	                      }}
+	                      className="rounded-md border border-[rgba(148,163,184,0.18)] bg-[rgba(10,14,21,0.7)] px-2 py-1 text-[var(--foreground)]"
+	                    >
+	                      <option value="external">I already use Obsidian Sync, iCloud, Dropbox, Git, or another provider</option>
+	                      <option value="syncthing">Use HivemindOS Syncthing over Tailscale</option>
+	                      <option value="manual">Manual Tailscale SSH repair only</option>
+	                    </select>
+	                    <small>
+	                      {sharedVault.syncProvider === "external"
+	                        ? "HivemindOS will not auto-pair Syncthing for this vault."
+	                        : sharedVault.syncProvider === "syncthing"
+	                          ? "Syncthing owns realtime sync. Syncthing conflict files appear in the vault and Syncthing UI."
+	                          : "Realtime sync is handled elsewhere or off; rsync repair can create .conflict-host-timestamp copies."}
+	                    </small>
+	                  </label>
+	                  <div className="grid gap-3 sm:grid-cols-2">
+	                    <label className="flex flex-col gap-1 text-xs text-[var(--muted)]">
+	                      Tailscale machine
                       <input
                         value={sharedVault.tailnetSyncHost}
                         onChange={(event) => updateSharedVault({ tailnetSyncHost: event.target.value })}
@@ -13193,19 +14034,21 @@ export default function Home() {
                         placeholder="Leave blank for collector default"
                         className="rounded-md border border-[rgba(148,163,184,0.18)] bg-[rgba(10,14,21,0.7)] px-2 py-1 text-[var(--foreground)]"
                       />
-                    </label>
-                  </div>
-                  <div className="mt-3 flex flex-wrap items-center gap-2">
-                    <label className="flex items-center gap-2 text-xs font-semibold text-[var(--foreground)]">
-                      <input
-                        type="checkbox"
-                        checked={sharedVault.tailnetSyncEnabled}
-                        onChange={(event) => updateSharedVault({ tailnetSyncEnabled: event.target.checked })}
-                      />
-                      Auto-pair realtime sync
-                    </label>
-                    <label className="flex items-center gap-2 text-xs text-[var(--muted)]">
-                      Repair direction
+	                    </label>
+	                  </div>
+	                  <div className="mt-3 flex flex-wrap items-center gap-2">
+	                    {sharedVault.syncProvider === "syncthing" ? (
+	                      <label className="flex items-center gap-2 text-xs font-semibold text-[var(--foreground)]">
+	                        <input
+	                          type="checkbox"
+	                          checked={sharedVault.syncthingAutoPairEnabled}
+	                          onChange={(event) => updateSharedVault({ syncthingAutoPairEnabled: event.target.checked })}
+	                        />
+	                        Auto-pair Syncthing with reachable Tailnet collectors
+	                      </label>
+	                    ) : null}
+	                    <label className="flex items-center gap-2 text-xs text-[var(--muted)]">
+	                      Repair direction
                       <select
                         value={sharedVault.tailnetSyncDirection}
                         onChange={(event) => updateSharedVault({ tailnetSyncDirection: event.target.value as "bidirectional" | "push" | "pull" })}
@@ -13213,25 +14056,27 @@ export default function Home() {
                       >
                         <option value="bidirectional">Bidirectional with conflict copies</option>
                         <option value="push">This Mac to Tailnet machine</option>
-                        <option value="pull">Tailnet machine to This Mac</option>
-                      </select>
-                    </label>
-	                    <Button type="button" size="sm" variant="secondary" disabled={Boolean(vaultSyncPending)} onClick={pairSyncthingVaultSync}>
-	                      {vaultSyncPending === "syncthing" ? "Pairing..." : "Pair realtime sync"}
-	                    </Button>
-	                    <Button type="button" size="sm" variant="secondary" disabled={Boolean(vaultSyncPending)} onClick={() => runVaultTailnetSync(true)}>
-	                      {vaultSyncPending === "dry-run" ? "Checking..." : "Dry run"}
+	                        <option value="pull">Tailnet machine to This Mac</option>
+	                      </select>
+	                    </label>
+		                    {sharedVault.syncProvider === "syncthing" ? (
+		                      <Button type="button" size="sm" variant="secondary" disabled={Boolean(vaultSyncPending)} onClick={pairSyncthingVaultSync}>
+		                        {vaultSyncPending === "syncthing" ? "Pairing..." : "Pair realtime sync"}
+		                      </Button>
+		                    ) : null}
+		                    <Button type="button" size="sm" variant="secondary" disabled={Boolean(vaultSyncPending)} onClick={() => runVaultTailnetSync(true)}>
+		                      {vaultSyncPending === "dry-run" ? "Checking..." : "Dry run"}
 	                    </Button>
                     <Button type="button" size="sm" variant="secondary" disabled={Boolean(vaultSyncPending)} onClick={() => runVaultTailnetSync(false)}>
                       {vaultSyncPending === "sync" ? "Syncing..." : "Sync now"}
                     </Button>
                   </div>
-                  {vaultSyncStatus ? (
-	                    <p className={`mt-3 text-xs ${vaultSyncStatus.ok ? "text-[#86efac]" : "text-[#fecdd3]"}`}>
-	                      {vaultSyncStatus.ok
-	                        ? vaultSyncStatus.message ?? `${vaultSyncStatus.dryRun ? "Dry run" : "Sync"} finished. ${vaultSyncStatus.direction === "bidirectional" ? "Merged with" : vaultSyncStatus.direction === "pull" ? "Pulled from" : "Pushed to"} ${sharedVault.tailnetSyncHost || "Tailnet machine"}.${vaultSyncStatus.conflicts?.length ? ` Conflict copies: ${vaultSyncStatus.conflicts.length}.` : ""}`
-	                        : vaultSyncStatus.error ?? vaultSyncStatus.stderr ?? "Tailnet sync failed."}
-                    </p>
+	                  {vaultSyncStatus ? (
+		                    <p className={`mt-3 text-xs ${vaultSyncStatus.ok ? "text-[#86efac]" : "text-[#fecdd3]"}`}>
+		                      {vaultSyncStatus.ok
+		                        ? vaultSyncStatus.message ?? `${vaultSyncStatus.dryRun ? "Dry run" : "Repair sync"} finished. ${vaultSyncStatus.direction === "bidirectional" ? "Merged with" : vaultSyncStatus.direction === "pull" ? "Pulled from" : "Pushed to"} ${sharedVault.tailnetSyncHost || "Tailnet machine"}.${vaultSyncStatus.conflicts?.length ? ` rsync conflict copies: ${vaultSyncStatus.conflicts.length}. Look for .conflict-host-timestamp files in the vault.` : ""}`
+		                        : vaultSyncStatus.error ?? vaultSyncStatus.stderr ?? "Tailnet sync failed."}
+	                    </p>
                   ) : null}
                 </div>
                 <div className="grid gap-3 sm:grid-cols-2">
@@ -13899,6 +14744,7 @@ export default function Home() {
                 disabled={busy}
                 busy={busy && !hasStreamingChunk}
                 attachments={chatAttachments}
+                directories={chatDirectories}
                 attachmentError={attachmentError}
                 attachmentMenuOpen={attachmentMenuOpen}
                 setAttachmentMenuOpen={setAttachmentMenuOpen}
@@ -13908,11 +14754,17 @@ export default function Home() {
                 onFileChange={handleChatFileChange}
                 onImageChange={handleChatImageChange}
                 onRemoveAttachment={removeChatAttachment}
+                onAttachDirectory={() => void attachChatDirectory()}
+                recentDirectories={recentDirectories}
+                recentDirectoriesExpanded={recentDirectoriesExpanded}
+                setRecentDirectoriesExpanded={setRecentDirectoriesExpanded}
+                onAttachRecentDirectory={attachChatRecentDirectory}
+                onRemoveDirectory={removeChatDirectory}
                 recording={recording && voiceTarget === "chat"}
                 voiceBands={voiceBands}
                 voiceTranscript={voiceTranscript}
                 onToggleRecording={recording ? stopAudioRecording : () => void startAudioRecording("chat")}
-                canSend={Boolean(text.trim() || chatAttachments.length)}
+                canSend={Boolean(text.trim() || chatAttachments.length || chatDirectories.length)}
               />
             </form>
             <p className="hint">
@@ -14194,9 +15046,15 @@ export default function Home() {
                         setAgentCreateDraft((current) => ({
                           ...current,
                           runtime,
+                          provider: runtime === "hermes" ? current.provider || "openai-codex" : "",
+                          model: runtime === "hermes" ? current.model : "",
                         }));
                       } else if (roleModalAgent) {
-                        updateAgentProfile(roleModalAgent.id, { runtime });
+                        updateAgentProfile(roleModalAgent.id, {
+                          runtime,
+                          provider: runtime === "hermes" ? roleModalAgent.provider || "openai-codex" : "",
+                          model: runtime === "hermes" ? roleModalAgent.model : "",
+                        });
                       }
                     }}
                   >
@@ -14205,6 +15063,139 @@ export default function Home() {
                     ))}
                   </select>
                 </label>
+                {agentSettingsRuntime === "hermes" ? (
+                  <div className={fleetClass("agentRuntimeModelPanel")}>
+                    <div className={fleetClass("agentRuntimeModelHeader")}>
+                      <div>
+                        <strong>Model</strong>
+                        <span>{selectedRuntimeProvider?.name ?? "Choose provider"} · {selectedRuntimeModel?.name || selectedRuntimeModelId || "Choose model"}</span>
+                      </div>
+                      <button
+                        type="button"
+                        aria-label="Refresh Hermes models"
+                        title="Refresh Hermes models"
+                        disabled={runtimeIntegrationBusy === "status"}
+                        onClick={() => void refreshRuntimeIntegrations(agentSettingsIntegrationTarget ?? undefined)}
+                      >
+                        {runtimeIntegrationBusy === "status" ? <LoaderCircle aria-hidden="true" className="animate-spin" /> : <RefreshCcw aria-hidden="true" />}
+                      </button>
+                    </div>
+                    <div className={fleetClass("agentRuntimeCardGroup")}>
+                      <span>Provider</span>
+                      <div className={fleetClass("agentRuntimeProviderCards")}>
+                        <button
+                          type="button"
+                          className={fleetClass("agentRuntimeAddCard")}
+                          onClick={() => setRuntimeModelSetupMode((current) => current === "provider" ? null : "provider")}
+                        >
+                          <Plus aria-hidden="true" />
+                          <strong>Add provider</strong>
+                        </button>
+                        {runtimeModelProviders.map((provider) => {
+                          const selected = provider.slug === selectedRuntimeProvider?.slug;
+                          return (
+                            <button
+                              type="button"
+                              key={provider.slug}
+                              className={selected ? fleetClass("agentRuntimeProviderCard", "selectedRuntimeCard") : fleetClass("agentRuntimeProviderCard")}
+                              aria-pressed={selected}
+                              onClick={() => updateAgentRuntimeModel(provider.slug, provider.models[0]?.id ?? "")}
+                            >
+                              <strong>{provider.name}</strong>
+                              <small>{provider.totalModels} model{provider.totalModels === 1 ? "" : "s"}</small>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                    <div className={fleetClass("agentRuntimeCardGroup")}>
+                      <span>Model</span>
+                      <div className={fleetClass("agentRuntimeModelCards")}>
+                        {selectedRuntimeModels.map((model) => {
+                          const selected = model.id === selectedRuntimeModelId;
+                          return (
+                            <button
+                              type="button"
+                              key={model.id}
+                              className={selected ? fleetClass("agentRuntimeModelCard", "selectedRuntimeCard") : fleetClass("agentRuntimeModelCard")}
+                              aria-pressed={selected}
+                              onClick={() => updateAgentRuntimeModel(selectedRuntimeProvider?.slug ?? agentSettingsProvider, model.id)}
+                            >
+                              <strong>{model.name || model.id}</strong>
+                              {model.name ? <small>{model.id}</small> : null}
+                            </button>
+                          );
+                        })}
+                        <button
+                          type="button"
+                          className={fleetClass("agentRuntimeAddCard")}
+                          onClick={() => setRuntimeModelSetupMode((current) => current === "model" ? null : "model")}
+                        >
+                          <Plus aria-hidden="true" />
+                          <strong>Add model</strong>
+                        </button>
+                      </div>
+                    </div>
+                    {runtimeModelSetupMode ? (
+                      <div className={fleetClass("agentRuntimeModelSetup")}>
+                        <div>
+                          <strong>{runtimeModelSetupMode === "provider" ? "Add provider" : "Add model"}</strong>
+                          <p>{runtimeModelSetupMode === "provider" ? "Use Hermes' provider setup, then refresh this list." : `Add an exact model ID to ${selectedRuntimeProvider?.name ?? "this provider"}.`}</p>
+                        </div>
+                        {runtimeModelSetupMode === "provider" ? (
+                          <Button type="button" variant="secondary" onClick={() => void refreshRuntimeIntegrations(agentSettingsIntegrationTarget ?? undefined)} disabled={runtimeIntegrationBusy === "status"}>
+                            {runtimeIntegrationBusy === "status" ? <LoaderCircle aria-hidden="true" className="animate-spin" /> : <RefreshCcw aria-hidden="true" />}
+                            Refresh after setup
+                          </Button>
+                        ) : (
+                          <>
+                            <label className={fleetClass("agentSettingsField")}>
+                              <span>Provider</span>
+                              <select
+                                value={runtimeModelDraft.provider || selectedRuntimeProvider?.slug || ""}
+                                onChange={(event) => setRuntimeModelDraft((current) => ({ ...current, provider: event.target.value }))}
+                              >
+                                {runtimeModelProviders.map((provider) => (
+                                  <option value={provider.slug} key={provider.slug}>{provider.name}</option>
+                                ))}
+                              </select>
+                            </label>
+                        <label className={fleetClass("agentSettingsField")}>
+                          <span>Custom model ID</span>
+                          <input
+                            value={runtimeModelDraft.model}
+                            onChange={(event) => setRuntimeModelDraft((current) => ({ ...current, model: event.target.value }))}
+                            placeholder="Paste exact model ID"
+                          />
+                        </label>
+                        <label className={fleetClass("agentSettingsField")}>
+                          <span>Context</span>
+                          <select
+                            value={runtimeModelDraft.contextLength}
+                            onChange={(event) => setRuntimeModelDraft((current) => ({ ...current, contextLength: event.target.value }))}
+                          >
+                            <option value="">Auto</option>
+                            <option value="128000">128k</option>
+                            <option value="200000">200k</option>
+                            <option value="400000">400k</option>
+                            <option value="1000000">1M</option>
+                          </select>
+                        </label>
+                        <Button
+                          type="button"
+                          variant="secondary"
+                          disabled={!runtimeModelDraft.model.trim() || runtimeIntegrationBusy === "add-model"}
+                          onClick={() => void addHermesModelFromDraft()}
+                        >
+                          {runtimeIntegrationBusy === "add-model" ? <LoaderCircle aria-hidden="true" className="animate-spin" /> : <Plus aria-hidden="true" />}
+                          Add
+                        </Button>
+                          </>
+                        )}
+                      </div>
+                    ) : null}
+                  </div>
+                ) : null}
                 {!agentCreateMachine && roleModalAgent ? (
                   <div className={fleetClass("agentRuntimeSummary")}>
                     <PlugZap aria-hidden="true" />
@@ -14961,6 +15952,90 @@ export default function Home() {
                 <Check aria-hidden="true" />
                 Done
               </Button>
+            </div>
+          </section>
+        </div>
+      ) : null}
+
+      {machineDirectoryBrowser?.open ? (
+        <div
+          className={kanbanClass("directoryBrowserBackdrop")}
+          role="presentation"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget) setMachineDirectoryBrowser(null);
+          }}
+        >
+          <section className={kanbanClass("directoryBrowser")} role="dialog" aria-modal="true" aria-labelledby="directory-browser-title">
+            <div className={kanbanClass("directoryBrowserHeader")}>
+              <div>
+                <p className="eyebrow">{machineDirectoryBrowser.machine.name}</p>
+                <h2 id="directory-browser-title">Choose directory</h2>
+                <span>{machineDirectoryBrowser.path}</span>
+              </div>
+              <button type="button" aria-label="Close directory browser" onClick={() => setMachineDirectoryBrowser(null)}>
+                <X aria-hidden="true" />
+              </button>
+            </div>
+            <div className={kanbanClass("directoryBrowserList")} aria-label="Directories">
+              {machineDirectoryBrowser.parentPath ? (
+                <button
+                  type="button"
+                  className={kanbanClass("directoryBrowserParentButton")}
+                  onClick={() => void loadMachineDirectories(
+                    machineDirectoryBrowser.machine,
+                    machineDirectoryBrowser.parentPath || "~",
+                    machineDirectoryBrowser.onChoose,
+                  )}
+                >
+                  <ChevronLeft aria-hidden="true" />
+                  Parent folder
+                </button>
+              ) : null}
+              {machineDirectoryBrowser.loading ? <p>Loading directories...</p> : null}
+              {machineDirectoryBrowser.error ? <p role="alert">{machineDirectoryBrowser.error}</p> : null}
+              {!machineDirectoryBrowser.loading && !machineDirectoryBrowser.error ? machineDirectoryBrowser.directories.map((directory) => (
+                <button
+                  type="button"
+                  key={directory.path}
+                  data-selected={machineDirectoryBrowser.selectedDirectory?.path === directory.path ? "true" : undefined}
+                  onDoubleClick={() => void loadMachineDirectories(machineDirectoryBrowser.machine, directory.path, machineDirectoryBrowser.onChoose)}
+                  onClick={() => {
+                    setMachineDirectoryBrowser((current) => current && current.machine.key === machineDirectoryBrowser.machine.key
+                      ? { ...current, selectedDirectory: directory }
+                      : current);
+                  }}
+                >
+                  <FolderOpen aria-hidden="true" />
+                  <span>
+                    <strong>{directory.name}</strong>
+                    <small>{directory.path}</small>
+                  </span>
+                </button>
+              )) : null}
+            </div>
+            <div className={kanbanClass("directoryBrowserActions")}>
+              <button type="button" onClick={() => setMachineDirectoryBrowser(null)}>
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={!machineDirectoryBrowser.selectedDirectory}
+                onClick={() => {
+                  const selected = machineDirectoryBrowser.selectedDirectory;
+                  if (!selected) return;
+                  machineDirectoryBrowser.onChoose?.({
+                    id: `${selected.name}-${crypto.randomUUID()}`,
+                    name: selected.name,
+                    path: selected.path,
+                    machineName: machineDirectoryBrowser.machine.name,
+                    machineKey: machineDirectoryBrowser.machine.key,
+                    lastUsedAt: Date.now(),
+                  });
+                  setMachineDirectoryBrowser(null);
+                }}
+              >
+                Open
+              </button>
             </div>
           </section>
         </div>

@@ -1,5 +1,5 @@
 {
-  "created_at": "2026-05-22T04:22:36.134263+00:00",
+  "created_at": "2026-05-23T07:26:09.641977+00:00",
   "custom_code_assessment": "balanced",
   "entries": [
     {
@@ -491,6 +491,104 @@
       "target_path": "src/lib/services/runtime-integrations.ts",
       "reuse_type": "adapted_code",
       "note": "Codex app-server presence detection surfaced as Hermes Codex runtime status"
+    },
+    {
+      "source_repo": "local-hermes-agent",
+      "source_path": "hermes_cli/inventory.py",
+      "target_path": "src/lib/services/runtime-integrations.ts",
+      "reuse_type": "adapted_code",
+      "note": "Calls Hermes' own inventory builder for configured provider/model choices"
+    },
+    {
+      "source_repo": "local-hermes-agent",
+      "source_path": "hermes_cli/web_server.py",
+      "target_path": "src/lib/services/runtime-integrations.ts",
+      "reuse_type": "adapted_code",
+      "note": "Adapted main model assignment behavior for set-model action"
+    },
+    {
+      "source_repo": "local-hermes-agent",
+      "source_path": "tests/hermes_cli/test_user_providers_model_switch.py",
+      "target_path": "src/lib/services/runtime-integrations.ts",
+      "reuse_type": "adapted_code",
+      "note": "Mirrored providers.*.models config shape for add-model action"
+    },
+    {
+      "source_repo": "Easonnotsing/VaultForge",
+      "source_path": "scripts/double-link-builder.py",
+      "target_path": "src/lib/services/miroshark/run-intelligence.ts",
+      "reuse_type": "adapted_code",
+      "note": "first-sentence note title/body split and durable note organization"
+    },
+    {
+      "source_repo": "harshinimk13/Watchdog",
+      "source_path": "watchdog.py",
+      "target_path": "src/lib/services/miroshark/run-intelligence.ts",
+      "reuse_type": "adapted_code",
+      "note": "keyword-based signal/risk scoring and verdict thresholds"
+    },
+    {
+      "source_repo": "cyberCharl/pi-vault-agent",
+      "source_path": "note-utils.ts",
+      "target_path": "src/app/api/miroshark/analysis/route.ts",
+      "reuse_type": "adapted_code",
+      "note": "vault-relative markdown note organization and path-safe note writing"
+    },
+    {
+      "source_repo": "amorijs/react-qsm",
+      "source_path": "src/containers/QuickSelectMenu.jsx",
+      "target_path": "src/components/agents/AgentSelectionModal.tsx",
+      "reuse_type": "adapted_code",
+      "note": "searchable command-palette item filtering and capped result interaction adapted for agent cards"
+    },
+    {
+      "source_repo": "pkparthk/pokemon-explorer",
+      "source_path": "src/hooks/usePokemon.tsx",
+      "target_path": "src/components/agents/AgentSelectionModal.tsx",
+      "reuse_type": "adapted_code",
+      "note": "card-grid search state and sorted filtered result flow adapted for agent search priority ranking"
+    },
+    {
+      "source_repo": "pkparthk/pokemon-explorer",
+      "source_path": "src/components/PokemonList.tsx",
+      "target_path": "src/components/agents/AgentSelectionModal.module.css",
+      "reuse_type": "style_adapted",
+      "note": "responsive searched card grid structure adapted for the reusable agent picker modal"
+    },
+    {
+      "source_repo": "pkparthk/pokemon-explorer",
+      "source_path": "src/components/TypeFilter.tsx",
+      "target_path": "src/components/agents/AgentSelectionModal.tsx",
+      "reuse_type": "adapted_code",
+      "note": "horizontal filter chip row adapted for machine-scoped agent filtering"
+    },
+    {
+      "source_repo": "100sarthak100/react-multi-select-search",
+      "source_path": "src/components/Chip/Chip.tsx",
+      "target_path": "src/components/agents/AgentSelectionModal.module.css",
+      "reuse_type": "style_adapted",
+      "note": "compact chip selected/removable visual language adapted for machine count badges; avoided audited helper.ts dynamic-eval path"
+    },
+    {
+      "source_repo": "carsoncall/tailscale-reverse-proxy",
+      "source_path": "main.go",
+      "target_path": "cmd/hivemind-linkd/main.go",
+      "reuse_type": "adapted_code",
+      "note": "tsnet.Server state directory, per-host embedded Tailnet listener, and localhost reverse proxy flow adapted for Hivemind Link"
+    },
+    {
+      "source_repo": "giodamelio/tsnet-reverse-proxy",
+      "source_path": "main.go",
+      "target_path": "cmd/hivemind-linkd/main.go",
+      "reuse_type": "adapted_code",
+      "note": "LocalClient WhoIs identity lookup and trusted forwarded Tailscale identity headers adapted for collector requests"
+    },
+    {
+      "source_repo": "almeidapaulopt/tsdproxy",
+      "source_path": "internal/proxyproviders/tailscale/{provider.go,proxy.go}",
+      "target_path": "cmd/hivemind-linkd/main.go",
+      "reuse_type": "adapted_code",
+      "note": "embedded tsnet Start/LocalClient lifecycle, auth URL status handling, and peer status shape adapted for the Link sidecar control API"
     }
   ]
 }

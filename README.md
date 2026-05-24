@@ -32,10 +32,11 @@ Clone it, run one setup command, and get a local-first dashboard for the agents 
 
 ## Quick Start
 
-Optional, but recommended before setup: join your machines to Tailscale first.
+By default, setup uses **Hivemind Link**: an app-managed Tailscale node that uses your own Tailscale account without requiring the system Tailscale VPN client.
 
 - For local-only use, you can skip Tailscale completely.
-- For fleet discovery and shared-brain folder sync, install Tailscale, sign in, and confirm `tailscale status` works on each machine.
+- For app-managed Fleet/chat access, run normal setup. Hivemind Link keeps the collector bound to localhost and exposes it only through the embedded Link sidecar.
+- For full Tailnet extras such as Tailscale SSH env sync, rsync repair, and HivemindOS-managed Syncthing peer addressing, run `./setup.sh --system-tailscale`, then install/sign in to system Tailscale.
 - On macOS, the App Store/sandboxed GUI build can join your Tailnet, but it cannot host the Tailscale SSH server. That is fine for VPN and Syncthing, but `hive-env-add` peer env sync and rsync repair from that Mac need a Tailscale SSH-capable host. Tailscale documents the macOS build differences here: [Three ways to run Tailscale on macOS](https://tailscale.com/docs/concepts/macos-variants).
 - To make a macOS machine host Tailscale SSH, install the open-source `tailscale` + `tailscaled` CLI/daemon build from the [Tailscaled on macOS guide](https://github.com/tailscale/tailscale/wiki/Tailscaled-on-macOS), or use Homebrew:
 
@@ -78,7 +79,7 @@ Then open the dashboard printed by setup, usually:
 http://localhost:5020
 ```
 
-Setup checks Node.js and pnpm/Corepack, installs dependencies, offers optional installs for Tailscale, Syncthing, Obsidian, and GnuPG, installs `hive-env-add`, installs the lightweight machine monitor where supported, builds the dashboard, starts it when possible, and can open the dashboard for you. On macOS/Linux use `setup.sh`; on native Windows use `setup.ps1`, which prompts for winget installs of Node.js, pnpm, Tailscale, Syncthing, Obsidian, and GnuPG. If Tailscale is installed and logged in, HivemindOS enables cross-machine collaboration. If not, it runs cleanly as a local-only dashboard.
+Setup checks Node.js and pnpm/Corepack, installs dependencies, installs `hive-env-add`, installs the lightweight machine monitor where supported, starts the dashboard when possible, and can open the dashboard for you. Production dashboard builds are skipped by default; use `./setup.sh --build` when you explicitly want one. On macOS/Linux use `setup.sh`; on native Windows use `setup.ps1`.
 
 To remove HivemindOS later, run the matching uninstaller. It asks one prompt at a time before removing services, generated files, `hive-env-add`, shared-skill agent hints, or optional apps such as Tailscale, Syncthing, pnpm, GnuPG, and Obsidian:
 
@@ -169,6 +170,7 @@ No single runtime is required. HivemindOS works with one local agent, a mixed fl
 HivemindOS uses Tailscale in a few specific ways:
 
 - **Agent connection:** the dashboard finds and connects to agent machines through your Tailscale VPN.
+- **Hivemind Link:** optional app-managed Link nodes use Tailscale's embedded `tsnet` library to expose only the local HivemindOS collector over your own Tailscale account, without requiring the system Tailscale VPN client.
 - **Env sync:** `hive-env-add` sends env updates to trusted peer machines over Tailscale SSH. Secret values travel through stdin, not command arguments, logs, or shared notes.
 - **Brain sync:** the shared Obsidian vault is a local folder. In Brain, choose whether an external provider such as Obsidian Sync, iCloud Drive, Dropbox, Git, or another folder sync tool owns realtime sync, or let HivemindOS pair Syncthing over Tailscale.
 - **Vault repair:** rsync over Tailscale SSH is available as an advanced fallback for one-shot push, pull, or bidirectional repair jobs. rsync repair conflicts are written as explicit `.conflict-host-timestamp` copies; Syncthing conflicts are handled by Syncthing in the vault and Syncthing UI.
@@ -213,6 +215,8 @@ HivemindOS can auto-detect common local Obsidian vault locations, validate an ex
 
 For multi-machine sharing, the built-in path pairs Syncthing over Tailscale so trusted machines each keep a local copy of the same vault. No Obsidian Sync subscription is required. If you already use Obsidian Sync, iCloud Drive, Dropbox, Git, or another provider, select that external sync owner in Brain so HivemindOS does not auto-pair Syncthing on top of it. When setup finds another Syncthing-capable collector and the Brain setting allows HivemindOS Syncthing, it can pair the shared vault and write/read a small test note to verify that sync is actually flowing.
 
+For the full sync and networking model, see [Syncing And Tailscale Architecture](docs/syncing-and-tailscale.md).
+
 ## Multi-Machine Setup
 
 On each additional machine that runs agents:
@@ -225,10 +229,21 @@ cd hivemindos
 
 The script installs the lightweight machine monitor and starts the services needed for dashboard discovery, env sync readiness, and optional Syncthing brain sync.
 
+For app-managed Link mode instead of a system Tailscale install, use either normal setup or the collector-only command:
+
+```bash
+HIVE_LINK_ENABLED=true ./scripts/install-telemetry-collector.sh
+```
+
+The first run builds `bin/hivemind-linkd`, starts a localhost-only collector, and prints a Tailscale sign-in URL when the embedded app node needs authorization. Remote HivemindOS traffic then travels over Tailscale's encrypted device links, while the collector itself stays on `127.0.0.1`.
+
+Use `./setup.sh --system-tailscale` only when you want the older full Tailnet setup surface: macOS firewall allow-listing, Tailscale SSH, rsync repair, and Syncthing pairing.
+
 ## Private By Default
 
 - The machine monitor is read-only by default.
-- Remote machines should stay private to Tailscale.
+- Remote machines should stay private to Tailscale or Hivemind Link.
+- In Hivemind Link mode, the collector binds to localhost and the `hivemind-linkd` sidecar is the only Tailnet-facing entry point.
 - Chat requests pass through a local agent security proxy before reaching runtimes.
 - Common secret formats are redacted before runtime output renders.
 - Local skill actions use allowlisted folders and argument validation where the dashboard exposes direct skill execution.
@@ -247,7 +262,7 @@ More detail: [docs/tailscale-fleet-telemetry.md](docs/tailscale-fleet-telemetry.
 ./setup.sh --share-skills codex,openclaw
 ./setup.sh --no-shared-skills
 ./setup.sh --skip-deps
-./setup.sh --skip-build
+./setup.sh --build
 ./setup.sh --skip-collector
 ./setup.sh --skip-dashboard
 ./setup.sh --force

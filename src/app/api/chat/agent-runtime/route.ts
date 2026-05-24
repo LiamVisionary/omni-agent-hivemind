@@ -154,6 +154,7 @@ function buildVaultContext(sharedVault: SharedVaultConfig | null): string {
     `- Shared note: ${sharedVault.sharedNotePath || "(not set)"}`,
     `- Shared Kanban folder: ${sharedVault.kanbanFolder || "Projects/HivemindOS/Kanban"}`,
     `- Agent notifications folder: ${sharedVault.notificationsFolder || "agent-notifications"}`,
+    `- Vault sync owner: ${sharedVault.syncProvider === "syncthing" ? "HivemindOS Syncthing over Tailscale" : sharedVault.syncProvider === "manual" ? "manual Tailscale SSH repair only" : "external provider such as Obsidian Sync, iCloud, Dropbox, Git, or another folder sync tool"}.`,
     "- Kanban workflow: Ideas are inert; Ready for Queen is the pickup lane; Working is claimed work; Needs Human is only for decisions/access/approval; Done is completed work.",
     "- Queen Bee behavior: if you are the Queen Bee, watch Ready for Queen, choose yourself or a worker class, move claimed cards to Working, comment with the routing reason, and move straight to Done when no human intervention is needed.",
     "- Kanban API: use the dashboard's /api/kanban endpoint for task creation, status moves, comments, and board reads when available. Use /api/orchestrator for the MCP-ready tool/agent/task surface when the dashboard provides agent role metadata.",
@@ -404,6 +405,8 @@ async function streamHttpRuntime(
       body: JSON.stringify({
         agentId: profile.agentId || profile.id,
         sessionKey: profile.sessionKey,
+        provider: profile.provider || undefined,
+        model: profile.model || undefined,
         message: runtimeMessage,
         messages: runtimeMessages,
         stream: true,

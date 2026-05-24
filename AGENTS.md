@@ -33,6 +33,7 @@
 - Do not silently truncate user-facing text with ellipses, line clamps, `text-overflow`, or forced no-wrap styling.
 - Text may be collapsed only when the compact surface genuinely needs it, such as a long chat/history/body preview, and the UI must provide an obvious expand/collapse affordance.
 - Prefer wrapping, taller rows/cards, or responsive layout adjustments over hiding content.
+- Do not use free-text inputs for configuration values, filesystem paths, model IDs, runtime/provider settings, or similar structured choices in the primary UI. Prefer dropdowns, pickers, segmented controls, buttons, browse flows, or discovered options. If arbitrary text is genuinely required, put it inside a clearly labeled expandable Advanced section and keep the default path input-free.
 
 ## Shared Skills
 

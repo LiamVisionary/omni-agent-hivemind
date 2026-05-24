@@ -5,12 +5,13 @@ import { randomBytes } from "node:crypto";
 import { access, mkdir, readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { constants } from "node:fs";
 import { homedir, hostname, userInfo } from "node:os";
-import { join, resolve } from "node:path";
+import { join, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 
 const execFileAsync = promisify(execFile);
 const port = Number(process.env.AGENT_TELEMETRY_PORT || 8787);
+const host = process.env.AGENT_TELEMETRY_HOST || "0.0.0.0";
 const appDir = resolve(join(fileURLToPath(import.meta.url), "..", ".."));
 const defaultHermesDir = process.env.HERMES_HOME || join(homedir(), ".hermes");
 const defaultAeonDir = process.env.AEON_LOCAL_PATH || process.env.AEON_HOME || join(homedir(), ".aeon");
@@ -757,6 +758,35 @@ async function scanFiles(agent, dataDir) {
   return tasks;
 }
 
+function displayPath(pathValue) {
+  const home = homedir();
+  if (pathValue === home) return "~";
+  return pathValue.startsWith(`${home}${sep}`) ? `~/${pathValue.slice(home.length + 1)}` : pathValue;
+}
+
+async function listDirectories(pathValue = "~") {
+  const expanded = resolve(expandHome(pathValue || "~"));
+  await access(expanded, constants.R_OK);
+  const stats = await stat(expanded);
+  if (!stats.isDirectory()) throw new Error("Path is not a directory.");
+  const entries = await readdir(expanded, { withFileTypes: true }).catch(() => []);
+  const directories = entries
+    .filter((entry) => entry.isDirectory() && !entry.name.startsWith("."))
+    .map((entry) => ({
+      name: entry.name,
+      path: displayPath(join(expanded, entry.name)),
+      kind: "directory",
+    }))
+    .sort((left, right) => left.name.localeCompare(right.name));
+  return {
+    ok: true,
+    host: hostname(),
+    path: displayPath(expanded),
+    parentPath: expanded === homedir() || expanded === sep ? "" : displayPath(resolve(expanded, "..")),
+    directories,
+  };
+}
+
 async function scanRuntimeSchedules(agent, dataDir) {
   const safeDir = resolve(expandHome(dataDir || ""));
   if (agent.runtime === "aeon") {
@@ -1354,6 +1384,7 @@ createServer(async (request, response) => {
       },
       capabilities: {
         chat: runtimes.includes("hermes"),
+        directoryBrowsing: true,
         runtimes,
         runtimeIntegrations: true,
         syncthing: syncthing.installed,
@@ -1378,6 +1409,18 @@ createServer(async (request, response) => {
   if (pathname === "/agents") {
     const agents = await localAgents();
     jsonResponse(response, 200, { ok: true, host: hostname(), agents });
+    return;
+  }
+  if (pathname === "/directories" && request.method === "GET") {
+    try {
+      const result = await listDirectories(requestUrl.searchParams.get("path") || "~");
+      jsonResponse(response, 200, result);
+    } catch (error) {
+      jsonResponse(response, 400, {
+        ok: false,
+        error: error instanceof Error ? error.message : "Could not list directories.",
+      });
+    }
     return;
   }
   const runtimeIntegrationMatch = pathname.match(/^\/runtimes\/([^/]+)\/integrations$/);
@@ -1478,6 +1521,6 @@ createServer(async (request, response) => {
   const agents = body.agent ? [body.agent] : body.agents || await localAgents();
   const snapshots = await Promise.all(agents.map((agent) => snapshotFor(agent)));
   jsonResponse(response, 200, { ok: true, snapshot: snapshots[0], snapshots });
-}).listen(port, "0.0.0.0", () => {
-  console.log(`agent telemetry collector listening on 0.0.0.0:${port}`);
+}).listen(port, host, () => {
+  console.log(`agent telemetry collector listening on ${host}:${port}`);
 });

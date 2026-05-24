@@ -58,6 +58,27 @@ export type RuntimeEnvSyncResult = {
   sources: string[];
 };
 
+export type RuntimeModelOption = {
+  id: string;
+  name?: string;
+};
+
+export type RuntimeModelProvider = {
+  slug: string;
+  name: string;
+  models: RuntimeModelOption[];
+  totalModels: number;
+  isCurrent?: boolean;
+  isUserDefined?: boolean;
+  source?: string;
+};
+
+export type RuntimeModelSelection = {
+  provider: string;
+  model: string;
+  providers: RuntimeModelProvider[];
+};
+
 export type RuntimeAdapter = {
   runtime: AgentRuntime;
   label: string;

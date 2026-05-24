@@ -2,7 +2,7 @@
 "use client";
 
 import * as React from "react";
-import { AlertTriangle, ChevronDown, ChevronRight, Copy, MessageSquare, Monitor, Plus, Settings2, Trash2, Wallet, X } from "lucide-react";
+import { AlertTriangle, ChevronDown, ChevronRight, Copy, LoaderCircle, MessageSquare, Monitor, Plus, Settings2, Trash2, Wallet, X } from "lucide-react";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { BeeIcon } from "./bee-icon";
 import { HexTile } from "./hex-tile";
@@ -17,17 +17,21 @@ const STATE_COLOR: Record<AgentState, string> = {
   failed:    "var(--danger)",
 };
 
+export type MachineUpdateButtonStatus = "idle" | "updating" | "updated" | "failed";
+
 interface RosterRowProps {
   machine: FleetMachine;
   selected: boolean;
   expanded: boolean;
   selectedAgentId: string | null;
+  updateStatus?: MachineUpdateButtonStatus;
   onSelectMachine: () => void;
   onSelectAgent: (a: FleetAgent) => void;
   onToggle: () => void;
   onAddAgent: () => void;
-  onOpenChat?: (a: FleetAgent) => void;
+  onUpdateMachine?: () => void;
   onOpenNetworkIssue?: () => void;
+  onOpenChat?: (a: FleetAgent) => void;
   onOpenWallet?: (a: FleetAgent) => void;
   onEditSettings?: (a: FleetAgent) => void;
   onDuplicate?: (a: FleetAgent) => void;
@@ -36,10 +40,14 @@ interface RosterRowProps {
 
 function RosterRow({
   machine, selected, expanded, selectedAgentId,
+  updateStatus,
   onSelectMachine, onSelectAgent, onToggle, onAddAgent,
-  onOpenChat, onOpenNetworkIssue, onOpenWallet, onEditSettings, onDuplicate, onRemove,
+  onUpdateMachine,
+  onOpenNetworkIssue,
+  onOpenChat, onOpenWallet, onEditSettings, onDuplicate, onRemove,
 }: RosterRowProps) {
   const [expandedTaskIds, setExpandedTaskIds] = React.useState<Set<string>>(() => new Set());
+  const [successDismissed, setSuccessDismissed] = React.useState(false);
   const roleIconDim = (state: AgentState) => state === "ready" || state === "setup" || state === "failed";
   const fire = (agent: FleetAgent, fn?: (a: FleetAgent) => void) => (event: React.MouseEvent) => {
     event.stopPropagation();
@@ -57,9 +65,26 @@ function RosterRow({
     });
   };
 
+  React.useEffect(() => {
+    if (updateStatus !== "updated") return;
+    const timeout = window.setTimeout(() => setSuccessDismissed(true), 3000);
+    return () => window.clearTimeout(timeout);
+  }, [updateStatus]);
+
+  const showUpdateButton = Boolean(
+    onUpdateMachine
+      && (
+        updateStatus === "updating"
+        || (updateStatus === "updated" && !successDismissed)
+        || updateStatus === "failed"
+        || (machine.versionState === "stale" && updateStatus !== "updated")
+      ),
+  );
+  const updateDisabled = updateStatus === "updating" || updateStatus === "updated";
+
   return (
     <div
-      className="rounded-lg overflow-hidden"
+      className="rounded-lg overflow-hidden relative"
       style={{
         border: `1px solid ${selected ? "rgba(255,212,90,0.42)" : "rgba(148,163,184,0.16)"}`,
         background: selected ? "rgba(255,212,90,0.10)" : "transparent",
@@ -117,6 +142,66 @@ function RosterRow({
             </button>
           ) : null}
         </div>
+        {showUpdateButton ? (
+          <button
+            type="button"
+            onClick={(event) => {
+              event.stopPropagation();
+              if (!updateDisabled) {
+                setSuccessDismissed(false);
+                onUpdateMachine?.();
+              }
+            }}
+            disabled={updateDisabled}
+            aria-label={
+              updateStatus === "updating"
+                ? `Updating ${machine.name}`
+                : updateStatus === "updated"
+                  ? `${machine.name} updated`
+                  : updateStatus === "failed"
+                    ? `Update failed for ${machine.name}. Retry update`
+                  : `Update ${machine.name}`
+            }
+            aria-live="polite"
+            className={`${styles.rosterUpdateButton} inline-flex items-center justify-center`}
+            style={{
+              minWidth: updateStatus === "updated" ? 70 : 62,
+              height: 24,
+              padding: "0 8px",
+              borderRadius: 7,
+              border: updateStatus === "failed"
+                ? "1px solid rgba(251,113,133,0.46)"
+                : updateStatus === "updated"
+                  ? "1px solid rgba(94,234,212,0.54)"
+                  : "1px solid rgba(255,212,90,0.46)",
+              background: updateStatus === "failed"
+                ? "rgba(251,113,133,0.14)"
+                : updateStatus === "updated"
+                  ? "rgba(45,212,191,0.16)"
+                  : "rgba(255,212,90,0.14)",
+              color: updateStatus === "failed"
+                ? "#fecdd3"
+                : updateStatus === "updated"
+                  ? "var(--accent-strong)"
+                  : "var(--hex-honey-border)",
+              fontFamily: "var(--f-mono)",
+              fontSize: 9.5,
+              fontWeight: 800,
+              letterSpacing: 0,
+              cursor: updateDisabled ? "default" : "pointer",
+            }}
+          >
+            {updateStatus === "updating" ? (
+              <LoaderCircle size={12} className="animate-spin" aria-hidden="true" />
+            ) : updateStatus === "updated" ? (
+              "Updated!"
+            ) : updateStatus === "failed" ? (
+              "Failed"
+            ) : (
+              "Update"
+            )}
+          </button>
+        ) : (
         <span
           style={{
             fontFamily: "var(--f-mono)", fontSize: 11,
@@ -125,6 +210,7 @@ function RosterRow({
         >
           {machine.agents.length}
         </span>
+        )}
         <button
           onClick={(e) => { e.stopPropagation(); onToggle(); }}
           aria-label={expanded ? "Collapse" : "Expand"}
@@ -351,10 +437,12 @@ interface RosterProps {
   selected: string;
   selectedAgentId: string | null;
   expanded: Set<string>;
+  updateStatusByMachine?: Record<string, MachineUpdateButtonStatus>;
   onSelectMachine: (id: string) => void;
   onSelectAgent: (m: FleetMachine, a: FleetAgent) => void;
   onToggleExpand: (id: string) => void;
   onAddAgent: (m: FleetMachine) => void;
+  onUpdateMachine?: (m: FleetMachine) => void;
   onOpenChat?: (m: FleetMachine, a: FleetAgent) => void;
   onOpenWallet?: (m: FleetMachine, a: FleetAgent) => void;
   onEditSettings?: (m: FleetMachine, a: FleetAgent) => void;
@@ -364,7 +452,9 @@ interface RosterProps {
 
 export function Roster({
   machines, selected, selectedAgentId, expanded,
+  updateStatusByMachine,
   onSelectMachine, onSelectAgent, onToggleExpand, onAddAgent,
+  onUpdateMachine,
   onOpenChat, onOpenWallet, onEditSettings, onDuplicate, onRemove,
 }: RosterProps) {
   const [activeIssueMachine, setActiveIssueMachine] = React.useState<FleetMachine | null>(null);
@@ -378,12 +468,14 @@ export function Roster({
           selected={m.id === selected}
           expanded={expanded.has(m.id) || (m.id === selected && !!selectedAgentId)}
           selectedAgentId={m.id === selected ? selectedAgentId : null}
+          updateStatus={updateStatusByMachine?.[m.id]}
           onSelectMachine={() => onSelectMachine(m.id)}
           onSelectAgent={(a) => onSelectAgent(m, a)}
           onToggle={() => onToggleExpand(m.id)}
           onAddAgent={() => onAddAgent(m)}
-          onOpenChat={(a) => onOpenChat?.(m, a)}
+          onUpdateMachine={onUpdateMachine ? () => onUpdateMachine(m) : undefined}
           onOpenNetworkIssue={m.networkIssue ? () => setActiveIssueMachine(m) : undefined}
+          onOpenChat={(a) => onOpenChat?.(m, a)}
           onOpenWallet={(a) => onOpenWallet?.(m, a)}
           onEditSettings={(a) => onEditSettings?.(m, a)}
           onDuplicate={(a) => onDuplicate?.(m, a)}

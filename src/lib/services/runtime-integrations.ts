@@ -6,9 +6,12 @@ import { dirname, join } from "node:path";
 import { promisify } from "node:util";
 import type { AgentProfile, AgentRuntime, RuntimeCapabilities } from "@/lib/types/agent-runtime";
 import { RUNTIME_CAPABILITIES } from "@/lib/types/agent-runtime";
+import type { RuntimeModelSelection } from "./runtime-adapters/types";
 
 const execFileAsync = promisify(execFile);
 const HERMES_HOME = join(homedir(), ".hermes");
+const HERMES_AGENT_DIR = join(HERMES_HOME, "hermes-agent");
+const HERMES_PYTHON = join(HERMES_AGENT_DIR, "venv", "bin", "python");
 const HERMES_DB = join(HERMES_HOME, "state.db");
 const OPENCLAW_AGENTS = join(homedir(), ".openclaw", "agents");
 const RUN_LOG_ROOT = join(homedir(), ".hivemindos", "runtime-runs");
@@ -31,6 +34,7 @@ export type RuntimeIntegrationStatus = {
     detail: string;
   }>;
   diagnostics: string[];
+  modelSelection?: RuntimeModelSelection;
 };
 
 export type RuntimeSessionSearchResult = {
@@ -69,13 +73,17 @@ export async function getRuntimeIntegrationStatus(runtime: AgentRuntime, agent?:
   }
 
   const diagnostics: string[] = [];
-  const [version, tools, config] = await Promise.all([
+  const [version, tools, config, modelSelection] = await Promise.all([
     runHermes(["--version"]).catch((error) => {
       diagnostics.push(error instanceof Error ? error.message : "Hermes version check failed.");
       return "";
     }),
     runHermes(["tools", "list"]).catch(() => ""),
     readFile(join(HERMES_HOME, "config.yaml"), "utf8").catch(() => ""),
+    getHermesModelSelection().catch((error) => {
+      diagnostics.push(error instanceof Error ? error.message : "Hermes model inventory failed.");
+      return undefined;
+    }),
   ]);
   const toolEnabled = (name: string) => new RegExp(`✓\\s+enabled\\s+${escapeRegExp(name)}\\b`).test(tools);
   const codexConfigured = /provider:\s*openai-codex\b|codex_app_server|codex-runtime/i.test(config);
@@ -85,6 +93,7 @@ export async function getRuntimeIntegrationStatus(runtime: AgentRuntime, agent?:
   return {
     runtime,
     capabilities,
+    modelSelection,
     integrations: {
       sessionSearch: {
         supported: true,
@@ -161,6 +170,21 @@ export async function runRuntimeIntegrationAction(runtime: AgentRuntime, action:
     const output = await runHermes(["update"], 300_000);
     return { ok: true, message: "Hermes update completed.", output };
   }
+  if (action === "set-model") {
+    const provider = String(input.provider ?? "").trim();
+    const model = String(input.model ?? "").trim();
+    if (!provider || !model) return { ok: false, error: "Provider and model are required." };
+    await setHermesModel(provider, model);
+    return { ok: true, message: `Hermes default model set to ${provider}/${model}.` };
+  }
+  if (action === "add-model") {
+    const provider = String(input.provider ?? "").trim();
+    const model = String(input.model ?? "").trim();
+    const contextLength = Number(input.contextLength ?? 0);
+    if (!provider || !model) return { ok: false, error: "Provider and model are required." };
+    await addHermesModel(provider, model, Number.isFinite(contextLength) && contextLength > 0 ? contextLength : undefined);
+    return { ok: true, message: `Added ${model} to Hermes provider ${provider}.` };
+  }
   if (action === "background") {
     const prompt = String(input.prompt ?? "").trim();
     if (!prompt) return { ok: false, error: "Background prompt is required." };
@@ -224,6 +248,148 @@ async function searchHermesSessions(query: string, limit: number) {
     updatedAt: toIso(row.updated_at || row.started_at),
     excerpt: (row.system_prompt || "").replace(/\s+/g, " ").slice(0, 280),
   }));
+}
+
+async function getHermesModelSelection(): Promise<RuntimeModelSelection | undefined> {
+  if (!existsSync(HERMES_PYTHON) || !existsSync(HERMES_AGENT_DIR)) return undefined;
+  const script = `
+import json
+from hermes_cli.config import load_config
+from hermes_cli.inventory import build_models_payload, load_picker_context
+cfg = load_config()
+payload = build_models_payload(load_picker_context(), max_models=200)
+configured = {}
+model_cfg = cfg.get("model", {})
+if isinstance(model_cfg, dict) and model_cfg.get("provider") and model_cfg.get("default"):
+    configured[model_cfg.get("provider")] = True
+providers = cfg.get("providers", {})
+if isinstance(providers, dict):
+    for slug, provider_cfg in providers.items():
+        if not isinstance(provider_cfg, dict):
+            continue
+        models = provider_cfg.get("models")
+        has_models = (
+            bool(models)
+            if isinstance(models, (list, dict))
+            else bool(provider_cfg.get("model") or provider_cfg.get("default_model"))
+        )
+        if has_models:
+            configured[slug] = True
+payload["configured_providers"] = sorted(configured.keys())
+print(json.dumps(payload))
+`;
+  const { stdout } = await execFileAsync(HERMES_PYTHON, ["-c", script], {
+    cwd: HERMES_AGENT_DIR,
+    env: { ...process.env, PYTHONPATH: HERMES_AGENT_DIR },
+    timeout: 20_000,
+    maxBuffer: 5_000_000,
+  });
+  const payload = JSON.parse(stdout || "{}") as {
+    provider?: string;
+    model?: string;
+    configured_providers?: string[];
+    providers?: Array<{
+      slug?: string;
+      name?: string;
+      models?: Array<string | { id?: string; name?: string }>;
+      total_models?: number;
+      totalModels?: number;
+      is_current?: boolean;
+      is_user_defined?: boolean;
+      source?: string;
+    }>;
+  };
+  const configuredProviders = new Set(payload.configured_providers ?? []);
+  return {
+    provider: payload.provider ?? "",
+    model: payload.model ?? "",
+    providers: (payload.providers ?? [])
+      .filter((provider) => provider.slug && configuredProviders.has(provider.slug))
+      .map((provider) => ({
+        slug: provider.slug ?? "",
+        name: provider.name || provider.slug || "Provider",
+        models: (provider.models ?? []).map((model) => (
+          typeof model === "string" ? { id: model } : { id: model.id ?? "", name: model.name }
+        )).filter((model) => model.id),
+        totalModels: provider.total_models ?? provider.totalModels ?? provider.models?.length ?? 0,
+        isCurrent: provider.is_current,
+        isUserDefined: provider.is_user_defined,
+        source: provider.source,
+      })),
+  };
+}
+
+async function setHermesModel(provider: string, model: string) {
+  const script = `
+from hermes_cli.config import load_config, save_config
+provider = __PROVIDER__
+model = __MODEL__
+cfg = load_config()
+model_cfg = cfg.get("model", {})
+if not isinstance(model_cfg, dict):
+    model_cfg = {}
+model_cfg["provider"] = provider
+model_cfg["default"] = model
+model_cfg.pop("context_length", None)
+if model_cfg.get("base_url"):
+    model_cfg["base_url"] = ""
+cfg["model"] = model_cfg
+save_config(cfg)
+`;
+  await runHermesPython(script, { __PROVIDER__: provider, __MODEL__: model });
+}
+
+async function addHermesModel(provider: string, model: string, contextLength?: number) {
+  const script = `
+from hermes_cli.config import load_config, save_config
+provider = __PROVIDER__
+model = __MODEL__
+context_length = __CONTEXT_LENGTH__
+cfg = load_config()
+providers = cfg.get("providers")
+if not isinstance(providers, dict):
+    providers = {}
+entry = providers.get(provider)
+if not isinstance(entry, dict):
+    entry = {"name": provider, "models": {}}
+models = entry.get("models")
+if isinstance(models, list):
+    if model not in models:
+        models.append(model)
+elif isinstance(models, dict):
+    meta = models.get(model)
+    if not isinstance(meta, dict):
+        meta = {}
+    if context_length:
+        meta["context_length"] = context_length
+    models[model] = meta
+else:
+    models = {model: {"context_length": context_length} if context_length else {}}
+entry["models"] = models
+entry.setdefault("default_model", model)
+providers[provider] = entry
+cfg["providers"] = providers
+save_config(cfg)
+`;
+  await runHermesPython(script, {
+    __PROVIDER__: provider,
+    __MODEL__: model,
+    __CONTEXT_LENGTH__: contextLength ?? 0,
+  });
+}
+
+async function runHermesPython(script: string, values: Record<string, string | number>) {
+  if (!existsSync(HERMES_PYTHON) || !existsSync(HERMES_AGENT_DIR)) throw new Error("Hermes Python runtime was not found.");
+  let rendered = script;
+  for (const [key, value] of Object.entries(values)) {
+    rendered = rendered.replaceAll(key, JSON.stringify(value));
+  }
+  await execFileAsync(HERMES_PYTHON, ["-c", rendered], {
+    cwd: HERMES_AGENT_DIR,
+    env: { ...process.env, PYTHONPATH: HERMES_AGENT_DIR },
+    timeout: 20_000,
+    maxBuffer: 2_000_000,
+  });
 }
 
 async function searchOpenClawSessions(query: string, limit: number) {

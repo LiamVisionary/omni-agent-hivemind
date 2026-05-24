@@ -8,7 +8,7 @@ import { HexTile } from "./hex-tile";
 import { ListView } from "./list-view";
 import { MapView } from "./map-view";
 import { NetworkGraph } from "./network-graph";
-import { Roster } from "./roster";
+import { Roster, type MachineUpdateButtonStatus } from "./roster";
 import {
   ALERTS,
   MACHINES,
@@ -35,6 +35,8 @@ interface FleetViewProps {
   /** Optional override hooks so the parent app can wire actions to real APIs. */
   onAddAgent?: (m: FleetMachine) => void;
   onAddMachine?: () => void;
+  updateStatusByMachine?: Record<string, MachineUpdateButtonStatus>;
+  onUpdateMachine?: (m: FleetMachine) => void;
   onOpenChat?: (m: FleetMachine, a: FleetAgent) => void;
   onOpenWallet?: (m: FleetMachine, a: FleetAgent) => void;
   onEditSettings?: (m: FleetMachine, a: FleetAgent) => void;
@@ -52,6 +54,8 @@ export function FleetView({
   tailnetLabel = "tailnet private",
   onAddAgent,
   onAddMachine,
+  updateStatusByMachine,
+  onUpdateMachine,
   onOpenChat,
   onOpenWallet,
   onEditSettings,
@@ -236,6 +240,8 @@ export function FleetView({
                 onSelectAgent={handleSelectAgent}
                 onToggleExpand={toggleExpand}
                 onAddAgent={handleAddAgent}
+                updateStatusByMachine={updateStatusByMachine}
+                onUpdateMachine={onUpdateMachine}
                 onOpenChat={onOpenChat}
                 onOpenWallet={onOpenWallet}
                 onEditSettings={onEditSettings}

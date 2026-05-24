@@ -7,9 +7,11 @@ HERMES_API_PORT="${AGENT_TELEMETRY_HERMES_API_PORT:-8642}"
 HERMES_RESTART_MODE="${AGENT_TELEMETRY_HERMES_RESTART:-now}"
 NETWORK_MANAGED_BY_SETUP="${HIVE_SETUP_NETWORK_MANAGED:-false}"
 SETUP_TAILNET_SYNC_ENABLED="${HIVE_SETUP_TAILNET_SYNC_ENABLED:-false}"
+LINK_ENABLED="${HIVE_LINK_ENABLED:-false}"
 APP_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 COLLECTOR="$APP_DIR/scripts/agent-telemetry-collector.mjs"
 SYNCTHING_RUNNER="$APP_DIR/scripts/run-syncthing.sh"
+LINK_BIN="${HIVE_LINK_BIN:-$APP_DIR/bin/hivemind-linkd}"
 NODE_BIN="$(command -v node)"
 
 if [[ ! -f "$COLLECTOR" ]]; then
@@ -53,6 +55,39 @@ install_syncthing_if_missing() {
   else
     echo "Install Syncthing to use realtime folder sync." >&2
   fi
+}
+
+install_go_if_missing() {
+  if command -v go >/dev/null 2>&1; then
+    return 0
+  fi
+  if ! prompt_yes_no "Go is missing. Install Go so Hivemind Link can build its embedded Tailscale sidecar?" "yes"; then
+    return 1
+  fi
+  if [[ "$(uname -s)" == "Darwin" ]] && { command -v brew >/dev/null 2>&1 || load_homebrew_shellenv; }; then
+    brew install go
+  elif command -v apt-get >/dev/null 2>&1 && command -v sudo >/dev/null 2>&1; then
+    sudo apt-get update
+    sudo apt-get install -y golang-go
+  elif command -v dnf >/dev/null 2>&1 && command -v sudo >/dev/null 2>&1; then
+    sudo dnf install -y golang
+  elif command -v yum >/dev/null 2>&1 && command -v sudo >/dev/null 2>&1; then
+    sudo yum install -y golang
+  else
+    echo "Install Go, then rerun ./scripts/install-telemetry-collector.sh with HIVE_LINK_ENABLED=true." >&2
+    return 1
+  fi
+  command -v go >/dev/null 2>&1
+}
+
+build_hivemind_linkd_if_enabled() {
+  [[ "$LINK_ENABLED" == "true" ]] || return 1
+  if [[ -x "$LINK_BIN" ]]; then
+    return 0
+  fi
+  install_go_if_missing || return 1
+  "$APP_DIR/scripts/build-hivemind-linkd.sh" >/dev/null
+  [[ -x "$LINK_BIN" ]]
 }
 
 load_homebrew_shellenv() {
@@ -579,8 +614,19 @@ configure_hermes_api_server() {
 
 configure_hermes_api_server
 
+LINK_ACTIVE="false"
+if build_hivemind_linkd_if_enabled; then
+  LINK_ACTIVE="true"
+  echo "Hivemind Link sidecar is ready: $LINK_BIN"
+elif [[ "$LINK_ENABLED" == "true" ]]; then
+  echo "Hivemind Link was requested but could not be built; falling back to the normal collector network mode." >&2
+fi
+
 TAILNET_SYNC_ENABLED="false"
-if [[ "$NETWORK_MANAGED_BY_SETUP" == "true" ]]; then
+if [[ "$LINK_ACTIVE" == "true" ]]; then
+  TAILNET_SYNC_ENABLED="false"
+  echo "Hivemind Link keeps the collector localhost-only and exposes it through the embedded Tailscale sidecar."
+elif [[ "$NETWORK_MANAGED_BY_SETUP" == "true" ]]; then
   TAILNET_SYNC_ENABLED="$SETUP_TAILNET_SYNC_ENABLED"
 elif ensure_tailscale_connected; then
   TAILNET_SYNC_ENABLED="true"
@@ -648,6 +694,7 @@ PLIST
   <key>EnvironmentVariables</key>
   <dict>
     <key>AGENT_TELEMETRY_PORT</key><string>$PORT</string>
+    <key>AGENT_TELEMETRY_HOST</key><string>$( [[ "$LINK_ACTIVE" == "true" ]] && printf "127.0.0.1" || printf "0.0.0.0" )</string>
     <key>AGENT_TELEMETRY_HERMES_API_HOST</key><string>$HERMES_API_HOST</string>
     <key>AGENT_TELEMETRY_HERMES_API_PORT</key><string>$HERMES_API_PORT</string>
   </dict>
@@ -662,7 +709,38 @@ PLIST
   launchctl_bounded 5 load "$PLIST"
   launchctl_bounded 5 kickstart -k "gui/$(id -u)/com.agent-control-room.telemetry" >/dev/null 2>&1 || true
   echo "Installed macOS LaunchAgent on port $PORT"
-  maybe_allow_node_through_macos_firewall
+  if [[ "$LINK_ACTIVE" == "true" ]]; then
+    LINK_PLIST="$HOME/Library/LaunchAgents/com.hivemindos.linkd.plist"
+    cat > "$LINK_PLIST" <<PLIST
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key><string>com.hivemindos.linkd</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>$LINK_BIN</string>
+  </array>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>HIVE_LINK_TARGET</key><string>http://127.0.0.1:$PORT</string>
+    <key>HIVE_LINK_LISTEN</key><string>:$PORT</string>
+    <key>HIVE_LINK_CONTROL</key><string>127.0.0.1:8788</string>
+  </dict>
+  <key>RunAtLoad</key><true/>
+  <key>KeepAlive</key><true/>
+  <key>StandardOutPath</key><string>$HOME/Library/Logs/hivemindos-linkd.log</string>
+  <key>StandardErrorPath</key><string>$HOME/Library/Logs/hivemindos-linkd.err.log</string>
+</dict>
+</plist>
+PLIST
+    launchctl_bounded 5 unload "$LINK_PLIST" >/dev/null 2>&1 || true
+    launchctl_bounded 5 load "$LINK_PLIST"
+    launchctl_bounded 5 kickstart -k "gui/$(id -u)/com.hivemindos.linkd" >/dev/null 2>&1 || true
+    echo "Installed Hivemind Link macOS LaunchAgent"
+  else
+    maybe_allow_node_through_macos_firewall
+  fi
 else
   if [[ "$TAILNET_SYNC_ENABLED" == "true" ]]; then
     install_syncthing_if_missing
@@ -700,6 +778,7 @@ Description=HivemindOS telemetry collector
 
 [Service]
 Environment=AGENT_TELEMETRY_PORT=$PORT
+Environment=AGENT_TELEMETRY_HOST=$( [[ "$LINK_ACTIVE" == "true" ]] && printf "127.0.0.1" || printf "0.0.0.0" )
 Environment=AGENT_TELEMETRY_HERMES_API_HOST=$HERMES_API_HOST
 Environment=AGENT_TELEMETRY_HERMES_API_PORT=$HERMES_API_PORT
 ExecStart=$(command -v node) $COLLECTOR
@@ -712,6 +791,28 @@ SERVICE
   systemctl --user enable agent-telemetry.service
   systemctl --user restart agent-telemetry.service
   echo "Installed systemd user service on port $PORT"
+  if [[ "$LINK_ACTIVE" == "true" ]]; then
+    LINK_SERVICE="$HOME/.config/systemd/user/hivemindos-linkd.service"
+    cat > "$LINK_SERVICE" <<SERVICE
+[Unit]
+Description=HivemindOS embedded Tailscale Link sidecar
+After=agent-telemetry.service
+
+[Service]
+Environment=HIVE_LINK_TARGET=http://127.0.0.1:$PORT
+Environment=HIVE_LINK_LISTEN=:$PORT
+Environment=HIVE_LINK_CONTROL=127.0.0.1:8788
+ExecStart=$LINK_BIN
+Restart=always
+
+[Install]
+WantedBy=default.target
+SERVICE
+    systemctl --user daemon-reload
+    systemctl --user enable hivemindos-linkd.service
+    systemctl --user restart hivemindos-linkd.service
+    echo "Installed Hivemind Link systemd user service"
+  fi
 fi
 
 if [[ "$TAILNET_SYNC_ENABLED" == "true" && "$NETWORK_MANAGED_BY_SETUP" != "true" ]]; then
@@ -733,6 +834,16 @@ if [[ "$NETWORK_MANAGED_BY_SETUP" != "true" ]] && tailscale_status_connected; th
   fi
 fi
 echo "Local collector URL: http://127.0.0.1:$PORT"
+if [[ "$LINK_ACTIVE" == "true" ]]; then
+  echo "Hivemind Link control URL: http://127.0.0.1:8788/status"
+  LINK_STATUS="$(curl -fsS --max-time 3 http://127.0.0.1:8788/status 2>/dev/null || true)"
+  LINK_AUTH_URL="$(printf "%s" "$LINK_STATUS" | node -e 'let d="";process.stdin.on("data",c=>d+=c);process.stdin.on("end",()=>{try{const j=JSON.parse(d); if(j.authUrl) console.log(j.authUrl)}catch{}})' 2>/dev/null || true)"
+  if [[ -n "$LINK_AUTH_URL" ]]; then
+    echo "Hivemind Link sign-in required."
+    echo "Open this URL on any device to connect this app-managed node to your Tailscale account:"
+    echo "  $LINK_AUTH_URL"
+  fi
+fi
 if wait_for_local_collector 10; then
   echo "Local collector health: ok"
 else

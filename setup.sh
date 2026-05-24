@@ -10,9 +10,10 @@ CLI_SHARED_SKILL_TARGETS=""
 CLI_INTERACTIVE=""
 CLI_FORCE="false"
 CLI_SKIP_DEPS="false"
-CLI_SKIP_BUILD="false"
+CLI_BUILD_DASHBOARD="${HIVE_SETUP_BUILD_DASHBOARD:-false}"
 CLI_SKIP_COLLECTOR="false"
 CLI_SKIP_DASHBOARD="false"
+CLI_NETWORK_MODE=""
 
 info() { printf "\033[1;36m%s\033[0m\n" "$*"; }
 ok() { printf "\033[1;32m✓\033[0m %s\n" "$*"; }
@@ -176,9 +177,13 @@ Options:
   --non-interactive             Do not prompt. Uses explicit flags/env or safe defaults.
   --interactive                 Force prompts when running in a TTY.
   --skip-deps                   Skip pnpm install.
-  --skip-build                  Skip next build.
+  --build                       Run a production Next.js build during setup.
+  --skip-build                  Deprecated no-op; production builds are skipped by default.
   --skip-collector              Skip collector service installation/restart.
   --skip-dashboard              Skip starting/restarting the dashboard dev server.
+  --link                        Use app-managed Hivemind Link. This is the default.
+  --system-tailscale            Use full system Tailscale setup for Syncthing, SSH, and rsync.
+  --local-only                  Skip all multi-machine networking.
   --force                       Re-run setup work even when cached checks say it is current.
   -h, --help                    Show this help.
 
@@ -187,6 +192,7 @@ Environment overrides:
   HIVE_SHARED_SKILL_IMPORTS=all|none|codex,hermes,aeon
   HIVE_SHARED_SKILL_TARGETS=all|none|codex,hermes,aeon
   HIVE_SETUP_INTERACTIVE=false
+  HIVE_NETWORK_MODE=link|system-tailscale|local
 EOF
 }
 
@@ -233,13 +239,25 @@ parse_args() {
         CLI_SKIP_DEPS="true"
         ;;
       --skip-build)
-        CLI_SKIP_BUILD="true"
+        CLI_BUILD_DASHBOARD="false"
+        ;;
+      --build|--production-build)
+        CLI_BUILD_DASHBOARD="true"
         ;;
       --skip-collector)
         CLI_SKIP_COLLECTOR="true"
         ;;
       --skip-dashboard|--no-start)
         CLI_SKIP_DASHBOARD="true"
+        ;;
+      --link)
+        CLI_NETWORK_MODE="link"
+        ;;
+      --system-tailscale|--tailscale)
+        CLI_NETWORK_MODE="system-tailscale"
+        ;;
+      --local-only|--local)
+        CLI_NETWORK_MODE="local"
         ;;
       --force)
         CLI_FORCE="true"
@@ -1254,25 +1272,45 @@ fi
 tailscale_ip=""
 tailnet_sync_enabled="false"
 env_tailnet_sync_enabled="false"
-if ensure_tailscale_connected; then
-  ok "Tailscale is running"
-  tailscale_ip="$(tailscale_ip4 || true)"
-  tailnet_sync_enabled="true"
-  prefer_homebrew_tailscaled_for_macos_fleet
-  tailscale_ip="$(tailscale_ip4 || true)"
-  if enable_tailscale_ssh; then
-    env_tailnet_sync_enabled="true"
-  fi
-else
-  warn "Tailscale setup was not completed"
-  warn "Multi-machine collaboration and shared memory sync are disabled for this run. Local-only dashboard, agents, and local vault features will still work."
-fi
+hivemind_link_enabled="false"
+network_mode="${CLI_NETWORK_MODE:-${HIVE_NETWORK_MODE:-link}}"
+case "$network_mode" in
+  link)
+    hivemind_link_enabled="true"
+    ok "Network mode: Hivemind Link"
+    ok "Remote Fleet/chat will use an app-managed Tailscale node."
+    ;;
+  system-tailscale)
+    if ensure_tailscale_connected; then
+      ok "Network mode: system Tailscale"
+      tailscale_ip="$(tailscale_ip4 || true)"
+      tailnet_sync_enabled="true"
+      prefer_homebrew_tailscaled_for_macos_fleet
+      tailscale_ip="$(tailscale_ip4 || true)"
+      if enable_tailscale_ssh; then
+        env_tailnet_sync_enabled="true"
+      fi
+    else
+      warn "Tailscale setup was not completed"
+      warn "Multi-machine collaboration and shared memory sync are disabled for this run. Local-only dashboard, agents, and local vault features will still work."
+    fi
+    ;;
+  local)
+    ok "Network mode: local only"
+    warn "Skipping all multi-machine networking."
+    ;;
+  *)
+    fail "Unknown HIVE_NETWORK_MODE: $network_mode"
+    echo "Use one of: link, system-tailscale, local"
+    exit 2
+    ;;
+esac
 
 if [[ "$tailnet_sync_enabled" == "true" ]]; then
   install_rsync_if_missing
   install_syncthing_if_missing
   start_syncthing_if_available
-else
+elif [[ "$network_mode" == "system-tailscale" ]]; then
   warn "Skipping Tailnet rsync/Syncthing setup because Tailscale is not connected"
 fi
 
@@ -1388,7 +1426,7 @@ else
   if setup_is_interactive; then
     hermes_restart_mode="ask"
   fi
-  HIVE_SETUP_NETWORK_MANAGED="true" HIVE_SETUP_TAILNET_SYNC_ENABLED="$tailnet_sync_enabled" AGENT_TELEMETRY_PORT="$COLLECTOR_PORT" AGENT_TELEMETRY_HERMES_RESTART="${AGENT_TELEMETRY_HERMES_RESTART:-$hermes_restart_mode}" ./scripts/install-telemetry-collector.sh
+  HIVE_SETUP_NETWORK_MANAGED="true" HIVE_SETUP_TAILNET_SYNC_ENABLED="$tailnet_sync_enabled" HIVE_LINK_ENABLED="$hivemind_link_enabled" AGENT_TELEMETRY_PORT="$COLLECTOR_PORT" AGENT_TELEMETRY_HERMES_RESTART="${AGENT_TELEMETRY_HERMES_RESTART:-$hermes_restart_mode}" ./scripts/install-telemetry-collector.sh
   if wait_for_local_collector; then
     ok "Collector installed and healthy locally"
     configure_env_reconciliation
@@ -1401,8 +1439,8 @@ fi
 
 build_stamp="$setup_cache_dir/build.sha"
 build_hash="$(hash_files package.json pnpm-lock.yaml next.config.ts tsconfig.json)"
-if [[ "$CLI_SKIP_BUILD" == "true" ]]; then
-  warn "Skipping dashboard build because --skip-build was provided"
+if [[ "$CLI_BUILD_DASHBOARD" != "true" ]]; then
+  ok "Skipping production dashboard build; dev server will compile on demand"
 elif [[ "$CLI_FORCE" != "true" && -d "$ROOT/.next" && -f "$build_stamp" && "$(cat "$build_stamp" 2>/dev/null)" == "$build_hash" ]]; then
   ok "Dashboard build already current"
 else
@@ -1488,11 +1526,18 @@ echo
 echo "Collector:"
 if [[ -n "$collector_url" ]]; then
   echo "  $collector_url"
+elif [[ "$hivemind_link_enabled" == "true" ]]; then
+  echo "  Hivemind Link: http://127.0.0.1:8788/status"
 else
   echo "  http://localhost:$COLLECTOR_PORT"
 fi
 echo
-if [[ "$tailnet_sync_enabled" == "true" ]]; then
+if [[ "$hivemind_link_enabled" == "true" ]]; then
+  echo "On other machines that run agents, clone the repo and run:"
+  echo "  HIVE_LINK_ENABLED=true ./scripts/install-telemetry-collector.sh"
+  echo
+  echo "Each machine links to your own Tailscale account through the embedded Hivemind Link node. The dashboard discovers Link peers through the local sidecar."
+elif [[ "$tailnet_sync_enabled" == "true" ]]; then
   echo "On other Tailscale machines that run agents, clone the repo and run only:"
   echo "  ./scripts/install-telemetry-collector.sh"
   echo

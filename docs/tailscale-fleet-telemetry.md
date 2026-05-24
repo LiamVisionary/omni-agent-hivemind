@@ -64,6 +64,34 @@ Minimal ACL idea:
 }
 ```
 
+## Hivemind Link Setup
+
+Normal setup uses the app-managed Link sidecar by default. For collector-only
+installs on additional machines, run:
+
+```bash
+HIVE_LINK_ENABLED=true ./scripts/install-telemetry-collector.sh
+```
+
+This builds and starts `hivemind-linkd`, an embedded `tsnet` reverse proxy. The
+collector binds to `127.0.0.1`, and the sidecar exposes port `8787` only through
+the user's own Tailscale account. The sidecar also serves local status at:
+
+```text
+http://127.0.0.1:8788/status
+```
+
+When no system Tailscale route exists, the dashboard reaches remote collectors
+through the local sidecar's `/peer/<host:port>/...` proxy instead of dialing
+Tailnet IPs directly.
+
+If the embedded node needs authorization, setup prints a Tailscale sign-in URL.
+No HivemindOS server proxies model or collector traffic.
+
+Use `./setup.sh --system-tailscale` only when you want the full system Tailscale
+setup surface for Tailscale SSH, rsync repair, and HivemindOS-managed Syncthing
+peer addressing.
+
 For a public template, the smooth path is:
 
 ```bash

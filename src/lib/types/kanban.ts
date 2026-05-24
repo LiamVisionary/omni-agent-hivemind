@@ -52,6 +52,10 @@ export type KanbanTaskAttachment = {
 export type KanbanLinkedDirectory = {
   id: string;
   name: string;
+  path?: string;
+  machineName?: string;
+  machineKey?: string;
+  lastUsedAt?: number;
 };
 
 export type KanbanMachineTarget = {

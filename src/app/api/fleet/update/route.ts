@@ -12,6 +12,7 @@ type UpdateBody = {
   ip?: string;
   appDir?: string;
   updateCommand?: string;
+  expectedCommit?: string;
   requiredCapabilities?: {
     chat?: boolean;
   };
@@ -27,6 +28,8 @@ type CollectorHealth = {
     commit?: string;
     shortCommit?: string;
     dirty?: boolean;
+    latestCommit?: string;
+    latestShortCommit?: string;
   };
 };
 
@@ -50,14 +53,54 @@ function hasRequiredCapabilities(health: CollectorHealth | null, required?: Upda
   return health?.capabilities?.chat === true;
 }
 
-async function waitForCollectorVerification(collectorUrl?: string, required?: UpdateBody["requiredCapabilities"]) {
-  const delays = [1_000, 2_000, 4_000, 8_000, 15_000];
-  let health = await fetchCollectorHealth(collectorUrl);
-  if (hasRequiredCapabilities(health, required)) return { verified: true, health };
+function hasExpectedVersion(health: CollectorHealth | null, expectedCommit?: string) {
+  const expected = expectedCommit?.trim();
+  const commit = health?.version?.commit?.trim();
+  const latest = health?.version?.latestCommit?.trim();
+  if (commit && latest && commit === latest) return true;
+  if (!expected) return true;
+  return commit === expected;
+}
+
+function hasVerificationTarget(body: UpdateBody) {
+  return Boolean(body.expectedCommit?.trim() || body.requiredCapabilities?.chat);
+}
+
+async function updateBodyWithTarget(body: UpdateBody): Promise<UpdateBody> {
+  if (body.expectedCommit?.trim()) return body;
+  const health = await fetchCollectorHealth(body.collectorUrl);
+  const commit = health?.version?.commit?.trim();
+  const latestCommit = health?.version?.latestCommit?.trim();
+  if (commit && latestCommit && commit !== latestCommit) {
+    return { ...body, expectedCommit: latestCommit };
+  }
+  return body;
+}
+
+function verificationError(body: UpdateBody, health: CollectorHealth | null) {
+  if (body.expectedCommit?.trim() && health?.version?.commit !== body.expectedCommit.trim()) {
+    const current = health?.version?.shortCommit || health?.version?.commit?.slice(0, 7) || "unknown";
+    const expected = health?.version?.latestShortCommit || body.expectedCommit.trim().slice(0, 7);
+    return `The update started, but this collector still reports ${current} instead of ${expected}. It may still be building, or the remote update failed.`;
+  }
+  if (body.requiredCapabilities?.chat) return "The update command finished, but the collector still does not report the Hermes chat bridge.";
+  if (!body.expectedCommit?.trim()) return "The update request did not include or expose a target commit to verify.";
+  return "The update command finished, but collector verification did not pass.";
+}
+
+async function waitForCollectorVerification(body: UpdateBody) {
+  const delays = [1_000, 2_000, 4_000, 8_000, 15_000, 30_000, 45_000, 60_000, 60_000, 60_000];
+  let health = await fetchCollectorHealth(body.collectorUrl);
+  if (!hasVerificationTarget(body)) return { verified: false, health };
+  if (hasVerificationTarget(body) && hasRequiredCapabilities(health, body.requiredCapabilities) && hasExpectedVersion(health, body.expectedCommit)) {
+    return { verified: true, health };
+  }
   for (const delay of delays) {
     await new Promise((resolve) => setTimeout(resolve, delay));
-    health = await fetchCollectorHealth(collectorUrl);
-    if (hasRequiredCapabilities(health, required)) return { verified: true, health };
+    health = await fetchCollectorHealth(body.collectorUrl);
+    if (hasVerificationTarget(body) && hasRequiredCapabilities(health, body.requiredCapabilities) && hasExpectedVersion(health, body.expectedCommit)) {
+      return { verified: true, health };
+    }
   }
   return { verified: false, health };
 }
@@ -81,21 +124,59 @@ function shellSingleQuote(value: string) {
   return `'${value.replaceAll("'", "'\\''")}'`;
 }
 
-function updateScriptForCheckout() {
+function installScriptForCheckout() {
   return [
-    "git pull --ff-only",
     "if ! command -v pnpm >/dev/null 2>&1 && command -v corepack >/dev/null 2>&1; then corepack enable; corepack prepare pnpm@latest --activate; fi",
     "pnpm install --frozen-lockfile",
     "AGENT_TELEMETRY_PORT=\"${AGENT_TELEMETRY_PORT:-8787}\" ./scripts/install-telemetry-collector.sh",
   ].join("\n");
 }
 
-function fallbackScript(appDir?: string) {
+function remoteUpdateScript() {
+  return [
+    "repo_url=$(git remote get-url origin)",
+    "branch=$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo main)",
+    "if ! git pull --ff-only; then",
+    "  status=$(git status --porcelain)",
+    "  if [ -z \"$status\" ]; then",
+    "    echo 'git pull failed on a clean checkout; not recloning.' >&2",
+    "    exit 1",
+    "  fi",
+    "  current_dir=$(pwd)",
+    "  parent_dir=$(dirname \"$current_dir\")",
+    "  base_name=$(basename \"$current_dir\")",
+    "  backup_dir=\"$parent_dir/$base_name.backup.$(date -u +%Y%m%dT%H%M%SZ)\"",
+    "  temp_dir=\"$parent_dir/$base_name.tmp.$(date -u +%Y%m%dT%H%M%SZ)\"",
+    "  echo \"Checkout is dirty; preserving it at $backup_dir and recloning $repo_url#$branch\"",
+    "  cd \"$parent_dir\"",
+    "  mv \"$current_dir\" \"$backup_dir\"",
+    "  git clone --branch \"$branch\" \"$repo_url\" \"$temp_dir\"",
+    "  for env_file in .env.local .env; do",
+    "    if [ -f \"$backup_dir/$env_file\" ]; then",
+    "      cp \"$backup_dir/$env_file\" \"$temp_dir/$env_file\"",
+    "      chmod 600 \"$temp_dir/$env_file\" 2>/dev/null || true",
+    "    fi",
+    "  done",
+    "  mv \"$temp_dir\" \"$current_dir\"",
+    "  cd \"$current_dir\"",
+    "fi",
+    installScriptForCheckout(),
+  ].join("\n");
+}
+
+function localUpdateScript() {
+  return [
+    "git pull --ff-only",
+    installScriptForCheckout(),
+  ].join("\n");
+}
+
+function fallbackScript(appDir?: string, allowReclone = false) {
   if (appDir?.trim()) {
     return [
       "set -euo pipefail",
       `cd ${shellSingleQuote(appDir.trim())}`,
-      updateScriptForCheckout(),
+      allowReclone ? remoteUpdateScript() : localUpdateScript(),
     ].join("\n");
   }
   const candidates = [
@@ -113,7 +194,7 @@ function fallbackScript(appDir?: string) {
     "  fi",
     "done",
     "[ -d .git ] || { echo 'Could not find hivemindos checkout'; exit 2; }",
-    updateScriptForCheckout(),
+    allowReclone ? remoteUpdateScript() : localUpdateScript(),
   ].join("\n");
 }
 
@@ -166,6 +247,10 @@ function isUnknownHostKeyError(error: unknown) {
 
 function combineOutput(...parts: Array<string | undefined>) {
   return parts.map((part) => part?.trim()).filter(Boolean).join("\n\n");
+}
+
+function commandReachedRemote(error: string) {
+  return /git pull|pnpm install|install-telemetry-collector|setup\.sh|exited with code/i.test(error);
 }
 
 async function runTailscaleSsh(target: string, script: string) {
@@ -231,7 +316,7 @@ async function runRemoteShell(target: string, script: string) {
 async function tryTailscaleSsh(body: UpdateBody) {
   const target = body.dnsName || body.name || body.ip;
   if (!target) throw new Error("No Tailscale target was provided.");
-  const script = fallbackScript(body.appDir);
+  const script = fallbackScript(body.appDir, true);
   const { stdout, stderr } = await runRemoteShell(target, script);
   return { ok: true, accepted: true, method: "remote-shell", target, stdout, stderr, command: script };
 }
@@ -248,36 +333,42 @@ async function isLocalCheckout(appDir?: string) {
 }
 
 async function tryLocalShell(body: UpdateBody) {
-  const script = fallbackScript(body.appDir);
+  const script = fallbackScript(body.appDir, false);
   const { stdout, stderr } = await runProcess("bash", ["-s"], script, 300_000);
   return { ok: true, accepted: true, method: "local-shell", target: "this machine", stdout, stderr, command: script };
 }
 
 export async function POST(request: Request) {
-  const body = await request.json().catch(() => ({})) as UpdateBody;
+  const parsedBody = await request.json().catch(() => ({})) as UpdateBody;
+  const body = await updateBodyWithTarget(parsedBody);
   try {
     const result = await (await isLocalCheckout(body.appDir) ? tryLocalShell(body) : tryTailscaleSsh(body));
-    const verification = await waitForCollectorVerification(body.collectorUrl, body.requiredCapabilities);
+    const verification = await waitForCollectorVerification(body);
     if (!verification.verified) {
       return Response.json({
         ok: false,
-        error: body.requiredCapabilities?.chat
-          ? "The update command finished, but the collector still does not report the Hermes chat bridge."
-          : "The update command finished, but collector verification did not pass.",
+        error: verificationError(body, verification.health),
         method: result.method,
         stdout: result.stdout,
         stderr: result.stderr,
         health: verification.health,
-        fallbackCommand: fallbackScript(body.appDir),
+        fallbackCommand: fallbackScript(body.appDir, false),
       }, { status: 502 });
     }
     return Response.json({ ...result, verified: true, health: verification.health });
   } catch (error) {
     const rawError = error instanceof Error ? error.message : "Update failed";
+    if (commandReachedRemote(rawError)) {
+      return Response.json({
+        ok: false,
+        error: rawError,
+        fallbackCommand: fallbackScript(body.appDir, false),
+      }, { status: 502 });
+    }
     if (body.collectorUrl) {
       try {
         const collectorResult = await startCollectorUpdate(body.collectorUrl);
-        const verification = await waitForCollectorVerification(body.collectorUrl, body.requiredCapabilities);
+        const verification = await waitForCollectorVerification(body);
         if (verification.verified) {
           return Response.json({
             ok: true,
@@ -291,12 +382,15 @@ export async function POST(request: Request) {
         }
         return Response.json({
           ok: false,
-          error: "SSH is not available for this machine, so the collector fallback started the update, but verification did not pass before the timeout.",
+          error: combineOutput(
+            "SSH is not available for this machine, so the collector fallback started the update, but verification did not pass before the timeout.",
+            verificationError(body, verification.health),
+          ),
           method: "collector-fallback",
           sshError: rawError,
           result: collectorResult,
           health: verification.health,
-          fallbackCommand: fallbackScript(body.appDir),
+          fallbackCommand: fallbackScript(body.appDir, false),
         }, { status: 502 });
       } catch (collectorError) {
         return Response.json({
@@ -305,14 +399,14 @@ export async function POST(request: Request) {
             rawError,
             `Collector fallback failed:\n${collectorError instanceof Error ? collectorError.message : String(collectorError)}`,
           ),
-          fallbackCommand: fallbackScript(body.appDir),
+          fallbackCommand: fallbackScript(body.appDir, false),
         }, { status: 502 });
       }
     }
     return Response.json({
       ok: false,
       error: rawError,
-      fallbackCommand: fallbackScript(body.appDir),
+      fallbackCommand: fallbackScript(body.appDir, false),
     }, { status: 502 });
   }
 }

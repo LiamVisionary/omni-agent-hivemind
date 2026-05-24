@@ -41,7 +41,7 @@ export function MarketPanel({ data }: { data: SwarmMarket }) {
   const max = Math.max(...data.ticks);
   const w = 280, h = 60;
   const pts = data.ticks.map((v, i) => {
-    const x = (i / (data.ticks.length - 1)) * w;
+    const x = data.ticks.length === 1 ? w / 2 : (i / (data.ticks.length - 1)) * w;
     const y = h - ((v - min) / (max - min || 1)) * (h - 4) - 2;
     return `${x.toFixed(1)},${y.toFixed(1)}`;
   }).join(" ");
@@ -150,6 +150,8 @@ export function SocialPanel({ posts }: { posts: SwarmSocialPost[] }) {
 }
 
 export function HeadlinesPanel({ headlines }: { headlines: SwarmMarket["headlines"] }) {
+  if (!headlines.length) return null;
+
   return (
     <section style={panelStyle}>
       <PanelHeader title="Headlines · timeline"

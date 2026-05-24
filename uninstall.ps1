@@ -103,6 +103,11 @@ if (Ask-YesNo "Stop Syncthing processes started for HivemindOS?" $true) {
   Ok "Stopped Syncthing processes"
 }
 
+if (Ask-YesNo "Stop HivemindOS Link sidecar processes?" $true) {
+  Get-Process hivemind-linkd -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+  Ok "Stopped HivemindOS Link sidecar processes"
+}
+
 if (Ask-YesNo "Remove HivemindOS shared-skill instructions from agent files?" $true) {
   $vaultPath = if ($env:NEXT_PUBLIC_OBSIDIAN_VAULT_PATH) { $env:NEXT_PUBLIC_OBSIDIAN_VAULT_PATH } else { "$([Environment]::GetFolderPath("UserProfile"))\Documents\Obsidian\hivemindos-vault" }
   Remove-ManagedBlock (Join-Path $vaultPath "AGENTS.md")
@@ -126,6 +131,19 @@ if (Ask-YesNo "Remove HivemindOS app cache/build/dependencies from this checkout
     if (Test-Path $path) { Remove-Item $path -Recurse -Force }
   }
   Ok "Removed .next, .setup-cache, and node_modules"
+}
+
+if (Ask-YesNo "Remove the built hivemind-linkd binary from this checkout?" $true) {
+  foreach ($path in @("bin\hivemind-linkd.exe", "bin\hivemind-linkd")) {
+    if (Test-Path $path) { Remove-Item $path -Force }
+  }
+  Ok "Removed built hivemind-linkd binaries"
+}
+
+if (Ask-YesNo "Remove local Hivemind Link Tailscale state from ~/.hivemindos/link?" $false) {
+  $linkState = Join-Path ([Environment]::GetFolderPath("UserProfile")) ".hivemindos\link"
+  if (Test-Path $linkState) { Remove-Item $linkState -Recurse -Force }
+  Ok "Removed $linkState"
 }
 
 if (Ask-YesNo "Remove .env.local from this checkout?" $false) {
@@ -153,6 +171,10 @@ if (Ask-YesNo "Uninstall Syncthing itself from this machine?" $false) {
 
 if (Ask-YesNo "Uninstall Tailscale itself from this machine?" $false) {
   Uninstall-WingetPackage "Tailscale" "Tailscale.Tailscale"
+}
+
+if (Ask-YesNo "Uninstall Go itself from this machine?" $false) {
+  Uninstall-WingetPackage "Go" "GoLang.Go"
 }
 
 if (Ask-YesNo "Uninstall pnpm from this machine?" $false) {

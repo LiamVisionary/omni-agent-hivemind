@@ -1198,6 +1198,32 @@ details[open] > summary .treeDisclosure::before {
   pointer-events: auto;
 }
 
+.attachmentMenuBelow {
+  top: calc(100% + 6px);
+  bottom: auto;
+  left: 0;
+}
+
+.attachmentRecents {
+  display: grid;
+  gap: 4px;
+  border-top: 1px solid rgba(148, 163, 184, 0.12);
+  margin-top: 2px;
+  padding-top: 4px;
+}
+
+.attachmentRecentList {
+  display: grid;
+  gap: 3px;
+  max-height: 210px;
+  overflow: auto;
+}
+
+.attachmentMenu:has(.attachmentRecentList) {
+  width: min(360px, calc(100vw - 32px));
+  min-width: min(300px, calc(100vw - 32px));
+}
+
 .attachmentMenu button,
 .chat .attachmentMenu button {
   display: flex;
@@ -1211,6 +1237,51 @@ details[open] > summary .treeDisclosure::before {
   padding: 0 10px;
   font-size: 12px;
   text-align: left;
+}
+
+.attachmentMenu button span {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+}
+
+.attachmentMenu button strong {
+  overflow: hidden;
+  color: inherit;
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.attachmentMenu button small,
+.attachmentRecentList p {
+  color: var(--muted);
+  font-size: 10px;
+}
+
+.attachmentRecentList button,
+.chat .attachmentRecentList button {
+  align-items: flex-start;
+  min-height: 44px;
+  padding-block: 8px;
+}
+
+.attachmentRecentList button strong {
+  overflow: visible;
+  line-height: 1.2;
+  overflow-wrap: anywhere;
+  text-overflow: clip;
+  white-space: normal;
+}
+
+.attachmentRecentList button small {
+  line-height: 1.25;
+  overflow-wrap: anywhere;
+  white-space: normal;
+}
+
+.attachmentRecentList p {
+  margin: 4px 8px 6px;
 }
 
 .attachmentMenu button:hover,

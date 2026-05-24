@@ -17,6 +17,7 @@ export const hermesAdapter: RuntimeAdapter = {
     kanbanDecompose: true,
     setup: true,
     walletTools: true,
+    modelSelection: true,
   },
   defaultProfile: {
     gatewayUrl: process.env.NEXT_PUBLIC_HERMES_BASE_URL ?? "http://127.0.0.1:8642",

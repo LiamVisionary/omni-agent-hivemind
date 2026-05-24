@@ -3,6 +3,7 @@ node_modules/
 .setup-cache/
 out/
 dist/
+bin/
 .remotion-capture/
 public/remotion/*
 !public/remotion/.gitkeep

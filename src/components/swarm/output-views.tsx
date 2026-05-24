@@ -48,6 +48,7 @@ export function XThreadView({ run }: { run: SwarmRun }) {
     <div style={{
       width: "min(650px, 100%)", maxHeight: 720, overflow: "auto", margin: "0 auto",
       border: "1px solid rgb(207, 217, 222)", background: "#fff", color: "#0f1419",
+      borderRadius: 18,
       fontFamily: "-apple-system, BlinkMacSystemFont, system-ui, sans-serif",
     }}>
       <article style={{ padding: "16px 16px 0", borderBottom: "1px solid rgb(239, 243, 244)" }}>
@@ -636,15 +637,28 @@ export function OpsView({ run }: { run: SwarmRun }) {
   );
 }
 
-export function MiroSharkIntegrationView({ run }: { run: SwarmRun }) {
+export function MiroSharkIntegrationView({
+  run,
+  onPublish,
+  publishPending = false,
+  publishStatus,
+}: {
+  run: SwarmRun;
+  onPublish?: () => void;
+  publishPending?: boolean;
+  publishStatus?: string;
+}) {
   const items = [
     ...(run.integrationItems ?? []),
     ...(run.marketPriceItems ?? []),
   ].slice(0, 18);
   const links = run.exportLinks ?? [];
+  const draftNotice = items.find((item) => item.id === "miroshark-integration-draft");
+  const outputItems = items.filter((item) => item.id !== "miroshark-integration-draft");
+  const isDraftOnly = Boolean(draftNotice) && outputItems.length === 0;
   return (
     <div style={{
-      width: "min(780px, 100%)", margin: "0 auto", padding: 18,
+      width: "100%", margin: "0 auto", padding: 18,
       borderRadius: 10, border: "1px solid rgba(148,163,184,0.16)",
       background: "var(--panel-bg)", color: "var(--foreground)",
       display: "grid", gap: 14,
@@ -653,18 +667,62 @@ export function MiroSharkIntegrationView({ run }: { run: SwarmRun }) {
         <div className="uppercase" style={{
           fontFamily: "var(--f-mono)", fontSize: 10, letterSpacing: 0.12, color: "var(--hex-active-border)",
         }}>
-          MiroShark integration layer
+          {isDraftOnly ? "Simulation status" : "MiroShark outputs"}
         </div>
         <h2 className="font-bold" style={{
           margin: "4px 0 0", fontFamily: "var(--f-display)", fontSize: 22, letterSpacing: -0.3,
         }}>
-          Reports, graph, exports, interviews, markets
+          {isDraftOnly ? "Not published yet" : "Reports, exports, interviews, markets"}
         </h2>
       </header>
       <div className="grid" style={{ gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 10 }}>
-        {items.length ? items.map((item) => (
+        {draftNotice ? (
+          <article style={{
+            gridColumn: "1 / -1", padding: "12px 14px", borderRadius: 8,
+            border: "1px solid rgba(255,212,90,0.22)", background: "var(--panel-bg-soft)",
+            display: "grid", gap: 10,
+          }}>
+            <div>
+              <div className="uppercase" style={{
+                fontFamily: "var(--f-mono)", fontSize: 10,
+                color: "var(--hex-honey-border)", letterSpacing: 0.08,
+              }}>
+                {draftNotice.meta}
+              </div>
+              <strong style={{ display: "block", marginTop: 4, fontSize: 13, color: "var(--foreground)" }}>
+                {draftNotice.title}
+              </strong>
+              <p style={{ margin: "4px 0 0", color: "var(--muted)", fontSize: 12, lineHeight: 1.45 }}>
+                {draftNotice.body}
+              </p>
+            </div>
+            {onPublish ? (
+              <button
+                type="button"
+                onClick={onPublish}
+                disabled={publishPending}
+                className="uppercase font-bold cursor-pointer"
+                style={{
+                  justifySelf: "start", padding: "7px 12px", borderRadius: 999,
+                  border: "1px solid rgba(255,212,90,0.3)",
+                  background: "rgba(255,212,90,0.14)", color: "var(--hex-honey-border)",
+                  fontFamily: "var(--f-mono)", fontSize: 10, letterSpacing: 0.08,
+                  opacity: publishPending ? 0.7 : 1,
+                }}
+              >
+                {publishPending ? "Publishing..." : "Publish simulation"}
+              </button>
+            ) : null}
+            {publishStatus ? (
+              <p style={{ margin: 0, color: "var(--muted)", fontSize: 12, lineHeight: 1.45 }}>
+                {publishStatus}
+              </p>
+            ) : null}
+          </article>
+        ) : null}
+        {outputItems.length ? outputItems.map((item) => (
           <IntegrationPayloadCard key={item.id} item={item} />
-        )) : (
+        )) : !draftNotice ? (
           <article style={{
             gridColumn: "1 / -1", padding: "10px 12px", borderRadius: 8,
             border: "1px solid rgba(148,163,184,0.16)", background: "var(--panel-bg-soft)",
@@ -674,7 +732,7 @@ export function MiroSharkIntegrationView({ run }: { run: SwarmRun }) {
               This run has not returned report, graph, interview, export, webhook, or market-price payloads yet.
             </p>
           </article>
-        )}
+        ) : null}
       </div>
       {links.length ? (
         <div className="flex flex-wrap" style={{ gap: 7 }}>

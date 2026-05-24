@@ -3,12 +3,52 @@
 This file records user-visible changes before they are committed. New work should
 be added here first, then marked `Committed` or `Pushed` after the git action.
 
-## 2026-05-23 17:32 WITA - Dedupe Fleet Machines
+## 2026-05-24 14:15 WITA - Quiet Default Link Setup
 
 - Status: Pushed
+- Areas changed: setup script, changelog
+- Summary: Stop printing the Tailnet rsync/Syncthing skip warning during the default Hivemind Link setup path so Link reads as the normal mode, not a degraded fallback.
+- Verification: `bash -n setup.sh`; `pnpm exec tsc --noEmit --pretty false`; `git diff --check -- setup.sh src/app/page.tsx CHANGELOG.md`.
+- Intended commit message: `Quiet default Link setup`
+
+## 2026-05-24 14:00 WITA - Resume Fleet Roster Task Chats
+
+- Status: Pushed
+- Areas changed: Fleet roster chat handoff, chat session preview routing, changelog
+- Summary: Make The Roster's Chat action resume the agent's latest Hermes/dashboard task chat, including cached task messages and working directory context, instead of opening the agent's blank direct chat.
+- Verification: `pnpm exec tsc --noEmit --pretty false`; staged `git diff --check`.
+- Intended commit message: `Resume fleet roster task chats`
+
+## 2026-05-24 14:07 WITA - Match Roster Chat To Displayed Task
+
+- Status: Pushed
+- Areas changed: Fleet roster chat handoff, chat task selection, changelog
+- Summary: Pass the roster's displayed task title into Chat, use it to select the matching Hermes session before falling back to dashboard-local chat history, and keep dashboard chat history from replacing real collector/Hermes work in the roster.
+- Verification: `pnpm exec tsc --noEmit --pretty false`; `git diff --check -- src/app/page.tsx CHANGELOG.md`.
+- Intended commit message: `Match roster chat to displayed task`
+
+## 2026-05-24 12:54 WITA - Add App-Managed Hivemind Link
+
+- Status: Pushed
+- Areas changed: embedded Tailscale Link sidecar, collector binding, Fleet/Tailscale discovery APIs, setup/uninstall scripts, docs, gitignore, assimilation manifest, changelog
+- Summary: Add a `hivemind-linkd` tsnet sidecar that lets HivemindOS expose the localhost collector through an app-managed Tailscale node using the user's own Tailscale account, make Link the default setup network mode, keep the heavier system Tailscale/Syncthing/SSH path behind `--system-tailscale`, and skip production dashboard builds unless `--build` is requested.
+- Verification: `bash -n setup.sh && bash -n scripts/install-telemetry-collector.sh`; `pnpm exec tsc --noEmit --pretty false`; targeted `git diff --check`.
+- Intended commit message: `Add app-managed Hivemind Link`
+
+## 2026-05-23 17:38 WITA - Add Machine Filters To Agent Picker
+
+- Status: Uncommitted
+- Areas changed: Agent picker modal, assimilation manifest, changelog
+- Summary: Add machine filter badges to the reusable agent picker so users can scope visible agent cards to all machines or a specific configured machine, with per-machine agent counts.
+- Verification: Pending.
+- Intended commit message: `Add machine filters to agent picker`
+
+## 2026-05-23 17:32 WITA - Dedupe Fleet Machines
+
+- Status: Uncommitted
 - Areas changed: Fleet discovery API, Tailscale devices API, Fleet machine grouping, changelog
 - Summary: Collapse duplicate Tailnet records for the same physical machine by normalized machine identity, merge stale discovered machines by the same identity, and prefer self/ready/agent-bearing records so `This Mac` and renamed Mac peers do not appear twice in the roster or graph.
-- Verification: `pnpm exec tsc --noEmit --pretty false`; `pnpm exec eslint src/app/api/fleet/discover/route.ts src/app/api/tailscale/devices/route.ts src/app/page.tsx` (0 errors, existing warnings only); `git diff --check -- src/app/api/fleet/discover/route.ts src/app/api/tailscale/devices/route.ts src/app/page.tsx CHANGELOG.md`.
+- Verification: Pending.
 - Intended commit message: `Dedupe Fleet machines`
 
 ## 2026-05-23 17:18 WITA - Make Tailscale Auth User-Opened
@@ -27,6 +67,14 @@ be added here first, then marked `Committed` or `Pushed` after the git action.
 - Verification: `bash -n setup.sh && bash -n scripts/install-telemetry-collector.sh`; static env handoff smoke; `git diff --check -- setup.sh scripts/install-telemetry-collector.sh CHANGELOG.md`. `pnpm run test:fleet-local` was not used because no dashboard was listening on `127.0.0.1:5020`.
 - Intended commit message: `Keep Tailscale setup in one phase`
 
+## 2026-05-23 17:05 WITA - Add Reusable Agent Picker Modal
+
+- Status: Uncommitted
+- Areas changed: Agent picker UI, Swarm simulation analysis selector, assimilation manifest, changelog
+- Summary: Replace the MiroShark analysis agent dropdown with a reusable searchable agent picker modal that shows bee icons, worker class, runtime, provider, model, skill badges, expandable suited-for prompts, selected-agent confirmation, top-layer portal rendering, and a dedicated scrollable card grid.
+- Verification: `pnpm tsc --noEmit --pretty false`; `verify_assimilation_manifest.py`; `git diff --check`.
+- Intended commit message: `Add reusable agent picker modal`
+
 ## 2026-05-23 16:58 WITA - Pin Tailscale SSH To Managed Daemon
 
 - Status: Pushed
@@ -43,6 +91,22 @@ be added here first, then marked `Committed` or `Pushed` after the git action.
 - Verification: `bash -n setup.sh && bash -n scripts/install-telemetry-collector.sh`; `pnpm run test:fleet-local`; `git diff --check -- setup.sh scripts/install-telemetry-collector.sh CHANGELOG.md`; stale install-later wording search.
 - Intended commit message: `Complete Tailscale during setup`
 
+## 2026-05-23 15:37 WITA - Streamline Agent Model Settings
+
+- Status: Uncommitted
+- Areas changed: Agent settings modal, agent runtime chat payload, project UI rules, changelog
+- Summary: Compact the Hermes model selector, replace the refresh text button with an icon action, remove the separate save-to-Hermes step from the primary flow, move custom model entry into Advanced model setup, and record the project rule that structured config should use pickers/dropdowns/buttons unless inside Advanced.
+- Verification: `pnpm typecheck`.
+- Intended commit message: `Streamline agent model settings`
+
+## 2026-05-23 15:30 WITA - Hide Unconfigured Runtime Model Providers
+
+- Status: Uncommitted
+- Areas changed: Agent settings modal, runtime integration service, changelog
+- Summary: Filter the Hermes model picker to providers with at least one configured model, so catalog-only providers and providers only detected from credentials do not appear as selectable agent model sources.
+- Verification: Hermes config/auth inspection without printing secrets; Hermes inventory filter smoke showed only `openai-codex`; `pnpm typecheck`.
+- Intended commit message: `Hide unconfigured runtime model providers`
+
 ## 2026-05-23 16:18 WITA - Make Tailscale Auth Headless Friendly
 
 - Status: Pushed
@@ -50,6 +114,14 @@ be added here first, then marked `Committed` or `Pushed` after the git action.
 - Summary: Print the managed Tailscale auth URL for use on any device, ask before opening it locally on interactive macOS runs, and keep waiting for auth completion so headless machines are not forced through a local browser.
 - Verification: `bash -n setup.sh && bash -n scripts/install-telemetry-collector.sh`; `pnpm run test:fleet-local`; `git diff --check -- setup.sh scripts/install-telemetry-collector.sh CHANGELOG.md`; Tailscale login URL parser smoke.
 - Intended commit message: `Make Tailscale auth headless friendly`
+
+## 2026-05-23 16:20 WITA - Add MiroShark Run Intelligence
+
+- Status: Uncommitted
+- Areas changed: Swarm simulation UI, MiroShark analysis API, Obsidian simulation archive, assimilation manifest, changelog
+- Summary: Add an at-a-glance run intelligence panel with verdict, signal quality, social/market/risk reads, support and objection summaries, selected-agent analysis actions that try the chosen agent runtime, and durable Obsidian markdown notes saved beside the existing MiroShark simulation archive.
+- Verification: `pnpm tsc --noEmit`; `verify_assimilation_manifest.py`.
+- Intended commit message: `Add MiroShark run intelligence`
 
 ## 2026-05-23 16:05 WITA - Await Managed Tailscale Login
 
@@ -66,6 +138,14 @@ be added here first, then marked `Committed` or `Pushed` after the git action.
 - Summary: Hide the internal `tailscale up` retry when preserving non-default flags, quit the macOS Tailscale GUI before restarting the Homebrew daemon so the CLI is less likely to keep talking to the stale GUI Network Extension, and simplify the final failure copy.
 - Verification: `bash -n setup.sh && bash -n scripts/install-telemetry-collector.sh`; `pnpm run test:fleet-local`; `git diff --check -- setup.sh scripts/install-telemetry-collector.sh CHANGELOG.md`.
 - Intended commit message: `Quiet managed Tailscale retries`
+
+## 2026-05-23 15:20 WITA - Add Hermes Model Selection To Agent Settings
+
+- Status: Uncommitted
+- Areas changed: Agent settings modal, runtime integration service, Hermes model configuration, assimilation manifest, changelog
+- Summary: Show Hermes' configured provider/model inventory in the agent settings modal, let each Hermes agent select a provider/model, save the selected default back to Hermes config, and add model IDs to a Hermes provider from the modal.
+- Verification: `pnpm typecheck`; `pnpm lint` (0 errors, 33 existing warnings); Hermes inventory smoke via the installed Hermes runtime; `verify_assimilation_manifest.py`.
+- Intended commit message: `Add Hermes model selection to agent settings`
 
 ## 2026-05-23 15:35 WITA - Retry Tailscale Up With Existing Flags
 
@@ -128,7 +208,7 @@ be added here first, then marked `Committed` or `Pushed` after the git action.
 - Status: Pushed
 - Areas changed: Fleet machine issue modal, Tailscale collector URL discovery, changelog
 - Summary: Use localhost for the current machine's collector URL and expand the remote collector Fix modal so duplicate machine names and stale Tailnet reachability are diagnosed with `tailscale ping`, dashboard-side curl, remote local health, and macOS firewall commands before assuming the collector installer is missing.
-- Verification: `pnpm exec tsc --noEmit --pretty false`; `pnpm exec eslint src/app/page.tsx src/app/api/tailscale/devices/route.ts` (0 errors, existing page warnings only); `git diff --check -- src/app/page.tsx src/app/api/tailscale/devices/route.ts CHANGELOG.md`; local diagnostics confirmed `tailscale ping 100.122.112.114`, `curl http://100.122.112.114:8787/health`, and `tailscale ssh liam@liams-macbook-pro.tail629894.ts.net` time out from this dashboard machine.
+- Verification: `pnpm exec tsc --noEmit --pretty false`; `pnpm exec eslint src/app/page.tsx src/app/api/tailscale/devices/route.ts` (0 errors, existing page warnings only); `git diff --check -- src/app/page.tsx src/app/api/tailscale/devices/route.ts CHANGELOG.md`; local diagnostics confirmed a private Tailnet ping, collector curl, and Tailscale SSH check timed out from this dashboard machine.
 - Intended commit message: `Clarify Fleet peer reachability fixes`
 
 ## 2026-05-23 00:52 WITA - Add Fleet Network Fix Badges
@@ -138,6 +218,30 @@ be added here first, then marked `Committed` or `Pushed` after the git action.
 - Summary: Replace the ambiguous Fleet local-mode message with `Tailscale not configured. Running locally.`, add per-machine roster Fix badges for Tailscale disconnected, collector unreachable, and env sync readiness issues, and show a modal with exact repair commands for each issue.
 - Verification: `pnpm exec tsc --noEmit --pretty false`; `pnpm exec eslint src/components/fleet/roster.tsx src/components/fleet/fleet-data.ts src/app/api/fleet/discover/route.ts src/app/page.tsx` (0 errors, existing page warnings only); `git diff --check -- src/components/fleet/roster.tsx src/components/fleet/fleet-data.ts src/app/api/fleet/discover/route.ts src/app/page.tsx CHANGELOG.md`.
 - Intended commit message: `Add Fleet network fix badges`
+
+## 2026-05-23 00:44 WITA - Clarify Fleet Local Tailscale Status
+
+- Status: Pushed
+- Areas changed: Fleet Tailscale status copy, changelog
+- Summary: Replace the ambiguous `Local mode; Tailscale optional` Fleet status with `Tailscale not configured. Running locally.` when Tailscale device discovery is unavailable.
+- Verification: Pending.
+- Intended commit message: `Clarify Fleet local Tailscale status`
+
+## 2026-05-23 00:32 WITA - Document Syncing And Tailscale Architecture
+
+- Status: Uncommitted
+- Areas changed: Sync/Tailscale architecture docs, README docs link, changelog
+- Summary: Add a docs page explaining the shared brain sync owner modes, Obsidian/external sync behavior, HivemindOS Syncthing pairing, manual rsync repair, conflict ownership, and the distinct ways Tailscale is used for discovery, collectors, Syncthing addressing, Tailscale SSH, env sync, and fleet updates.
+- Verification: `git diff --check -- docs/syncing-and-tailscale.md README.md CHANGELOG.md`; confirmed `docs/syncing-and-tailscale.md` exists and the README link target resolves.
+- Intended commit message: `Document syncing and Tailscale architecture`
+
+## 2026-05-22 23:01 WITA - Clarify Brain Sync Ownership
+
+- Status: Uncommitted
+- Areas changed: Brain view vault sync settings, shared vault config, agent runtime vault context, README sharing docs, changelog
+- Summary: Add a Brain setting for choosing whether an external provider owns realtime vault sync, HivemindOS Syncthing owns realtime sync, or Tailscale SSH rsync is manual repair only; migrate the old `tailnetSyncEnabled` setting into `syncthingAutoPairEnabled`; suppress Syncthing auto-pairing unless HivemindOS Syncthing is selected; and clarify where Syncthing versus rsync conflict files appear.
+- Verification: `pnpm exec tsc --noEmit --pretty false`; `pnpm exec eslint src/app/page.tsx src/lib/types/agent-runtime.ts src/app/api/chat/agent-runtime/route.ts` (0 errors, existing page warnings only); `git diff --check -- src/app/page.tsx src/lib/types/agent-runtime.ts src/app/api/chat/agent-runtime/route.ts README.md CHANGELOG.md`.
+- Intended commit message: `Clarify brain sync ownership`
 
 ## 2026-05-22 22:57 WITA - Streamline Env And Sync Setup
 
@@ -211,6 +315,22 @@ be added here first, then marked `Committed` or `Pushed` after the git action.
 - Verification: `bash -n setup.sh && bash -n uninstall.sh`; `./uninstall.sh --non-interactive`; `git diff --check -- setup.sh setup.ps1 uninstall.sh uninstall.ps1 README.md CHANGELOG.md`. PowerShell parse check was skipped because `pwsh`/`powershell` is not installed in this macOS workspace.
 - Intended commit message: `Install env encryption helpers`
 
+## 2026-05-22 20:41 WITA - Verify Fleet Updates By Commit
+
+- Status: Uncommitted
+- Areas changed: Fleet update API, Fleet update request payload, changelog
+- Summary: Require remote machine updates to verify that the collector reports the expected latest commit before returning success, infer that target commit server-side for older UI calls, fail fast when the remote shell reaches the machine but the update command fails, and only show roster `Updated!` when the response includes `verified: true`.
+- Verification: `pnpm exec tsc --noEmit --pretty false`; `pnpm exec eslint src/app/api/fleet/update/route.ts src/app/page.tsx` (0 errors, existing page warnings only); `git diff --check -- src/app/api/fleet/update/route.ts src/app/page.tsx CHANGELOG.md`.
+- Intended commit message: `Verify fleet updates by commit`
+
+## 2026-05-22 20:33 WITA - Hide Pathless Recent Directories
+
+- Status: Uncommitted
+- Areas changed: Shared recent-directory service
+- Summary: Treat Recents as a reusable directory picker by excluding historical linked-directory records that do not have a saved path, and reject future recent-directory writes that only contain a display name.
+- Verification: `pnpm exec tsc --noEmit --pretty false`; `pnpm exec eslint src/lib/services/obsidian/recent-directories.ts src/app/page.tsx` (0 errors, existing page warnings only); `/api/obsidian/recent-directories` returns only entries with usable paths; `git diff --check -- src/lib/services/obsidian/recent-directories.ts CHANGELOG.md`.
+- Intended commit message: `Hide pathless recent directories`
+
 ## 2026-05-22 20:27 WITA - Resolve Pnpm After Setup Installs
 
 - Status: Pushed
@@ -218,6 +338,22 @@ be added here first, then marked `Committed` or `Pushed` after the git action.
 - Summary: Refresh Homebrew and npm global bin paths after setup installs pnpm, route later dependency/build/dev commands through a pnpm wrapper that can fall back to Corepack, and add optional Obsidian install prompts to setup so the existing uninstall prompts have a matching install surface.
 - Verification: `bash -n setup.sh && bash -n uninstall.sh`; `git diff --check -- setup.sh setup.ps1 uninstall.sh README.md CHANGELOG.md`; local `command -v pnpm`, `pnpm --version`, and `command -v corepack` confirm pnpm is available through the active Node toolchain. PowerShell parse check was skipped because `pwsh`/`powershell` is not installed in this macOS workspace.
 - Intended commit message: `Resolve pnpm after setup installs`
+
+## 2026-05-22 20:23 WITA - Clarify Recent Directory Metadata
+
+- Status: Uncommitted
+- Areas changed: Attachment menu recent-directory labels, local checkout folder, shared-vault Kanban linked-directory metadata
+- Summary: Replace the misleading `Shared brain` fallback for recent directories that lack saved path/machine metadata with source-aware labels, rename the local checkout folder from `openclaw-next` to `hivemind-os`, update the stale Kanban linked-directory entry to the new folder name/path, and restart the local collector from the renamed checkout.
+- Verification: `pnpm exec tsc --noEmit --pretty false`; `pnpm exec eslint src/app/page.tsx` (0 errors, existing page warnings only); `KANBAN_TEST_BASE_URL=http://127.0.0.1:5021 node scripts/test-kanban-workflow.mjs && KANBAN_TEST_BASE_URL=http://127.0.0.1:5021 node scripts/test-dashboard-nav.mjs`; `git diff --check -- src/app/page.tsx src/app/chat.module.css CHANGELOG.md`; `/api/obsidian/recent-directories` now returns `hivemind-os` with the renamed local path; collector `/health` reports the renamed app directory.
+- Intended commit message: `Clarify recent directory metadata`
+
+## 2026-05-22 20:20 WITA - Let Recent Directory Names Wrap
+
+- Status: Uncommitted
+- Areas changed: Attachment menu recent-directory rows
+- Summary: Widen recent-directory attachment menus and let folder names plus metadata wrap across multiple lines instead of truncating them with ellipses.
+- Verification: `pnpm exec tsc --noEmit --pretty false`; `pnpm exec eslint src/app/page.tsx` (0 errors, existing page warnings only); `git diff --check -- src/app/chat.module.css CHANGELOG.md`.
+- Intended commit message: `Let recent directory names wrap`
 
 ## 2026-05-22 20:19 WITA - Keep Uninstall Prompts Flowing
 
@@ -227,13 +363,45 @@ be added here first, then marked `Committed` or `Pushed` after the git action.
 - Verification: `bash -n uninstall.sh`; `./uninstall.sh --non-interactive`; temp-`HOME` piped uninstall run completed past shared-skill cleanup; `git diff --check -- uninstall.sh CHANGELOG.md`.
 - Intended commit message: `Keep uninstall prompts flowing`
 
+## 2026-05-22 20:16 WITA - Improve Directory And Attachment Picking
+
+- Status: Uncommitted
+- Areas changed: Kanban card attachment controls, remote directory browser
+- Summary: Make the machine directory browser behave like a file picker with single-click selection, double-click navigation, and Cancel/Open actions; split the card attachment badge so the paperclip opens a removable attachment list while the plus opens the add-attachment menu.
+- Verification: `pnpm exec tsc --noEmit --pretty false`; `pnpm exec eslint src/app/page.tsx` (0 errors, existing page warnings only); `KANBAN_TEST_BASE_URL=http://127.0.0.1:5021 node scripts/test-kanban-workflow.mjs && KANBAN_TEST_BASE_URL=http://127.0.0.1:5021 node scripts/test-dashboard-nav.mjs && git diff --check -- src/app/page.tsx src/app/kanban-board.module.css CHANGELOG.md`; Playwright smoke loaded `http://127.0.0.1:5021` with no page errors.
+- Intended commit message: `Improve directory and attachment picking`
+
+## 2026-05-22 20:05 WITA - Fallback Remote Directory Browse To Tailscale SSH
+
+- Status: Uncommitted
+- Areas changed: Machine directory browsing API
+- Summary: Let remote machine directory browsing recover when a target collector is stale or missing `/directories` by falling back to `tailscale ssh` and listing folders directly on the selected machine.
+- Verification: `pnpm exec tsc --noEmit --pretty false`; `pnpm exec eslint src/app/api/machines/directories/route.ts`; `node --check scripts/agent-telemetry-collector.mjs && node scripts/test-kanban-workflow.mjs && node scripts/test-dashboard-nav.mjs && git diff --check -- src/app/api/machines/directories/route.ts src/app/page.tsx src/app/kanban-board.module.css CHANGELOG.md`; local route smoke returned the local home directory list; Ubuntu remote route smoke returned `/root` directory entries through the Tailscale SSH fallback after the stale collector returned `not found`.
+- Intended commit message: `Fallback remote directory browse to Tailscale SSH`
+
+## 2026-05-22 20:09 WITA - Restore Roster Machine Update Button
+
+- Status: Uncommitted
+- Areas changed: Fleet roster, fleet view action wiring, changelog
+- Summary: Show a compact `Update` button on stale roster machine rows, call the existing remote fleet update action from the new Fleet UI, animate a spinner while updating, show `Updated!` briefly after success, then hide the button.
+- Verification: `pnpm exec tsc --noEmit --pretty false`; `pnpm exec eslint src/components/fleet/roster.tsx src/components/fleet/FleetView.tsx src/app/page.tsx` (0 errors, existing page warnings only); `git diff --check -- src/components/fleet/roster.tsx src/components/fleet/FleetView.tsx src/components/fleet/fleet-tokens.module.css src/app/page.tsx CHANGELOG.md`; local Next dev server on port 5020 loaded the Fleet UI through Playwright.
+- Intended commit message: `Restore roster machine update button`
+
 ## 2026-05-22 20:04 WITA - Add Mirrored Uninstall Prompts
 
-- Status: Pushed
+- Status: Uncommitted
 - Areas changed: macOS/Linux uninstaller, Windows uninstaller, README setup docs, project agent rules
 - Summary: Add `uninstall.sh` and `uninstall.ps1` with one-by-one prompts to stop HivemindOS dashboard/services, remove shared-skill agent instruction blocks, optionally remove copied skill folders and generated repo files, optionally uninstall Syncthing/Tailscale/pnpm/Obsidian, and optionally delete the checkout. Add an AGENTS rule requiring future setup prompts and install actions to have matching uninstall prompts in the same change.
 - Verification: `bash -n uninstall.sh`; `bash -n setup.sh`; `./uninstall.sh --non-interactive` listed each uninstall prompt without mutating local files; `git diff --check -- uninstall.sh uninstall.ps1 README.md AGENTS.md CHANGELOG.md`; public GitHub search for `bash interactive uninstall script cleanup prompts tailscale syncthing` returned no reusable candidates. PowerShell execution/parsing was not run because `pwsh`/`powershell` is not installed in this macOS workspace.
 - Intended commit message: `Add mirrored uninstall prompts`
+
+## 2026-05-22 20:01 WITA - Combine Card Attachment Badge
+
+- Status: Uncommitted
+- Areas changed: Kanban card attachment controls
+- Summary: Merge the separate card `+` button and attachment count pill into one clickable attachment badge that shows a gray paperclip with `0` when empty, switches to the active attachment color when populated, and keeps the plus affordance on the right.
+- Verification: `pnpm exec tsc --noEmit --pretty false`; `pnpm exec eslint src/app/page.tsx` (0 errors, existing page warnings only); `node scripts/test-kanban-workflow.mjs && node scripts/test-dashboard-nav.mjs && git diff --check -- src/app/page.tsx src/app/kanban-board.module.css CHANGELOG.md`.
+- Intended commit message: `Combine card attachment badge`
 
 ## 2026-05-22 19:57 WITA - Add Native Windows Setup
 
@@ -243,6 +411,14 @@ be added here first, then marked `Committed` or `Pushed` after the git action.
 - Verification: `bash -n setup.sh`; `git diff --check -- setup.ps1 README.md CHANGELOG.md`; public GitHub assimilation searches for `PowerShell Windows setup script winget pnpm node tailscale syncthing` and `setup.ps1 winget node pnpm` returned no reusable candidates. PowerShell execution/parsing was not run because `pwsh`/`powershell` is not installed in this macOS workspace.
 - Intended commit message: `Add native Windows setup`
 
+## 2026-05-22 19:55 WITA - Share Attachment Menu UI
+
+- Status: Uncommitted
+- Areas changed: Attachment menu rendering, chat/add-task/steer/card attachment controls, Kanban card attachment styling
+- Summary: Replace the separate Kanban card attachment tooltip with the same shared attachment menu used by chat and task creation so Images, Files, Directories, and Recents have one source of truth and one visual treatment.
+- Verification: `pnpm exec tsc --noEmit --pretty false`; `pnpm exec eslint src/app/page.tsx` (0 errors, existing page warnings only); `node scripts/test-kanban-workflow.mjs && node scripts/test-dashboard-nav.mjs && git diff --check -- src/app/page.tsx src/app/chat.module.css src/app/kanban-board.module.css CHANGELOG.md`.
+- Intended commit message: `Share attachment menu UI`
+
 ## 2026-05-22 19:49 WITA - Prompt For Setup Tool Installs
 
 - Status: Pushed
@@ -250,6 +426,30 @@ be added here first, then marked `Committed` or `Pushed` after the git action.
 - Summary: Add interactive yes/no install prompts for Homebrew, pnpm, Tailscale, rsync, and Syncthing, load Homebrew shellenv from standard Apple Silicon and Intel paths so newly installed tools are immediately visible, ask before adding Homebrew shellenv to `~/.zprofile`, and start/check Syncthing after installation when Tailnet sync is connected. Non-interactive setup no longer installs optional sync tools automatically.
 - Verification: `bash -n setup.sh`; `git diff --check -- setup.sh CHANGELOG.md`; `/opt/homebrew/bin/brew shellenv zsh` smoke confirmed the zsh profile line is valid for `.zprofile`.
 - Intended commit message: `Prompt for setup tool installs`
+
+## 2026-05-22 19:44 WITA - Keep This Mac On Native Directory Picker
+
+- Status: Uncommitted
+- Areas changed: Kanban directory picker machine detection
+- Summary: Treat `This Mac` as local even when its collector URL is a Tailscale address, so local task directory attachment opens the browser-native directory picker instead of the remote collector browser.
+- Verification: `pnpm exec tsc --noEmit --pretty false`; `pnpm exec eslint src/app/page.tsx src/app/api/machines/directories/route.ts scripts/agent-telemetry-collector.mjs` (0 errors, existing page warnings only); `node --check scripts/agent-telemetry-collector.mjs && node scripts/test-kanban-workflow.mjs && git diff --check`.
+- Intended commit message: `Keep This Mac on native directory picker`
+
+## 2026-05-22 19:38 WITA - Browse Directories On Target Machine
+
+- Status: Uncommitted
+- Areas changed: Kanban machine defaults, attachment directory picker behavior, telemetry collector directory browsing, machine directory API proxy
+- Summary: Default new Kanban tasks to This Mac when available, keep Any Machine as an explicit manual choice, disable directory selection for Any Machine, use the native browser directory picker for local targets, and add remote collector directory browsing for Tailscale machines.
+- Verification: `pnpm exec tsc --noEmit --pretty false`; `pnpm exec eslint src/app/page.tsx src/app/api/machines/directories/route.ts src/app/api/obsidian/recent-directories/route.ts src/lib/services/obsidian/recent-directories.ts src/lib/types/agent-runtime.ts src/lib/types/kanban.ts scripts/agent-telemetry-collector.mjs` (0 errors, existing page warnings only); `node --check scripts/agent-telemetry-collector.mjs && node scripts/test-kanban-workflow.mjs && node scripts/test-dashboard-nav.mjs && git diff --check`; `curl -sS /api/machines/directories?...collectorUrl=http://127.0.0.1:8787` returned the local home directory list.
+- Intended commit message: `Browse directories on target machine`
+
+## 2026-05-22 19:11 WITA - Add Shared Recent Directory Attachments
+
+- Status: Uncommitted
+- Areas changed: Attachment menus, Kanban linked-directory metadata, shared brain recent-directory API, chat/add-task directory handling
+- Summary: Add an expandable Recents section to Images/Files/Directories menus, source recent folders from the shared Obsidian brain plus Kanban history, record selected folders back to the shared brain for cross-machine reuse, and allow chat composer directory links.
+- Verification: `pnpm exec tsc --noEmit --pretty false`; `pnpm exec eslint src/app/page.tsx src/app/api/obsidian/recent-directories/route.ts src/lib/services/obsidian/recent-directories.ts src/lib/types/kanban.ts src/lib/types/recent-directories.ts` (0 errors, existing page warnings only); `node scripts/test-kanban-workflow.mjs && node scripts/test-dashboard-nav.mjs && git diff --check`; `curl -sS /api/obsidian/recent-directories` against the local dev server returned the shared-brain recents list sorted with `openclaw-next`.
+- Intended commit message: `Add shared recent directory attachments`
 
 ## 2026-05-22 16:47 WITA - Route Kanban Undo To Workers
 

@@ -28,6 +28,13 @@ type TailscaleStatus = {
   Peer?: Record<string, TailscalePeer>;
 };
 
+type HivemindLinkStatus = {
+  ok?: boolean;
+  backendState?: string;
+  self?: TailscalePeer;
+  peer?: Record<string, TailscalePeer>;
+};
+
 type Device = {
   self: boolean;
   name: string;
@@ -137,7 +144,12 @@ function dedupeDevices(devices: Device[]) {
   return [...byIdentity.values()];
 }
 
-function simplifyDevice(peer: TailscalePeer, self = false): Device {
+function linkCollectorUrl(ip: string) {
+  const controlUrl = (process.env.HIVE_LINK_CONTROL_URL || "http://127.0.0.1:8788").replace(/\/+$/, "");
+  return `${controlUrl}/peer/${encodeURIComponent(`${ip}:8787`)}`;
+}
+
+function simplifyDevice(peer: TailscalePeer, self = false, viaLink = false): Device {
   const ip = peer.TailscaleIPs?.find((value) => /^\d+\.\d+\.\d+\.\d+$/.test(value)) ?? peer.TailscaleIPs?.[0] ?? "";
   const dnsName = peer.DNSName?.replace(/\.$/, "") ?? "";
   return {
@@ -147,7 +159,7 @@ function simplifyDevice(peer: TailscalePeer, self = false): Device {
     os: peer.OS ?? "unknown",
     online: Boolean(peer.Online),
     ip,
-    collectorUrl: self ? "http://127.0.0.1:8787" : ip ? `http://${ip}:8787` : "",
+    collectorUrl: self ? "http://127.0.0.1:8787" : ip ? (viaLink ? linkCollectorUrl(ip) : `http://${ip}:8787`) : "",
     lastSeen: peer.LastSeen,
     lastHandshake: peer.LastHandshake,
     curAddr: peer.CurAddr ?? "",
@@ -158,19 +170,47 @@ function simplifyDevice(peer: TailscalePeer, self = false): Device {
   };
 }
 
+async function hivemindLinkStatus(): Promise<HivemindLinkStatus | null> {
+  const controlUrl = process.env.HIVE_LINK_CONTROL_URL || "http://127.0.0.1:8788";
+  try {
+    const response = await fetch(`${controlUrl.replace(/\/+$/, "")}/status`, {
+      cache: "no-store",
+      signal: AbortSignal.timeout(2_000),
+    });
+    if (!response.ok) return null;
+    return await response.json() as HivemindLinkStatus;
+  } catch {
+    return null;
+  }
+}
+
+function devicesFromStatus(status: TailscaleStatus | HivemindLinkStatus, viaLink = false) {
+  const isCliStatus = Object.prototype.hasOwnProperty.call(status, "Self") || Object.prototype.hasOwnProperty.call(status, "Peer");
+  const selfPeer = isCliStatus ? (status as TailscaleStatus).Self : (status as HivemindLinkStatus).self;
+  const peerMap = isCliStatus ? (status as TailscaleStatus).Peer : (status as HivemindLinkStatus).peer;
+  const self = selfPeer ? simplifyDevice(selfPeer, true, viaLink) : undefined;
+  const peers = Object.values(peerMap ?? {})
+    .map((peer) => simplifyDevice(peer, false, viaLink))
+    .filter((device) => !isStaleSelfDuplicate(self, device));
+  const devices = dedupeDevices([...(self ? [self] : []), ...peers]);
+  return devices.length ? devices : [localDevice()];
+}
+
 async function tailscaleDevices() {
   const { stdout } = await execFileAsync("tailscale", ["status", "--json"], {
     timeout: 5_000,
     maxBuffer: 1_500_000,
   }).catch(() => ({ stdout: "" }));
-  if (!stdout) return [localDevice()];
-  const status = JSON.parse(stdout) as TailscaleStatus;
-  const self = status.Self ? simplifyDevice(status.Self, true) : undefined;
-  const peers = Object.values(status.Peer ?? {})
-    .map((peer) => simplifyDevice(peer))
-    .filter((device) => !isStaleSelfDuplicate(self, device));
-  const devices = dedupeDevices([...(self ? [self] : []), ...peers]);
-  return devices.length ? devices : [localDevice()];
+  if (!stdout) {
+    const link = await hivemindLinkStatus();
+    return link ? devicesFromStatus(link, true) : [localDevice()];
+  }
+  try {
+    return devicesFromStatus(JSON.parse(stdout) as TailscaleStatus);
+  } catch {
+    const link = await hivemindLinkStatus();
+    return link ? devicesFromStatus(link, true) : [localDevice()];
+  }
 }
 
 async function fetchJson(url: string, init?: RequestInit) {
