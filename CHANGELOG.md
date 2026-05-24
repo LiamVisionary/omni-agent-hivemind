@@ -3,6 +3,14 @@
 This file records user-visible changes before they are committed. New work should
 be added here first, then marked `Committed` or `Pushed` after the git action.
 
+## 2026-05-24 18:01 WITA - Avoid Collector Port Conflicts In Link Mode
+
+- Status: Uncommitted
+- Areas changed: telemetry collector installer, setup health check, changelog
+- Summary: In Hivemind Link mode, detect when `127.0.0.1:8787` is already owned by another local service, move the private collector to a fallback localhost port, keep the Tailnet-facing Link port at `8787`, and make setup validate that `/health` is actually HivemindOS rather than any app returning `{ ok: true }`.
+- Verification: `bash -n scripts/install-telemetry-collector.sh setup.sh`; `git diff --check -- scripts/install-telemetry-collector.sh setup.sh CHANGELOG.md`.
+- Intended commit message: `Avoid collector port conflicts in Link mode`
+
 ## 2026-05-24 17:11 WITA - Show Hivemind Link Wait Progress
 
 - Status: Uncommitted

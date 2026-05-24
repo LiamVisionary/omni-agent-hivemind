@@ -2,6 +2,8 @@
 set -euo pipefail
 
 PORT="${AGENT_TELEMETRY_PORT:-8787}"
+REQUESTED_PORT="$PORT"
+LINK_TAILNET_PORT="${HIVE_LINK_TAILNET_PORT:-8787}"
 HERMES_API_HOST="${AGENT_TELEMETRY_HERMES_API_HOST:-127.0.0.1}"
 HERMES_API_PORT="${AGENT_TELEMETRY_HERMES_API_PORT:-8642}"
 HERMES_RESTART_MODE="${AGENT_TELEMETRY_HERMES_RESTART:-now}"
@@ -423,6 +425,57 @@ stop_existing_listener() {
   fi
 }
 
+port_listener_pids() {
+  local port="$1"
+  if command -v lsof >/dev/null 2>&1; then
+    lsof -tiTCP:"$port" -sTCP:LISTEN 2>/dev/null || true
+  elif command -v fuser >/dev/null 2>&1; then
+    fuser "$port/tcp" 2>/dev/null || true
+  fi
+}
+
+collector_health_is_hivemind() {
+  local port="$1"
+  local body
+  body="$(curl -fsS --max-time 2 "http://127.0.0.1:$port/health" 2>/dev/null || true)"
+  [[ -n "$body" ]] || return 1
+  printf "%s" "$body" | node -e '
+let d = "";
+process.stdin.on("data", c => d += c);
+process.stdin.on("end", () => {
+  try {
+    const j = JSON.parse(d);
+    process.exit(j?.version?.appDir || j?.capabilities?.runtimes ? 0 : 1);
+  } catch {
+    process.exit(1);
+  }
+});
+' >/dev/null 2>&1
+}
+
+choose_link_local_collector_port() {
+  [[ "$LINK_ACTIVE" == "true" ]] || return
+  local listener
+  listener="$(port_listener_pids "$PORT")"
+  if [[ -z "$listener" ]] || collector_health_is_hivemind "$PORT"; then
+    return
+  fi
+
+  local candidate
+  for candidate in 18787 18788 18789 28787 28788 28789; do
+    if [[ -z "$(port_listener_pids "$candidate")" ]]; then
+      echo "Port $PORT is already used by another local service, so HivemindOS will run its private collector on 127.0.0.1:$candidate."
+      echo "Hivemind Link will still expose this machine to the Tailnet on port $LINK_TAILNET_PORT."
+      PORT="$candidate"
+      return
+    fi
+  done
+
+  echo "Port $PORT is already used by another local service, and no fallback collector port was free." >&2
+  echo "Stop the process on $PORT or set AGENT_TELEMETRY_PORT to a free local port before rerunning setup." >&2
+  exit 1
+}
+
 run_with_timeout() {
   local seconds="$1"
   shift
@@ -650,6 +703,7 @@ TAILNET_SYNC_ENABLED="false"
 if [[ "$LINK_ACTIVE" == "true" ]]; then
   TAILNET_SYNC_ENABLED="false"
   echo "Hivemind Link keeps the collector localhost-only and exposes it through the embedded Tailscale sidecar."
+  choose_link_local_collector_port
 elif [[ "$NETWORK_MANAGED_BY_SETUP" == "true" ]]; then
   TAILNET_SYNC_ENABLED="$SETUP_TAILNET_SYNC_ENABLED"
 elif ensure_tailscale_connected; then
@@ -748,7 +802,7 @@ PLIST
   <key>EnvironmentVariables</key>
   <dict>
     <key>HIVE_LINK_TARGET</key><string>http://127.0.0.1:$PORT</string>
-    <key>HIVE_LINK_LISTEN</key><string>:$PORT</string>
+    <key>HIVE_LINK_LISTEN</key><string>:$LINK_TAILNET_PORT</string>
     <key>HIVE_LINK_CONTROL</key><string>127.0.0.1:8788</string>
   </dict>
   <key>RunAtLoad</key><true/>
@@ -825,7 +879,7 @@ After=agent-telemetry.service
 
 [Service]
 Environment=HIVE_LINK_TARGET=http://127.0.0.1:$PORT
-Environment=HIVE_LINK_LISTEN=:$PORT
+Environment=HIVE_LINK_LISTEN=:$LINK_TAILNET_PORT
 Environment=HIVE_LINK_CONTROL=127.0.0.1:8788
 ExecStart=$LINK_BIN
 Restart=always
@@ -839,6 +893,12 @@ SERVICE
     echo "Installed Hivemind Link systemd user service"
   fi
 fi
+
+mkdir -p "$HOME/.hivemindos"
+{
+  printf "AGENT_TELEMETRY_PORT=%q\n" "$PORT"
+  printf "HIVE_LINK_TAILNET_PORT=%q\n" "$LINK_TAILNET_PORT"
+} > "$HOME/.hivemindos/collector.env"
 
 if [[ "$TAILNET_SYNC_ENABLED" == "true" && "$NETWORK_MANAGED_BY_SETUP" != "true" ]]; then
   install_rsync_if_missing
@@ -860,6 +920,9 @@ if [[ "$NETWORK_MANAGED_BY_SETUP" != "true" ]] && tailscale_status_connected; th
 fi
 echo "Local collector URL: http://127.0.0.1:$PORT"
 if [[ "$LINK_ACTIVE" == "true" ]]; then
+  if [[ "$PORT" != "$REQUESTED_PORT" ]]; then
+    echo "Hivemind Link Tailnet collector URL remains: http://<this-link-node>:$LINK_TAILNET_PORT"
+  fi
   echo "Hivemind Link control URL: http://127.0.0.1:8788/status"
   echo "Waiting for Hivemind Link to start and return a sign-in or connected state..."
   LINK_STATUS=""

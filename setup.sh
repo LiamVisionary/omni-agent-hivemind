@@ -1246,9 +1246,31 @@ configure_syncthing_verification() {
 }
 
 wait_for_local_collector() {
-  local url="http://127.0.0.1:$COLLECTOR_PORT/health"
+  local port="$COLLECTOR_PORT"
+  if [[ -f "$HOME/.hivemindos/collector.env" ]]; then
+    # shellcheck disable=SC1091
+    source "$HOME/.hivemindos/collector.env" >/dev/null 2>&1 || true
+    port="${AGENT_TELEMETRY_PORT:-$port}"
+  fi
+  local url="http://127.0.0.1:$port/health"
+  local body=""
   for _ in {1..15}; do
-    curl -fsS --max-time 2 "$url" >/dev/null 2>&1 && return 0
+    body="$(curl -fsS --max-time 2 "$url" 2>/dev/null || true)"
+    if [[ -n "$body" ]] && printf "%s" "$body" | node -e '
+let d = "";
+process.stdin.on("data", c => d += c);
+process.stdin.on("end", () => {
+  try {
+    const j = JSON.parse(d);
+    process.exit(j?.version?.appDir || j?.capabilities?.runtimes ? 0 : 1);
+  } catch {
+    process.exit(1);
+  }
+});
+' >/dev/null 2>&1; then
+      COLLECTOR_PORT="$port"
+      return 0
+    fi
     sleep 1
   done
   return 1
