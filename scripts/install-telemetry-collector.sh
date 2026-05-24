@@ -469,6 +469,30 @@ prompt_yes_no() {
   fi
 }
 
+wait_for_hivemind_link_auth_confirmation() {
+  if [[ ! -t 0 || ! -t 1 ]]; then
+    return 0
+  fi
+  printf "Press Enter once you've signed in to Hivemind Link. "
+  read -r _ || true
+  echo "Verifying Hivemind Link connection; this can take up to 2 minutes."
+  for attempt in $(seq 1 60); do
+    local status connected_name backend_state
+    status="$(curl -fsS --max-time 3 http://127.0.0.1:8788/status 2>/dev/null || true)"
+    connected_name="$(printf "%s" "$status" | node -e 'let d="";process.stdin.on("data",c=>d+=c);process.stdin.on("end",()=>{try{const j=JSON.parse(d); if(j.ok) console.log(j.self?.DNSName || j.self?.HostName || "connected")}catch{}})' 2>/dev/null || true)"
+    if [[ -n "$connected_name" ]]; then
+      echo "Hivemind Link connected: $connected_name"
+      return 0
+    fi
+    if (( attempt == 1 || attempt % 5 == 0 )); then
+      backend_state="$(printf "%s" "$status" | node -e 'let d="";process.stdin.on("data",c=>d+=c);process.stdin.on("end",()=>{try{const j=JSON.parse(d); console.log(j.backendState || "starting")}catch{console.log("starting")}})' 2>/dev/null || true)"
+      echo "Still waiting for Hivemind Link to connect: ${backend_state:-starting}"
+    fi
+    sleep 2
+  done
+  echo "Hivemind Link has not reported connected yet. The dashboard will keep checking http://127.0.0.1:8788/status." >&2
+}
+
 collector_local_health() {
   curl -fsS --max-time 2 "http://127.0.0.1:$PORT/health" >/dev/null 2>&1
 }
@@ -705,8 +729,8 @@ PLIST
 </dict>
 </plist>
 PLIST
-  launchctl_bounded 5 unload "$PLIST" >/dev/null 2>&1 || true
-  launchctl_bounded 5 load "$PLIST"
+  launchctl_bounded 5 bootout "gui/$(id -u)/com.agent-control-room.telemetry" >/dev/null 2>&1 || launchctl_bounded 5 unload "$PLIST" >/dev/null 2>&1 || true
+  launchctl_bounded 5 bootstrap "gui/$(id -u)" "$PLIST" >/dev/null 2>&1 || launchctl_bounded 5 load "$PLIST"
   launchctl_bounded 5 kickstart -k "gui/$(id -u)/com.agent-control-room.telemetry" >/dev/null 2>&1 || true
   echo "Installed macOS LaunchAgent on port $PORT"
   if [[ "$LINK_ACTIVE" == "true" ]]; then
@@ -734,8 +758,9 @@ PLIST
 </dict>
 </plist>
 PLIST
-    launchctl_bounded 5 unload "$LINK_PLIST" >/dev/null 2>&1 || true
-    launchctl_bounded 5 load "$LINK_PLIST"
+    launchctl_bounded 5 bootout "gui/$(id -u)/com.hivemindos.linkd" >/dev/null 2>&1 || launchctl_bounded 5 unload "$LINK_PLIST" >/dev/null 2>&1 || true
+    pkill -f hivemind-linkd >/dev/null 2>&1 || true
+    launchctl_bounded 5 bootstrap "gui/$(id -u)" "$LINK_PLIST" >/dev/null 2>&1 || launchctl_bounded 5 load "$LINK_PLIST"
     launchctl_bounded 5 kickstart -k "gui/$(id -u)/com.hivemindos.linkd" >/dev/null 2>&1 || true
     echo "Installed Hivemind Link macOS LaunchAgent"
   else
@@ -836,12 +861,48 @@ fi
 echo "Local collector URL: http://127.0.0.1:$PORT"
 if [[ "$LINK_ACTIVE" == "true" ]]; then
   echo "Hivemind Link control URL: http://127.0.0.1:8788/status"
-  LINK_STATUS="$(curl -fsS --max-time 3 http://127.0.0.1:8788/status 2>/dev/null || true)"
+  echo "Waiting for Hivemind Link to start and return a sign-in or connected state..."
+  LINK_STATUS=""
+  for attempt in $(seq 1 60); do
+    LINK_STATUS="$(curl -fsS --max-time 3 http://127.0.0.1:8788/status 2>/dev/null || true)"
+    if printf "%s" "$LINK_STATUS" | node -e 'let d="";process.stdin.on("data",c=>d+=c);process.stdin.on("end",()=>{try{const j=JSON.parse(d); process.exit(j.authUrl || j.ok || (j.backendState && j.backendState !== "NeedsLogin") ? 0 : 1)}catch{process.exit(1)}})' 2>/dev/null; then
+      break
+    fi
+    if [[ "$attempt" == "15" && -x "$LINK_BIN" ]]; then
+      echo "Hivemind Link has not answered yet; starting the sidecar directly as a fallback..."
+      pkill -f hivemind-linkd >/dev/null 2>&1 || true
+      HIVE_LINK_TARGET="http://127.0.0.1:$PORT" \
+        HIVE_LINK_LISTEN=":$PORT" \
+        HIVE_LINK_CONTROL="127.0.0.1:8788" \
+        nohup "$LINK_BIN" >>"$HOME/Library/Logs/hivemindos-linkd.log" 2>>"$HOME/Library/Logs/hivemindos-linkd.err.log" &
+      sleep 2
+    elif (( attempt == 5 || attempt == 10 || attempt == 30 || attempt == 45 )); then
+      echo "Still waiting for Hivemind Link status..."
+    fi
+    sleep 1
+  done
   LINK_AUTH_URL="$(printf "%s" "$LINK_STATUS" | node -e 'let d="";process.stdin.on("data",c=>d+=c);process.stdin.on("end",()=>{try{const j=JSON.parse(d); if(j.authUrl) console.log(j.authUrl)}catch{}})' 2>/dev/null || true)"
+  if [[ -z "$LINK_AUTH_URL" && -f "$HOME/Library/Logs/hivemindos-linkd.err.log" ]]; then
+    LINK_AUTH_URL="$(grep -aEho 'https://login\.tailscale\.com/a/[A-Za-z0-9]+' "$HOME/Library/Logs/hivemindos-linkd.err.log" 2>/dev/null | tail -1 || true)"
+  fi
+  if [[ -z "$LINK_AUTH_URL" && -f "$HOME/Library/Logs/hivemindos-linkd.log" ]]; then
+    LINK_AUTH_URL="$(grep -aEho 'https://login\.tailscale\.com/a/[A-Za-z0-9]+' "$HOME/Library/Logs/hivemindos-linkd.log" 2>/dev/null | tail -1 || true)"
+  fi
+  LINK_CONNECTED_NAME="$(printf "%s" "$LINK_STATUS" | node -e 'let d="";process.stdin.on("data",c=>d+=c);process.stdin.on("end",()=>{try{const j=JSON.parse(d); if(j.ok) console.log(j.self?.DNSName || j.self?.HostName || "connected")}catch{}})' 2>/dev/null || true)"
+  LINK_BACKEND_STATE="$(printf "%s" "$LINK_STATUS" | node -e 'let d="";process.stdin.on("data",c=>d+=c);process.stdin.on("end",()=>{try{const j=JSON.parse(d); if(j.backendState) console.log(j.backendState)}catch{}})' 2>/dev/null || true)"
   if [[ -n "$LINK_AUTH_URL" ]]; then
     echo "Hivemind Link sign-in required."
     echo "Open this URL on any device to connect this app-managed node to your Tailscale account:"
     echo "  $LINK_AUTH_URL"
+    wait_for_hivemind_link_auth_confirmation
+  elif [[ -n "$LINK_CONNECTED_NAME" ]]; then
+    echo "Hivemind Link is already connected: $LINK_CONNECTED_NAME"
+    echo "To force a first-time sign-in test, stop the Hivemind Link service, remove ~/.hivemindos/link, then reinstall."
+  elif [[ -n "$LINK_BACKEND_STATE" ]]; then
+    echo "Hivemind Link is starting: $LINK_BACKEND_STATE"
+    echo "Open the dashboard or retry this status URL in a few seconds if sign-in is needed."
+  else
+    echo "Hivemind Link status is not ready yet. Retry: curl http://127.0.0.1:8788/status"
   fi
 fi
 if wait_for_local_collector 10; then

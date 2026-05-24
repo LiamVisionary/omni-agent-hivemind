@@ -3,6 +3,22 @@
 This file records user-visible changes before they are committed. New work should
 be added here first, then marked `Committed` or `Pushed` after the git action.
 
+## 2026-05-24 17:11 WITA - Show Hivemind Link Wait Progress
+
+- Status: Uncommitted
+- Areas changed: telemetry collector installer, changelog
+- Summary: Print progress while setup waits for Hivemind Link to produce a sign-in or connected state, announce the direct sidecar fallback, and show bounded verification status after the user presses Enter following Link sign-in.
+- Verification: `bash -n scripts/install-telemetry-collector.sh`; `git diff --check -- scripts/install-telemetry-collector.sh CHANGELOG.md`.
+- Intended commit message: `Show Hivemind Link wait progress`
+
+## 2026-05-24 16:26 WITA - Restart Link LaunchAgent Reliably
+
+- Status: Uncommitted
+- Areas changed: telemetry collector installer, changelog
+- Summary: Replace macOS LaunchAgent unload/load with bootout/bootstrap for collector and Hivemind Link jobs, kill stale sidecar processes across checkouts, wait up to 60 seconds for Link status, directly start the sidecar if launchd does not answer, scrape binary Link logs safely for the Tailscale auth URL, and in interactive setup wait for the user to confirm sign-in before verifying Link is connected.
+- Verification: `bash -n scripts/install-telemetry-collector.sh`; `git diff --check -- scripts/install-telemetry-collector.sh CHANGELOG.md`; clean-reset smoke stopped `com.hivemindos.linkd`, removed `~/.hivemindos/link`, reinstalled the collector, and setup printed `Hivemind Link sign-in required` with a Tailscale auth URL.
+- Intended commit message: `Restart Link LaunchAgent reliably`
+
 ## 2026-05-24 14:15 WITA - Quiet Default Link Setup
 
 - Status: Pushed
