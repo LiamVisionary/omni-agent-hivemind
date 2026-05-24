@@ -1,5 +1,6 @@
 import { execFile } from "child_process";
 import { promisify } from "util";
+import { hivemindLinkControlUrl } from "@/lib/services/hivemind-link-control";
 import type { AgentProfile, AgentRuntime } from "@/lib/types/agent-runtime";
 
 export const runtime = "nodejs";
@@ -189,8 +190,7 @@ function dedupeDevices(devices: Device[]) {
 }
 
 function linkCollectorUrl(ip: string) {
-  const controlUrl = (process.env.HIVE_LINK_CONTROL_URL || "http://127.0.0.1:8788").replace(/\/+$/, "");
-  return `${controlUrl}/peer/${encodeURIComponent(`${ip}:8787`)}`;
+  return `${hivemindLinkControlUrl()}/peer/${encodeURIComponent(`${ip}:8787`)}`;
 }
 
 function simplifyDevice(peer: TailscalePeer, self = false, viaLink = false): Device {
@@ -215,9 +215,8 @@ function simplifyDevice(peer: TailscalePeer, self = false, viaLink = false): Dev
 }
 
 async function hivemindLinkStatus(): Promise<HivemindLinkStatus | null> {
-  const controlUrl = process.env.HIVE_LINK_CONTROL_URL || "http://127.0.0.1:8788";
   try {
-    const response = await fetch(`${controlUrl.replace(/\/+$/, "")}/status`, {
+    const response = await fetch(`${hivemindLinkControlUrl()}/status`, {
       cache: "no-store",
       signal: AbortSignal.timeout(2_000),
     });

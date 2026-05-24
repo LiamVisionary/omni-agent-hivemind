@@ -1530,6 +1530,13 @@ fi
 local_url="http://localhost:$PORT"
 network_url=""
 collector_url=""
+link_control_url="${HIVE_LINK_CONTROL_URL:-}"
+
+if [[ -f "$HOME/.hivemindos/collector.env" ]]; then
+  # shellcheck disable=SC1091
+  source "$HOME/.hivemindos/collector.env" >/dev/null 2>&1 || true
+  link_control_url="${HIVE_LINK_CONTROL_URL:-$link_control_url}"
+fi
 
 if [[ -n "$tailscale_ip" ]]; then
   network_url="http://$tailscale_ip:$PORT"
@@ -1549,7 +1556,7 @@ echo "Collector:"
 if [[ -n "$collector_url" ]]; then
   echo "  $collector_url"
 elif [[ "$hivemind_link_enabled" == "true" ]]; then
-  echo "  Hivemind Link: http://127.0.0.1:8788/status"
+  echo "  Hivemind Link: ${link_control_url:-http://127.0.0.1:8788}/status"
 else
   echo "  http://localhost:$COLLECTOR_PORT"
 fi

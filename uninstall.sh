@@ -192,6 +192,11 @@ if ask "Remove local Hivemind Link Tailscale state from ~/.hivemindos/link?" "no
   ok "Removed ~/.hivemindos/link"
 fi
 
+if ask "Remove HivemindOS collector environment file ~/.hivemindos/collector.env?" "no"; then
+  rm -f "$HOME/.hivemindos/collector.env"
+  ok "Removed ~/.hivemindos/collector.env"
+fi
+
 if ask "Stop and remove the HivemindOS Syncthing service wrapper?" "yes"; then
   if [[ "$(uname -s)" == "Darwin" ]]; then
     plist="$HOME/Library/LaunchAgents/com.hivemindos.syncthing.plist"

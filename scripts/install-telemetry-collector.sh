@@ -4,6 +4,7 @@ set -euo pipefail
 PORT="${AGENT_TELEMETRY_PORT:-8787}"
 REQUESTED_PORT="$PORT"
 LINK_TAILNET_PORT="${HIVE_LINK_TAILNET_PORT:-8787}"
+LINK_CONTROL="${HIVE_LINK_CONTROL:-127.0.0.1:8788}"
 HERMES_API_HOST="${AGENT_TELEMETRY_HERMES_API_HOST:-127.0.0.1}"
 HERMES_API_PORT="${AGENT_TELEMETRY_HERMES_API_PORT:-8642}"
 HERMES_RESTART_MODE="${AGENT_TELEMETRY_HERMES_RESTART:-now}"
@@ -15,6 +16,16 @@ COLLECTOR="$APP_DIR/scripts/agent-telemetry-collector.mjs"
 SYNCTHING_RUNNER="$APP_DIR/scripts/run-syncthing.sh"
 LINK_BIN="${HIVE_LINK_BIN:-$APP_DIR/bin/hivemind-linkd}"
 NODE_BIN="$(command -v node)"
+
+if [[ -z "${HIVE_LINK_CONTROL:-}" && -f "$HOME/.hivemindos/collector.env" ]]; then
+  EXISTING_LINK_CONTROL="$(awk -F= '$1=="HIVE_LINK_CONTROL"{print substr($0, index($0, "=") + 1)}' "$HOME/.hivemindos/collector.env" | tail -1)"
+  if [[ -n "$EXISTING_LINK_CONTROL" ]]; then
+    LINK_CONTROL="${EXISTING_LINK_CONTROL%\"}"
+    LINK_CONTROL="${LINK_CONTROL#\"}"
+    LINK_CONTROL="${LINK_CONTROL%\'}"
+    LINK_CONTROL="${LINK_CONTROL#\'}"
+  fi
+fi
 
 if [[ ! -f "$COLLECTOR" ]]; then
   echo "Missing collector: $COLLECTOR" >&2
@@ -453,6 +464,25 @@ process.stdin.on("end", () => {
 ' >/dev/null 2>&1
 }
 
+link_control_is_hivemind() {
+  local control="$1"
+  local body
+  body="$(curl -fsS --max-time 2 "http://$control/status" 2>/dev/null || true)"
+  [[ -n "$body" ]] || return 1
+  printf "%s" "$body" | node -e '
+let d = "";
+process.stdin.on("data", c => d += c);
+process.stdin.on("end", () => {
+  try {
+    const j = JSON.parse(d);
+    process.exit(j && (j.backendState || j.magicDnsSuffix || j.self || j.peer) ? 0 : 1);
+  } catch {
+    process.exit(1);
+  }
+});
+' >/dev/null 2>&1
+}
+
 choose_link_local_collector_port() {
   [[ "$LINK_ACTIVE" == "true" ]] || return
   local listener
@@ -473,6 +503,36 @@ choose_link_local_collector_port() {
 
   echo "Port $PORT is already used by another local service, and no fallback collector port was free." >&2
   echo "Stop the process on $PORT or set AGENT_TELEMETRY_PORT to a free local port before rerunning setup." >&2
+  exit 1
+}
+
+choose_link_control_port() {
+  [[ "$LINK_ACTIVE" == "true" ]] || return
+  local host="${LINK_CONTROL%:*}"
+  local port="${LINK_CONTROL##*:}"
+  if [[ -z "$host" || "$host" == "$LINK_CONTROL" || -z "$port" ]]; then
+    echo "Invalid HIVE_LINK_CONTROL value: $LINK_CONTROL" >&2
+    echo "Use host:port, for example 127.0.0.1:8788." >&2
+    exit 1
+  fi
+
+  local listener
+  listener="$(port_listener_pids "$port")"
+  if [[ -z "$listener" ]] || link_control_is_hivemind "$LINK_CONTROL"; then
+    return
+  fi
+
+  local candidate
+  for candidate in 18788 18789 28788 28789 38788 38789; do
+    if [[ -z "$(port_listener_pids "$candidate")" ]]; then
+      echo "Port $port is already used by another local service, so Hivemind Link control will run on $host:$candidate."
+      LINK_CONTROL="$host:$candidate"
+      return
+    fi
+  done
+
+  echo "Port $port is already used by another local service, and no fallback Hivemind Link control port was free." >&2
+  echo "Stop the process on $port or set HIVE_LINK_CONTROL to a free host:port before rerunning setup." >&2
   exit 1
 }
 
@@ -531,7 +591,7 @@ wait_for_hivemind_link_auth_confirmation() {
   echo "Verifying Hivemind Link connection; this can take up to 2 minutes."
   for attempt in $(seq 1 60); do
     local status connected_name backend_state
-    status="$(curl -fsS --max-time 3 http://127.0.0.1:8788/status 2>/dev/null || true)"
+    status="$(curl -fsS --max-time 3 "http://$LINK_CONTROL/status" 2>/dev/null || true)"
     connected_name="$(printf "%s" "$status" | node -e 'let d="";process.stdin.on("data",c=>d+=c);process.stdin.on("end",()=>{try{const j=JSON.parse(d); if(j.ok) console.log(j.self?.DNSName || j.self?.HostName || "connected")}catch{}})' 2>/dev/null || true)"
     if [[ -n "$connected_name" ]]; then
       echo "Hivemind Link connected: $connected_name"
@@ -543,7 +603,7 @@ wait_for_hivemind_link_auth_confirmation() {
     fi
     sleep 2
   done
-  echo "Hivemind Link has not reported connected yet. The dashboard will keep checking http://127.0.0.1:8788/status." >&2
+  echo "Hivemind Link has not reported connected yet. The dashboard will keep checking http://$LINK_CONTROL/status." >&2
 }
 
 collector_local_health() {
@@ -704,6 +764,7 @@ if [[ "$LINK_ACTIVE" == "true" ]]; then
   TAILNET_SYNC_ENABLED="false"
   echo "Hivemind Link keeps the collector localhost-only and exposes it through the embedded Tailscale sidecar."
   choose_link_local_collector_port
+  choose_link_control_port
 elif [[ "$NETWORK_MANAGED_BY_SETUP" == "true" ]]; then
   TAILNET_SYNC_ENABLED="$SETUP_TAILNET_SYNC_ENABLED"
 elif ensure_tailscale_connected; then
@@ -803,7 +864,7 @@ PLIST
   <dict>
     <key>HIVE_LINK_TARGET</key><string>http://127.0.0.1:$PORT</string>
     <key>HIVE_LINK_LISTEN</key><string>:$LINK_TAILNET_PORT</string>
-    <key>HIVE_LINK_CONTROL</key><string>127.0.0.1:8788</string>
+    <key>HIVE_LINK_CONTROL</key><string>$LINK_CONTROL</string>
   </dict>
   <key>RunAtLoad</key><true/>
   <key>KeepAlive</key><true/>
@@ -881,7 +942,7 @@ After=agent-telemetry.service
 [Service]
 Environment=HIVE_LINK_TARGET=http://127.0.0.1:$PORT
 Environment=HIVE_LINK_LISTEN=:$LINK_TAILNET_PORT
-Environment=HIVE_LINK_CONTROL=127.0.0.1:8788
+Environment=HIVE_LINK_CONTROL=$LINK_CONTROL
 ExecStart=$LINK_BIN
 Restart=always
 
@@ -899,6 +960,8 @@ mkdir -p "$HOME/.hivemindos"
 {
   printf "AGENT_TELEMETRY_PORT=%q\n" "$PORT"
   printf "HIVE_LINK_TAILNET_PORT=%q\n" "$LINK_TAILNET_PORT"
+  printf "HIVE_LINK_CONTROL=%q\n" "$LINK_CONTROL"
+  printf "HIVE_LINK_CONTROL_URL=%q\n" "http://$LINK_CONTROL"
 } > "$HOME/.hivemindos/collector.env"
 
 if [[ "$TAILNET_SYNC_ENABLED" == "true" && "$NETWORK_MANAGED_BY_SETUP" != "true" ]]; then
@@ -924,11 +987,11 @@ if [[ "$LINK_ACTIVE" == "true" ]]; then
   if [[ "$PORT" != "$REQUESTED_PORT" ]]; then
     echo "Hivemind Link Tailnet collector URL remains: http://<this-link-node>:$LINK_TAILNET_PORT"
   fi
-  echo "Hivemind Link control URL: http://127.0.0.1:8788/status"
+  echo "Hivemind Link control URL: http://$LINK_CONTROL/status"
   echo "Waiting for Hivemind Link to start and return a sign-in or connected state..."
   LINK_STATUS=""
   for attempt in $(seq 1 60); do
-    LINK_STATUS="$(curl -fsS --max-time 3 http://127.0.0.1:8788/status 2>/dev/null || true)"
+    LINK_STATUS="$(curl -fsS --max-time 3 "http://$LINK_CONTROL/status" 2>/dev/null || true)"
     if printf "%s" "$LINK_STATUS" | node -e 'let d="";process.stdin.on("data",c=>d+=c);process.stdin.on("end",()=>{try{const j=JSON.parse(d); process.exit(j.authUrl || j.ok || (j.backendState && j.backendState !== "NeedsLogin") ? 0 : 1)}catch{process.exit(1)}})' 2>/dev/null; then
       break
     fi
@@ -938,7 +1001,7 @@ if [[ "$LINK_ACTIVE" == "true" ]]; then
       pkill -f "$LINK_BIN" >/dev/null 2>&1 || true
       HIVE_LINK_TARGET="http://127.0.0.1:$PORT" \
         HIVE_LINK_LISTEN=":$LINK_TAILNET_PORT" \
-        HIVE_LINK_CONTROL="127.0.0.1:8788" \
+        HIVE_LINK_CONTROL="$LINK_CONTROL" \
         nohup "$LINK_BIN" >>"$HOME/Library/Logs/hivemindos-linkd.log" 2>>"$HOME/Library/Logs/hivemindos-linkd.err.log" &
       sleep 2
     elif (( attempt == 5 || attempt == 10 || attempt == 30 || attempt == 45 )); then
@@ -967,7 +1030,7 @@ if [[ "$LINK_ACTIVE" == "true" ]]; then
     echo "Hivemind Link is starting: $LINK_BACKEND_STATE"
     echo "Open the dashboard or retry this status URL in a few seconds if sign-in is needed."
   else
-    echo "Hivemind Link status is not ready yet. Retry: curl http://127.0.0.1:8788/status"
+    echo "Hivemind Link status is not ready yet. Retry: curl http://$LINK_CONTROL/status"
   fi
 fi
 if wait_for_local_collector 10; then

@@ -108,6 +108,12 @@ if (Ask-YesNo "Stop HivemindOS Link sidecar processes?" $true) {
   Ok "Stopped HivemindOS Link sidecar processes"
 }
 
+if (Ask-YesNo "Remove HivemindOS collector environment file ~/.hivemindos/collector.env?" $false) {
+  $collectorEnv = Join-Path ([Environment]::GetFolderPath("UserProfile")) ".hivemindos\collector.env"
+  Remove-Item $collectorEnv -Force -ErrorAction SilentlyContinue
+  Ok "Removed $collectorEnv"
+}
+
 if (Ask-YesNo "Remove HivemindOS shared-skill instructions from agent files?" $true) {
   $vaultPath = if ($env:NEXT_PUBLIC_OBSIDIAN_VAULT_PATH) { $env:NEXT_PUBLIC_OBSIDIAN_VAULT_PATH } else { "$([Environment]::GetFolderPath("UserProfile"))\Documents\Obsidian\hivemindos-vault" }
   Remove-ManagedBlock (Join-Path $vaultPath "AGENTS.md")

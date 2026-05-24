@@ -3,6 +3,14 @@
 This file records user-visible changes before they are committed. New work should
 be added here first, then marked `Committed` or `Pushed` after the git action.
 
+## 2026-05-24 19:28 WITA - Auto-Select Link Control Port
+
+- Status: Pushed
+- Areas changed: telemetry collector installer, setup summary, Link control discovery, uninstall prompts, changelog
+- Summary: Detect when another local app owns the Hivemind Link control port, automatically choose a free fallback control port, persist it in `~/.hivemindos/collector.env`, and have dashboard discovery read that persisted control URL.
+- Verification: `bash -n scripts/install-telemetry-collector.sh setup.sh uninstall.sh`; `pwsh -NoProfile -Command { $null = [System.Management.Automation.PSParser]::Tokenize((Get-Content -Raw uninstall.ps1), [ref]$null) }` if PowerShell is available; `pnpm exec tsc --noEmit --pretty false`; `git diff --check -- scripts/install-telemetry-collector.sh setup.sh uninstall.sh uninstall.ps1 src/app/api/fleet/discover/route.ts src/app/api/tailscale/devices/route.ts src/lib/services/hivemind-link-control.ts CHANGELOG.md`.
+- Intended commit message: `Auto-select Link control port`
+
 ## 2026-05-24 19:07 WITA - Clarify Collector Reachability States
 
 - Status: Pushed
