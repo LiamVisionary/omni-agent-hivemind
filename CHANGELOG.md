@@ -3,6 +3,14 @@
 This file records user-visible changes before they are committed. New work should
 be added here first, then marked `Committed` or `Pushed` after the git action.
 
+## 2026-05-25 03:04 WITA - Keep Env Sync Update Visible
+
+- Status: Uncommitted
+- Areas changed: fleet roster update visibility, env sync repair detection, changelog
+- Summary: Treat any ready collector that does not advertise `envHttpSync` as updateable and keep the roster Update button visible for stale/update-needed machines even when cached `canUpdate` data is incomplete.
+- Verification: `pnpm exec tsc --noEmit --pretty false`; `git diff --check -- src/app/page.tsx src/components/fleet/roster.tsx CHANGELOG.md`; local fleet discovery shows Ubuntu ready at `f1c753b` with latest `3270a34` and no `capabilities.envHttpSync`.
+- Intended commit message: `Keep env sync update visible`
+
 ## 2026-05-25 02:52 WITA - Verify Env Sync Collector Updates
 
 - Status: Pushed

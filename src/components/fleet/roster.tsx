@@ -99,7 +99,6 @@ function RosterRow({
 
   const showUpdateButton = Boolean(
     onUpdateMachine
-      && machine.canUpdate !== false
       && (
 	        updateStatus === "updating"
 	        || (updateStatus === "updated" && !successDismissed)

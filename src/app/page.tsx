@@ -4007,7 +4007,7 @@ function machineNeedsChatBridgeRepair(machine: MachineGroup) {
 }
 
 function machineNeedsEnvHttpSyncRepair(machine: MachineGroup) {
-  return machine.collector === "ready" && machine.envSync?.ready === true && machine.capabilities?.envHttpSync !== true;
+  return machine.collector === "ready" && machine.capabilities?.envHttpSync !== true;
 }
 
 function localDashboardHasUnpublishedChanges(version?: AppVersion | null) {
