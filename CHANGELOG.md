@@ -3,6 +3,14 @@
 This file records user-visible changes before they are committed. New work should
 be added here first, then marked `Committed` or `Pushed` after the git action.
 
+## 2026-05-24 19:45 WITA - Protect Managed Dev Server Port
+
+- Status: Pushed
+- Areas changed: project agent instructions, local dev server process
+- Summary: Free port `5020` on request and document that port `5020` belongs to Liam's managed dev server, so agents must not kill or replace it and should use another port for their own testing.
+- Verification: `lsof -nP -iTCP:5020 -sTCP:LISTEN` returned no listener after killing PID `24435`; `git diff --check -- AGENTS.md CHANGELOG.md`.
+- Intended commit message: `Protect managed dev server port`
+
 ## 2026-05-24 19:41 WITA - Update Machines Through Collectors
 
 - Status: Pushed
