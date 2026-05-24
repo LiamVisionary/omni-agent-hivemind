@@ -6,7 +6,7 @@ import { AlertTriangle, ChevronDown, ChevronRight, Copy, LoaderCircle, MessageSq
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { BeeIcon } from "./bee-icon";
 import { HexTile } from "./hex-tile";
-import { fleetAgentCanChat, isFleetMachineMobile, type AgentState, type FleetAgent, type FleetMachine } from "./fleet-data";
+import { fleetAgentCanChat, isFleetMachineMobile, type AgentState, type FleetAgent, type FleetAgentChat, type FleetMachine } from "./fleet-data";
 import styles from "./fleet-tokens.module.css";
 
 const STATE_COLOR: Record<AgentState, string> = {
@@ -38,6 +38,7 @@ interface RosterRowProps {
   onRenameMachine?: (name: string) => void;
   onOpenNetworkIssue?: () => void;
   onOpenChat?: (a: FleetAgent) => void;
+  onOpenTaskChat?: (a: FleetAgent, chat?: FleetAgentChat) => void;
   onOpenWallet?: (a: FleetAgent) => void;
   onEditSettings?: (a: FleetAgent) => void;
   onDuplicate?: (a: FleetAgent) => void;
@@ -52,7 +53,7 @@ function RosterRow({
   onUpdateMachine,
   onRenameMachine,
   onOpenNetworkIssue,
-  onOpenChat, onOpenWallet, onEditSettings, onDuplicate, onRemove,
+  onOpenChat, onOpenTaskChat, onOpenWallet, onEditSettings, onDuplicate, onRemove,
 }: RosterRowProps) {
   const [expandedTaskIds, setExpandedTaskIds] = React.useState<Set<string>>(() => new Set());
   const [successDismissed, setSuccessDismissed] = React.useState(false);
@@ -63,13 +64,17 @@ function RosterRow({
     event.stopPropagation();
     fn?.(agent);
   };
-  const toggleTaskPreview = (agentId: string) => {
+  const fireTaskChat = (agent: FleetAgent, chat: FleetAgentChat, fn?: (a: FleetAgent, chat?: FleetAgentChat) => void) => (event: React.MouseEvent) => {
+    event.stopPropagation();
+    fn?.(agent, chat);
+  };
+  const toggleTaskPreview = (previewId: string) => {
     setExpandedTaskIds((current) => {
       const next = new Set(current);
-      if (next.has(agentId)) {
-        next.delete(agentId);
+      if (next.has(previewId)) {
+        next.delete(previewId);
       } else {
-        next.add(agentId);
+        next.add(previewId);
       }
       return next;
     });
@@ -82,7 +87,9 @@ function RosterRow({
   }, [updateStatus]);
 
   React.useEffect(() => {
-    if (!editingName) setNameDraft(machine.name);
+    if (editingName) return;
+    const timeout = window.setTimeout(() => setNameDraft(machine.name), 0);
+    return () => window.clearTimeout(timeout);
   }, [editingName, machine.name]);
 
   const commitName = () => {
@@ -94,12 +101,13 @@ function RosterRow({
     onUpdateMachine
       && machine.canUpdate !== false
       && (
-        updateStatus === "updating"
-        || (updateStatus === "updated" && !successDismissed)
-        || updateStatus === "failed"
-        || (machine.versionState === "stale" && updateStatus !== "updated")
-      ),
-  );
+	        updateStatus === "updating"
+	        || (updateStatus === "updated" && !successDismissed)
+	        || updateStatus === "failed"
+	        || (machine.versionState === "stale" && updateStatus !== "updated")
+	        || machine.canUpdate === true
+	      ),
+	  );
   const updateDisabled = updateStatus === "updating" || updateStatus === "updated";
   const MachineIcon = isFleetMachineMobile(machine) ? Smartphone : Monitor;
 
@@ -324,7 +332,6 @@ function RosterRow({
         <div className="grid gap-1" style={{ padding: "0 10px 10px" }}>
           {machine.agents.map((a) => {
             const isSelA = selectedAgentId === a.id;
-            const isTaskExpanded = expandedTaskIds.has(a.id);
             const canChat = fleetAgentCanChat(a);
             return (
               <div
@@ -380,23 +387,76 @@ function RosterRow({
                       padding: "0 10px 10px 46px",
                     }}
                   >
-                    <button
-                      type="button"
-                      onClick={(event) => {
-                        event.stopPropagation();
-                        toggleTaskPreview(a.id);
-                      }}
-                      className={`${styles.rosterTaskPreview} ${isTaskExpanded ? styles.rosterTaskPreviewExpanded : ""}`}
-                      aria-expanded={isTaskExpanded}
-                      aria-label={`${isTaskExpanded ? "Collapse" : "Expand"} recent task for ${a.name}`}
-                    >
-                      <span
-                        className={`${styles.rosterTaskPreviewText} ${isTaskExpanded ? "" : styles.rosterTaskPreviewTextCollapsed}`}
-                      >
-                        {a.task}
-                      </span>
-                      <ChevronDown size={13} aria-hidden="true" />
-                    </button>
+                    {(a.recentChats?.length
+                      ? a.recentChats
+                      : [{ id: "current", title: a.task, task: a.task, since: a.since }]
+                    ).slice(0, 3).map((chat) => {
+                      const previewId = `${a.id}:${chat.id}`;
+                      const isTaskExpanded = expandedTaskIds.has(previewId);
+                      return (
+                        <div
+                          key={previewId}
+                          role="button"
+                          tabIndex={0}
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            toggleTaskPreview(previewId);
+                          }}
+                          onKeyDown={(event) => {
+                            if (event.key !== "Enter" && event.key !== " ") return;
+                            event.preventDefault();
+                            event.stopPropagation();
+                            toggleTaskPreview(previewId);
+                          }}
+                          className={`${styles.rosterTaskPreview} ${isTaskExpanded ? styles.rosterTaskPreviewExpanded : ""}`}
+                          aria-expanded={isTaskExpanded}
+                          aria-label={`${isTaskExpanded ? "Collapse" : "Expand"} recent chat for ${a.name}`}
+                        >
+                          <span
+                            className={`${styles.rosterTaskPreviewText} ${isTaskExpanded ? "" : styles.rosterTaskPreviewTextCollapsed}`}
+                          >
+                            {chat.title}
+                          </span>
+                          {canChat ? (
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <button
+                                  type="button"
+                                  onClick={fireTaskChat(a, chat, onOpenTaskChat)}
+                                  aria-label={`Resume chat with ${a.name}`}
+                                  className="inline-grid place-items-center"
+                                  style={{
+                                    width: 24,
+                                    height: 24,
+                                    borderRadius: 7,
+                                    border: "1px solid rgba(94,234,212,0.32)",
+                                    background: "rgba(45,212,191,0.10)",
+                                    color: "var(--accent-strong)",
+                                    cursor: "pointer",
+                                    flex: "0 0 auto",
+                                  }}
+                                >
+                                  <MessageSquare size={12} aria-hidden="true" />
+                                </button>
+                              </TooltipTrigger>
+                              <TooltipContent>Resume chat</TooltipContent>
+                            </Tooltip>
+                          ) : null}
+                          <span
+                            aria-hidden="true"
+                            style={{
+                              color: "var(--muted)",
+                              fontFamily: "var(--f-mono)",
+                              fontSize: 9,
+                              whiteSpace: "nowrap",
+                            }}
+                          >
+                            {chat.since}
+                          </span>
+                          <ChevronDown size={13} aria-hidden="true" />
+                        </div>
+                      );
+                    })}
                     <div className="flex items-center flex-wrap" style={{ gap: 6 }}>
                       {canChat && (
                         <Tooltip>
@@ -413,10 +473,10 @@ function RosterRow({
                                 color: "var(--accent-strong)",
                               }}
                             >
-                              <MessageSquare size={12} /> Chat
+                              <MessageSquare size={12} /> New Chat
                             </button>
                           </TooltipTrigger>
-                          <TooltipContent>Open chat with {a.name}</TooltipContent>
+                          <TooltipContent>Start a fresh chat with {a.name}</TooltipContent>
                         </Tooltip>
                       )}
 
@@ -540,6 +600,7 @@ interface RosterProps {
   onUpdateMachine?: (m: FleetMachine) => void;
   onRenameMachine?: (machineId: string, name: string) => void;
   onOpenChat?: (m: FleetMachine, a: FleetAgent) => void;
+  onOpenTaskChat?: (m: FleetMachine, a: FleetAgent, chat?: FleetAgentChat) => void;
   onOpenWallet?: (m: FleetMachine, a: FleetAgent) => void;
   onEditSettings?: (m: FleetMachine, a: FleetAgent) => void;
   onDuplicate?: (m: FleetMachine, a: FleetAgent) => void;
@@ -553,7 +614,7 @@ export function Roster({
   onSelectMachine, onSelectAgent, onToggleExpand, onAddAgent,
   onUpdateMachine,
   onRenameMachine,
-  onOpenChat, onOpenWallet, onEditSettings, onDuplicate, onRemove,
+  onOpenChat, onOpenTaskChat, onOpenWallet, onEditSettings, onDuplicate, onRemove,
 }: RosterProps) {
   const [activeIssueMachine, setActiveIssueMachine] = React.useState<FleetMachine | null>(null);
   const activeIssue = activeIssueMachine?.networkIssue;
@@ -576,6 +637,7 @@ export function Roster({
           onRenameMachine={onRenameMachine ? (name) => onRenameMachine(m.id, name) : undefined}
           onOpenNetworkIssue={m.networkIssue ? () => setActiveIssueMachine(m) : undefined}
           onOpenChat={(a) => onOpenChat?.(m, a)}
+          onOpenTaskChat={(a, chat) => onOpenTaskChat?.(m, a, chat)}
           onOpenWallet={(a) => onOpenWallet?.(m, a)}
           onEditSettings={(a) => onEditSettings?.(m, a)}
           onDuplicate={(a) => onDuplicate?.(m, a)}

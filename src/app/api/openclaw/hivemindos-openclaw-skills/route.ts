@@ -1,9 +1,9 @@
-import { NextRequest, NextResponse } from 'next/server';
+import { NextResponse } from 'next/server';
 
 /**
- * GET /api/openclaw/amiclaw-skills
+ * GET /api/openclaw/hivemindos-openclaw-skills
  *
- * Returns the list of AmiClaw-exclusive skills from the amiclaw-skills GitHub repo.
+ * Returns the list of HivemindOS OpenClaw-exclusive skills from the hivemindos-openclaw-skills GitHub repo.
  * Each skill is a subdirectory under /skills/ that contains a SKILL.md.
  *
  * The repo structure mirrors the openclaw/skills monorepo:
@@ -11,16 +11,16 @@ import { NextRequest, NextResponse } from 'next/server';
  *   skills/{slug}/scripts/...
  */
 
-const AMICLAW_REPO_OWNER = process.env.AMICLAW_REPO_OWNER ?? 'openclaw';
-const AMICLAW_REPO_NAME = 'amiclaw-skills';
-const AMICLAW_REPO_BRANCH = 'main';
-const AMICLAW_SKILLS_PATH = 'skills';
+const HIVEMINDOS_OPENCLAW_REPO_OWNER = process.env.HIVEMINDOS_OPENCLAW_REPO_OWNER ?? 'openclaw';
+const HIVEMINDOS_OPENCLAW_REPO_NAME = 'hivemindos-openclaw-skills';
+const HIVEMINDOS_OPENCLAW_REPO_BRANCH = 'main';
+const HIVEMINDOS_OPENCLAW_SKILLS_PATH = 'skills';
 
-const GITHUB_CONTENTS_URL = `https://api.github.com/repos/${AMICLAW_REPO_OWNER}/${AMICLAW_REPO_NAME}/contents/${AMICLAW_SKILLS_PATH}?ref=${AMICLAW_REPO_BRANCH}`;
-const RAW_BASE = `https://raw.githubusercontent.com/${AMICLAW_REPO_OWNER}/${AMICLAW_REPO_NAME}/${AMICLAW_REPO_BRANCH}`;
+const GITHUB_CONTENTS_URL = `https://api.github.com/repos/${HIVEMINDOS_OPENCLAW_REPO_OWNER}/${HIVEMINDOS_OPENCLAW_REPO_NAME}/contents/${HIVEMINDOS_OPENCLAW_SKILLS_PATH}?ref=${HIVEMINDOS_OPENCLAW_REPO_BRANCH}`;
+const RAW_BASE = `https://raw.githubusercontent.com/${HIVEMINDOS_OPENCLAW_REPO_OWNER}/${HIVEMINDOS_OPENCLAW_REPO_NAME}/${HIVEMINDOS_OPENCLAW_REPO_BRANCH}`;
 
 /** Built-in skills that are auto-installed by the sync route (not from a repo) */
-const BUILTIN_AMICLAW_SKILLS: AmiClawSkillMeta[] = [
+const BUILTIN_HIVEMINDOS_OPENCLAW_SKILLS: HivemindOSOpenClawSkillMeta[] = [
   {
     slug: 'apple-notes',
     name: 'Apple Notes',
@@ -31,7 +31,7 @@ const BUILTIN_AMICLAW_SKILLS: AmiClawSkillMeta[] = [
   },
 ];
 
-export interface AmiClawSkillMeta {
+export interface HivemindOSOpenClawSkillMeta {
   slug: string;
   name: string;
   description: string;
@@ -67,14 +67,14 @@ function parseSkillMd(content: string): { description: string; icon: string } {
     if (h2) description = h2.replace(/^##\s*/, '').trim();
   }
 
-  return { description: description || 'AmiClaw exclusive skill', icon };
+  return { description: description || 'HivemindOS OpenClaw exclusive skill', icon };
 }
 
-export async function GET(_req: NextRequest) {
+export async function GET() {
   try {
     const headers: HeadersInit = {
       'Accept': 'application/vnd.github.v3+json',
-      'User-Agent': 'amiclaw-skill-browser',
+      'User-Agent': 'hivemindos-openclaw-skill-browser',
     };
     if (process.env.GITHUB_TOKEN) {
       headers['Authorization'] = `Bearer ${process.env.GITHUB_TOKEN}`;
@@ -88,9 +88,9 @@ export async function GET(_req: NextRequest) {
 
     if (!res.ok) {
       if (res.status === 404) {
-        return NextResponse.json({ skills: BUILTIN_AMICLAW_SKILLS });
+        return NextResponse.json({ skills: BUILTIN_HIVEMINDOS_OPENCLAW_SKILLS });
       }
-      return NextResponse.json({ skills: BUILTIN_AMICLAW_SKILLS, error: `GitHub API error: ${res.status}` });
+      return NextResponse.json({ skills: BUILTIN_HIVEMINDOS_OPENCLAW_SKILLS, error: `GitHub API error: ${res.status}` });
     }
 
     const entries = await res.json() as Array<{ name: string; type: string; url: string }>;
@@ -98,17 +98,17 @@ export async function GET(_req: NextRequest) {
 
     // For each skill dir, fetch SKILL.md to get description/icon
     const skills = await Promise.all(
-      skillDirs.map(async (dir): Promise<AmiClawSkillMeta> => {
+      skillDirs.map(async (dir): Promise<HivemindOSOpenClawSkillMeta> => {
         const slug = dir.name;
-        const skillMdUrl = `${RAW_BASE}/${AMICLAW_SKILLS_PATH}/${slug}/SKILL.md`;
-        const githubUrl = `https://github.com/${AMICLAW_REPO_OWNER}/${AMICLAW_REPO_NAME}/tree/${AMICLAW_REPO_BRANCH}/${AMICLAW_SKILLS_PATH}/${slug}`;
+        const skillMdUrl = `${RAW_BASE}/${HIVEMINDOS_OPENCLAW_SKILLS_PATH}/${slug}/SKILL.md`;
+        const githubUrl = `https://github.com/${HIVEMINDOS_OPENCLAW_REPO_OWNER}/${HIVEMINDOS_OPENCLAW_REPO_NAME}/tree/${HIVEMINDOS_OPENCLAW_REPO_BRANCH}/${HIVEMINDOS_OPENCLAW_SKILLS_PATH}/${slug}`;
 
-        let description = 'AmiClaw exclusive skill';
+        let description = 'HivemindOS OpenClaw exclusive skill';
         let icon = '🔧';
 
         try {
           const mdRes = await fetch(skillMdUrl, {
-            headers: { 'User-Agent': 'amiclaw-skill-browser' },
+            headers: { 'User-Agent': 'hivemindos-openclaw-skill-browser' },
             signal: AbortSignal.timeout(5_000),
           });
           if (mdRes.ok) {
@@ -132,10 +132,10 @@ export async function GET(_req: NextRequest) {
       })
     );
 
-    return NextResponse.json({ skills: [...BUILTIN_AMICLAW_SKILLS, ...skills] });
+    return NextResponse.json({ skills: [...BUILTIN_HIVEMINDOS_OPENCLAW_SKILLS, ...skills] });
   } catch (err) {
-    console.error('[AmiClawSkills] Error:', err);
+    console.error('[HivemindOS OpenClawSkills] Error:', err);
     // Still return built-ins even if remote fetch fails
-    return NextResponse.json({ skills: BUILTIN_AMICLAW_SKILLS, error: 'Failed to fetch remote AmiClaw skills' });
+    return NextResponse.json({ skills: BUILTIN_HIVEMINDOS_OPENCLAW_SKILLS, error: 'Failed to fetch remote HivemindOS OpenClaw skills' });
   }
 }

@@ -16,6 +16,7 @@ const MAX_FILES_PER_DIR = 20;
 const MAX_FILE_CHARS = 4_000;
 
 type FleetTaskStatus = "active" | "completed" | "failed" | "unknown";
+const HERMES_EMPTY_TRANSCRIPT_MESSAGE = "Hermes session found. Send a message to resume it.";
 
 type FleetTask = {
   id: string;
@@ -133,6 +134,9 @@ function readableChatContent(value: unknown): string {
       }
     }
     return trimmed;
+  }
+  if (Array.isArray(value)) {
+    return value.map((item) => readableChatContent(item)).filter(Boolean).join("\n").trim();
   }
   if (!value || typeof value !== "object") return "";
   const record = value as Record<string, unknown>;
@@ -287,7 +291,7 @@ async function scanHermesStateDb(agent: AgentProfile, hermesDir: string): Promis
     const latestAssistant = readableMessages.find((message) => message.role === "assistant");
     const latestUser = readableMessages.find((message) => message.role === "user");
     const latestTool = readableMessages.find((message) => message.role === "tool");
-    const latest = latestAssistant ?? latestTool ?? messages.find((message) => message.content?.trim());
+    const latest = latestAssistant ?? latestTool ?? readableMessages[0];
     const chatMessages = readableMessages
       .filter((message) => (
         (message.role === "user" || message.role === "assistant")
@@ -302,7 +306,7 @@ async function scanHermesStateDb(agent: AgentProfile, hermesDir: string): Promis
       id: `hermes-state:${session.id}`,
       agentId: agent.id,
       title: (session.title || latestUser?.content || `Hermes ${session.source} session`).slice(0, 160),
-      lastMessage: compact(latest?.content, "Hermes session exists, but no readable message was stored."),
+      lastMessage: compact(latest?.content, HERMES_EMPTY_TRANSCRIPT_MESSAGE),
       status: statusFromSession(session.ended_at, session.end_reason),
       source: "hermes-state",
       startedAt: session.started_at * 1000,

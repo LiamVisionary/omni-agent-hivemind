@@ -21,6 +21,10 @@ const vaultDir = path.join(os.homedir(), ".hivemindos");
 const vaultPath = path.join(vaultDir, "wallet-vault.json");
 const keyPath = path.join(vaultDir, "wallet-vault.key");
 
+export const LOCAL_WALLET_VAULT_DIR = vaultDir;
+export const LOCAL_WALLET_VAULT_PATH = vaultPath;
+export const LOCAL_WALLET_VAULT_KEY_PATH = keyPath;
+
 function publicInfo(record: VaultRecord): AgentWalletVaultInfo {
   return {
     agentId: record.agentId,

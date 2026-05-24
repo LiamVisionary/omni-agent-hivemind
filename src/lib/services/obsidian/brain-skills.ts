@@ -134,7 +134,7 @@ const PROVIDERS: Array<{
     home: "~/.openclaw",
     roots: [
       { path: "~/.openclaw/skills", maxDepth: 4 },
-      { path: "~/Documents/code/projects/my-anime-waifu-web/openclaw-next/skills", maxDepth: 4 },
+      { path: "~/Documents/code/projects/hivemind-os/openclaw-next/skills", maxDepth: 4 },
     ],
   },
   {

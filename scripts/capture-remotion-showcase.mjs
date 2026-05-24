@@ -330,7 +330,7 @@ async function main() {
       nextCursor: null,
     },
   }));
-  await context.route("**/api/openclaw/amiclaw-skills", (route) => route.fulfill({ json: { ok: true, skills: [] } }));
+  await context.route("**/api/openclaw/hivemindos-openclaw-skills", (route) => route.fulfill({ json: { ok: true, skills: [] } }));
   await context.route("**/api/openclaw/skills**", (route) => route.fulfill({ json: { ok: true, skills: [] } }));
   await context.route("**/api/chat/folders", (route) => route.fulfill({ json: { ok: true, folders: [{ path: ROOT, label: "openclaw-next", chats: [] }] } }));
     await context.route("**/api/chat/agent-runtime", fulfillHermesChat);

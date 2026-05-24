@@ -17,6 +17,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import time
 import urllib.request
 from typing import Iterable
 
@@ -24,6 +25,11 @@ SCRIPT_PATH = pathlib.Path(__file__).resolve()
 ROOT = pathlib.Path(os.path.expanduser(os.environ.get("HIVE_ENV_PROJECT_ROOT", ""))).resolve() if os.environ.get("HIVE_ENV_PROJECT_ROOT") else SCRIPT_PATH.parents[1]
 DEFAULT_ENV_FILE = ROOT / ".env.local"
 DEFAULT_AGENT_ENV_FILE = pathlib.Path.home() / ".hivemindos" / ".env"
+DEFAULT_NOTE_ROOT_CANDIDATES = [
+    pathlib.Path.home() / "Documents" / "Obsidian" / "hivemindos-vault",
+    pathlib.Path.home() / "Documents" / "Obsidian" / "HivemindOS Vault",
+    pathlib.Path.home() / "Documents" / "Obsidian" / "Agent Team Vault",
+]
 OPENCLAW_DIR = pathlib.Path.home() / ".openclaw"
 OPENCLAW_JSON = OPENCLAW_DIR / "openclaw.json"
 OPENCLAW_SECRETS = OPENCLAW_DIR / "secrets.json"
@@ -52,12 +58,7 @@ LOCAL_ONLY_KEYS = {
 }
 
 
-def parse_env_file(path: pathlib.Path) -> dict[str, str]:
-    try:
-        data = path.read_text()
-    except FileNotFoundError:
-        return {}
-
+def parse_env_text(data: str) -> dict[str, str]:
     parsed: dict[str, str] = {}
     for raw_line in data.splitlines():
         line = raw_line.strip()
@@ -74,6 +75,14 @@ def parse_env_file(path: pathlib.Path) -> dict[str, str]:
             value = value[1:-1]
         parsed[key] = value
     return parsed
+
+
+def parse_env_file(path: pathlib.Path) -> dict[str, str]:
+    try:
+        data = path.read_text()
+    except FileNotFoundError:
+        return {}
+    return parse_env_text(data)
 
 
 def local_setting(key: str) -> str:
@@ -121,6 +130,59 @@ def update_env_file(path: pathlib.Path, key: str, value: str) -> None:
 
     path.write_text("\n".join(output) + "\n")
     path.chmod(0o600)
+
+
+def remove_env_file_key(path: pathlib.Path, key: str) -> None:
+    if not path.exists():
+        return
+    lines = path.read_text().splitlines()
+    output: list[str] = []
+    for line in lines:
+        stripped = line.strip()
+        if stripped.startswith("#") or "=" not in line:
+            output.append(line)
+            continue
+        existing_key = line.split("=", 1)[0].removeprefix("export ").strip()
+        if existing_key == key:
+            continue
+        output.append(line)
+    path.write_text("\n".join(output).rstrip() + ("\n" if output else ""))
+    path.chmod(0o600)
+
+
+def env_meta_file(path: pathlib.Path) -> pathlib.Path:
+    return path.with_name(path.name + ".meta.json")
+
+
+def read_env_meta(path: pathlib.Path) -> dict[str, float]:
+    meta_path = env_meta_file(path)
+    if not meta_path.exists():
+        return {}
+    try:
+        data = json.loads(meta_path.read_text())
+    except json.JSONDecodeError:
+        return {}
+    if not isinstance(data, dict):
+        return {}
+    updated_at = data.get("updatedAt")
+    if not isinstance(updated_at, dict):
+        return {}
+    return {str(key): float(value) for key, value in updated_at.items() if isinstance(value, (int, float))}
+
+
+def write_env_meta(path: pathlib.Path, updated_at: dict[str, float]) -> None:
+    meta_path = env_meta_file(path)
+    meta_path.parent.mkdir(parents=True, exist_ok=True)
+    meta_path.write_text(json.dumps({"version": 1, "updatedAt": dict(sorted(updated_at.items()))}, indent=2) + "\n")
+    meta_path.chmod(0o600)
+
+
+def touch_env_meta(path: pathlib.Path, keys: Iterable[str]) -> None:
+    updated_at = read_env_meta(path)
+    now = time.time()
+    for key in keys:
+        updated_at[key] = now
+    write_env_meta(path, updated_at)
 
 
 def read_json(path: pathlib.Path) -> dict[str, object]:
@@ -229,7 +291,7 @@ def note_root() -> pathlib.Path | None:
         or local_setting("NEXT_PUBLIC_OBSIDIAN_VAULT_PATH")
     )
     if not raw:
-        return None
+        return next((candidate.resolve() for candidate in DEFAULT_NOTE_ROOT_CANDIDATES if candidate.exists()), None)
     return pathlib.Path(os.path.expanduser(raw)).resolve()
 
 
@@ -316,10 +378,121 @@ def refresh_encrypted_backup(env_file: pathlib.Path) -> str | None:
     return f"refreshed encrypted backup: {output}"
 
 
-def tailscale_peer_targets() -> list[str]:
+def backup_env_file(args: argparse.Namespace, env_file: pathlib.Path) -> pathlib.Path:
+    if args.scope == "agent" and args.runtime == "generic":
+        return agent_env_file(args)
+    return env_file
+
+
+def env_store_file(args: argparse.Namespace, env_file: pathlib.Path) -> pathlib.Path:
+    if args.scope in ("all", "app"):
+        return env_file
+    if args.runtime == "hermes":
+        return HERMES_ENV_FILE
+    if args.runtime == "aeon":
+        return AEON_ENV_FILE
+    if args.runtime == "generic":
+        return agent_env_file(args)
+    return OPENCLAW_SECRETS
+
+
+def backup_applies(args: argparse.Namespace) -> bool:
+    return args.scope in ("all", "app") or (args.scope == "agent" and args.runtime == "generic")
+
+
+def encrypted_backup_path() -> pathlib.Path | None:
+    directory = backup_dir()
+    if not directory:
+        return None
+    return directory / "hive.env.gpg"
+
+
+def maybe_refresh_encrypted_backup(args: argparse.Namespace, env_file: pathlib.Path) -> None:
+    if args.no_backup or not backup_applies(args):
+        return
+    message = refresh_encrypted_backup(backup_env_file(args, env_file))
+    if message:
+        print(message, file=sys.stderr if "failed" in message.lower() else sys.stdout)
+
+
+def export_backup_status(args: argparse.Namespace, env_file: pathlib.Path) -> None:
+    path = encrypted_backup_path()
+    target = backup_env_file(args, env_file)
+    payload = {
+        "version": 1,
+        "scope": args.scope,
+        "runtime": args.runtime,
+        "envFile": str(target),
+        "backupPath": str(path) if path else "",
+        "backupExists": bool(path and path.exists()),
+        "gpgAvailable": shutil.which("gpg") is not None,
+        "backupApplies": backup_applies(args),
+    }
+    print(json.dumps(payload, sort_keys=True))
+
+
+def restore_encrypted_backup(args: argparse.Namespace, env_file: pathlib.Path) -> int:
+    if not backup_applies(args):
+        print("Encrypted backup restore only applies to app env or the generic shared agent env.", file=sys.stderr)
+        return 2
+    path = encrypted_backup_path()
+    if not path:
+        print("No note root configured; cannot find encrypted env backup.", file=sys.stderr)
+        return 1
+    if not path.exists():
+        print(f"Encrypted env backup not found: {path}", file=sys.stderr)
+        return 1
+    if shutil.which("gpg") is None:
+        print("gpg is not installed; cannot restore encrypted env backup.", file=sys.stderr)
+        return 1
+
+    target = backup_env_file(args, env_file)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    with tempfile.NamedTemporaryFile("w", delete=False) as tmp:
+        tmp_path = pathlib.Path(tmp.name)
+    try:
+        proc = subprocess.run(
+            ["gpg", "--decrypt", str(path)],
+            text=True,
+            capture_output=True,
+            check=False,
+            timeout=60,
+        )
+        if proc.returncode != 0:
+            detail = (proc.stderr or proc.stdout).strip()
+            print(detail or "Could not decrypt encrypted env backup.", file=sys.stderr)
+            return 1
+        tmp_path.write_text(proc.stdout)
+        tmp_path.chmod(0o600)
+        shutil.copyfile(tmp_path, target)
+        target.chmod(0o600)
+    finally:
+        try:
+            tmp_path.unlink()
+        except FileNotFoundError:
+            pass
+
+    values = shared_env_values(args, env_file)
+    print(f"restored {len(values)} env key{'s' if len(values) != 1 else ''} from encrypted backup")
+    if not args.no_tailnet_sync:
+        sync_tailnet_updates(args, values)
+    return 0
+
+
+def tailscale_local_ips(data: dict[str, object]) -> set[str]:
+    self_data = data.get("Self")
+    if not isinstance(self_data, dict):
+        return set()
+    return {str(value) for value in self_data.get("TailscaleIPs") or []}
+
+
+def tailscale_peer_targets() -> list[dict[str, str]]:
     configured = os.environ.get("HIVE_ENV_TAILNET_TARGETS") or local_setting("HIVE_ENV_TAILNET_TARGETS")
     if configured:
-        return sorted({target.strip() for target in configured.split(",") if target.strip()})
+        return [
+            {"host": target.strip(), "ip": target.strip(), "user": ""}
+            for target in sorted({target.strip() for target in configured.split(",") if target.strip()})
+        ]
     if shutil.which("tailscale") is None:
         return []
     proc = subprocess.run(["tailscale", "status", "--json"], text=True, capture_output=True, check=False)
@@ -330,18 +503,19 @@ def tailscale_peer_targets() -> list[str]:
     except json.JSONDecodeError:
         return []
 
-    targets: list[str] = []
+    local_ips = tailscale_local_ips(data)
+    targets: list[dict[str, str]] = []
     for peer in (data.get("Peer") or {}).values():
         if not isinstance(peer, dict) or peer.get("Online") is False:
             continue
         ip = next((str(value) for value in peer.get("TailscaleIPs") or [] if re.match(r"^\d+\.\d+\.\d+\.\d+$", str(value))), "")
-        if not ip:
+        if not ip or ip in local_ips:
             continue
         target_host = str(peer.get("DNSName") or "").rstrip(".") or ip
         user = env_sync_user_from_collector(ip)
         if user:
-            targets.append(f"{user}@{target_host}")
-    return sorted(set(targets))
+            targets.append({"host": target_host, "ip": ip, "user": user})
+    return sorted(targets, key=lambda target: target["host"])
 
 
 def env_sync_user_from_collector(ip: str) -> str:
@@ -368,15 +542,7 @@ def target_candidates(target: str) -> list[str]:
 
 
 def tailnet_sync_enabled(args: argparse.Namespace) -> bool:
-    if args.no_tailnet_sync:
-        return False
-    configured = (
-        os.environ.get("HIVE_ENV_TAILNET_SYNC")
-        or local_setting("HIVE_ENV_TAILNET_SYNC")
-        or os.environ.get("NEXT_PUBLIC_TAILNET_SYNC_ENABLED")
-        or local_setting("NEXT_PUBLIC_TAILNET_SYNC_ENABLED")
-    )
-    return truthy(configured)
+    return not args.no_tailnet_sync
 
 
 def remote_hive_command(args: argparse.Namespace, key: str) -> str:
@@ -409,6 +575,25 @@ def remote_update_args(args: argparse.Namespace, key: str) -> list[str]:
         remote_args.extend(["--agent-env-file", args.agent_env_file])
     remote_args.append(key)
     return remote_args
+
+
+def sync_target_over_collector(target: dict[str, str], args: argparse.Namespace, updates: dict[str, str]) -> tuple[bool, str]:
+    port = os.environ.get("HIVE_ENV_COLLECTOR_PORT") or local_setting("HIVE_ENV_COLLECTOR_PORT") or "8787"
+    url = f"http://{target['ip']}:{port}/env"
+    payload = json.dumps({
+        "scope": args.scope,
+        "runtime": args.runtime,
+        "entries": updates,
+    }).encode("utf-8")
+    request = urllib.request.Request(url, data=payload, headers={"content-type": "application/json"}, method="POST")
+    try:
+        with urllib.request.urlopen(request, timeout=20) as response:
+            data = json.loads(response.read().decode("utf-8") or "{}")
+    except Exception as error:
+        return False, str(error)
+    if data.get("ok") is True:
+        return True, ""
+    return False, str(data.get("error") or "collector env sync failed")
 
 
 def shared_env_values(args: argparse.Namespace, env_file: pathlib.Path) -> dict[str, str]:
@@ -444,30 +629,11 @@ def sync_tailnet_updates(args: argparse.Namespace, updates: dict[str, str]) -> N
     attempted_targets = 0
     for target in targets:
         attempted_targets += 1
-        ok_for_target = True
-        for key, value in updates.items():
-            proc = None
-            attempted: list[str] = []
-            for candidate in target_candidates(target):
-                attempted.append(candidate)
-                proc = subprocess.run(
-                    ["tailscale", "ssh", candidate, remote_hive_command(args, key)],
-                    input=value,
-                    text=True,
-                    capture_output=True,
-                    check=False,
-                    timeout=20,
-                )
-                if proc.returncode == 0:
-                    break
-            if proc.returncode != 0:
-                ok_for_target = False
-                detail = (proc.stderr or proc.stdout).strip().splitlines()[:1]
-                suffix = f": {detail[0]}" if detail else ""
-                failed.append(f"{'/'.join(attempted)}{suffix}")
-                break
-        if ok_for_target:
+        ok, detail = sync_target_over_collector(target, args, updates)
+        if ok:
             synced += 1
+        else:
+            failed.append(f"{target['host']}: {detail}")
 
     if synced:
         print(f"tailnet env sync updated {synced} peer{'s' if synced != 1 else ''}")
@@ -476,7 +642,7 @@ def sync_tailnet_updates(args: argparse.Namespace, updates: dict[str, str]) -> N
             print(
                 "tailnet env sync skipped "
                 + ", ".join(failed)
-                + " (run setup on that machine and ensure Tailscale SSH is allowed)",
+                + " (run setup on that machine and ensure the telemetry collector is reachable)",
                 file=sys.stderr,
             )
         else:
@@ -487,11 +653,14 @@ def sync_tailnet_updates(args: argparse.Namespace, updates: dict[str, str]) -> N
 
 
 def export_json(args: argparse.Namespace, env_file: pathlib.Path) -> None:
+    values = shared_env_values(args, env_file)
+    updated_at = read_env_meta(env_store_file(args, env_file))
     payload = {
         "version": 1,
         "scope": args.scope,
         "runtime": args.runtime,
-        "values": shared_env_values(args, env_file),
+        "values": values,
+        "updatedAt": {key: updated_at.get(key, 0) for key in values},
     }
     print(json.dumps(payload, sort_keys=True))
 
@@ -542,10 +711,8 @@ def pull_from_peer(args: argparse.Namespace, env_file: pathlib.Path, target: str
         print("conflicting keys: " + ", ".join(sorted(conflicts)), file=sys.stderr)
         return 1
     print(f"pulled {applied} env key{'s' if applied != 1 else ''} from {target}" + (f"; skipped {skipped} local conflict{'s' if skipped != 1 else ''}" if skipped else ""))
-    if applied and not args.no_backup and args.scope in ("all", "app"):
-        message = refresh_encrypted_backup(env_file)
-        if message:
-            print(message, file=sys.stderr if "failed" in message.lower() else sys.stdout)
+    if applied:
+        maybe_refresh_encrypted_backup(args, env_file)
     if applied and not args.no_tailnet_sync:
         sync_tailnet_updates(args, applied_values)
     return 0
@@ -571,6 +738,11 @@ def parse_args() -> argparse.Namespace:
         help="Import every valid key from the existing Hermes env source into the selected hive scope.",
     )
     parser.add_argument(
+        "--import-stdin",
+        action="store_true",
+        help="Import .env assignments from stdin into the selected hive scope.",
+    )
+    parser.add_argument(
         "--reconcile",
         action="store_true",
         help="Push the current shared env set from this machine to every ready Tailnet peer.",
@@ -593,12 +765,22 @@ def parse_args() -> argparse.Namespace:
         help=argparse.SUPPRESS,
     )
     parser.add_argument(
+        "--backup-status",
+        action="store_true",
+        help=argparse.SUPPRESS,
+    )
+    parser.add_argument(
+        "--restore-backup",
+        action="store_true",
+        help="Restore this env store from the encrypted shared-note backup, then sync it to ready Tailnet peers.",
+    )
+    parser.add_argument(
         "--stdin",
         action="store_true",
         help=argparse.SUPPRESS,
     )
     parser.add_argument("--no-backup", action="store_true", help="Skip encrypted shared-note backup refresh")
-    parser.add_argument("--no-tailnet-sync", action="store_true", help="Do not replicate this update over Tailscale SSH")
+    parser.add_argument("--no-tailnet-sync", action="store_true", help="Do not replicate this update to ready Tailnet collectors")
     parser.add_argument("--aeon-repo", default="", help="owner/repo target for --sync-aeon-github-secret")
     parser.add_argument(
         "--sync-aeon-github-secret",
@@ -609,8 +791,12 @@ def parse_args() -> argparse.Namespace:
 
 
 def apply_update(args: argparse.Namespace, env_file: pathlib.Path, key: str, value: str, quiet: bool = False) -> None:
+    touched_file = env_store_file(args, env_file)
     if args.scope in ("all", "app"):
-        update_env_file(env_file, key, value)
+        if value == "":
+            remove_env_file_key(env_file, key)
+        else:
+            update_env_file(env_file, key, value)
         if not quiet:
             print(f"updated {env_file}: {key}")
     if args.scope in ("all", "agent"):
@@ -619,19 +805,29 @@ def apply_update(args: argparse.Namespace, env_file: pathlib.Path, key: str, val
             if not quiet:
                 print(f"updated OpenClaw runtime secret stores: {key}")
         elif args.runtime == "hermes":
-            update_env_file(HERMES_ENV_FILE, key, value)
+            if value == "":
+                remove_env_file_key(HERMES_ENV_FILE, key)
+            else:
+                update_env_file(HERMES_ENV_FILE, key, value)
             if not quiet:
                 print(f"updated Hermes runtime env: {key}")
         elif args.runtime == "aeon":
-            update_env_file(AEON_ENV_FILE, key, value)
+            if value == "":
+                remove_env_file_key(AEON_ENV_FILE, key)
+            else:
+                update_env_file(AEON_ENV_FILE, key, value)
             if not quiet:
                 print(f"updated Aeon runtime env: {key}")
             sync_aeon_github_secret(args, key, value, quiet=quiet)
         else:
             path = agent_env_file(args)
-            update_env_file(path, key, value)
+            if value == "":
+                remove_env_file_key(path, key)
+            else:
+                update_env_file(path, key, value)
             if not quiet:
                 print(f"updated generic hive agent env {path}: {key}")
+    touch_env_meta(touched_file, [key])
 
 
 def main() -> int:
@@ -647,6 +843,13 @@ def main() -> int:
         export_json(args, env_file)
         return 0
 
+    if args.backup_status:
+        export_backup_status(args, env_file)
+        return 0
+
+    if args.restore_backup:
+        return restore_encrypted_backup(args, env_file)
+
     if args.pull_from:
         return pull_from_peer(args, env_file, args.pull_from)
 
@@ -656,10 +859,7 @@ def main() -> int:
             print("No local shared env keys found to reconcile.", file=sys.stderr)
             return 1
         sync_tailnet_updates(args, values)
-        if not args.no_backup and args.scope in ("all", "app"):
-            message = refresh_encrypted_backup(env_file)
-            if message:
-                print(message, file=sys.stderr if "failed" in message.lower() else sys.stdout)
+        maybe_refresh_encrypted_backup(args, env_file)
         return 0
 
     if args.import_env:
@@ -675,15 +875,25 @@ def main() -> int:
         for key, value in valid_values.items():
             apply_update(args, env_file, key, value, quiet=True)
         print(f"imported {len(valid_values)} keys from {source}")
-        if not args.no_backup and args.scope in ("all", "app"):
-            message = refresh_encrypted_backup(env_file)
-            if message:
-                print(message, file=sys.stderr if "failed" in message.lower() else sys.stdout)
+        maybe_refresh_encrypted_backup(args, env_file)
+        sync_tailnet_updates(args, valid_values)
+        return 0
+
+    if args.import_stdin:
+        values = parse_env_text(sys.stdin.read())
+        valid_values = {key: value for key, value in values.items() if KEY_RE.match(key)}
+        if not valid_values:
+            print("No valid env keys found on stdin", file=sys.stderr)
+            return 1
+        for key, value in valid_values.items():
+            apply_update(args, env_file, key, value, quiet=True)
+        print(f"imported {len(valid_values)} keys from stdin")
+        maybe_refresh_encrypted_backup(args, env_file)
         sync_tailnet_updates(args, valid_values)
         return 0
 
     if not args.assignment:
-        print("Usage: hive-env-add KEY=value, hive-env-add KEY, hive-env-add --import-env, hive-env-add --reconcile, or hive-env-add --pull-from USER@HOST", file=sys.stderr)
+        print("Usage: hive-env-add KEY=value, hive-env-add KEY, hive-env-add --import-env, hive-env-add --import-stdin, hive-env-add --reconcile, or hive-env-add --pull-from USER@HOST", file=sys.stderr)
         return 2
 
     if "=" in args.assignment:
@@ -701,10 +911,7 @@ def main() -> int:
 
     apply_update(args, env_file, key, value)
 
-    if not args.no_backup and args.scope in ("all", "app"):
-        message = refresh_encrypted_backup(env_file)
-        if message:
-            print(message, file=sys.stderr if "failed" in message.lower() else sys.stdout)
+    maybe_refresh_encrypted_backup(args, env_file)
     sync_tailnet_updates(args, {key: value})
     return 0
 

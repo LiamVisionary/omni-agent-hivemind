@@ -15,6 +15,7 @@ type UpdateBody = {
   expectedCommit?: string;
   requiredCapabilities?: {
     chat?: boolean;
+    envHttpSync?: boolean;
   };
 };
 
@@ -22,6 +23,7 @@ type CollectorHealth = {
   ok?: boolean;
   capabilities?: {
     chat?: boolean;
+    envHttpSync?: boolean;
     runtimes?: string[];
   };
   version?: {
@@ -49,8 +51,9 @@ async function fetchCollectorHealth(collectorUrl?: string): Promise<CollectorHea
 }
 
 function hasRequiredCapabilities(health: CollectorHealth | null, required?: UpdateBody["requiredCapabilities"]) {
-  if (!required?.chat) return true;
-  return health?.capabilities?.chat === true;
+  if (required?.chat && health?.capabilities?.chat !== true) return false;
+  if (required?.envHttpSync && health?.capabilities?.envHttpSync !== true) return false;
+  return true;
 }
 
 function hasExpectedVersion(health: CollectorHealth | null, expectedCommit?: string) {
@@ -63,7 +66,7 @@ function hasExpectedVersion(health: CollectorHealth | null, expectedCommit?: str
 }
 
 function hasVerificationTarget(body: UpdateBody) {
-  return Boolean(body.expectedCommit?.trim() || body.requiredCapabilities?.chat);
+  return Boolean(body.expectedCommit?.trim() || body.requiredCapabilities?.chat || body.requiredCapabilities?.envHttpSync);
 }
 
 async function updateBodyWithTarget(body: UpdateBody): Promise<UpdateBody> {
@@ -83,7 +86,8 @@ function verificationError(body: UpdateBody, health: CollectorHealth | null) {
     const expected = health?.version?.latestShortCommit || body.expectedCommit.trim().slice(0, 7);
     return `The update started, but this collector still reports ${current} instead of ${expected}. It may still be building, or the remote update failed.`;
   }
-  if (body.requiredCapabilities?.chat) return "The update command finished, but the collector still does not report the Hermes chat bridge.";
+  if (body.requiredCapabilities?.chat && health?.capabilities?.chat !== true) return "The update command finished, but the collector still does not report the Hermes chat bridge.";
+  if (body.requiredCapabilities?.envHttpSync && health?.capabilities?.envHttpSync !== true) return "The update command finished, but the collector still does not report the shared-env sync endpoint.";
   if (!body.expectedCommit?.trim()) return "The update request did not include or expose a target commit to verify.";
   return "The update command finished, but collector verification did not pass.";
 }

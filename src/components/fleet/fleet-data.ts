@@ -6,6 +6,13 @@ import type { BeeWorkerClass } from "@/lib/types/agent-runtime";
 
 export type AgentState = "working" | "ready" | "scheduled" | "setup" | "failed";
 
+export interface FleetAgentChat {
+  id: string;
+  title: string;
+  task: string;
+  since: string;
+}
+
 export interface FleetAgent {
   id: string;
   name: string;
@@ -19,6 +26,7 @@ export interface FleetAgent {
   balance: "healthy" | "low_compute" | "dead" | "off";
   task: string;
   since: string;      // formatted e.g. "2m", "5h"
+  recentChats?: FleetAgentChat[];
 }
 
 export function fleetAgentCanChat(agent: FleetAgent) {

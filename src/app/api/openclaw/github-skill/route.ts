@@ -52,7 +52,7 @@ export async function POST(req: NextRequest) {
     const { owner, repo } = parsed;
     const headers: Record<string, string> = {
       'Accept': 'application/vnd.github.v3+json',
-      'User-Agent': 'withami-skill-browser',
+      'User-Agent': 'hivemind-os-skill-browser',
     };
 
     // Fetch repo metadata + check SKILL.md existence in parallel

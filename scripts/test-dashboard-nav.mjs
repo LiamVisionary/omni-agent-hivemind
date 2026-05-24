@@ -18,5 +18,10 @@ assert.deepEqual([...new Set(ids)], ids, "Dashboard nav ids should be unique");
 assert.equal(ids.filter((id) => id === "chat").length, 1, "Dashboard nav should include exactly one Chat tab");
 assert.equal(ids.filter((id) => id === "new").length, 0, "Dashboard nav should not include a New tab");
 assert.doesNotMatch(renderedTabsBlock[1], /"new"/, "Dashboard rendered tab order should not include New");
+assert.deepEqual(
+  [...renderedTabsBlock[1].matchAll(/"([^"]+)"/g)].map((match) => match[1]),
+  ["agents", "kanban", "vault", "chat", "wallet", "more"],
+  "Dashboard rendered tab order should be Fleet, Work, Brain, Chat, Wallets, More",
+);
 
-console.log("Dashboard nav has no removed New tab and no duplicate ids.");
+console.log("Dashboard nav has the expected top-level buttons and no duplicate ids.");

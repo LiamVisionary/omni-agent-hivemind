@@ -1,18 +1,18 @@
 export const AGENT_PAYMENT_PROVIDER_COPY = {
   bankr: {
-    label: "Bankr LLM",
-    summary: "Bankr wallet and LLM Gateway access for agents that need paid model calls.",
-    setup: "Store the Bankr API or LLM Gateway key in the agent environment, set spending caps, and keep Honey/HIVE rewards in the app ledger until redemption is wired.",
+    label: "Bankr trading",
+    summary: "Broker rail for autonomous crypto and Polymarket trading once the Bankr key is reachable.",
+    setup: "Store the Bankr API key in the shared/agent environment, set spending caps here, and route trades through Bankr instead of treating it as the primary wallet.",
   },
   clawcard: {
-    label: "ClawCard",
-    summary: "Agent identity, inbox, phone number, virtual cards, Base wallet, and budgets.",
-    setup: "Store CLAWCARD_API_KEY in the agent environment, allocate a small budget, then let the agent use CLI/API commands through its skill.",
+    label: "ClawCard legacy",
+    summary: "Paused unless it proves a card feature that MoneyClaw does not cover.",
+    setup: "Keep existing CLAWCARD_API_KEY values if you have them, but new agent wallet setup uses MoneyClaw for cards, local wallets for crypto, x402 for paid APIs, and Bankr for trading.",
   },
   moneyclaw: {
     label: "MoneyClaw",
-    summary: "Prepaid buyer-side payment tasks with explicit approval and account inbox context.",
-    setup: "Store MONEYCLAW_API_KEY, inspect account readiness, create bounded payment intents, and only continue approved payment steps.",
+    summary: "Primary card and web-payment rail for bounded checkout tasks, subscriptions, and inbox-backed payment context.",
+    setup: "Store MONEYCLAW_API_KEY once through shared env. The wallet card can then inspect readiness, deposit address, balance, and recent payment tasks automatically.",
   },
   x402: {
     label: "x402",

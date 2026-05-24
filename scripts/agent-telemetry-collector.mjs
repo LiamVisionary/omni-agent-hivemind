@@ -16,6 +16,7 @@ const appDir = resolve(join(fileURLToPath(import.meta.url), "..", ".."));
 const defaultHermesDir = process.env.HERMES_HOME || join(homedir(), ".hermes");
 const defaultAeonDir = process.env.AEON_LOCAL_PATH || process.env.AEON_HOME || join(homedir(), ".aeon");
 const maxChars = 1000;
+const HERMES_EMPTY_TRANSCRIPT_MESSAGE = "Hermes session found. Send a message to resume it.";
 const maxChatChars = 12_000;
 const chatTimeoutMs = Number(process.env.AGENT_TELEMETRY_CHAT_TIMEOUT_MS || 10 * 60_000);
 const sessionDiscoveryTimeoutMs = Number(process.env.AGENT_TELEMETRY_SESSION_DISCOVERY_TIMEOUT_MS || 15_000);
@@ -37,6 +38,12 @@ let hermesApiStartPromise = null;
 
 function expandHome(path) {
   return path?.replace(/^~(?=$|\/)/, homedir());
+}
+
+function safeAgentEnv(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return {};
+  return Object.fromEntries(Object.entries(value)
+    .filter(([key, entry]) => /^[A-Za-z_][A-Za-z0-9_]*$/.test(key) && typeof entry === "string"));
 }
 
 function jsonResponse(response, status, payload) {
@@ -146,6 +153,9 @@ function readableChatContent(value) {
       }
     }
     return trimmed;
+  }
+  if (Array.isArray(value)) {
+    return value.map((item) => readableChatContent(item)).filter(Boolean).join("\n").trim();
   }
   if (!value || typeof value !== "object") return "";
   const choices = Array.isArray(value.choices) ? value.choices : [];
@@ -276,6 +286,54 @@ async function resolveHiveEnvAdd() {
     command: "hive-env-add",
     error: "hive-env-add is not installed or executable. Run setup on this machine.",
   };
+}
+
+function encodeEnvEntries(entries) {
+  return Object.entries(entries)
+    .map(([key, value]) => `${key}=${JSON.stringify(value)}`)
+    .join("\n") + "\n";
+}
+
+function runHiveEnvImport({ entries, scope = "agent", runtime = "generic" }) {
+  return new Promise(async (resolveImport, rejectImport) => {
+    const envSync = await resolveHiveEnvAdd();
+    if (!envSync.ready) {
+      rejectImport(new Error(envSync.error || "hive-env-add is not installed or executable."));
+      return;
+    }
+    const child = spawn(envSync.command, [
+      "--import-stdin",
+      "--scope",
+      scope,
+      "--runtime",
+      runtime,
+      "--no-backup",
+      "--no-tailnet-sync",
+    ], {
+      stdio: ["pipe", "ignore", "pipe"],
+    });
+    let errorText = "";
+    const timeout = setTimeout(() => {
+      child.kill("SIGTERM");
+      rejectImport(new Error("Timed out while importing env variables."));
+    }, 60_000);
+    child.stderr.on("data", (chunk) => {
+      errorText += chunk.toString();
+    });
+    child.on("error", (error) => {
+      clearTimeout(timeout);
+      rejectImport(error);
+    });
+    child.on("close", (code) => {
+      clearTimeout(timeout);
+      if (code === 0) {
+        resolveImport();
+        return;
+      }
+      rejectImport(new Error(errorText.trim() || "hive-env-add could not import env variables."));
+    });
+    child.stdin.end(encodeEnvEntries(entries));
+  });
 }
 
 function startSyncthingDetached() {
@@ -728,12 +786,12 @@ async function scanHermesState(agent, hermesDir) {
     const latestAssistant = readableMessages.find((message) => message.role === "assistant");
     const latestUser = readableMessages.find((message) => message.role === "user");
     const latestTool = readableMessages.find((message) => message.role === "tool");
-    const latest = latestAssistant ?? latestTool ?? messages.find((message) => message.content?.trim());
+    const latest = latestAssistant ?? latestTool ?? readableMessages[0];
     return {
       id: `hermes-state:${session.id}`,
       agentId: agent.id,
       title: compact(session.title || latestUser?.content || `Hermes ${session.source} session`).slice(0, 160),
-      lastMessage: compact(latest?.content, "Hermes session exists, but no readable message was stored."),
+      lastMessage: compact(latest?.content, HERMES_EMPTY_TRANSCRIPT_MESSAGE),
       status: session.ended_at ? (/error|fail/i.test(session.end_reason || "") ? "failed" : "completed") : "active",
       source: "hermes-state",
       startedAt: session.started_at * 1000,
@@ -936,11 +994,13 @@ async function sendHermesChat(body) {
 
   const agent = body.agent && typeof body.agent === "object" ? body.agent : {};
   const hermesHome = expandHome(agent.localDataDir || body.localDataDir || defaultHermesDir);
+  const agentEnv = safeAgentEnv(body.agentEnv);
   const { stdout, stderr } = await execFileAsync(await resolveHermesBin(), ["-z", text], {
     timeout: chatTimeoutMs,
     maxBuffer: 3_000_000,
     env: {
       ...process.env,
+      ...agentEnv,
       HERMES_HOME: hermesHome,
       PAGER: "cat",
     },
@@ -1075,6 +1135,48 @@ async function readHermesApiSession(hermesHome, sessionId) {
   } catch {
     return null;
   }
+}
+
+async function readHermesDbSession(hermesHome, sessionId) {
+  const normalized = normalizeHermesSessionId(sessionId);
+  if (!normalized) return null;
+  const dbPath = join(hermesHome, "state.db");
+  try {
+    await access(dbPath, constants.R_OK);
+  } catch {
+    return null;
+  }
+  const escaped = normalized.replaceAll("'", "''");
+  const sessions = await execJson("sqlite3", ["-json", dbPath, `
+    select id, source, started_at, ended_at, end_reason, title, message_count, tool_call_count
+    from sessions
+    where id = '${escaped}'
+    limit 1;
+  `], []);
+  const session = sessions[0];
+  if (!session) return null;
+  const rows = await execJson("sqlite3", ["-json", dbPath, `
+    select role, content, tool_name, timestamp
+    from messages
+    where session_id = '${escaped}'
+    order by timestamp asc
+    limit 200;
+  `], []);
+  const messages = rows.map((message, index) => ({
+    index,
+    role: message.role === "user" || message.role === "assistant" || message.role === "tool" ? message.role : "assistant",
+    content: readableSessionMessageContent(message),
+    createdAt: Number(message.timestamp || 0) > 0 ? Number(message.timestamp) * 1000 : 0,
+  })).filter((message) => message.content.trim());
+  return {
+    sessionId: normalized,
+    source: session.source || "state.db",
+    title: session.title || "",
+    startedAt: Number(session.started_at || 0) > 0 ? Number(session.started_at) * 1000 : 0,
+    updatedAt: messages.at(-1)?.createdAt || (Number(session.started_at || 0) > 0 ? Number(session.started_at) * 1000 : 0),
+    messageCount: session.message_count ?? messages.length,
+    messages,
+  };
 }
 
 async function listRecentHermesApiSessions(hermesHome, sinceMs = 0) {
@@ -1265,6 +1367,7 @@ async function streamHermesChat(body, response) {
 
   const agent = body.agent && typeof body.agent === "object" ? body.agent : {};
   const hermesHome = expandHome(agent.localDataDir || body.localDataDir || defaultHermesDir);
+  const agentEnv = safeAgentEnv(body.agentEnv);
   if (hermesChatMode === "api" && await proxyHermesApiChat(body, response, text, hermesHome)) return;
 
   const runtimeSessionId = normalizeHermesSessionId(body.runtimeSessionId || body.hermesSessionId || "");
@@ -1276,6 +1379,7 @@ async function streamHermesChat(body, response) {
     cwd,
     env: {
       ...process.env,
+      ...agentEnv,
       HERMES_HOME: hermesHome,
       HERMES_ACCEPT_HOOKS: "1",
       PAGER: "cat",
@@ -1407,6 +1511,7 @@ createServer(async (request, response) => {
       capabilities: {
         chat: runtimes.includes("hermes"),
         directoryBrowsing: true,
+        envHttpSync: true,
         runtimes,
         runtimeIntegrations: true,
         syncthing: syncthing.installed,
@@ -1415,9 +1520,9 @@ createServer(async (request, response) => {
     });
     return;
   }
-  if (pathname === "/update" && request.method === "POST") {
-    const version = await appVersion();
-    const command = startUpdate();
+	  if (pathname === "/update" && request.method === "POST") {
+	    const version = await appVersion();
+	    const command = startUpdate();
     jsonResponse(response, 202, {
       ok: true,
       accepted: true,
@@ -1425,9 +1530,59 @@ createServer(async (request, response) => {
       version,
       message: "Update started. The collector and dashboard may briefly restart.",
       command,
-    });
-    return;
-  }
+	    });
+	    return;
+	  }
+	  if (pathname === "/env" && request.method === "POST") {
+	    try {
+	      const rawBody = await readBody(request);
+	      const body = rawBody ? JSON.parse(rawBody) : {};
+	      const entries = safeAgentEnv(body.entries || body.updates || {});
+	      if (!Object.keys(entries).length) {
+	        jsonResponse(response, 400, { ok: false, error: "No valid env variables were provided." });
+	        return;
+	      }
+	      await runHiveEnvImport({
+	        entries,
+	        scope: body.scope === "all" || body.scope === "app" || body.scope === "agent" ? body.scope : "agent",
+	        runtime: ["generic", "hermes", "aeon", "openclaw"].includes(body.runtime) ? body.runtime : "generic",
+	      });
+	      jsonResponse(response, 200, { ok: true, updated: Object.keys(entries).length });
+	    } catch (error) {
+	      jsonResponse(response, 500, {
+	        ok: false,
+	        error: error instanceof Error ? error.message : "Could not import env variables.",
+	      });
+	    }
+	    return;
+	  }
+	  if (pathname === "/env" && request.method === "GET") {
+	    try {
+	      const envSync = await resolveHiveEnvAdd();
+	      if (!envSync.ready) {
+	        jsonResponse(response, 503, { ok: false, error: envSync.error || "hive-env-add is not installed or executable." });
+	        return;
+	      }
+	      const scope = ["all", "app", "agent"].includes(requestUrl.searchParams.get("scope") || "")
+	        ? requestUrl.searchParams.get("scope")
+	        : "agent";
+	      const runtime = ["generic", "hermes", "aeon", "openclaw"].includes(requestUrl.searchParams.get("runtime") || "")
+	        ? requestUrl.searchParams.get("runtime")
+	        : "generic";
+	      const { stdout } = await execFileAsync(envSync.command, ["--export-json", "--scope", scope, "--runtime", runtime], {
+	        timeout: 12_000,
+	        maxBuffer: 1_000_000,
+	      });
+	      const payload = JSON.parse(stdout);
+	      jsonResponse(response, 200, { ok: true, ...payload });
+	    } catch (error) {
+	      jsonResponse(response, 500, {
+	        ok: false,
+	        error: error instanceof Error ? error.message : "Could not read env variables.",
+	      });
+	    }
+	    return;
+	  }
   if (pathname === "/agents") {
     const agents = await localAgents();
     jsonResponse(response, 200, { ok: true, host: hostname(), agents });
@@ -1509,10 +1664,11 @@ createServer(async (request, response) => {
   }
   if (pathname === "/sessions" && request.method === "GET") {
     const sessionId = requestUrl.searchParams.get("sessionId") || requestUrl.searchParams.get("id") || "";
+    const hermesHome = expandHome(requestUrl.searchParams.get("localDataDir") || defaultHermesDir);
     const sinceMs = Number(requestUrl.searchParams.get("sinceMs") || 0);
     const session = sessionId
-      ? await readHermesApiSession(defaultHermesDir, sessionId)
-      : (await listRecentHermesApiSessions(defaultHermesDir, sinceMs))[0] ?? null;
+      ? await readHermesApiSession(hermesHome, sessionId) ?? await readHermesDbSession(hermesHome, sessionId)
+      : (await listRecentHermesApiSessions(hermesHome, sinceMs))[0] ?? null;
     jsonResponse(response, session ? 200 : 404, session ? { ok: true, session } : { ok: false, error: "session not found" });
     return;
   }

@@ -957,7 +957,7 @@ run_helper() {
 }
 
 run_helper "$ROOT" "\$@" || true
-for root in "\$PWD" "\$HOME/hivemindos" "\$HOME/omni-agent-hivemind" "\$HOME/Documents/code/projects/my-anime-waifu-web/hivemind-os"; do
+for root in "\$PWD" "\$HOME/hivemindos" "\$HOME/omni-agent-hivemind" "\$HOME/Documents/code/projects/hivemind-os"; do
   run_helper "\$root" "\$@" || true
 done
 found="\$(find "\$HOME" -maxdepth 6 -type f -path '*/scripts/hive-env-add' 2>/dev/null | head -1 || true)"

@@ -74,6 +74,7 @@ type CollectorVersion = {
 
 type CollectorCapabilities = {
   chat?: boolean;
+  envHttpSync?: boolean;
   runtimes?: string[];
   syncthing?: boolean;
   defaultSyncPath?: string;

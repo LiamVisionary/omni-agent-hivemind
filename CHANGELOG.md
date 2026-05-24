@@ -3,6 +3,270 @@
 This file records user-visible changes before they are committed. New work should
 be added here first, then marked `Committed` or `Pushed` after the git action.
 
+## 2026-05-25 02:52 WITA - Verify Env Sync Collector Updates
+
+- Status: Pushed
+- Areas changed: fleet roster update verification, telemetry collector capabilities, changelog
+- Summary: Make remote collectors advertise the shared-env HTTP sync endpoint and require that capability before the fleet Update button can claim success for env-sync repairs.
+- Verification: `python3 -m py_compile scripts/hive-env-add`; `node --check scripts/agent-telemetry-collector.mjs`; `pnpm exec tsc --noEmit --pretty false`; `git diff --check -- scripts/agent-telemetry-collector.mjs src/app/api/fleet/discover/route.ts src/app/api/fleet/update/route.ts src/lib/types/agent-runtime.ts src/app/page.tsx src/components/fleet/roster.tsx CHANGELOG.md`; Ubuntu collector health check still lacks `capabilities.envHttpSync`, confirming the previous "Updated!" state was a false positive.
+- Intended commit message: `Verify env sync collector updates`
+
+## 2026-05-25 02:44 WITA - Sync Shared Env Through Collectors
+
+- Status: Pushed
+- Areas changed: `hive-env-add`, telemetry collector env endpoint, shared env API/UI, changelog
+- Summary: Keep shared env saves/imports on the official `hive-env-add` path with automatic collector sync, add a Shared env "Sync machines" button that runs `hive-env-add --reconcile`, and make collectors accept bulk env imports over their Tailnet HTTP endpoint instead of requiring Tailscale SSH.
+- Verification: `python3 -m py_compile scripts/hive-env-add`; `node --check scripts/agent-telemetry-collector.mjs`; `pnpm exec tsc --noEmit --pretty false`; `git diff --check -- scripts/hive-env-add scripts/agent-telemetry-collector.mjs src/app/api/env/route.ts src/app/page.tsx CHANGELOG.md`; temp `hive-env-add --import-stdin --no-tailnet-sync` smoke confirmed local bulk import writes metadata; `node scripts/test-dashboard-nav.mjs`.
+- Intended commit message: `Sync shared env through collectors`
+
+## 2026-05-25 02:40 WITA - Default MoneyClaw Keys Per Agent
+
+- Status: Pushed
+- Areas changed: MoneyClaw key modal, changelog
+- Summary: Change MoneyClaw setup to default to a per-agent key so each agent can have its own MoneyClaw account, wallet, inbox, and balance. Keep the shared-key option available but clearly label it as sharing one MoneyClaw account across agents.
+- Verification: `pnpm exec tsc --noEmit --pretty false`; `pnpm exec eslint src/components/wallet/AgentWalletCard.tsx --max-warnings=0`; `git diff --check -- src/components/wallet/AgentWalletCard.tsx CHANGELOG.md`.
+- Intended commit message: `Default MoneyClaw keys per agent`
+
+## 2026-05-25 02:01 WITA - Clarify Shared MoneyClaw Key Setup
+
+- Status: Pushed
+- Areas changed: MoneyClaw key modal, MoneyClaw key save behavior, changelog
+- Summary: Make MoneyClaw key setup default to a clear "Use for all agents" toggle, simplify the shared terminal command to `scripts/hive-env-add MONEYCLAW_API_KEY`, and support the alternate local-only path by saving the key into the selected agent's env overlay when sharing is disabled.
+- Verification: `pnpm exec tsc --noEmit --pretty false`; `pnpm exec eslint src/components/wallet/AgentWalletCard.tsx src/app/page.tsx --max-warnings=999` passed with existing page warnings only; `git diff --check -- src/components/wallet/AgentWalletCard.tsx src/components/wallet/AgentWalletCard.module.css src/app/page.tsx CHANGELOG.md`.
+- Intended commit message: `Clarify shared MoneyClaw key setup`
+
+## 2026-05-25 01:53 WITA - Replace Wallet Row Placeholder Icons
+
+- Status: Pushed
+- Areas changed: wallet holdings icons, changelog
+- Summary: Replace the Gas row emoji with a proper icon and render HIVE with a hexagon outline mark instead of the placeholder diamond glyph.
+- Verification: `pnpm exec tsc --noEmit --pretty false`; `pnpm exec eslint src/components/wallet/AgentWalletCard.tsx --max-warnings=0`; `git diff --check -- src/components/wallet/AgentWalletCard.tsx src/components/wallet/AgentWalletCard.module.css CHANGELOG.md`.
+- Intended commit message: `Replace wallet row placeholder icons`
+
+## 2026-05-25 01:50 WITA - Add Shared Env Bulk Import UI
+
+- Status: Pushed
+- Areas changed: `hive-env-add`, shared env API, More shared env UI, changelog
+- Summary: Add `hive-env-add --import-stdin` for bulk `.env` ingestion, wire the env API to import multiple shared keys through that command, and restyle the Shared sync store with Render-like read/edit mode, export, generated secret, and `.env` paste/file import review before setting variables.
+- Verification: `python3 -m py_compile scripts/hive-env-add`; disposable `hive-env-add --import-stdin --scope agent --runtime generic --no-backup --no-tailnet-sync` smoke imported two fake keys into a temp env file; `pnpm exec tsc --noEmit --pretty false`; `git diff --check -- scripts/hive-env-add src/app/api/env/route.ts src/app/page.tsx CHANGELOG.md`; `node scripts/test-dashboard-nav.mjs`; value-free `/api/env` smoke returned shared env metadata.
+- Intended commit message: `Add shared env bulk import UI`
+
+## 2026-05-25 01:37 WITA - Move MoneyClaw Setup Into Cards Badge
+
+- Status: Pushed
+- Areas changed: MoneyClaw validation API, wallet card Cards rail action, MoneyClaw key modal, shared env save flow, changelog
+- Summary: Remove the ugly Core rails footer status/error section and make the Cards rail setup badge open a MoneyClaw API key modal. The modal validates the key, saves it through the shared hive-env-add env path, shows Check/Checking/Saved states, and includes a terminal command alternative for manual setup.
+- Verification: `pnpm exec tsc --noEmit --pretty false`; `pnpm exec eslint src/components/wallet/AgentWalletCard.tsx src/app/page.tsx src/app/api/wallet/moneyclaw/route.ts src/lib/services/wallet/moneyclaw-client.ts --max-warnings=999` passed with existing page warnings only; `git diff --check -- src/components/wallet/AgentWalletCard.tsx src/components/wallet/AgentWalletCard.module.css src/app/page.tsx src/app/api/wallet/moneyclaw/route.ts src/lib/services/wallet/moneyclaw-client.ts CHANGELOG.md`.
+- Intended commit message: `Move MoneyClaw setup into cards badge`
+
+## 2026-05-25 01:27 WITA - Keep New Wallet Spending Off
+
+- Status: Pushed
+- Areas changed: wallet initialization behavior, expanded wallet toggle copy, changelog
+- Summary: Stop turning agent spending on automatically after wallet creation, so newly initialized wallets do not immediately enter the red funding/runway state. Rename the wallet toggle to Spend on/off and clarify that it controls whether the agent may spend from the wallet.
+- Verification: `pnpm exec tsc --noEmit --pretty false`; `pnpm exec eslint src/components/wallet/AgentWalletCard.tsx src/app/page.tsx --max-warnings=999` passed with existing page warnings only; `git diff --check -- src/components/wallet/AgentWalletCard.tsx src/app/page.tsx CHANGELOG.md`.
+- Intended commit message: `Keep new wallet spending off`
+
+## 2026-05-25 01:22 WITA - Remove Wallet Setup Header Icon
+
+- Status: Pushed
+- Areas changed: compact wallet card setup state, changelog
+- Summary: Remove the top icon from compact wallet setup confirmation/loading states so the inline setup card keeps the same height and rhythm as the normal compact wallet card.
+- Verification: `pnpm exec tsc --noEmit --pretty false`; `pnpm exec eslint src/components/wallet/AgentWalletCardCompact.tsx --max-warnings=0`; `git diff --check -- src/components/wallet/AgentWalletCardCompact.tsx src/components/wallet/AgentWalletCardCompact.module.css CHANGELOG.md`.
+- Intended commit message: `Remove wallet setup header icon`
+
+## 2026-05-25 01:19 WITA - Tighten Wallet Setup Confirmation Card
+
+- Status: Pushed
+- Areas changed: compact wallet card setup copy and sizing, changelog
+- Summary: Remove the explanatory body text from the compact wallet creation confirmation and tune the setup, loading, and success states to stay close to the original compact wallet card height.
+- Verification: `pnpm exec tsc --noEmit --pretty false`; `pnpm exec eslint src/components/wallet/AgentWalletCardCompact.tsx --max-warnings=0`; `git diff --check -- src/components/wallet/AgentWalletCardCompact.tsx src/components/wallet/AgentWalletCardCompact.module.css CHANGELOG.md`.
+- Intended commit message: `Tighten wallet setup confirmation card`
+
+## 2026-05-25 01:16 WITA - Improve Wallet Initialization UX
+
+- Status: Pushed
+- Areas changed: compact wallet card setup flow, expanded wallet rail copy, wallet card styling, changelog
+- Summary: Move wallet initialization out of the expanded Core rails panel and into the compact agent wallet card. Uninitialized wallet cards now confirm wallet creation in-place with large cancel/confirm controls, show a loading state for at least two seconds while setup runs, show a completion checkmark before opening the full wallet, and remove the visible ClawCard demotion copy from the rail footer.
+- Verification: Pending.
+- Intended commit message: `Improve wallet initialization UX`
+
+## 2026-05-25 01:03 WITA - Simplify Agent Payment Rails
+
+- Status: Pushed
+- Areas changed: agent wallet defaults, payment provider copy, Wallets agent cards, MoneyClaw status wiring, changelog
+- Summary: Make MoneyClaw the default card rail, keep local USDC wallets and x402 as first-class rails, position Bankr as the trading rail, demote ClawCard to legacy advanced setup, and add a one-click Initialize action plus rail readiness checklist to each expanded agent wallet card.
+- Verification: `pnpm exec tsc --noEmit --pretty false`; `pnpm exec eslint src/components/wallet/AgentWalletCard.tsx src/components/wallet/AgentWalletCardCompact.tsx src/app/page.tsx src/lib/config/agent-payments.ts src/lib/utils/agent-wallet.ts --max-warnings=999` passed with existing page warnings only; `git diff --check -- src/components/wallet/AgentWalletCard.tsx src/components/wallet/AgentWalletCard.module.css src/components/wallet/AgentWalletCardCompact.tsx src/app/page.tsx src/lib/config/agent-payments.ts src/lib/utils/agent-wallet.ts CHANGELOG.md`; temporary dev server on port 5021 rendered the expanded seeded wallet card with Core rails, Initialize, MoneyClaw, Bankr trading, and ClawCard demotion visible.
+- Intended commit message: `Simplify agent payment rails`
+
+## 2026-05-25 00:50 WITA - Add MoneyClaw Readiness API
+
+- Status: Pushed
+- Areas changed: MoneyClaw wallet service, MoneyClaw wallet API, changelog
+- Summary: Add a server-side MoneyClaw status client backed by the documented MoneyClaw API, using `MONEYCLAW_API_KEY` or an agent's configured MoneyClaw env name to check `/me`, `/me/balance`, `/me/deposit-address`, and recent `/payment-intents` without exposing the key or performing spend actions.
+- Verification: `pnpm exec tsc --noEmit --pretty false`; `pnpm exec eslint src/lib/services/wallet/moneyclaw-client.ts src/app/api/wallet/moneyclaw/route.ts --max-warnings=0`; `git diff --check -- src/lib/services/wallet/moneyclaw-client.ts src/app/api/wallet/moneyclaw/route.ts CHANGELOG.md`.
+- Intended commit message: `Add MoneyClaw readiness API`
+
+## 2026-05-25 00:37 WITA - Add Encrypted Wallet Vault Sync
+
+- Status: Pushed
+- Areas changed: wallet vault sync service, wallet sync API, wallet creation route, Wallets vault controls, changelog
+- Summary: Add a GPG-encrypted shared-brain wallet vault path. Wallet creation now tries to sync the encrypted vault plus its vault key material into `hive.wallet-vault.gpg`, writes adjacent reference-only metadata to `hive.wallet-vault.md`, and exposes Sync/Restore controls in the Wallets rail without putting wallet secrets in plaintext Obsidian notes.
+- Verification: `pnpm exec tsc --noEmit --pretty false`; `pnpm exec eslint src/lib/services/wallet/wallet-vault-backup.ts src/app/api/wallet/vault-backup/route.ts src/app/api/wallet/create/route.ts src/lib/services/wallet/local-wallet-vault.ts --max-warnings=0`; `git diff --check -- src/lib/services/wallet/local-wallet-vault.ts src/lib/services/wallet/wallet-vault-backup.ts src/app/api/wallet/vault-backup/route.ts src/app/api/wallet/create/route.ts src/app/page.tsx src/app/wallets.module.css CHANGELOG.md`; live `localhost:5020` route smoke timed out without response, so runtime UI verification is pending without restarting Liam's managed dev server.
+- Intended commit message: `Add encrypted wallet vault sync`
+
+## 2026-05-25 00:09 WITA - Wire Shared Env Backup And Sync
+
+- Status: Pushed
+- Areas changed: `hive-env-add`, shared env API, More shared env UI, changelog
+- Summary: Make the generic shared agent env participate in encrypted `hive.env.gpg` backup/restore, have the app save shared env edits through the real hive-env-add sync path, and add a Restore backup action/status in the Shared env UI.
+- Verification: `python3 -m py_compile scripts/hive-env-add`; `pnpm exec tsc --noEmit --pretty false`; `git diff --check -- scripts/hive-env-add src/app/api/env/route.ts src/app/page.tsx CHANGELOG.md`; `node scripts/test-dashboard-nav.mjs`; `scripts/hive-env-add --backup-status --scope agent --runtime generic`; disposable GPG home smoke created and restored a fake shared env key through encrypted `hive.env.gpg`; local `/api/env` smoke returned shared count, backup path, and GPG availability without printing values.
+- Intended commit message: `Wire shared env backup and sync`
+
+## 2026-05-24 23:12 WITA - Show Agent Env Card Model Names
+
+- Status: Pushed
+- Areas changed: env management agent cards, changelog
+- Summary: Use runtime model selection metadata when rendering env agent cards so provider/model labels fall back to the actual configured runtime model instead of `default model`.
+- Verification: `pnpm exec tsc --noEmit --pretty false`; `git diff --check -- src/app/page.tsx CHANGELOG.md`; Playwright opened More > Shared env and confirmed the stale `default model` text is absent with no page/console errors.
+- Intended commit message: `Show agent env card model names`
+
+## 2026-05-24 22:33 WITA - Keep Shared Env Store Runtime-Only
+
+- Status: Pushed
+- Areas changed: shared env API, changelog
+- Summary: Keep the Env view's shared sync store pointed at the actual generic hive agent env file instead of pulling dashboard `.env.local` keys into the shared list.
+- Verification: `scripts/hive-env-add --export-json --scope agent --runtime generic` reported 0 shared keys; `~/.hivemindos/.env` exists and currently has 0 keys.
+- Intended commit message: `Keep shared env store runtime-only`
+
+## 2026-05-24 22:23 WITA - Simplify Env Management UX
+
+- Status: Pushed
+- Areas changed: env management UI, shared env API, hive-env-add removal behavior, reusable agent env card, changelog
+- Summary: Collapse env management to one shared sync store, hide dashboard `.env.local`, show runtime-specific keys only when they are not shared, add promote/remove controls, and replace the agent env list with reusable agent cards that support add/edit/remove.
+- Verification: `node scripts/test-dashboard-nav.mjs`; `python3 -m py_compile scripts/hive-env-add`; `pnpm exec tsc --noEmit --pretty false`; `git diff --check -- src/app/page.tsx src/app/api/env/route.ts scripts/hive-env-add CHANGELOG.md scripts/test-dashboard-nav.mjs`; temp-file `hive-env-add --stdin` smoke confirmed empty stdin removes an env-file key; Playwright verified `/api/env` returns one shared source plus runtime sources, shared same-value POST succeeds, More > Shared env shows Shared sync store, Runtime-specific env, Specific to each agent, hides Dashboard shared env, and has no page/console errors.
+- Intended commit message: `Simplify env management UX`
+
+## 2026-05-24 22:10 WITA - Clear Stale Wallet Placeholder Balances
+
+- Status: Pushed
+- Areas changed: Wallet balance helpers, wallet ledger hydration/rendering, wallet card display, Queen Bee shared wallet record
+- Summary: Treat disabled wallets with no address and no on-chain sync as unfunded, so stale placeholder accounting cannot show as spendable USDC. Wallet ledger reads and writes now strip that unfunded placeholder shape, Syncthing conflict notes are ignored by the ledger reader, and the Queen Bee shared wallet record was cleared from the old `$10.00 USDC` placeholder to `$0.00`.
+- Verification: `pnpm exec tsc --noEmit --pretty false`; `pnpm exec eslint src/lib/utils/agent-wallet.ts src/lib/services/obsidian/wallet-ledger.ts src/components/wallet/AgentWalletCard.tsx src/components/wallet/AgentWalletCardCompact.tsx src/app/page.tsx --max-warnings=999` passed with existing dashboard warnings only; `git diff --check -- src/lib/utils/agent-wallet.ts src/lib/services/obsidian/wallet-ledger.ts src/components/wallet/AgentWalletCard.tsx src/components/wallet/AgentWalletCardCompact.tsx src/app/page.tsx CHANGELOG.md`; `rg` confirmed no `$10.00 USDC`/`currentBalanceUsd: 10` remains in wallet ledger records; local API smoke returned Queen Bee with `currentBalanceUsd: 0`, `seedBalanceUsd: 0`, no wallet address, and `onchainBalanceUsd: 0`; Browser checked `http://localhost:5020` Wallets and confirmed Queen Bee tiles show `$0.00 USDC` with `Wallet off` and no `$10.00`.
+- Intended commit message: `Clear stale wallet placeholder balances`
+
+## 2026-05-24 22:01 WITA - Accordion Fleet Roster
+
+- Status: Pushed
+- Areas changed: fleet roster machine expansion, changelog
+- Summary: Treat machine expansion like an accordion so selecting or expanding one machine collapses the others.
+- Verification: `pnpm exec tsc --noEmit --pretty false`; `pnpm exec eslint src/components/fleet/FleetView.tsx --max-warnings=0`; `git diff --check -- src/components/fleet/FleetView.tsx CHANGELOG.md`.
+- Intended commit message: `Accordion fleet roster`
+
+## 2026-05-24 22:00 WITA - Auto Expand Selected Machine
+
+- Status: Pushed
+- Areas changed: fleet roster machine selection, changelog
+- Summary: Expand a machine's roster row automatically when the machine is selected, while leaving the arrow control available for manual collapse or expand.
+- Verification: `pnpm exec tsc --noEmit --pretty false`; `pnpm exec eslint src/components/fleet/FleetView.tsx --max-warnings=0`; `git diff --check -- src/components/fleet/FleetView.tsx CHANGELOG.md`.
+- Intended commit message: `Auto expand selected machine`
+
+## 2026-05-24 22:00 WITA - Filter Cron Chat Rows
+
+- Status: Pushed
+- Areas changed: chat task filtering, fleet recent chat rows, changelog
+- Summary: Exclude Hermes cron sessions from the resumable chat predicate so cron placeholders do not appear in, or count toward, the fleet agent's latest three chat rows.
+- Verification: `pnpm exec tsc --noEmit --pretty false`; `pnpm exec eslint src/app/page.tsx --max-warnings=999` passed with existing dashboard warnings; `git diff --check -- src/app/page.tsx CHANGELOG.md`.
+- Intended commit message: `Filter cron chat rows`
+
+## 2026-05-24 21:59 WITA - Make Env Viewer Editable
+
+- Status: Pushed
+- Areas changed: shared env API, More env view, agent env overlays, changelog
+- Summary: Allow shared hive-env-add variables and per-agent env overlays to be edited inline, saving shared values through local-only `hive-env-add` on blur or Enter and saving agent overlays back to their agent profile.
+- Verification: `node scripts/test-dashboard-nav.mjs`; `pnpm exec tsc --noEmit --pretty false`; `git diff --check -- src/app/page.tsx src/app/api/env/route.ts CHANGELOG.md scripts/test-dashboard-nav.mjs`; Playwright verified `/api/env` GET and POST of an existing same-value env key without printing secrets, opened More > Shared env, and confirmed editable password inputs render with the blur/Enter save copy.
+- Intended commit message: `Make env viewer editable`
+
+## 2026-05-24 21:36 WITA - Add Shared Env Viewer
+
+- Status: Pushed
+- Areas changed: More utilities, shared env API, agent env viewer, changelog
+- Summary: Add a Shared env button to More, expose a read-only `/api/env` inventory backed by `hive-env-add --export-json`, and show masked shared/runtime env variables alongside each agent's dashboard-specific env overlay.
+- Verification: `node scripts/test-dashboard-nav.mjs`; `scripts/hive-env-add --export-json --scope app --runtime generic`; `pnpm exec tsc --noEmit --pretty false`; `git diff --check -- src/app/page.tsx src/app/api/env/route.ts scripts/test-dashboard-nav.mjs CHANGELOG.md`; Playwright loaded `http://localhost:5020`, opened More, confirmed the Shared env card, Env headings, masked values, refresh button, and no page/console errors.
+- Intended commit message: `Add shared env viewer`
+
+## 2026-05-24 21:15 WITA - Show Recent Agent Chats
+
+- Status: Pushed
+- Areas changed: fleet agent data model, roster chat rows, list chat rows, dashboard fleet mapping, changelog
+- Summary: Show up to three recent resumable chats for each selected fleet agent and simplify the resume tooltip to "Resume chat".
+- Verification: `pnpm exec tsc --noEmit --pretty false`; `pnpm exec eslint src/components/fleet/fleet-data.ts src/components/fleet/index.ts src/components/fleet/roster.tsx src/components/fleet/list-view.tsx src/components/fleet/FleetView.tsx --max-warnings=0`; `git diff --check -- src/components/fleet/fleet-data.ts src/components/fleet/index.ts src/components/fleet/roster.tsx src/components/fleet/list-view.tsx src/components/fleet/FleetView.tsx src/app/page.tsx CHANGELOG.md`; `curl -I --max-time 5 http://127.0.0.1:5020`; headless Playwright loaded `http://127.0.0.1:5020`, confirmed Fleet renders and the old `Resume latest task chat` text is absent. The current live fleet had `0 AGENTS`, so the smoke could not visually exercise populated chat rows.
+- Intended commit message: `Show recent agent chats`
+
+## 2026-05-24 21:11 WITA - Group Work Navigation
+
+- Status: Pushed
+- Areas changed: dashboard top navigation, Work view mode switcher, More utilities hub, dashboard nav smoke test, changelog
+- Summary: Replace the top nav with Fleet, Work, Brain, Chat, Wallets, and More; move Workboard, Automations, and Simulation behind a segmented control in Work; and move Diagnostics, Files, and Alerts into More.
+- Verification: `node scripts/test-dashboard-nav.mjs`; `pnpm exec tsc --noEmit --pretty false`; `git diff --check -- src/app/page.tsx scripts/test-dashboard-nav.mjs CHANGELOG.md`; Playwright loaded `http://localhost:5020`, confirmed the top nav labels, Work segmented tabs, Automations tab selection, More utilities, and no page/console errors.
+- Intended commit message: `Group work navigation`
+
+## 2026-05-24 21:00 WITA - Separate New Agent Chats
+
+- Status: Pushed
+- Areas changed: Fleet roster/list chat controls, dashboard chat session routing, OpenClaw gateway session keys, Hermes collector env overlay, agent duplicate flow, agent runtime profile model, OpenClaw docs/naming, changelog
+- Summary: Reframe the selected-agent chat action as New Chat, add a task-row resume chat icon, generate reliable fresh OpenClaw session keys per chat leaf, preserve past dashboard chats as resumable leaves, add agent-specific env overlays, and replace leftover legacy companion naming with HivemindOS.
+- Verification: `pnpm exec tsc --noEmit --pretty false`; `node --check scripts/agent-telemetry-collector.mjs`; `node --check scripts/capture-remotion-showcase.mjs`; focused `pnpm exec eslint ...` passed with existing page warnings only; `rg -n "ami-companion|anime waifu|anime-waifu|my-anime-waifu|waifu|withami|workspace-ami|Ami: AI Companion|\bAmi\b|AmiClaw|amiclaw|AMICLAW|from-ami|ami-custom" . -S -g '!*node_modules*' -g '!tsconfig.tsbuildinfo'` returned no matches; `git diff --check`; `curl -I http://127.0.0.1:5020` returned 200; headless Playwright loaded `http://127.0.0.1:5020` with title `HivemindOS` and only the existing dev HMR websocket warning.
+- Intended commit message: `Separate new agent chats`
+
+## 2026-05-24 20:51 WITA - Stabilize Duplicate Agent Render Keys
+
+- Status: Pushed
+- Areas changed: Fleet agent cells, scheduler agent selector, wallet agent list, changelog
+- Summary: Use composite render keys for agent lists so duplicated discovered Hermes ids do not trigger React duplicate-key warnings or unstable wallet rows.
+- Verification: `pnpm exec tsc --noEmit --pretty false`; `git diff --check -- src/app/page.tsx CHANGELOG.md`; Browser opened `http://localhost:5020`, switched to Wallets, and reported no duplicate-key console errors or page errors.
+- Intended commit message: `Stabilize duplicate agent render keys`
+
+## 2026-05-24 20:47 WITA - Suppress Hermes Inventory Noise
+
+- Status: Pushed
+- Areas changed: Chat assistant transcript normalization, chat message visibility, changelog
+- Summary: Hide Hermes startup inventory/tool banners from web chat, promote more plain-text assistant section labels into headings, and convert colon-led plain text lists into bullets so streamed Hermes responses read as formatted chat instead of terminal output.
+- Verification: `pnpm exec tsc --noEmit --pretty false`; `git diff --check -- src/app/page.tsx CHANGELOG.md`; Browser loaded `http://localhost:5020` with no page errors and checked the formatter contract for hiding Hermes inventory text, promoting headings, and bulleting colon-led lists.
+- Intended commit message: `Suppress Hermes inventory noise`
+
+## 2026-05-24 20:38 WITA - Preserve Full Hermes Chat History
+
+- Status: Pushed
+- Areas changed: Fleet chat resume behavior, task resume chat routing, changelog
+- Summary: Stop applying the compact five-message preview window when opening a real Hermes runtime session, so hydrated Hermes chats show the user's prior turns and full session history instead of only the latest assistant response.
+- Verification: `pnpm exec tsc --noEmit --pretty false`; `git diff --check -- src/app/page.tsx CHANGELOG.md`; Browser loaded `http://localhost:5020` with no page errors after the history-window change.
+- Intended commit message: `Preserve full Hermes chat history`
+
+## 2026-05-24 20:34 WITA - Restore Chat Top Nav
+
+- Status: Pushed
+- Areas changed: dashboard top navigation, changelog
+- Summary: Re-add Chat as a top-level dashboard tab while keeping Diagnostics inside Fleet and Files inside Brain.
+- Verification: `pnpm exec tsc --noEmit --pretty false`; `git diff --check -- src/app/page.tsx CHANGELOG.md`; Browser checked `http://localhost:5020` and confirmed the top nav shows Fleet, Work, Brain, Automations, Swarm, Wallets, and Chat with no page errors.
+- Intended commit message: `Restore chat top nav`
+
+## 2026-05-24 20:23 WITA - Refine Chat Message Rendering
+
+- Status: Pushed
+- Areas changed: Chat transcript rendering, Hermes assistant transcript cleanup, chat scrolling behavior, chat CSS module, changelog
+- Summary: Render assistant replies as unboxed prose, keep only user messages in bubbles, strip Hermes TUI banners/status/footer before markdown formatting, improve wrapping for long runtime output, and stop auto-scroll from jerking the transcript when the user scrolls away from the bottom.
+- Verification: `pnpm exec tsc --noEmit --pretty false`; `git diff --check -- src/app/page.tsx src/app/chat.module.css CHANGELOG.md`; Browser loaded `http://localhost:5020` with no page errors and confirmed chat CSS has unboxed assistant rules, gated auto-scroll styling, and long-output wrapping.
+- Intended commit message: `Refine chat message rendering`
+
+## 2026-05-24 20:08 WITA - Avoid Empty Hermes Resume Bubbles
+
+- Status: Pushed
+- Areas changed: Fleet Hermes session snapshots, telemetry collector Hermes session scan, targeted agent-session hydration, chat resume seed messages, changelog
+- Summary: Stop metadata-only Hermes sessions from opening Chat with a fake assistant bubble, hydrate clicked Fleet chats from the collector's Hermes session endpoint, and make that endpoint read both Hermes JSON session files and `state.db` cron sessions.
+- Verification: `pnpm exec tsc --noEmit --pretty false`; `node --check scripts/agent-telemetry-collector.mjs`; `git diff --check -- src/app/page.tsx src/app/api/chat/agent-session/route.ts src/app/api/fleet/snapshot/route.ts scripts/agent-telemetry-collector.mjs CHANGELOG.md`; restarted `com.agent-control-room.telemetry`; local collector `/sessions?sessionId=20260524_154625_4295cb&localDataDir=$HOME/.hermes` returned 4 hydrated Hermes messages from `state.db`; dashboard `/api/chat/agent-session` proxy returned the same session messages; Browser loaded `http://localhost:5020` with no page errors.
+- Intended commit message: `Avoid empty Hermes resume bubbles`
+
 ## 2026-05-24 19:45 WITA - Protect Managed Dev Server Port
 
 - Status: Pushed
@@ -1595,13 +1859,13 @@ be added here first, then marked `Committed` or `Pushed` after the git action.
 - Verification: `pnpm typecheck`; `pnpm lint`; `git diff --check`; inspected the generated class icon contact sheet.
 - Intended commit message: `Add worker bee class variants`
 
-## 2026-05-21 17:12 WITA - Match Ami Scheduler Builder
+## 2026-05-21 17:12 WITA - Match HivemindOS Scheduler Builder
 
 - Status: Pushed
 - Areas changed: Scheduler builder, per-step schedule data model, Scheduler styles, schedule card actions, changelog
-- Summary: Replace the Scheduler's textarea-style step mode with an Ami-style selected-step builder: Enter adds steps, empty Backspace removes them, every step has its own `+` attachment menu for skills/folders/files/paths, every step has its own model picker, attached step context is included when a schedule runs, and saved schedules can be edited in the same builder instead of removed/recreated.
+- Summary: Replace the Scheduler's textarea-style step mode with an HivemindOS-style selected-step builder: Enter adds steps, empty Backspace removes them, every step has its own `+` attachment menu for skills/folders/files/paths, every step has its own model picker, attached step context is included when a schedule runs, and saved schedules can be edited in the same builder instead of removed/recreated.
 - Verification: `pnpm typecheck --pretty false`; `pnpm eslint src/app/page.tsx` (0 errors, existing warnings only); `git diff --check -- src/app/page.tsx src/app/fleet.module.css CHANGELOG.md`; Playwright smoke on `http://localhost:5020` verified step mode, per-step attachment menu, 147 skill choices, model menu, edit affordance, no console errors, and no horizontal overflow.
-- Intended commit message: `Match Ami scheduler builder`
+- Intended commit message: `Match HivemindOS scheduler builder`
 
 ## 2026-05-21 17:02 WITA - Replace Work View With Dispatch Board
 
@@ -2011,13 +2275,13 @@ be added here first, then marked `Committed` or `Pushed` after the git action.
 - Verification: Read both vault `AGENTS.md` files before durable vault changes; `rsync -a --backup --suffix=.pre-hivemindos-merge-20260520-224203.bak` merged current HivemindOS vault contents into the synced vault; moved `HivemindOS Vault` to `HivemindOS Vault.merged-20260520-224203.bak`; renamed `HivemindOS Vault` to `hivemindos-vault`; ran `NEXT_PUBLIC_OBSIDIAN_VAULT_PATH=~/Documents/Obsidian/hivemindos-vault ./scripts/seed-shared-skills.sh --import-sources none --share-targets all`; propagated the same repo/vault default to the reachable Ubuntu Tailscale machine at `~/hivemindos`; merged its recreated uppercase vault folder into `~/Documents/Obsidian/hivemindos-vault`; restarted its collector and verified `/health` reports `~/Documents/Obsidian/hivemindos-vault`; `bash -n setup.sh`; `bash -n scripts/seed-shared-skills.sh`; `bash -n scripts/install-telemetry-collector.sh`; `bash -n scripts/run-with-memory-limit.sh`; `node --check scripts/agent-telemetry-collector.mjs`; `pnpm typecheck --pretty false`; bounded `pnpm build` now runs as `next build --webpack` and passes without the Turbopack NFT warning; `MEMORY_TIMEOUT_SECONDS=60 pnpm dev` served `/` on port 5020 under the guard and was stopped by the test timeout; an artificial memory-growth command with `--limit-mb 50` was killed with exit 137.
 - Intended commit message: `Canonicalize shared vault folder`
 
-## 2026-05-20 22:05 WITA - Match Ami Scheduler Attachments
+## 2026-05-20 22:05 WITA - Match HivemindOS Scheduler Attachments
 
 - Status: Pushed
 - Areas changed: Scheduler attachment menu, Scheduler skill/path chips, Brain skill browser inventory, changelog
-- Summary: Replace the Scheduler's direct skill-browser button with an Ami-style `+` attachment popover for attaching skills, folders, files, and paths; show removable attachment chips on new schedules and schedule cards; load installed/shared provider skills into Scheduler and the Skill Browser so it no longer appears as a one-card catalog.
+- Summary: Replace the Scheduler's direct skill-browser button with an HivemindOS-style `+` attachment popover for attaching skills, folders, files, and paths; show removable attachment chips on new schedules and schedule cards; load installed/shared provider skills into Scheduler and the Skill Browser so it no longer appears as a one-card catalog.
 - Verification: `pnpm typecheck`; `pnpm eslint src/app/page.tsx`; `git diff --check -- src/app/page.tsx src/app/fleet.module.css CHANGELOG.md`; Playwright smoke on `http://localhost:5020` verified the Scheduler `+` menu, skill-search subpopover, 147 discovered skill buttons, and no horizontal overflow.
-- Intended commit message: `Match Ami scheduler attachments`
+- Intended commit message: `Match HivemindOS scheduler attachments`
 
 ## 2026-05-20 22:52 WITA - Refine Kanban Lane Headers
 
@@ -2091,13 +2355,13 @@ be added here first, then marked `Committed` or `Pushed` after the git action.
 - Verification: `pnpm eslint src/app/page.tsx`; `pnpm typecheck --pretty false`; `git diff --check -- src/app/page.tsx src/app/kanban-board.module.css CHANGELOG.md`.
 - Intended commit message: `Add Kanban card expand control`
 
-## 2026-05-20 20:58 WITA - Restyle Scheduler Like Ami
+## 2026-05-20 20:58 WITA - Restyle Scheduler Like HivemindOS
 
 - Status: Pushed
 - Areas changed: Scheduler UI, fleet styles, changelog
-- Summary: Replace the generic Scheduler form with an Ami-inspired automation studio: compact glass sections, prompt/step segmented controls with icons, cadence preset chips, live step previews, inline skill attachment chips, and tighter schedule cards.
+- Summary: Replace the generic Scheduler form with an HivemindOS-inspired automation studio: compact glass sections, prompt/step segmented controls with icons, cadence preset chips, live step previews, inline skill attachment chips, and tighter schedule cards.
 - Verification: `pnpm typecheck`; `pnpm eslint src/app/page.tsx`; `git diff --check -- src/app/page.tsx src/app/fleet.module.css CHANGELOG.md`; Playwright smoke on `http://localhost:5020` verified the Scheduler tab renders without horizontal overflow and captured `/tmp/hivemindos-scheduler-smoke.png`.
-- Intended commit message: `Restyle scheduler like Ami`
+- Intended commit message: `Restyle scheduler like HivemindOS`
 
 ## 2026-05-20 21:45 WITA - Render Alert Markdown
 

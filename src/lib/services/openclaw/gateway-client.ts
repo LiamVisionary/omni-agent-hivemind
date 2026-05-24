@@ -49,7 +49,7 @@ export interface ConnectParams {
 
 export interface ChatSendParams {
   text: string;
-  /** Agent ID to route to (e.g. 'ami'). Falls back to default agent. */
+  /** Agent ID to route to. Falls back to default agent. */
   agentId?: string;
   sessionKey?: string;
   idempotencyKey?: string;
@@ -231,7 +231,7 @@ async function sendMessageViaGatewayOnce(
           permissions: {},
           auth: { token: params.token },
           locale: 'en-US',
-          userAgent: 'ami-companion/1.0.0',
+          userAgent: 'hivemind-os/1.0.0',
         },
       };
       ws.send(JSON.stringify(connectReq));
@@ -263,7 +263,7 @@ async function sendMessageViaGatewayOnce(
           // Send the chat message
           chatRequestId = nextRequestId();
           const agentTarget = params.agentId || 'main';
-          const sessionKey = params.sessionKey || `agent:${agentTarget}:webchat:dm:ami-companion`;
+          const sessionKey = params.sessionKey || `agent:${agentTarget}:webchat:dm:hivemind-os`;
           const idempotencyKey = params.idempotencyKey || `idem-${Date.now()}`;
           const chatReq: GatewayRequest = {
             type: 'req',
@@ -500,7 +500,7 @@ export async function testGatewayConnection(
           permissions: {},
           auth: { token: params.token },
           locale: 'en-US',
-          userAgent: 'ami-companion/1.0.0',
+          userAgent: 'hivemind-os/1.0.0',
         },
       };
       ws.send(JSON.stringify(connectReq));
@@ -591,7 +591,7 @@ export async function syncCharacterIdentity(
           permissions: {},
           auth: { token: params.token },
           locale: 'en-US',
-          userAgent: 'ami-companion/1.0.0',
+          userAgent: 'hivemind-os/1.0.0',
         },
       };
       ws.send(JSON.stringify(connectReq));
@@ -657,7 +657,7 @@ export async function syncCharacterIdentity(
           let agentModelString: string | undefined;
 
           if (params.llmProvider === 'custom' && params.customLlm?.endpoint) {
-            const providerKey = 'ami-custom';
+            const providerKey = 'hivemindos-custom';
             const modelId = params.customLlm.modelName || 'default';
             const modelRef = `${providerKey}/${modelId}`;
 
@@ -777,7 +777,7 @@ export async function syncCharacterIdentity(
             params: {
               raw: identityPatch,
               ...(baseHash ? { baseHash } : {}),
-              note: `Synced from Ami: AI Companion — ${params.characterName}`,
+              note: `Synced from HivemindOS — ${params.characterName}`,
               restartDelayMs: 2000,
             },
           }));

@@ -2,7 +2,7 @@
  * OpenClaw channel configuration types.
  *
  * Mirrors the subset of config options from OpenClaw's plugin-sdk that
- * we expose in the Ami companion UI for per-channel control.
+ * we expose in the HivemindOS companion UI for per-channel control.
  */
 
 export type DmPolicy = 'pairing' | 'allowlist' | 'open' | 'disabled';

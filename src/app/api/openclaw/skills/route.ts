@@ -37,7 +37,7 @@ async function refreshSkillCache(supabase: ReturnType<typeof getSupabase>): Prom
   const res = await fetch(GITHUB_TREE_URL, {
     headers: {
       'Accept': 'application/vnd.github.v3+json',
-      'User-Agent': 'withami-skill-browser',
+      'User-Agent': 'hivemind-os-skill-browser',
     },
     signal: AbortSignal.timeout(15_000),
   });

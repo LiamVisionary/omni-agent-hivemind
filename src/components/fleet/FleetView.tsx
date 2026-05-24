@@ -17,6 +17,7 @@ import {
   FLEET_EDGES,
   type FleetAlert,
   type FleetAgent,
+  type FleetAgentChat,
   type FleetMachine,
   type FleetTask,
 } from "./fleet-data";
@@ -40,6 +41,7 @@ interface FleetViewProps {
   onUpdateMachine?: (m: FleetMachine) => void;
   onRenameMachine?: (machineId: string, name: string) => void;
   onOpenChat?: (m: FleetMachine, a: FleetAgent) => void;
+  onOpenTaskChat?: (m: FleetMachine, a: FleetAgent, chat?: FleetAgentChat) => void;
   onOpenWallet?: (m: FleetMachine, a: FleetAgent) => void;
   onEditSettings?: (m: FleetMachine, a: FleetAgent) => void;
   onDuplicate?: (m: FleetMachine, a: FleetAgent) => void;
@@ -61,6 +63,7 @@ export function FleetView({
   onUpdateMachine,
   onRenameMachine,
   onOpenChat,
+  onOpenTaskChat,
   onOpenWallet,
   onEditSettings,
   onDuplicate,
@@ -91,11 +94,12 @@ export function FleetView({
   const handleSelectMachine = React.useCallback((id: string) => {
     setSelected(id);
     setSelectedAgentId(null);
+    setExpanded(new Set([id]));
   }, []);
   const handleSelectAgent = React.useCallback((m: FleetMachine, a: FleetAgent) => {
     setSelected(m.id);
     setSelectedAgentId(a.id);
-    setExpanded((prev) => (prev.has(m.id) ? prev : new Set(prev).add(m.id)));
+    setExpanded(new Set([m.id]));
   }, []);
   const handleAddAgent = React.useCallback((m: FleetMachine) => {
     setSelected(m.id);
@@ -105,10 +109,8 @@ export function FleetView({
   }, [onAddAgent]);
   const toggleExpand = React.useCallback((id: string) => {
     setExpanded((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
+      if (prev.has(id)) return new Set();
+      return new Set([id]);
     });
   }, []);
 
@@ -249,6 +251,7 @@ export function FleetView({
                 onUpdateMachine={onUpdateMachine}
                 onRenameMachine={onRenameMachine}
                 onOpenChat={onOpenChat}
+                onOpenTaskChat={onOpenTaskChat}
                 onOpenWallet={onOpenWallet}
                 onEditSettings={onEditSettings}
                 onDuplicate={onDuplicate}
@@ -359,6 +362,7 @@ export function FleetView({
                   onSelectAgent={handleSelectAgent}
                   onAddAgent={handleAddAgent}
                   onOpenChat={onOpenChat}
+                  onOpenTaskChat={onOpenTaskChat}
                   onOpenWallet={onOpenWallet}
                   onEditSettings={onEditSettings}
                   onDuplicate={onDuplicate}

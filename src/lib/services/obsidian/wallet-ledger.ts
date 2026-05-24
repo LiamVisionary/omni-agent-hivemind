@@ -4,6 +4,7 @@ import { join } from "path";
 
 import { resolveObsidianVaultPath } from "@/lib/services/obsidian/vault-path";
 import type { AgentWalletConfig } from "@/lib/types/agent-wallet";
+import { stripUnfundedWalletBalance } from "@/lib/utils/agent-wallet";
 
 const WALLET_FOLDER = "Projects/HivemindOS/Wallets";
 
@@ -177,7 +178,7 @@ function parseRecordMarkdown(filename: string, content: string): WalletLedgerRec
     machineName: typeof fm.machineName === "string" ? fm.machineName : undefined,
     dashboardMachine: typeof fm.dashboardMachine === "string" ? fm.dashboardMachine : "",
     updatedAt: typeof fm.updatedAt === "string" ? fm.updatedAt : new Date(0).toISOString(),
-    wallet,
+    wallet: stripUnfundedWalletBalance(wallet),
   };
 }
 
@@ -205,6 +206,7 @@ export async function readWalletLedger(vaultPath?: string): Promise<WalletLedger
   for (const entry of entries) {
     if (!entry.toLowerCase().endsWith(".md")) continue;
     if (entry.toLowerCase() === "readme.md") continue;
+    if (entry.toLowerCase().includes(".sync-conflict-")) continue;
     try {
       const raw = await readFile(join(folderPath, entry), "utf8");
       const record = parseRecordMarkdown(entry, raw);
@@ -237,7 +239,7 @@ export async function writeWalletRecord(input: {
     machineName: input.machineName,
     dashboardMachine: hostname(),
     updatedAt: new Date().toISOString(),
-    wallet: { ...input.wallet, agentId: input.agentId },
+    wallet: stripUnfundedWalletBalance({ ...input.wallet, agentId: input.agentId }),
   };
   const filePath = join(folderPath, fileNameFor(input.agentId));
   await writeFile(filePath, renderRecordMarkdown(record), "utf8");

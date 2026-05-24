@@ -9,7 +9,7 @@ import type {
 
 export const DEFAULT_AGENT_WALLET: Omit<AgentWalletConfig, "agentId"> = {
   enabled: false,
-  provider: "bankr",
+  provider: "moneyclaw",
   walletAddress: "",
   network: "eip155:8453",
   tokenSymbol: "USDC",
@@ -67,6 +67,30 @@ export function createDefaultAgentWallet(agentId: string): AgentWalletConfig {
     survivalStartedAt: now,
     updatedAt: now,
   };
+}
+
+export function hasWalletBalanceEvidence(config: AgentWalletConfig): boolean {
+  return Boolean(
+    config.walletAddress.trim()
+    || config.vaultAddress?.trim()
+    || (config.lastOnchainSyncAt && config.lastOnchainSyncAt > 0)
+    || (config.onchainBalanceUsd && config.onchainBalanceUsd > 0)
+  );
+}
+
+export function stripUnfundedWalletBalance(config: AgentWalletConfig): AgentWalletConfig {
+  if (config.enabled || hasWalletBalanceEvidence(config)) return config;
+  if (config.currentBalanceUsd <= 0 && config.seedBalanceUsd <= 0) return config;
+  return {
+    ...config,
+    seedBalanceUsd: 0,
+    currentBalanceUsd: 0,
+    onchainBalanceUsd: 0,
+  };
+}
+
+export function getDisplayWalletBalanceUsd(config: AgentWalletConfig, now = Date.now()): number {
+  return hasWalletBalanceEvidence(config) ? getEffectiveBalanceUsd(config, now) : 0;
 }
 
 export function normalizeMoney(value: unknown, fallback = 0): number {

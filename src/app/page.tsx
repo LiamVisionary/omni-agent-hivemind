@@ -33,6 +33,7 @@ import {
   HandCoins,
   Hexagon,
   KanbanSquare,
+  KeyRound,
   Layers3,
   LineChart,
   List,
@@ -81,6 +82,7 @@ import {
   getHoneyAgentRewards,
   getSurvivalSnapshot,
   normalizeMoney,
+  stripUnfundedWalletBalance,
 } from "@/lib/utils/agent-wallet";
 import { groupKanbanTasks } from "@/lib/utils/kanban-board";
 import {
@@ -110,7 +112,7 @@ import {
 } from "@/components/cells";
 import { AgentWalletCard } from "@/components/wallet/AgentWalletCard";
 import { AgentWalletCardCompact } from "@/components/wallet/AgentWalletCardCompact";
-import { FleetView, type FleetAgent, type FleetAlert, type FleetMachine, type FleetTask } from "@/components/fleet";
+import { FleetView, type FleetAgent, type FleetAgentChat, type FleetAlert, type FleetMachine, type FleetTask } from "@/components/fleet";
 import { SchedulerView, type SchedulerJob, type SchedulerRunPhase, type SchedulerRunState } from "@/components/scheduler";
 import { TaskModal, type NewTaskPayload } from "@/components/task-modal";
 import {
@@ -223,6 +225,59 @@ type RuntimeFilePayload = {
   files?: RuntimeFileEntry[];
   file?: RuntimeFileEntry & { content?: string };
 };
+
+type HiveEnvSource = {
+  id: string;
+  label: string;
+  scope: string;
+  runtime: string;
+  values: Record<string, string>;
+  error?: string;
+};
+
+type HiveEnvBackupStatus = {
+  envFile?: string;
+  backupPath?: string;
+  backupExists?: boolean;
+  gpgAvailable?: boolean;
+  backupApplies?: boolean;
+  error?: string;
+};
+
+type HiveEnvPayload = {
+  ok?: boolean;
+  error?: string;
+  total?: number;
+  source?: HiveEnvSource;
+  sharedSource?: HiveEnvSource;
+  runtimeSources?: HiveEnvSource[];
+  backupStatus?: HiveEnvBackupStatus;
+};
+
+type HiveEnvImportEntry = {
+  key: string;
+  value: string;
+  status: "new" | "changed" | "same";
+};
+
+type WalletVaultBackupStatus = {
+  vaultPath: string;
+  keyPath: string;
+  vaultExists: boolean;
+  keyExists: boolean;
+  envKeyConfigured: boolean;
+  backupPath: string;
+  backupExists: boolean;
+  referencePath: string;
+  referenceExists: boolean;
+  gpgAvailable: boolean;
+  recipientConfigured: boolean;
+  recordCount: number;
+  updatedAt?: string;
+  error?: string;
+};
+
+type RuntimeModelSelection = NonNullable<RuntimeIntegrationStatus["modelSelection"]>;
 
 type RuntimeSetupAction = {
   id: string;
@@ -524,6 +579,13 @@ type ChatCustomFolder = {
   createdAt: number;
 };
 
+type DuplicateAgentDraft = {
+  agentId: string;
+  copyMemories: boolean;
+  copyEnv: boolean;
+  copyChats: boolean;
+};
+
 type WalletActionState = {
   busy?: boolean;
   message?: string;
@@ -534,6 +596,17 @@ type WalletActionState = {
   x402Url?: string;
   x402Method?: string;
   x402Confirmation?: string;
+};
+
+type WalletMoneyClawStatus = {
+  configured: boolean;
+  apiKeyEnvName: string;
+  baseUrl?: string;
+  account?: unknown;
+  balance?: unknown;
+  depositAddress?: unknown;
+  paymentIntents?: unknown;
+  errors?: Record<string, string>;
 };
 
 type AgentSnapshot = {
@@ -1531,8 +1604,13 @@ function swarmMarketFromItems(items: Record<string, unknown>[], timelineItems: R
   };
 }
 
-type DashboardView = "agents" | "kanban" | "scheduler" | "swarm" | "wallet" | "vault" | "maintenance" | "files" | "notifications" | "chat";
+type DashboardView = "agents" | "kanban" | "scheduler" | "swarm" | "wallet" | "vault" | "maintenance" | "files" | "notifications" | "chat" | "more" | "env";
+type WorkView = Extract<DashboardView, "kanban" | "scheduler" | "swarm">;
 type DashboardTheme = "dark" | "hive-light";
+
+function isWorkView(view: DashboardView): view is WorkView {
+  return view === "kanban" || view === "scheduler" || view === "swarm";
+}
 
 const STORAGE_KEY = "hivemindos.agentProfiles.v1";
 const VAULT_STORAGE_KEY = "hivemindos.sharedVault.v1";
@@ -1545,6 +1623,7 @@ const CHAT_MESSAGES_STORAGE_KEY = "hivemindos.chatMessages.v1";
 const CHAT_FOLDER_STORAGE_KEY = "hivemindos.chatFolders.v1";
 const MACHINE_NAME_ALIAS_STORAGE_KEY = "hivemindos.machineNameAliases.v1";
 const CHAT_RESPONSE_STALL_TIMEOUT_MS = 130 * 1000;
+const HERMES_EMPTY_TRANSCRIPT_MESSAGE = "Hermes session found. Send a message to resume it.";
 const DISCOVERED_MACHINES_STORAGE_KEY = "hivemindos.discoveredMachines.v1";
 const KANBAN_STALE_WORK_MS = 30 * 60 * 1000;
 const KANBAN_TOOL_OUTPUT_STALL_MS = 5 * 60 * 1000;
@@ -1651,6 +1730,9 @@ function normalizeAgentProfile(agent: AgentProfile): AgentProfile {
     customWorkerClass: customWorkerClasses?.find((workerClass) => workerClass.id === selectedCustomWorkerClassId) ?? agent.customWorkerClass,
     skillProfilePrompt: agent.skillProfilePrompt ?? beeWorkerPreset(agent.workerClass ?? "general").taskProfile,
     preferredSkillSlugs: agent.preferredSkillSlugs ?? beeWorkerPreset(agent.workerClass ?? "general").skillSlugs,
+    agentEnv: agent.agentEnv && typeof agent.agentEnv === "object" && !Array.isArray(agent.agentEnv)
+      ? Object.fromEntries(Object.entries(agent.agentEnv).filter(([key, value]) => /^[A-Za-z_][A-Za-z0-9_]*$/.test(key) && typeof value === "string"))
+      : undefined,
   };
 }
 
@@ -1907,7 +1989,10 @@ function parseStoredWallets(): Record<string, AgentWalletConfig> {
   if (!raw) return {};
   try {
     const parsed = JSON.parse(raw) as Record<string, AgentWalletConfig>;
-    return parsed && typeof parsed === "object" ? parsed : {};
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return {};
+    return Object.fromEntries(Object.entries(parsed)
+      .filter(([agentId, wallet]) => typeof agentId === "string" && wallet && typeof wallet === "object")
+      .map(([agentId, wallet]) => [agentId, stripUnfundedWalletBalance({ ...createDefaultAgentWallet(agentId), ...wallet, agentId })]));
   } catch {
     return {};
   }
@@ -2380,6 +2465,16 @@ function collectorRuntimeKey(agent: AgentProfile) {
   return collector ? `${agent.runtime}:collector:${collector}` : "";
 }
 
+function renderAgentKey(agent: AgentProfile, index: number) {
+  return [
+    agent.id || "agent",
+    agent.runtime,
+    collectorKey(agent.telemetryUrl),
+    agent.localDataDir?.trim() || agent.machineName || "",
+    index,
+  ].filter(Boolean).join(":");
+}
+
 function agentAliasTarget(agent: AgentProfile, autoDiscoveredAgents: AgentProfile[]) {
   const exactKey = agentWorkspaceKey(agent);
   const exact = autoDiscoveredAgents.find((candidate) => candidate.id !== agent.id && agentWorkspaceKey(candidate) === exactKey);
@@ -2655,6 +2750,8 @@ function viewIcon(view: DashboardView) {
   if (view === "maintenance") return <ShieldCheck aria-hidden="true" />;
   if (view === "files") return <FolderOpen aria-hidden="true" />;
   if (view === "notifications") return <Bell aria-hidden="true" />;
+  if (view === "more") return <Layers3 aria-hidden="true" />;
+  if (view === "env") return <KeyRound aria-hidden="true" />;
   return <MessageSquare aria-hidden="true" />;
 }
 
@@ -2740,17 +2837,30 @@ function isMeaningfulActive(task: AgentTask) {
   return task.status === "active" && sourcePriority(task.source) >= 4;
 }
 
+function isCronChatTask(task: AgentTask) {
+  if (task.source?.includes("/cron")) return true;
+  return /^hermes\s+cron\s+session$/i.test(cleanActivityTitle(task.title));
+}
+
 function isChatSidebarTask(task: AgentTask) {
+  if (isCronChatTask(task)) return false;
   return task.source === "hermes-state" || task.source === "dashboard-chat";
 }
 
 function chatSeedMessagesForTask(task: AgentTask): ChatMessage[] {
-  return task.messages?.some((message) => message.content.trim())
-    ? task.messages
-    : [
-      { role: "system" as const, content: `Resuming ${task.title || "previous chat"} from recent collector metadata.` },
-      { role: "assistant" as const, content: task.lastMessage || task.title || "Recent chat metadata is available, but the full transcript was not cached locally." },
-    ];
+  if (task.messages?.some((message) => message.content.trim())) return task.messages;
+  const placeholderOnly = !task.lastMessage
+    || task.lastMessage === HERMES_EMPTY_TRANSCRIPT_MESSAGE
+    || /no readable message was stored/i.test(task.lastMessage);
+  return [
+    {
+      role: "system" as const,
+      content: placeholderOnly
+        ? `Resuming ${task.title || "previous chat"} from Hermes session metadata. The session id is available, but the dashboard could not display prior Hermes messages yet. Send the next message to continue this runtime session.`
+        : `Resuming ${task.title || "previous chat"} from recent collector metadata.`,
+    },
+    ...(placeholderOnly ? [] : [{ role: "assistant" as const, content: task.lastMessage }]),
+  ];
 }
 
 function taskChatLeafKey(agentId: string, task: AgentTask, taskIndex = 0) {
@@ -2765,6 +2875,41 @@ function hermesRuntimeSessionIdFromTask(task: AgentTask) {
 function chatMessageStorageKey(agentId: string, leafKey?: string) {
   if (!leafKey || leafKey === `agent-${agentId}`) return agentId;
   return `${agentId}::${leafKey}`;
+}
+
+function chatLeafFromStorageKey(agentId: string, storageKey: string) {
+  return storageKey === agentId ? `agent-${agentId}` : storageKey.startsWith(`${agentId}::`) ? storageKey.slice(agentId.length + 2) : "";
+}
+
+function createChatLeafKey(agentId: string, base = "agent") {
+  return `${base}-${agentId}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+}
+
+function runtimeSessionForChat(agent: AgentProfile, leafKey: string, runtimeSessionId = "") {
+  if (runtimeSessionId.trim()) return runtimeSessionId.trim();
+  if (agent.runtime !== "openclaw") return "";
+  const normalized = leafKey || `agent-${agent.id}`;
+  return `agent:${agent.agentId || agent.id}:chat:${normalized.replace(/[^A-Za-z0-9:_-]+/g, "-")}`;
+}
+
+function parseAgentEnvText(value: string): Record<string, string> {
+  const env: Record<string, string> = {};
+  for (const rawLine of value.split("\n")) {
+    const line = rawLine.trim();
+    if (!line || line.startsWith("#") || !line.includes("=")) continue;
+    const [rawKey, ...rest] = line.split("=");
+    const key = rawKey.trim();
+    if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(key)) continue;
+    env[key] = rest.join("=").trim();
+  }
+  return env;
+}
+
+function formatAgentEnvText(env?: Record<string, string>) {
+  return Object.entries(env ?? {})
+    .sort(([left], [right]) => left.localeCompare(right))
+    .map(([key, value]) => `${key}=${value}`)
+    .join("\n");
 }
 
 function chatTaskMatchKey(value: string) {
@@ -2784,6 +2929,204 @@ function findRosterChatTask(agentWork: AgentTask[], displayedTask?: string) {
     ?? chatTasks.find(({ task }) => task.source !== "dashboard-chat")
     ?? chatTasks[0]
     ?? null;
+}
+
+function parseEnvImportText(text: string, currentValues: Record<string, string>): { entries: HiveEnvImportEntry[]; error: string } {
+  const values = new Map<string, string>();
+  const invalid: string[] = [];
+  for (const rawLine of text.split(/\r?\n/)) {
+    const line = rawLine.trim();
+    if (!line || line.startsWith("#") || !line.includes("=")) continue;
+    const [rawKey, ...rest] = line.split("=");
+    const key = rawKey.replace(/^export\s+/, "").trim();
+    if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(key)) {
+      invalid.push(key || rawKey);
+      continue;
+    }
+    let value = rest.join("=").trim();
+    if (value.length >= 2 && value[0] === value[value.length - 1] && (value[0] === "\"" || value[0] === "'")) {
+      value = value.slice(1, -1);
+    }
+    values.set(key, value);
+  }
+  const entries = Array.from(values.entries())
+    .map(([key, value]) => ({
+      key,
+      value,
+      status: currentValues[key] === undefined ? "new" : currentValues[key] === value ? "same" : "changed",
+    } satisfies HiveEnvImportEntry))
+    .sort((left, right) => left.key.localeCompare(right.key));
+  return {
+    entries,
+    error: invalid.length ? `Skipped ${invalid.length} invalid key${invalid.length === 1 ? "" : "s"}.` : "",
+  };
+}
+
+function randomEnvSecret() {
+  const bytes = new Uint8Array(32);
+  crypto.getRandomValues(bytes);
+  return Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("");
+}
+
+function EnvValueRow({
+  name,
+  value,
+  revealKey,
+  revealed,
+  saving,
+  onToggleReveal,
+  onSave,
+  onRemove,
+  extraAction,
+  editable = true,
+}: {
+  name: string;
+  value: string;
+  revealKey: string;
+  revealed: boolean;
+  saving?: boolean;
+  onToggleReveal: (key: string) => void;
+  onSave: (value: string) => void;
+  onRemove: () => void;
+  extraAction?: ReactNode;
+  editable?: boolean;
+}) {
+  return (
+    <div className="grid gap-2 rounded-md border border-[rgba(148,163,184,0.10)] bg-[rgba(2,6,23,0.35)] p-3">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <code className="break-all text-xs text-[var(--foreground)]">{name}</code>
+        <div className="flex flex-wrap gap-1">
+          {editable ? extraAction : null}
+          <Button type="button" size="icon" variant="ghost" aria-label={`${revealed ? "Hide" : "Reveal"} ${name}`} title={revealed ? "Hide value" : "Reveal value"} onClick={() => onToggleReveal(revealKey)}>
+            <Eye aria-hidden="true" />
+          </Button>
+          <Button type="button" size="icon" variant="ghost" aria-label={`Copy ${name}`} title="Copy value" onClick={() => navigator.clipboard?.writeText(value)}>
+            <Copy aria-hidden="true" />
+          </Button>
+          {editable ? (
+            <Button type="button" size="icon" variant="ghost" aria-label={`Remove ${name}`} title="Remove" onClick={onRemove}>
+              <Trash2 aria-hidden="true" />
+            </Button>
+          ) : null}
+        </div>
+      </div>
+      <input
+        key={`${revealKey}:${value}`}
+        type={revealed ? "text" : "password"}
+        defaultValue={value}
+        autoComplete="off"
+        spellCheck={false}
+        disabled={saving || !editable}
+        onBlur={(event) => {
+          if (editable) onSave(event.currentTarget.value);
+        }}
+        onKeyDown={(event) => {
+          if (event.key === "Enter") event.currentTarget.blur();
+          if (event.key === "Escape") {
+            event.currentTarget.value = value;
+            event.currentTarget.blur();
+          }
+        }}
+        className={`min-w-0 rounded-sm border border-[rgba(148,163,184,0.14)] px-2 py-1 font-mono text-xs outline-none focus:border-[rgba(94,234,212,0.45)] focus:text-[var(--foreground)] ${editable ? "bg-[rgba(15,23,42,0.72)] text-[var(--muted)]" : "bg-[rgba(148,163,184,0.10)] text-[rgba(148,163,184,0.72)]"}`}
+      />
+      {saving ? <small className="text-[var(--muted)]">Saving...</small> : null}
+    </div>
+  );
+}
+
+function AgentEnvCard({
+  agent,
+  renderKey,
+  entries,
+  draft,
+  runtimeModelSelection,
+  revealedEnvValues,
+  onToggleReveal,
+  onSave,
+  onRemove,
+  onDraftChange,
+  onAdd,
+}: {
+  agent: AgentProfile;
+  renderKey: string;
+  entries: Array<[string, string]>;
+  draft: { key: string; value: string };
+  runtimeModelSelection?: RuntimeModelSelection;
+  revealedEnvValues: Record<string, boolean>;
+  onToggleReveal: (key: string) => void;
+  onSave: (key: string, value: string, previousValue: string) => void;
+  onRemove: (key: string, previousValue: string) => void;
+  onDraftChange: (draft: { key: string; value: string }) => void;
+  onAdd: () => void;
+}) {
+  const icon = beeRoleIconPath(agent.beeRole, agent.workerClass);
+  const providerSlug = agent.provider?.trim() || runtimeModelSelection?.provider?.trim() || "";
+  const providerMatch = runtimeModelSelection?.providers.find((provider) => provider.slug === providerSlug);
+  const modelId = agent.model?.trim() || runtimeModelSelection?.model?.trim() || "";
+  const modelMatch = providerMatch?.models.find((model) => model.id === modelId);
+  const providerLabel = providerMatch?.name || providerSlug || RUNTIME_LABELS[agent.runtime];
+  const modelLabel = modelMatch?.name || modelId || "Model not set";
+  return (
+    <article className="grid gap-4 rounded-md border border-[rgba(148,163,184,0.14)] bg-[linear-gradient(135deg,rgba(10,14,21,0.86),rgba(5,8,13,0.74))] p-4" data-agent-card={renderKey}>
+      <div className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-start gap-3">
+        <div className="grid h-12 w-12 place-items-center overflow-hidden rounded-md border border-[rgba(94,234,212,0.24)] bg-[rgba(20,184,166,0.10)]">
+          <Image src={icon} alt="" width={42} height={42} aria-hidden="true" unoptimized />
+        </div>
+        <div className="min-w-0">
+          <strong className="block break-words text-base">{agent.name}</strong>
+          <p className="m-0 mt-1 break-words text-xs text-[var(--muted)]">
+            {providerLabel} · {modelLabel}
+          </p>
+          <p className="m-0 mt-1 break-words text-xs text-[var(--muted)]">
+            {RUNTIME_LABELS[agent.runtime]} · {agent.agentId || agent.id}
+          </p>
+        </div>
+        <span className="rounded-full border border-[rgba(148,163,184,0.18)] px-2 py-1 font-mono text-xs text-[var(--muted)]">{entries.length}</span>
+      </div>
+      <div className="grid grid-cols-[minmax(0,0.8fr)_minmax(0,1fr)_auto] gap-2">
+        <input
+          value={draft.key}
+          onChange={(event) => onDraftChange({ ...draft, key: event.target.value })}
+          placeholder="KEY"
+          className="min-w-0 rounded-md border border-[rgba(148,163,184,0.14)] bg-[rgba(15,23,42,0.72)] px-2 py-2 font-mono text-xs text-[var(--foreground)] outline-none focus:border-[rgba(94,234,212,0.45)]"
+        />
+        <input
+          type="password"
+          value={draft.value}
+          onChange={(event) => onDraftChange({ ...draft, value: event.target.value })}
+          onKeyDown={(event) => {
+            if (event.key === "Enter") onAdd();
+          }}
+          placeholder="value"
+          className="min-w-0 rounded-md border border-[rgba(148,163,184,0.14)] bg-[rgba(15,23,42,0.72)] px-2 py-2 font-mono text-xs text-[var(--foreground)] outline-none focus:border-[rgba(94,234,212,0.45)]"
+        />
+        <Button type="button" size="icon" variant="secondary" aria-label={`Add env for ${agent.name}`} title="Add env" onClick={onAdd}>
+          <Plus aria-hidden="true" />
+        </Button>
+      </div>
+      <div className="grid gap-2">
+        {entries.length ? entries.map(([key, value]) => {
+          const revealKey = `agent:${agent.id}:${key}`;
+          return (
+            <EnvValueRow
+              key={key}
+              name={key}
+              value={value}
+              revealKey={revealKey}
+              revealed={Boolean(revealedEnvValues[revealKey])}
+              onToggleReveal={onToggleReveal}
+              onSave={(nextValue) => onSave(key, nextValue, value)}
+              onRemove={() => onRemove(key, value)}
+            />
+          );
+        }) : (
+          <p className="m-0 rounded-md border border-dashed border-[rgba(148,163,184,0.18)] p-3 text-xs text-[var(--muted)]">
+            No agent-specific env overlay.
+          </p>
+        )}
+      </div>
+    </article>
+  );
 }
 
 function cleanActivityTitle(title: string) {
@@ -2896,6 +3239,124 @@ function ChatMarkdown({ text, className, headingClassName }: { text: string; cla
   }
 
   return <div className={className ?? chatClass("messageMarkdown")}>{blocks}</div>;
+}
+
+function stripAnsiSequences(value: string) {
+  return value.replace(/\u001b\[[0-9;?]*[ -/]*[@-~]/g, "");
+}
+
+function stripHermesBoxLine(line: string) {
+  let next = line;
+  if (/^\s*[│┃]/.test(next)) next = next.replace(/^\s*[│┃]\s?/, "");
+  if (/[│┃]\s*$/.test(next)) next = next.replace(/\s*[│┃]\s*$/, "");
+  return next.replace(/\s+$/g, "");
+}
+
+function isHermesFrameLine(line: string) {
+  const trimmed = line.trim();
+  return /^[╭╰╮╯─━\s]+$/.test(trimmed) || /^[─━]{6,}$/.test(trimmed);
+}
+
+function isHermesInventoryText(text: string) {
+  return /Available Tools/i.test(text)
+    && /Available Skills/i.test(text)
+    && /MCP Servers/i.test(text)
+    && !/╭.*Hermes/i.test(text);
+}
+
+function looksLikeAssistantHeading(line: string) {
+  const trimmed = line.trim();
+  if (!trimmed || /^[-*]\s+/.test(trimmed) || /^\d+[.)]\s+/.test(trimmed)) return false;
+  if (/[.!?;:]$/.test(trimmed)) return false;
+  if (/[,/]/.test(trimmed)) return false;
+  if (trimmed.length > 58) return false;
+  if (trimmed.split(/\s+/).length > 7) return false;
+  return /^[A-Z][A-Za-z0-9’'() -]+$/.test(trimmed);
+}
+
+function shouldPromotePlainLineToBullet(line: string) {
+  const trimmed = line.trim();
+  if (!trimmed || /^#{1,3}\s+/.test(trimmed) || /^[-*]\s+/.test(trimmed) || /^\d+[.)]\s+/.test(trimmed)) return false;
+  if (looksLikeAssistantHeading(trimmed)) return false;
+  if (trimmed.length > 120) return false;
+  if (/[.!?]$/.test(trimmed)) return false;
+  return true;
+}
+
+function structureAssistantPlainText(lines: string[]) {
+  const output: string[] = [];
+  const headingPattern = /^(Summary|Main idea|Key features|Why it matters|Takeaway|Result|Details|Next steps|Practical answer|Where .+ wins|The nuance|Bottom line|Exo vs\..+|.+\s+vs\.\s+.+)$/i;
+  for (let index = 0; index < lines.length; index += 1) {
+    const line = lines[index];
+    const trimmed = line.trim();
+    if (!trimmed) {
+      output.push("");
+      continue;
+    }
+    if (/^#{1,3}\s+/.test(trimmed) || /^[-*]\s+/.test(trimmed) || /^\d+[.)]\s+/.test(trimmed)) {
+      output.push(line);
+      continue;
+    }
+    const previous = output.at(-1)?.trim() ?? "";
+    const next = lines[index + 1]?.trim() ?? "";
+    const afterColonList = previous.endsWith(":") && shouldPromotePlainLineToBullet(trimmed);
+    const continuingList = /^[-*]\s+/.test(previous) && shouldPromotePlainLineToBullet(trimmed) && !looksLikeAssistantHeading(next);
+    if (afterColonList || continuingList) {
+      output.push(`- ${trimmed}`);
+      continue;
+    }
+    if (headingPattern.test(trimmed) || (looksLikeAssistantHeading(trimmed) && next && !previous.endsWith(":"))) {
+      output.push(`### ${trimmed}`);
+      continue;
+    }
+    output.push(line);
+  }
+  return output;
+}
+
+function normalizeAssistantChatText(value: string) {
+  const text = stripAnsiSequences(value || "").replace(/\r\n/g, "\n").trim();
+  if (!text) return "";
+  if (isHermesInventoryText(text)) return "";
+  const lines = text.split("\n");
+  let hermesBoxIndex = -1;
+  for (let index = lines.length - 1; index >= 0; index -= 1) {
+    if (/╭.*Hermes.*[╮]/i.test(lines[index])) {
+      hermesBoxIndex = index;
+      break;
+    }
+  }
+  const relevant = hermesBoxIndex >= 0 ? lines.slice(hermesBoxIndex) : lines;
+  const cleaned: string[] = [];
+  let skippingFooter = false;
+
+  for (const rawLine of relevant) {
+    const line = stripHermesBoxLine(rawLine);
+    const trimmed = line.trim();
+    if (/^Resume this session with:/i.test(trimmed) || /^Session:\s+/i.test(trimmed)) {
+      skippingFooter = true;
+    }
+    if (skippingFooter) continue;
+    if (!trimmed) {
+      if (cleaned.at(-1) !== "") cleaned.push("");
+      continue;
+    }
+    if (isHermesFrameLine(trimmed)) continue;
+    if (/^(Query:|Initializing agent|↻ Resumed session|\(\d+\s+user message|hermes --resume|hermes -c\b)/i.test(trimmed)) continue;
+    if (/^╭.*╮$/.test(trimmed) || /^╰.*╯$/.test(trimmed)) continue;
+    cleaned.push(trimmed);
+  }
+
+  return structureAssistantPlainText(cleaned
+    .join("\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .split("\n"))
+    .join("\n")
+    .trim();
+}
+
+function chatDisplayContent(message: ChatMessage) {
+  return message.role === "assistant" ? normalizeAssistantChatText(message.content) : message.content;
 }
 
 function attachmentSummary(attachments: ChatAttachment[]) {
@@ -3545,6 +4006,10 @@ function machineNeedsChatBridgeRepair(machine: MachineGroup) {
   return machine.collector === "ready" && machine.capabilities?.chat === false;
 }
 
+function machineNeedsEnvHttpSyncRepair(machine: MachineGroup) {
+  return machine.collector === "ready" && machine.envSync?.ready === true && machine.capabilities?.envHttpSync !== true;
+}
+
 function localDashboardHasUnpublishedChanges(version?: AppVersion | null) {
   if (!version) return false;
   if (version.dirty) return true;
@@ -4119,6 +4584,11 @@ export default function Home() {
   const [honeyLedgerEnabled, setHoneyLedgerEnabled] = useState(false);
   const [walletActionsByAgent, setWalletActionsByAgent] = useState<Record<string, WalletActionState>>({});
   const [walletPanelMode, setWalletPanelMode] = useState<"wallets" | "usage">("wallets");
+  const [moneyClawStatusByEnvName, setMoneyClawStatusByEnvName] = useState<Record<string, WalletMoneyClawStatus>>({});
+  const [moneyClawLoadingEnvName, setMoneyClawLoadingEnvName] = useState("");
+  const [walletVaultBackupStatus, setWalletVaultBackupStatus] = useState<WalletVaultBackupStatus | null>(null);
+  const [walletVaultBackupBusy, setWalletVaultBackupBusy] = useState("");
+  const [walletVaultBackupMessage, setWalletVaultBackupMessage] = useState("");
   const [runtimeUsage, setRuntimeUsage] = useState<RuntimeUsageAnalytics | null>(null);
   const [runtimeUsageLoading, setRuntimeUsageLoading] = useState(false);
   const [maintenanceReport, setMaintenanceReport] = useState<MaintenanceReport | null>(null);
@@ -4131,6 +4601,21 @@ export default function Home() {
   const [runtimeFileOpen, setRuntimeFileOpen] = useState<RuntimeFilePayload["file"] | null>(null);
   const [runtimeFileDraft, setRuntimeFileDraft] = useState("");
   const [runtimeFileStatus, setRuntimeFileStatus] = useState("");
+  const [hiveEnv, setHiveEnv] = useState<HiveEnvPayload | null>(null);
+  const [hiveEnvLoading, setHiveEnvLoading] = useState(false);
+  const [hiveEnvRestoring, setHiveEnvRestoring] = useState(false);
+  const [hiveEnvSyncing, setHiveEnvSyncing] = useState(false);
+  const [hiveEnvStatus, setHiveEnvStatus] = useState("");
+  const [hiveEnvSavingKey, setHiveEnvSavingKey] = useState("");
+  const [hiveEnvRuntimeSourceId, setHiveEnvRuntimeSourceId] = useState("runtime-hermes");
+  const [sharedEnvDraft, setSharedEnvDraft] = useState({ key: "", value: "" });
+  const [sharedEnvEditable, setSharedEnvEditable] = useState(false);
+  const [sharedEnvAddMenuOpen, setSharedEnvAddMenuOpen] = useState(false);
+  const [sharedEnvImportOpen, setSharedEnvImportOpen] = useState(false);
+  const [sharedEnvImportText, setSharedEnvImportText] = useState("");
+  const [sharedEnvImporting, setSharedEnvImporting] = useState(false);
+  const [agentEnvDrafts, setAgentEnvDrafts] = useState<Record<string, { key: string; value: string }>>({});
+  const [revealedEnvValues, setRevealedEnvValues] = useState<Record<string, boolean>>({});
   const [fleetSnapshots, setFleetSnapshots] = useState<Record<string, AgentSnapshot>>({});
   const [fleetCheckedAt, setFleetCheckedAt] = useState<number | null>(null);
   const [tailscaleDevices, setTailscaleDevices] = useState<TailscaleDevice[]>([]);
@@ -4194,6 +4679,7 @@ export default function Home() {
   const [agentRuntimeFolderBrowsing, setAgentRuntimeFolderBrowsing] = useState(false);
   const [agentRuntimeFolderStatus, setAgentRuntimeFolderStatus] = useState("");
   const [agentRuntimeAdvancedOpen, setAgentRuntimeAdvancedOpen] = useState(false);
+  const [duplicateAgentDraft, setDuplicateAgentDraft] = useState<DuplicateAgentDraft | null>(null);
   const [runtimeIntegrationStatus, setRuntimeIntegrationStatus] = useState<RuntimeIntegrationStatus | null>(null);
   const [runtimeModelSelectionsByRuntime, setRuntimeModelSelectionsByRuntime] = useState<Partial<Record<AgentRuntime, NonNullable<RuntimeIntegrationStatus["modelSelection"]>>>>({});
   const [runtimeIntegrationBusy, setRuntimeIntegrationBusy] = useState("");
@@ -4312,6 +4798,8 @@ export default function Home() {
     error: "",
   });
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
+  const messagesScrollRef = useRef<HTMLDivElement | null>(null);
+  const chatAutoScrollRef = useRef(true);
   const chatFileInputRef = useRef<HTMLInputElement | null>(null);
   const chatImageInputRef = useRef<HTMLInputElement | null>(null);
   const quickAddFileInputRef = useRef<HTMLInputElement | null>(null);
@@ -4413,6 +4901,201 @@ export default function Home() {
     setTailscaleStatus(data?.ok ? `Tailscale ${data.backendState}` : "Tailscale not configured. Running locally.");
   }, [applyHivemindLinkStatus]);
 
+  const refreshHiveEnv = useCallback(async () => {
+    setHiveEnvLoading(true);
+    setHiveEnvStatus("");
+    try {
+      const response = await fetch("/api/env", { cache: "no-store" }).catch(() => null);
+      const data = await response?.json().catch(() => null) as HiveEnvPayload | null;
+      if (!response?.ok || !data?.ok) {
+        setHiveEnvStatus(data?.error ?? "Could not read hive-env-add variables.");
+        return;
+      }
+	      setHiveEnv(data);
+	      const sharedCount = Object.keys(data.sharedSource?.values ?? {}).length;
+	      const backupCopy = data.backupStatus?.backupExists ? " Encrypted backup is available." : " No encrypted backup found yet.";
+	      setHiveEnvStatus(`Loaded ${sharedCount} shared env variable${sharedCount === 1 ? "" : "s"}.${backupCopy}`);
+	    } finally {
+	      setHiveEnvLoading(false);
+	    }
+	  }, []);
+
+  const toggleEnvValue = useCallback((key: string) => {
+    setRevealedEnvValues((current) => ({ ...current, [key]: !current[key] }));
+  }, []);
+
+  const saveSharedEnvValue = useCallback(async (source: HiveEnvSource, key: string, value: string, previousValue: string) => {
+    if (value === previousValue) return;
+    const savingKey = `shared:${source.id}:${key}`;
+    setHiveEnvSavingKey(savingKey);
+    setHiveEnvStatus(`Saving ${key}...`);
+    try {
+      const response = await fetch("/api/env", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ sourceId: source.id, key, value }),
+      }).catch(() => null);
+      const data = await response?.json().catch(() => null) as HiveEnvPayload | null;
+      if (!response?.ok || !data?.ok || !data.sharedSource) {
+        setHiveEnvStatus(data?.error ?? `Could not save ${key}.`);
+        return;
+      }
+	      setHiveEnv(data);
+	      setHiveEnvStatus(value === "" ? `Removed ${key} with hive-env-add.` : `Saved ${key} with hive-env-add.`);
+	    } finally {
+	      setHiveEnvSavingKey("");
+	    }
+	  }, []);
+
+  const saveAgentEnvValue = useCallback((agent: AgentProfile, key: string, value: string, previousValue: string) => {
+    if (value === previousValue) return;
+    const nextEnv = { ...(agent.agentEnv ?? {}) };
+    if (value === "") delete nextEnv[key];
+    else nextEnv[key] = value;
+    updateAgentProfile(agent.id, {
+      agentEnv: nextEnv,
+    });
+    setHiveEnvStatus(value === "" ? `Removed ${key} for ${agent.name}.` : `Saved ${key} for ${agent.name}.`);
+  }, []);
+
+	  const addSharedEnvValue = useCallback(async () => {
+	    const key = sharedEnvDraft.key.trim();
+	    if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(key)) {
+      setHiveEnvStatus("Use a valid env name like ANTHROPIC_API_KEY.");
+      return;
+    }
+    await saveSharedEnvValue(hiveEnv?.sharedSource ?? {
+      id: "shared",
+      label: "Shared sync store",
+      scope: "agent",
+      runtime: "generic",
+      values: {},
+    }, key, sharedEnvDraft.value, "");
+	    setSharedEnvDraft({ key: "", value: "" });
+	  }, [hiveEnv?.sharedSource, saveSharedEnvValue, sharedEnvDraft.key, sharedEnvDraft.value]);
+
+	  const generateSharedEnvSecret = useCallback(() => {
+	    setSharedEnvDraft((current) => ({ ...current, value: randomEnvSecret() }));
+	    setSharedEnvEditable(true);
+	    setSharedEnvAddMenuOpen(false);
+	    setHiveEnvStatus("Generated a secret value. Add a key name, then set it.");
+	  }, []);
+
+	  const importSharedEnvEntries = useCallback(async () => {
+	    const entries = parseEnvImportText(sharedEnvImportText, hiveEnv?.sharedSource?.values ?? {}).entries.filter((entry) => entry.status !== "same");
+	    if (!entries.length) {
+	      setHiveEnvStatus("No new or changed env variables found.");
+	      return;
+	    }
+	    setSharedEnvImporting(true);
+	    setHiveEnvStatus(`Importing ${entries.length} env variable${entries.length === 1 ? "" : "s"}...`);
+	    try {
+	      const response = await fetch("/api/env", {
+	        method: "POST",
+	        headers: { "Content-Type": "application/json" },
+	        body: JSON.stringify({
+	          sourceId: hiveEnv?.sharedSource?.id ?? "shared",
+	          entries: Object.fromEntries(entries.map((entry) => [entry.key, entry.value])),
+	        }),
+	      }).catch(() => null);
+	      const data = await response?.json().catch(() => null) as HiveEnvPayload | null;
+	      if (!response?.ok || !data?.ok || !data.sharedSource) {
+	        setHiveEnvStatus(data?.error ?? "Could not import env variables.");
+	        return;
+	      }
+	      setHiveEnv(data);
+	      setSharedEnvImportText("");
+	      setSharedEnvImportOpen(false);
+	      setSharedEnvEditable(false);
+	      setHiveEnvStatus(`Imported ${entries.length} env variable${entries.length === 1 ? "" : "s"} with hive-env-add.`);
+	    } finally {
+	      setSharedEnvImporting(false);
+	    }
+	  }, [hiveEnv?.sharedSource?.id, hiveEnv?.sharedSource?.values, sharedEnvImportText]);
+
+  const promoteRuntimeEnvValue = useCallback(async (source: HiveEnvSource, key: string, value: string) => {
+    const savingKey = `promote:${source.id}:${key}`;
+    setHiveEnvSavingKey(savingKey);
+    setHiveEnvStatus(`Adding ${key} to shared env...`);
+    try {
+      const response = await fetch("/api/env", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ sourceId: source.id, key, value, promoteToShared: true }),
+      }).catch(() => null);
+      const data = await response?.json().catch(() => null) as HiveEnvPayload | null;
+      if (!response?.ok || !data?.ok || !data.sharedSource) {
+        setHiveEnvStatus(data?.error ?? `Could not add ${key} to shared env.`);
+        return;
+      }
+	      setHiveEnv(data);
+	      setHiveEnvStatus(`Added ${key} to shared env with hive-env-add.`);
+	    } finally {
+	      setHiveEnvSavingKey("");
+	    }
+	  }, []);
+
+	  const restoreSharedEnvBackup = useCallback(async () => {
+	    setHiveEnvRestoring(true);
+	    setHiveEnvStatus("Restoring encrypted shared env backup...");
+	    try {
+	      const response = await fetch("/api/env", {
+	        method: "POST",
+	        headers: { "Content-Type": "application/json" },
+	        body: JSON.stringify({ action: "restoreBackup" }),
+	      }).catch(() => null);
+	      const data = await response?.json().catch(() => null) as HiveEnvPayload | null;
+	      if (!response?.ok || !data?.ok || !data.sharedSource) {
+	        setHiveEnvStatus(data?.error ?? "Could not restore encrypted shared env backup.");
+	        return;
+	      }
+	      setHiveEnv(data);
+	      const sharedCount = Object.keys(data.sharedSource.values ?? {}).length;
+	      setHiveEnvStatus(`Restored ${sharedCount} shared env variable${sharedCount === 1 ? "" : "s"} from encrypted backup with hive-env-add.`);
+	    } finally {
+	      setHiveEnvRestoring(false);
+	    }
+	  }, []);
+
+	  const syncSharedEnvMachines = useCallback(async () => {
+	    setHiveEnvSyncing(true);
+	    setHiveEnvStatus("Syncing shared env with machines...");
+	    try {
+	      const response = await fetch("/api/env", {
+	        method: "POST",
+	        headers: { "Content-Type": "application/json" },
+	        body: JSON.stringify({ action: "syncMachines" }),
+	      }).catch(() => null);
+	      const data = await response?.json().catch(() => null) as HiveEnvPayload | null;
+	      if (!response?.ok || !data?.ok || !data.sharedSource) {
+	        setHiveEnvStatus(data?.error ?? "Could not sync shared env with machines.");
+	        return;
+	      }
+	      setHiveEnv(data);
+	      const sharedCount = Object.keys(data.sharedSource.values ?? {}).length;
+	      setHiveEnvStatus(`Synced ${sharedCount} shared env variable${sharedCount === 1 ? "" : "s"} with machines.`);
+	    } finally {
+	      setHiveEnvSyncing(false);
+	    }
+	  }, []);
+
+  const addAgentEnvValue = useCallback((agent: AgentProfile) => {
+    const draft = agentEnvDrafts[agent.id] ?? { key: "", value: "" };
+    const key = draft.key.trim();
+    if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(key)) {
+      setHiveEnvStatus("Use a valid agent env name like WRITER_STYLE.");
+      return;
+    }
+    updateAgentProfile(agent.id, {
+      agentEnv: {
+        ...(agent.agentEnv ?? {}),
+        [key]: draft.value,
+      },
+    });
+    setAgentEnvDrafts((current) => ({ ...current, [agent.id]: { key: "", value: "" } }));
+    setHiveEnvStatus(`Added ${key} for ${agent.name}.`);
+  }, [agentEnvDrafts]);
+
   // Hydrate persisted state on the client after the first render. Reading
   // localStorage inside useState init would diverge from SSR and trigger
   // a hydration mismatch — this is the canonical pattern to avoid it,
@@ -4512,10 +5195,11 @@ export default function Home() {
           const next = { ...current };
           for (const record of data.records!) {
             const existing = next[record.agentId];
-            const remoteMs = record.wallet.updatedAt ?? 0;
+            const wallet = stripUnfundedWalletBalance(record.wallet);
+            const remoteMs = wallet.updatedAt ?? 0;
             const localMs = existing?.updatedAt ?? 0;
             if (!existing || remoteMs > localMs) {
-              next[record.agentId] = record.wallet;
+              next[record.agentId] = wallet;
               mutated = true;
             }
           }
@@ -5343,7 +6027,7 @@ export default function Home() {
     setSkillBrowserLoading(true);
     const hermesDetailPromise = refreshHermesUpdateRequirement();
     const [featuredResponse, communityResponse] = await Promise.all([
-      fetch("/api/openclaw/amiclaw-skills", { cache: "no-store" }).catch(() => null),
+      fetch("/api/openclaw/hivemindos-openclaw-skills", { cache: "no-store" }).catch(() => null),
       fetch("/api/openclaw/skills?limit=24", { cache: "no-store" }).catch(() => null),
     ]);
     const hermesDetail = await hermesDetailPromise;
@@ -5964,6 +6648,15 @@ export default function Home() {
   }, [activeView, hydrated, walletPanelMode]);
 
   useEffect(() => {
+    if (!hydrated || activeView !== "wallet") return;
+    const timer = window.setTimeout(() => {
+      void refreshWalletVaultBackupStatus();
+    }, 0);
+    return () => window.clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeView, hydrated, sharedVault.enabled, sharedVault.vaultPath]);
+
+  useEffect(() => {
     if (!hydrated || activeView !== "maintenance") return;
     const timer = window.setTimeout(() => {
       void refreshMaintenanceReport();
@@ -5980,6 +6673,14 @@ export default function Home() {
     return () => window.clearTimeout(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeView, hydrated]);
+
+  useEffect(() => {
+    if (!hydrated || activeView !== "env" || hiveEnv || hiveEnvLoading) return;
+    const timer = window.setTimeout(() => {
+      void refreshHiveEnv();
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, [activeView, hiveEnv, hiveEnvLoading, hydrated, refreshHiveEnv]);
 
   useEffect(() => {
     if (!hydrated || agentWorkerClassView !== "create" || brainSkills || brainSkillsLoading) return;
@@ -6376,11 +7077,14 @@ export default function Home() {
 
   const lastAssistant = useMemo(
     () => [...messages].reverse().find((message) => message.role === "assistant")?.content ?? "",
-    [messages],
+    [busy, messages],
   );
 
   const visibleMessages = useMemo(
-    () => messages.filter((message) => message.role !== "system"),
+    () => messages.filter((message) => (
+      message.role !== "system"
+      && (message.role !== "assistant" || busy || chatDisplayContent(message).trim())
+    )),
     [messages],
   );
 
@@ -6390,8 +7094,20 @@ export default function Home() {
   );
 
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ block: "end" });
+    if (!chatAutoScrollRef.current) return;
+    const element = messagesScrollRef.current;
+    if (!element) return;
+    const frame = window.requestAnimationFrame(() => {
+      element.scrollTop = element.scrollHeight;
+    });
+    return () => window.cancelAnimationFrame(frame);
   }, [visibleMessages, busy]);
+
+  const updateChatAutoScroll = useCallback(() => {
+    const element = messagesScrollRef.current;
+    if (!element) return;
+    chatAutoScrollRef.current = element.scrollHeight - element.scrollTop - element.clientHeight < 180;
+  }, []);
 
   const machineGroups = useMemo<MachineGroup[]>(() => {
     const discoveryByKey = new Map(discoveredMachines.map((machine) => [collectorKey(machine.device.collectorUrl), machine]));
@@ -6577,7 +7293,12 @@ export default function Home() {
     const machines: FleetMachine[] = machineGroups.map((machine, index) => {
       const location = fleetMachineLocation(machine, index);
       const mobile = isMobileMachineOs(machine.os);
-      const canUpdate = !mobile;
+      const versionState = fleetVersionState(machine);
+      const canUpdate = !mobile && machine.collector === "ready" && (
+        versionState === "stale"
+        || machineNeedsChatBridgeRepair(machine)
+        || machineNeedsEnvHttpSyncRepair(machine)
+      );
       return {
         id: machine.key,
         name: machine.self ? "This Mac" : machine.name,
@@ -6591,7 +7312,7 @@ export default function Home() {
         ram: fleetMetric(`${machine.key}:ram`, 18, 86),
         disk: fleetMetric(`${machine.key}:disk`, 12, 88),
         version: machine.version?.shortCommit ? `build ${machine.version.shortCommit}` : machine.collector === "ready" ? "current" : "—",
-        versionState: fleetVersionState(machine),
+        versionState,
         canUpdate,
         location: location.location,
         city: location.city,
@@ -6604,6 +7325,15 @@ export default function Home() {
           const activeCount = agentWork.filter(isMeaningfulActive).length;
           const snapshot = fleetSnapshots[agent.id];
           const primaryWork = agentWork[0];
+          const recentChats: FleetAgentChat[] = agentWork
+            .filter(isChatSidebarTask)
+            .slice(0, 3)
+            .map((work) => ({
+              id: work.id,
+              title: cleanActivityTitle(work.title || work.lastMessage || "Previous chat"),
+              task: cleanActivityTitle(work.title || work.lastMessage || "Previous chat"),
+              since: work.updatedAt > 0 ? formatRelativeTime(work.updatedAt) : work.startedAt > 0 ? formatRelativeTime(work.startedAt) : "—",
+            }));
           const hasMachineWiring = Boolean(agent.telemetryUrl || machine.self);
           const wallet = walletsByAgent[agent.id] ?? createDefaultAgentWallet(agent.id);
           const survival = getSurvivalSnapshot(wallet);
@@ -6628,6 +7358,7 @@ export default function Home() {
               ? cleanActivityTitle(primaryWork.title)
               : snapshot?.summary || "Idle · waiting for the next handoff",
             since: primaryWork?.updatedAt ? formatRelativeTime(primaryWork.updatedAt) : snapshot?.checkedAt ? formatRelativeTime(snapshot.checkedAt) : "—",
+            recentChats,
           };
         }),
       };
@@ -6774,6 +7505,17 @@ export default function Home() {
     [selectedWallet],
   );
 
+  useEffect(() => {
+    if (!hydrated || activeView !== "wallet" || !walletExpanded || !selectedAgent || !selectedWallet) return;
+    const envName = selectedWallet.moneyClawEnvName?.trim() || "MONEYCLAW_API_KEY";
+    if (moneyClawStatusByEnvName[envName] || moneyClawLoadingEnvName === envName) return;
+    const timer = window.setTimeout(() => {
+      void refreshMoneyClawStatus(selectedAgent.id);
+    }, 0);
+    return () => window.clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeView, hydrated, moneyClawLoadingEnvName, moneyClawStatusByEnvName, selectedAgent, selectedWallet, walletExpanded]);
+
   const walletStats = useMemo(() => {
     const walletRows = displayAgents.map((agent) => walletsByAgent[agent.id] ?? createDefaultAgentWallet(agent.id));
     const enabled = walletRows.filter((wallet) => wallet.enabled);
@@ -6875,6 +7617,19 @@ export default function Home() {
     };
   }, [activeView, kanbanIncludeArchived, kanbanViewColumns.length, selectedKanbanTaskId, updateKanbanBoardScrollState]);
 
+  const agentSpecificEnvCount = displayAgents.reduce((sum, agent) => sum + Object.keys(agent.agentEnv ?? {}).length, 0);
+  const sharedEnvSource = hiveEnv?.sharedSource ?? null;
+  const runtimeEnvSources = hiveEnv?.runtimeSources ?? [];
+  const selectedRuntimeEnvSource = runtimeEnvSources.find((source) => source.id === hiveEnvRuntimeSourceId) ?? runtimeEnvSources[0] ?? null;
+  const sharedEnvCount = Object.keys(sharedEnvSource?.values ?? {}).length;
+  const unsharedRuntimeEnvCount = runtimeEnvSources.reduce((sum, source) => sum + Object.keys(source.values ?? {}).length, 0);
+  const sharedBackupStatus = hiveEnv?.backupStatus ?? null;
+  const sharedEnvImport = parseEnvImportText(sharedEnvImportText, sharedEnvSource?.values ?? {});
+  const sharedEnvImportDiff = sharedEnvImport.entries.filter((entry) => entry.status !== "same");
+  const sharedEnvImportNewCount = sharedEnvImport.entries.filter((entry) => entry.status === "new").length;
+  const sharedEnvImportChangedCount = sharedEnvImport.entries.filter((entry) => entry.status === "changed").length;
+  const sharedEnvImportSameCount = sharedEnvImport.entries.filter((entry) => entry.status === "same").length;
+
   const navItems = useMemo(() => [
     {
       id: "agents" as const,
@@ -6884,17 +7639,11 @@ export default function Home() {
     {
       id: "kanban" as const,
       label: "Work",
-      detail: `${kanbanBoard?.tasks.length ?? 0} tasks`,
-    },
-    {
-      id: "scheduler" as const,
-      label: "Automations",
-      detail: `${schedules.filter((schedule) => schedule.enabled).length} active`,
-    },
-    {
-      id: "swarm" as const,
-      label: "Swarm",
-      detail: mirosharkStatus?.ok ? "rehearsal ready" : "companion off",
+      detail: activeView === "scheduler"
+        ? `${schedules.filter((schedule) => schedule.enabled).length} active`
+        : activeView === "swarm"
+          ? mirosharkStatus?.ok ? "rehearsal ready" : "companion off"
+          : `${kanbanBoard?.tasks.length ?? 0} tasks`,
     },
     {
       id: "wallet" as const,
@@ -6928,22 +7677,37 @@ export default function Home() {
       label: "Chat",
       detail: selectedAgent?.name ?? "none",
     },
-  ], [kanbanBoard?.tasks.length, maintenanceReport?.ok, mirosharkStatus?.ok, notificationSummary, runtimeFileRoots.length, runtimeUsage?.totals, schedules, selectedAgent?.name, sharedVault.enabled, visibleAgentCount, walletStats.critical, walletStats.enabled]);
+    {
+      id: "more" as const,
+      label: "More",
+      detail: notificationSummary?.unread
+        ? `${notificationSummary.unread} alerts`
+        : maintenanceReport?.ok === false
+          ? "repairs available"
+          : `${sharedEnvCount + agentSpecificEnvCount + unsharedRuntimeEnvCount} env vars`,
+    },
+  ], [activeView, agentSpecificEnvCount, kanbanBoard?.tasks.length, maintenanceReport?.ok, mirosharkStatus?.ok, notificationSummary, runtimeUsage?.totals, schedules, selectedAgent?.name, sharedEnvCount, sharedVault.enabled, unsharedRuntimeEnvCount, visibleAgentCount, walletStats.critical, walletStats.enabled]);
 
-  const activeNavItem = navItems.find((item) => item.id === activeView);
+  const activeNavItem = navItems.find((item) => (
+    item.id === activeView
+    || (item.id === "kanban" && isWorkView(activeView))
+    || (item.id === "more" && (activeView === "maintenance" || activeView === "files" || activeView === "notifications" || activeView === "env"))
+  ));
   const activeHeader = useMemo(() => {
     const detail = activeNavItem?.detail ?? "";
     const headers: Record<DashboardView, { label: string; title: string }> = {
       agents: { label: "Fleet", title: "Where the hive is deployed" },
-      kanban: { label: "Work Board", title: "What the hive is up to" },
-      scheduler: { label: "Automations", title: "What the hive will do next" },
-      swarm: { label: "Swarm Theater", title: "What the hive is simulating" },
+      kanban: { label: "Work", title: "What the hive is up to" },
+      scheduler: { label: "Work", title: "What the hive will do next" },
+      swarm: { label: "Work", title: "What the hive is simulating" },
       wallet: { label: "Wallets", title: "What agents spend and consume" },
       vault: { label: "Brain Graph", title: "What the hive remembers" },
       maintenance: { label: "Fleet Diagnostics", title: "What needs repair" },
       files: { label: "Brain Files", title: "What agents can inspect" },
       notifications: { label: "Alerts", title: "What needs attention" },
       chat: { label: "Agent Chat", title: selectedAgent?.name ? `Talking with ${selectedAgent.name}` : "Choose an agent to chat with" },
+      more: { label: "More", title: "Utilities and quieter surfaces" },
+      env: { label: "Env", title: "Shared and agent-specific variables" },
     };
     const header = headers[activeView];
     return {
@@ -8565,6 +9329,104 @@ export default function Home() {
     await navigator.clipboard?.writeText(buildAgentPaymentPrompt(config)).catch(() => undefined);
   }
 
+  async function refreshMoneyClawStatus(agentId: string) {
+    const wallet = walletsByAgent[agentId] ?? createDefaultAgentWallet(agentId);
+    const envName = wallet.moneyClawEnvName?.trim() || "MONEYCLAW_API_KEY";
+    setMoneyClawLoadingEnvName(envName);
+    const response = await fetch(`/api/wallet/moneyclaw?envName=${encodeURIComponent(envName)}`, { cache: "no-store" }).catch(() => null);
+    const data = await response?.json().catch(() => null) as {
+      ok?: boolean;
+      status?: WalletMoneyClawStatus;
+      error?: string;
+    } | null;
+    setMoneyClawStatusByEnvName((current) => ({
+      ...current,
+      [envName]: data?.status ?? {
+        configured: false,
+        apiKeyEnvName: envName,
+        errors: { status: data?.error ?? "Could not check MoneyClaw." },
+      },
+    }));
+    setMoneyClawLoadingEnvName("");
+  }
+
+  async function saveMoneyClawKey(
+    agentId: string,
+    apiKey: string,
+    options: { shareWithAllAgents: boolean },
+  ): Promise<{ ok: boolean; error?: string }> {
+    const wallet = walletsByAgent[agentId] ?? createDefaultAgentWallet(agentId);
+    const agent = displayAgents.find((item) => item.id === agentId);
+    const envName = wallet.moneyClawEnvName?.trim() || "MONEYCLAW_API_KEY";
+    const key = apiKey.trim();
+    if (!key.startsWith("mcl_")) return { ok: false, error: "MoneyClaw keys should start with mcl_." };
+
+    const validateResponse = await fetch("/api/wallet/moneyclaw", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ apiKey: key, envName }),
+    }).catch(() => null);
+    const validateData = await validateResponse?.json().catch(() => null) as {
+      ok?: boolean;
+      status?: WalletMoneyClawStatus;
+      error?: string;
+    } | null;
+    if (!validateResponse?.ok || !validateData?.ok) {
+      return { ok: false, error: validateData?.error ?? "MoneyClaw could not validate this key." };
+    }
+
+    if (options.shareWithAllAgents) {
+      const saveResponse = await fetch("/api/env", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          sourceId: "shared",
+          key: envName,
+          value: key,
+          promoteToShared: true,
+        }),
+      }).catch(() => null);
+      const saveData = await saveResponse?.json().catch(() => null) as { ok?: boolean; error?: string } | null;
+      if (!saveResponse?.ok || !saveData?.ok) {
+        return { ok: false, error: saveData?.error ?? "Could not save the MoneyClaw key." };
+      }
+    } else {
+      if (!agent) return { ok: false, error: "Could not find this agent." };
+      updateAgentProfile(agentId, {
+        agentEnv: {
+          ...(agent.agentEnv ?? {}),
+          [envName]: key,
+        },
+      });
+    }
+
+    if (validateData.status) {
+      setMoneyClawStatusByEnvName((current) => ({ ...current, [envName]: validateData.status! }));
+    }
+    return { ok: true };
+  }
+
+  async function initializeCoreWalletRails(agentId: string) {
+    const wallet = walletsByAgent[agentId] ?? createDefaultAgentWallet(agentId);
+    updateWalletAction(agentId, { busy: true, error: "", message: "Initializing payment rails..." });
+    updateWallet(agentId, {
+      enabled: false,
+      provider: "moneyclaw",
+      tokenSymbol: wallet.tokenSymbol || "USDC",
+      maxPaymentUsd: wallet.maxPaymentUsd > 0 ? wallet.maxPaymentUsd : 0.5,
+      approvalRequiredOverUsd: wallet.approvalRequiredOverUsd > 0 ? wallet.approvalRequiredOverUsd : 2,
+      moneyClawEnvName: wallet.moneyClawEnvName || "MONEYCLAW_API_KEY",
+      autoPayEnabled: false,
+      survivalStartedAt: wallet.survivalStartedAt || Date.now(),
+    });
+    if (!wallet.walletAddress && !wallet.vaultAddress) {
+      await createLocalWallet(agentId, wallet.network || "eip155:8453");
+    } else {
+      updateWalletAction(agentId, { busy: false, error: "", message: "Core rails initialized. Refresh balances after funding." });
+    }
+    await refreshMoneyClawStatus(agentId);
+  }
+
   async function refreshHoneyLedger() {
     if (!honeyLedgerEnabled) return;
     const response = await fetch("/api/honey-ledger", { cache: "no-store" }).catch(() => null);
@@ -8607,6 +9469,51 @@ export default function Home() {
     const data = await response?.json().catch(() => null) as RuntimeUsageAnalytics | null;
     setRuntimeUsage(data ?? { ok: false, error: "Could not read runtime usage." });
     setRuntimeUsageLoading(false);
+  }
+
+  async function refreshWalletVaultBackupStatus() {
+    const vaultPath = sharedVault.enabled ? sharedVault.vaultPath.trim() : "";
+    const params = vaultPath ? `?vaultPath=${encodeURIComponent(vaultPath)}` : "";
+    const response = await fetch(`/api/wallet/vault-backup${params}`, { cache: "no-store" }).catch(() => null);
+    const data = await response?.json().catch(() => null) as {
+      ok?: boolean;
+      status?: WalletVaultBackupStatus;
+      error?: string;
+    } | null;
+    if (data?.status) {
+      setWalletVaultBackupStatus(data.status);
+      if (!data.ok && data.error) setWalletVaultBackupMessage(data.error);
+      return;
+    }
+    if (data?.error) setWalletVaultBackupMessage(data.error);
+  }
+
+  async function runWalletVaultBackupAction(action: "refresh" | "restore") {
+    setWalletVaultBackupBusy(action);
+    setWalletVaultBackupMessage(action === "refresh" ? "Syncing encrypted wallet vault..." : "Restoring wallet vault locally...");
+    const response = await fetch("/api/wallet/vault-backup", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        action,
+        vaultPath: sharedVault.enabled ? sharedVault.vaultPath.trim() : undefined,
+      }),
+    }).catch(() => null);
+    const data = await response?.json().catch(() => null) as {
+      ok?: boolean;
+      status?: WalletVaultBackupStatus;
+      error?: string;
+    } | null;
+    if (!response?.ok || !data?.ok || !data.status) {
+      setWalletVaultBackupMessage(data?.error ?? "Wallet vault backup action failed.");
+      setWalletVaultBackupBusy("");
+      return;
+    }
+    setWalletVaultBackupStatus(data.status);
+    setWalletVaultBackupMessage(action === "refresh"
+      ? "Encrypted wallet vault synced to the shared brain."
+      : "Wallet vault restored locally. Refresh balances before spending.");
+    setWalletVaultBackupBusy("");
   }
 
   async function refreshMaintenanceReport() {
@@ -8746,11 +9653,16 @@ export default function Home() {
     const response = await fetch("/api/wallet/create", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ agentId, network }),
+      body: JSON.stringify({
+        agentId,
+        network,
+        vaultPath: sharedVault.enabled ? sharedVault.vaultPath.trim() : undefined,
+      }),
     }).catch(() => null);
     const data = await response?.json().catch(() => null) as {
       ok?: boolean;
       wallet?: { address: string; network: string };
+      vaultSync?: { ok?: boolean; error?: string };
       error?: string;
     } | null;
     if (!response?.ok || !data?.ok || !data.wallet) {
@@ -8762,10 +9674,17 @@ export default function Home() {
       vaultAddress: data.wallet.address,
       walletAddress: data.wallet.address,
       network: data.wallet.network,
-      enabled: true,
+      enabled: false,
       survivalStartedAt: Date.now(),
     });
-    updateWalletAction(agentId, { busy: false, error: "", message: "Wallet created. Send a tiny test amount to the address, then refresh balance." });
+    updateWalletAction(agentId, {
+      busy: false,
+      error: "",
+      message: data.vaultSync?.ok
+        ? "Wallet created and encrypted vault synced to the shared brain."
+        : `Wallet created. Encrypted vault sync needs attention: ${data.vaultSync?.error ?? "not refreshed"}`,
+    });
+    await refreshWalletVaultBackupStatus();
   }
 
   async function refreshWalletBalance(agentId: string) {
@@ -8868,19 +9787,49 @@ export default function Home() {
     openAgentCreationModal(machine, runtime);
   }
 
-  function duplicateAgent(agentId?: string) {
+  function requestDuplicateAgent(agentId?: string) {
     const source = agentId
       ? displayAgents.find((agent) => agent.id === agentId) ?? selectedAgent
       : selectedAgent;
     if (!source) return;
+    setDuplicateAgentDraft({
+      agentId: source.id,
+      copyMemories: false,
+      copyEnv: true,
+      copyChats: false,
+    });
+  }
+
+  function duplicateAgent() {
+    if (!duplicateAgentDraft) return;
+    const source = displayAgents.find((agent) => agent.id === duplicateAgentDraft.agentId) ?? selectedAgent;
+    if (!source) return;
+    const nextId = `${source.runtime}-${Date.now()}`;
     const next = {
       ...source,
       // eslint-disable-next-line react-hooks/purity
-      id: `${source.runtime}-${Date.now()}`,
+      id: nextId,
       name: `${source.name} Copy`,
+      sessionKey: undefined,
+      agentEnv: duplicateAgentDraft.copyEnv ? { ...(source.agentEnv ?? {}) } : undefined,
+      memoryForkedFromAgentId: duplicateAgentDraft.copyMemories ? source.id : undefined,
     };
     setAgents((current) => [...current, next]);
     setSelectedAgentId(next.id);
+    if (duplicateAgentDraft.copyChats) {
+      setMessagesByAgent((current) => {
+        const additions: Record<string, ChatMessage[]> = {};
+        for (const [key, messages] of Object.entries(current)) {
+          if (key === source.id) {
+            additions[nextId] = messages.map((message) => ({ ...message }));
+          } else if (key.startsWith(`${source.id}::`)) {
+            additions[`${nextId}${key.slice(source.id.length)}`] = messages.map((message) => ({ ...message }));
+          }
+        }
+        return Object.keys(additions).length ? { ...current, ...additions } : current;
+      });
+    }
+    setDuplicateAgentDraft(null);
   }
 
   function deleteAgent(agentId = selectedAgent?.id) {
@@ -8944,14 +9893,62 @@ export default function Home() {
     return firstUserMessage ? firstUserMessage.slice(0, 56) : "Previous chat";
   }, [messagesByAgent]);
 
+  const hydrateHermesSessionChat = useCallback(async (agent: AgentProfile, sessionId: string, leafKey: string) => {
+    const startedAt = Date.now();
+    const response = await fetch("/api/chat/agent-session", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ agent, sessionId }),
+    }).catch(() => null);
+    const data = await response?.json().catch(() => null) as {
+      ok?: boolean;
+      session?: {
+        sessionId?: string;
+        messages?: Array<{ role?: string; content?: string; createdAt?: number; index?: number }>;
+      };
+    } | null;
+    const hydratedMessages = (data?.session?.messages ?? [])
+      .filter((message) => (
+        (message.role === "user" || message.role === "assistant")
+        && typeof message.content === "string"
+        && message.content.trim()
+      ))
+      .map((message): ChatMessage => ({
+        role: message.role as "user" | "assistant",
+        content: message.content!.trim(),
+        createdAt: Number(message.createdAt || 0) || undefined,
+        sourceSessionId: data?.session?.sessionId ?? sessionId,
+        sourceIndex: Number.isFinite(Number(message.index)) ? Number(message.index) : undefined,
+      }));
+    if (!hydratedMessages.length) return;
+
+    const storageKey = chatMessageStorageKey(agent.id, leafKey);
+    setMessagesByAgent((current) => {
+      const existing = current[storageKey] ?? [];
+      const userSentAfterOpen = existing.some((message) => (
+        message.role === "user"
+        && !message.sourceSessionId
+        && Number(message.createdAt || 0) >= startedAt
+      ));
+      return userSentAfterOpen ? current : { ...current, [storageKey]: hydratedMessages };
+    });
+    setSelectedChatPreview((current) => (
+      current?.agentId === agent.id && current.leafKey === leafKey
+        ? { ...current, messages: hydratedMessages }
+        : current
+    ));
+  }, []);
+
   const startAgentChat = useCallback((agentId: string, options: { fresh?: boolean; messageLimit?: number; seedMessages?: ChatMessage[]; chatLeafKey?: string; workingDirectoryPath?: string; runtimeSessionId?: string } = {}) => {
-    const leafKey = options.chatLeafKey ?? `agent-${agentId}`;
     const agent = displayAgents.find((item) => item.id === agentId);
     if (!runtimeCan(agent, "chat")) return;
+    if (!agent) return;
+    const leafBase = options.chatLeafKey ?? `agent-${agentId}`;
+    const leafKey = options.fresh ? createChatLeafKey(agentId, leafBase.replace(new RegExp(`-${agentId}$`), "")) : leafBase;
     const machine = machineGroups.find((group) => group.agents.some((item) => item.id === agentId));
     setSelectedAgentId(agentId);
     setSelectedChatLeafKey(leafKey);
-    setSelectedChatRuntimeSessionId(options.runtimeSessionId ?? "");
+    setSelectedChatRuntimeSessionId(runtimeSessionForChat(agent, leafKey, options.runtimeSessionId));
     setSelectedChatDirectoryPath(options.workingDirectoryPath ?? machine?.version?.appDir ?? agent?.localDataDir ?? "");
     setSelectedChatPreview(options.seedMessages?.length ? { agentId, leafKey, messages: options.seedMessages } : null);
     setActiveView("chat");
@@ -8959,11 +9956,8 @@ export default function Home() {
     setStatusAgentId("");
     setChatMessageWindow(options.messageLimit ? { agentId, limit: options.messageLimit } : null);
     if (options.fresh) {
-      setMessagesByAgent((current) => {
-        const nextMessages = { ...current };
-        delete nextMessages[agentId];
-        return nextMessages;
-      });
+      const storageKey = chatMessageStorageKey(agentId, leafKey);
+      setMessagesByAgent((current) => ({ ...current, [storageKey]: [] }));
     } else if (options.seedMessages?.length) {
       const storageKey = chatMessageStorageKey(agentId, leafKey);
       setMessagesByAgent((current) => {
@@ -8975,6 +9969,7 @@ export default function Home() {
   }, [displayAgents, machineGroups]);
 
   const startAgentWorkChat = useCallback((agentId: string, displayedTask?: string) => {
+    const agent = displayAgents.find((item) => item.id === agentId);
     const agentWork = agentWorkById[agentId] ?? [];
     const match = findRosterChatTask(agentWork, displayedTask);
     if (!match) {
@@ -8982,14 +9977,17 @@ export default function Home() {
       return;
     }
     const { task, index: taskIndex } = match;
+    const leafKey = taskChatLeafKey(agentId, task, taskIndex);
+    const runtimeSessionId = hermesRuntimeSessionIdFromTask(task);
     startAgentChat(agentId, {
-      messageLimit: 5,
+      messageLimit: runtimeSessionId ? undefined : 5,
       seedMessages: chatSeedMessagesForTask(task),
-      chatLeafKey: taskChatLeafKey(agentId, task, taskIndex),
+      chatLeafKey: leafKey,
       workingDirectoryPath: task.workingDirectory,
-      runtimeSessionId: hermesRuntimeSessionIdFromTask(task),
+      runtimeSessionId,
     });
-  }, [agentWorkById, startAgentChat]);
+    if (agent && runtimeSessionId) void hydrateHermesSessionChat(agent, runtimeSessionId, leafKey);
+  }, [agentWorkById, displayAgents, hydrateHermesSessionChat, startAgentChat]);
 
   function openChatFolderCreator(machine: MachineGroup) {
     const chatAgents = machine.agents.filter((agent) => runtimeCan(agent, "chat"));
@@ -9097,6 +10095,24 @@ export default function Home() {
           });
         }
 
+        for (const [storageKey, storedMessages] of Object.entries(messagesByAgent)) {
+          const storedLeafKey = chatLeafFromStorageKey(agent.id, storageKey);
+          if (!storedLeafKey || storedLeafKey === agentChatKey || storedLeafKey.startsWith("task-")) continue;
+          const manualMessages = storedMessages.filter(isManualAgentChatMessage);
+          if (!manualMessages.some((message) => message.content.trim())) continue;
+          const firstUser = manualMessages.find((message) => message.role === "user" && message.content.trim());
+          const lastMessage = [...manualMessages].reverse().find((message) => message.content.trim());
+          folder.chats.push({
+            key: storedLeafKey,
+            title: firstUser?.content.trim().slice(0, 56) || "Previous chat",
+            subtitle: lastMessage?.content.trim().slice(0, 80) || agent.name,
+            updatedAt: Math.max(...manualMessages.map((message) => Number(message.createdAt || 0))),
+            rank: 4,
+            active: selectedChatLeafKey === storedLeafKey,
+            onOpen: () => startAgentChat(agent.id, { chatLeafKey: storedLeafKey }),
+          });
+        }
+
         for (const [taskIndex, task] of agentWork.entries()) {
           if (task.source === "dashboard-chat" && hasDirectConversation) continue;
           const seedMessages = chatSeedMessagesForTask(task);
@@ -9116,13 +10132,17 @@ export default function Home() {
             updatedAt: task.updatedAt > 0 ? task.updatedAt : task.startedAt > 0 ? task.startedAt : undefined,
             rank: workPriority(task) + (task.messages?.length ? 3 : 0),
             active: selectedChatLeafKey === taskChatKey,
-            onOpen: () => startAgentChat(agent.id, {
-              messageLimit: 5,
-              seedMessages,
-              chatLeafKey: taskChatKey,
-              workingDirectoryPath: task.workingDirectory,
-              runtimeSessionId: hermesRuntimeSessionIdFromTask(task),
-            }),
+            onOpen: () => {
+              const runtimeSessionId = hermesRuntimeSessionIdFromTask(task);
+              startAgentChat(agent.id, {
+                messageLimit: runtimeSessionId ? undefined : 5,
+                seedMessages,
+                chatLeafKey: taskChatKey,
+                workingDirectoryPath: task.workingDirectory,
+                runtimeSessionId,
+              });
+              if (runtimeSessionId) void hydrateHermesSessionChat(agent, runtimeSessionId, taskChatKey);
+            },
           });
         }
       }
@@ -9165,7 +10185,7 @@ export default function Home() {
           )),
       };
     })
-  ), [agentWorkById, chatCustomFolders, chatMessageWindow, conversationTitle, hasConversation, machineGroups, selectedAgent?.id, selectedChatDirectoryPath, selectedChatLeafKey, startAgentChat]);
+  ), [agentWorkById, chatCustomFolders, chatMessageWindow, conversationTitle, hasConversation, hydrateHermesSessionChat, machineGroups, messagesByAgent, selectedAgent?.id, selectedChatDirectoryPath, selectedChatLeafKey, startAgentChat]);
 
   const selectedChatMachine = useMemo(() => (
     selectedAgent
@@ -9312,18 +10332,20 @@ export default function Home() {
   async function runMachineUpdate(machine: MachineGroup) {
     const versionCopy = machineVersionCopy(machine, appVersion?.latestCommit || appVersion?.commit);
     const needsChatBridgeRepair = machineNeedsChatBridgeRepair(machine);
-    if (needsChatBridgeRepair && localDashboardHasUnpublishedChanges(appVersion)) {
+    const needsEnvHttpSyncRepair = machineNeedsEnvHttpSyncRepair(machine);
+    if ((needsChatBridgeRepair || needsEnvHttpSyncRepair) && localDashboardHasUnpublishedChanges(appVersion)) {
+      const missingFeature = needsEnvHttpSyncRepair ? "shared-env sync endpoint" : "Hermes chat bridge";
       setUpdateStatusByMachine((current) => ({
         ...current,
         [machine.key]: {
           label: "Publish update first",
-          detail: "This machine is missing the Hermes chat bridge, but the bridge code only exists in this local dashboard checkout right now. Commit and push these dashboard changes first, then Update can pull them on that machine.",
+          detail: `This machine is missing the ${missingFeature}, but that code only exists in this local dashboard checkout right now. Commit and push these dashboard changes first, then Update can pull them on that machine.`,
           tone: "error",
         },
       }));
       return;
     }
-    if (!isCollectorAutoUpdateable(versionCopy) && !needsChatBridgeRepair) {
+    if (!isCollectorAutoUpdateable(versionCopy) && !needsChatBridgeRepair && !needsEnvHttpSyncRepair) {
       setUpdateStatusByMachine((current) => ({
         ...current,
         [machine.key]: {
@@ -9348,6 +10370,7 @@ export default function Home() {
         expectedCommit: machine.version?.latestCommit || appVersion?.latestCommit,
         requiredCapabilities: {
           chat: needsChatBridgeRepair || undefined,
+          envHttpSync: needsEnvHttpSyncRepair || undefined,
         },
       }),
     }).catch(() => null);
@@ -11858,6 +12881,7 @@ export default function Home() {
     setBusy(true);
     setBusyAgentId(selectedAgent.id);
     setHasStreamingChunk(false);
+    chatAutoScrollRef.current = true;
     setText("");
     setChatAttachments([]);
     setChatDirectories([]);
@@ -11966,10 +12990,15 @@ export default function Home() {
             choices?: Array<{ delta?: { content?: string } }>;
             error?: string;
             honey?: unknown;
+            session?: { id?: string; startedAt?: number; updatedAt?: number; messageCount?: number };
           };
           if (parsed.error) throw new Error(parsed.error);
           if (parsed.honey) {
             await refreshHoneyLedger();
+            continue;
+          }
+          if (parsed.session?.id) {
+            setSelectedChatRuntimeSessionId(parsed.session.id);
             continue;
           }
           const chunk = parsed.choices?.[0]?.delta?.content;
@@ -12235,16 +13264,20 @@ export default function Home() {
               </div>
 
               <nav className="viewTabs" aria-label="Dashboard views">
-                {(["agents", "kanban", "vault", "scheduler", "swarm", "wallet"] as DashboardView[])
+                {(["agents", "kanban", "vault", "chat", "wallet", "more"] as DashboardView[])
                   .map((id) => navItems.find((item) => item.id === id))
                   .filter((item): item is (typeof navItems)[number] => Boolean(item))
-                  .map((item) => (
+                  .map((item) => {
+                    const active = item.id === activeView
+                      || (item.id === "kanban" && isWorkView(activeView))
+                      || (item.id === "more" && (activeView === "maintenance" || activeView === "files" || activeView === "notifications" || activeView === "env"));
+                    return (
                   <Tooltip key={item.id}>
                     <TooltipTrigger asChild>
                       <button
                         type="button"
-                        className={`viewTab ${activeView === item.id ? "active" : ""}`}
-                        aria-pressed={activeView === item.id}
+                        className={`viewTab ${active ? "active" : ""}`}
+                        aria-pressed={active}
                         title={`${item.label}: ${item.detail}`}
                         onClick={() => {
                           if (item.id === "kanban" && !kanbanBoard) setKanbanLoading(true);
@@ -12267,7 +13300,8 @@ export default function Home() {
                       <span className="block text-[var(--muted)]">{item.detail}</span>
                     </TooltipContent>
                   </Tooltip>
-                ))}
+                );
+              })}
               </nav>
 
             </div>
@@ -12336,9 +13370,10 @@ export default function Home() {
         <div className="mb-3 flex flex-wrap items-center justify-end gap-2">
           <Button
             type="button"
-            size="sm"
-            variant="secondary"
-            onClick={() => {
+		                  size="sm"
+		                  variant="secondary"
+		                  className={sharedEnvCount === 0 ? "opacity-35" : ""}
+		                  onClick={() => {
               setActiveView("maintenance");
               void refreshMaintenanceReport();
             }}
@@ -12367,7 +13402,8 @@ export default function Home() {
             if (group) void runMachineUpdate(group);
           }}
           onRenameMachine={renameMachine}
-          onOpenChat={(_, agent) => startAgentWorkChat(agent.id, agent.task)}
+          onOpenChat={(_, agent) => startAgentChat(agent.id, { fresh: true })}
+          onOpenTaskChat={(_, agent, chat) => startAgentWorkChat(agent.id, chat?.task ?? agent.task)}
           onOpenWallet={(_, agent) => {
             setSelectedAgentId(agent.id);
             setActiveView("wallet");
@@ -12382,7 +13418,7 @@ export default function Home() {
             setAgentSettingsPanel("role");
             setAgentRoleModalId(agent.id);
           }}
-          onDuplicate={(_, agent) => duplicateAgent(agent.id)}
+          onDuplicate={(_, agent) => requestDuplicateAgent(agent.id)}
           onRemove={(_, agent) => deleteAgent(agent.id)}
         />
       </section>
@@ -12405,8 +13441,9 @@ export default function Home() {
             const updateStatus = updateStatusByMachine[machine.key];
             const isReady = machine.collector === "ready";
             const needsChatBridgeRepair = machineNeedsChatBridgeRepair(machine);
-            const needsPublishedBridge = needsChatBridgeRepair && localDashboardHasUnpublishedChanges(appVersion);
-            const canAutoUpdate = isCollectorAutoUpdateable(versionCopy) || (needsChatBridgeRepair && !needsPublishedBridge);
+            const needsEnvHttpSyncRepair = machineNeedsEnvHttpSyncRepair(machine);
+            const needsPublishedBridge = (needsChatBridgeRepair || needsEnvHttpSyncRepair) && localDashboardHasUnpublishedChanges(appVersion);
+            const canAutoUpdate = isCollectorAutoUpdateable(versionCopy) || ((needsChatBridgeRepair || needsEnvHttpSyncRepair) && !needsPublishedBridge);
 
             // Connect chip and Sync icon both live in MachineCell's
             // top-right header slot — see the MachineCell component for the
@@ -12429,6 +13466,8 @@ export default function Home() {
                     ? "Collector synced"
                     : needsChatBridgeRepair
                       ? "Repair chat bridge"
+                      : needsEnvHttpSyncRepair
+                        ? "Repair env sync"
                       : "Update collector",
                 icon: syncSucceeded
                   ? <Check aria-hidden="true" />
@@ -12480,6 +13519,7 @@ export default function Home() {
                 {machine.ip ? <span><strong className="text-[var(--foreground)]">IP:</strong> {machine.ip}</span> : null}
                 {machine.collectorUrl ? <span className="truncate"><strong className="text-[var(--foreground)]">Collector:</strong> {machine.collectorUrl}</span> : null}
                 {machine.capabilities ? <span><strong className="text-[var(--foreground)]">Chat bridge:</strong> {machine.capabilities.chat ? "Installed" : "Missing"}</span> : null}
+                {machine.envSync ? <span><strong className="text-[var(--foreground)]">Env sync endpoint:</strong> {machine.capabilities?.envHttpSync ? "Installed" : "Missing"}</span> : null}
                 {versionCopy ? <span><strong className="text-[var(--foreground)]">Dashboard tools:</strong> {versionCopy.label} ({versionCopy.detail})</span> : null}
               </div>
             );
@@ -12512,7 +13552,7 @@ export default function Home() {
               >
                 {machine.agents.length > 0 ? (
                   <div className="flex flex-col">
-                    {machine.agents.map((agent) => {
+                    {machine.agents.map((agent, agentIndex) => {
                       const agentWork = agentWorkById[agent.id] ?? [];
                       const activeCount = agentWork.filter(isMeaningfulActive).length;
                       const snapshot = fleetSnapshots[agent.id];
@@ -12554,7 +13594,7 @@ export default function Home() {
                           key: "duplicate",
                           label: "Duplicate",
                           icon: <CopyPlus aria-hidden="true" />,
-                          onClick: () => duplicateAgent(agent.id),
+                          onClick: () => requestDuplicateAgent(agent.id),
                         },
                         {
                           key: "remove",
@@ -12583,7 +13623,7 @@ export default function Home() {
 
                       return (
                         <AgentCell
-                          key={agent.id}
+                          key={renderAgentKey(agent, agentIndex)}
                           name={agent.name}
                           roleLabel={beeRoleLabel(agent.beeRole)}
                           runtime={agent.runtime}
@@ -12606,13 +13646,23 @@ export default function Home() {
                               tasks={taskRows}
                               onResumeTask={(taskRow) => {
                                 const task = agentWork.find((item) => item.id === taskRow.id);
+                                const taskIndex = task ? agentWork.findIndex((item) => item.id === task.id) : -1;
+                                const runtimeSessionId = task ? hermesRuntimeSessionIdFromTask(task) : "";
+                                const chatLeafKey = task && taskIndex >= 0 ? taskChatLeafKey(agent.id, task, taskIndex) : undefined;
                                 const seedMessages = task?.messages?.length
-                                  ? task.messages.slice(-5)
+                                  ? runtimeSessionId ? task.messages : task.messages.slice(-5)
                                   : [
                                     { role: "user" as const, content: cleanActivityTitle(task?.title ?? taskRow.title) },
                                     { role: "assistant" as const, content: task?.lastMessage ?? "No readable response was stored for this task." },
                                   ].filter((message) => message.content.trim());
-                                startAgentChat(agent.id, { messageLimit: 5, seedMessages });
+                                startAgentChat(agent.id, {
+                                  messageLimit: runtimeSessionId ? undefined : 5,
+                                  seedMessages,
+                                  chatLeafKey,
+                                  workingDirectoryPath: task?.workingDirectory,
+                                  runtimeSessionId,
+                                });
+                                if (runtimeSessionId && chatLeafKey) void hydrateHermesSessionChat(agent, runtimeSessionId, chatLeafKey);
                               }}
                               onTrackTask={(taskRow) => {
                                 const task = agentWork.find((item) => item.id === taskRow.id);
@@ -12636,6 +13686,30 @@ export default function Home() {
           })}
         </div>
       </section>
+      ) : null}
+
+      {isWorkView(activeView) ? (
+        <div className={`${walletClass("walletSegmented")} mb-4`} role="tablist" aria-label="Work view mode">
+          {[
+            ["kanban", "Workboard"],
+            ["scheduler", "Automations"],
+            ["swarm", "Simulation"],
+          ].map(([mode, label]) => (
+            <button
+              key={mode}
+              type="button"
+              role="tab"
+              aria-selected={activeView === mode}
+              className={walletClass("walletSegment", activeView === mode && "walletSegmentActive")}
+              onClick={() => {
+                if (mode === "kanban" && !kanbanBoard) setKanbanLoading(true);
+                setActiveView(mode as WorkView);
+              }}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
       ) : null}
 
       {activeView === "kanban" ? (
@@ -13514,7 +14588,7 @@ export default function Home() {
               <label className={fleetClass("schedulerField")}>
                 <span>Agent</span>
                 <select value={scheduleDraft.agentId} onChange={(event) => setScheduleDraft((current) => ({ ...current, agentId: event.target.value }))}>
-                  {displayAgents.map((agent) => <option value={agent.id} key={agent.id}>{agent.name} · {RUNTIME_LABELS[agent.runtime]}</option>)}
+                  {displayAgents.map((agent, agentIndex) => <option value={agent.id} key={renderAgentKey(agent, agentIndex)}>{agent.name} · {RUNTIME_LABELS[agent.runtime]}</option>)}
                 </select>
               </label>
             </div>
@@ -14166,6 +15240,7 @@ export default function Home() {
           {walletExpanded && selectedAgent && selectedWallet && selectedWalletSnapshot ? (
             (() => {
               const walletAction = walletActionsByAgent[selectedAgent.id] ?? {};
+              const moneyClawEnvName = selectedWallet.moneyClawEnvName?.trim() || "MONEYCLAW_API_KEY";
               return (
             <div className={walletClass("walletDetail")}>
               <button
@@ -14185,9 +15260,11 @@ export default function Home() {
                 honeyLedgerEnabled={honeyLedgerEnabled}
                 providerCopy={AGENT_PAYMENT_PROVIDER_COPY[selectedWallet.provider]}
                 providerOptions={Object.entries(AGENT_PAYMENT_PROVIDER_COPY) as Array<[AgentPaymentProvider, typeof AGENT_PAYMENT_PROVIDER_COPY[AgentPaymentProvider]]>}
+                moneyClawStatus={moneyClawStatusByEnvName[moneyClawEnvName] ?? null}
                 walletAction={walletAction}
                 onUpdateWallet={(patch) => updateWallet(selectedAgent.id, patch)}
                 onUpdateAction={(patch) => updateWalletAction(selectedAgent.id, patch)}
+                onSaveMoneyClawKey={(apiKey, options) => saveMoneyClawKey(selectedAgent.id, apiKey, options)}
                 onResetRunway={() => resetWalletBurnClock(selectedAgent.id)}
                 onCopyPaymentPrompt={() => copyPaymentPrompt(selectedWallet)}
                 onCreateLocalWallet={() => createLocalWallet(selectedAgent.id, selectedWallet.network)}
@@ -14201,11 +15278,11 @@ export default function Home() {
             })()
           ) : displayAgents.length > 0 ? (
             <div className={walletClass("walletGridList")} role="list" aria-label="Agent wallets">
-              {displayAgents.map((agent) => {
+              {displayAgents.map((agent, agentIndex) => {
                 const wallet = walletsByAgent[agent.id] ?? createDefaultAgentWallet(agent.id);
                 const snapshot = getSurvivalSnapshot(wallet);
                 return (
-                  <div role="listitem" key={agent.id}>
+                  <div role="listitem" key={renderAgentKey(agent, agentIndex)}>
                     <AgentWalletCardCompact
                       agentName={agent.name}
                       wallet={wallet}
@@ -14213,6 +15290,10 @@ export default function Home() {
                       onOpen={() => {
                         setSelectedAgentId(agent.id);
                         setWalletExpanded(true);
+                      }}
+                      onInitialize={async () => {
+                        setSelectedAgentId(agent.id);
+                        await initializeCoreWalletRails(agent.id);
                       }}
                     />
                   </div>
@@ -14307,6 +15388,56 @@ export default function Home() {
                 </details>
               </>
             )}
+
+            <details className={walletClass("hiveRailDetails")}>
+              <summary>Encrypted wallet vault</summary>
+              <dl>
+                <div>
+                  <dt>Local vault</dt>
+                  <dd>
+                    {walletVaultBackupStatus?.vaultExists ? `${walletVaultBackupStatus.recordCount} record${walletVaultBackupStatus.recordCount === 1 ? "" : "s"}` : "Not created"}
+                    <small>{walletVaultBackupStatus?.envKeyConfigured ? "env key" : walletVaultBackupStatus?.keyExists ? "file key" : "no key"}</small>
+                  </dd>
+                </div>
+                <div>
+                  <dt>Shared vault</dt>
+                  <dd>
+                    {walletVaultBackupStatus?.backupExists ? "Ready" : "Missing"}
+                    <small>{walletVaultBackupStatus?.updatedAt ? formatRelativeTime(Date.parse(walletVaultBackupStatus.updatedAt)) : "not refreshed"}</small>
+                  </dd>
+                </div>
+                <div>
+                  <dt>GPG</dt>
+                  <dd>
+                    {walletVaultBackupStatus?.gpgAvailable ? "Available" : "Missing"}
+                    <small>{walletVaultBackupStatus?.recipientConfigured ? "recipient ready" : "recipient missing"}</small>
+                  </dd>
+                </div>
+              </dl>
+              <div className={walletClass("walletVaultActions")}>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="secondary"
+                  disabled={Boolean(walletVaultBackupBusy) || !walletVaultBackupStatus?.vaultExists || !walletVaultBackupStatus?.gpgAvailable || !walletVaultBackupStatus?.recipientConfigured}
+                  onClick={() => runWalletVaultBackupAction("refresh")}
+                >
+                  <RefreshCcw aria-hidden="true" />
+                  Sync
+                </Button>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="secondary"
+                  disabled={Boolean(walletVaultBackupBusy) || !walletVaultBackupStatus?.backupExists || !walletVaultBackupStatus?.gpgAvailable}
+                  onClick={() => runWalletVaultBackupAction("restore")}
+                >
+                  <Download aria-hidden="true" />
+                  Restore
+                </Button>
+              </div>
+              {walletVaultBackupMessage ? <p>{walletVaultBackupMessage}</p> : null}
+            </details>
 
           </aside>
         </div>
@@ -14896,6 +16027,384 @@ export default function Home() {
       </section>
       ) : null}
 
+      {activeView === "more" ? (
+      <section className={fleetClass("taskPanel", "tabPanel")}>
+        <div className={fleetClass("taskPanelHeader")}>
+          <div>
+            <p className="eyebrow">More</p>
+            <h2>Utilities</h2>
+            <p>Diagnostics, scoped files, and agent notifications live here so the main navigation stays focused.</p>
+          </div>
+        </div>
+        <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+          {[
+            {
+              id: "env" as const,
+              icon: <KeyRound aria-hidden="true" />,
+              eyebrow: `${sharedEnvCount} shared · ${agentSpecificEnvCount} agent`,
+              title: "Shared env",
+              body: "View hive-env-add variables and per-agent overlays.",
+            },
+            {
+              id: "maintenance" as const,
+              icon: <ShieldCheck aria-hidden="true" />,
+              eyebrow: maintenanceReport?.ok === false ? "Needs attention" : "Fleet checks",
+              title: "Diagnostics",
+              body: "Run dashboard and runtime health checks.",
+            },
+            {
+              id: "files" as const,
+              icon: <FolderOpen aria-hidden="true" />,
+              eyebrow: runtimeFileRoots.length ? `${runtimeFileRoots.length} roots` : "Scoped browser",
+              title: "Files",
+              body: "Inspect allowlisted runtime and brain files.",
+            },
+            {
+              id: "notifications" as const,
+              icon: <Bell aria-hidden="true" />,
+              eyebrow: notificationSummary?.unread ? `${notificationSummary.unread} unread` : `${notificationSummary?.total ?? 0} total`,
+              title: "Alerts",
+              body: "Review messages agents write into the shared inbox.",
+            },
+          ].map((item) => (
+            <button
+              type="button"
+              key={item.id}
+              onClick={() => {
+                setActiveView(item.id);
+                if (item.id === "env") void refreshHiveEnv();
+                if (item.id === "maintenance") void refreshMaintenanceReport();
+                if (item.id === "files") void refreshRuntimeFileRoots();
+                if (item.id === "notifications") void refreshNotifications();
+              }}
+              className="grid gap-3 rounded-md border border-[rgba(148,163,184,0.14)] bg-[rgba(10,14,21,0.55)] p-4 text-left text-[var(--foreground)] transition hover:border-[rgba(94,234,212,0.35)] hover:bg-[rgba(20,184,166,0.08)]"
+            >
+              <span className="flex h-9 w-9 items-center justify-center rounded-md border border-[rgba(94,234,212,0.24)] bg-[rgba(20,184,166,0.10)] text-[var(--accent-strong)] [&_svg]:h-4 [&_svg]:w-4">
+                {item.icon}
+              </span>
+              <span className="grid gap-1">
+                <small className="font-mono text-[10px] font-bold uppercase tracking-[0.08em] text-[var(--muted)]">{item.eyebrow}</small>
+                <strong>{item.title}</strong>
+                <span className="text-xs leading-5 text-[var(--muted)]">{item.body}</span>
+              </span>
+            </button>
+          ))}
+        </div>
+      </section>
+      ) : null}
+
+      {activeView === "env" ? (
+      <section className={fleetClass("taskPanel", "tabPanel")}>
+        <div className={fleetClass("taskPanelHeader")}>
+          <div>
+            <p className="eyebrow">Shared env</p>
+            <h2>Environment variables</h2>
+            <p>One shared sync store first. Runtime-specific keys only appear below when they are not already shared.</p>
+          </div>
+		          <div className="flex flex-wrap gap-2">
+		            <Button type="button" size="sm" variant="secondary" onClick={() => void syncSharedEnvMachines()} disabled={hiveEnvSyncing || sharedEnvCount === 0}>
+		              {hiveEnvSyncing ? <LoaderCircle aria-hidden="true" className={vaultClass("spinIcon")} /> : <RefreshCcw aria-hidden="true" />}
+		              Sync machines
+		            </Button>
+		            <Button type="button" size="sm" variant="secondary" onClick={() => void restoreSharedEnvBackup()} disabled={hiveEnvRestoring || !sharedBackupStatus?.backupExists || !sharedBackupStatus?.gpgAvailable}>
+	              {hiveEnvRestoring ? <LoaderCircle aria-hidden="true" className={vaultClass("spinIcon")} /> : <Download aria-hidden="true" />}
+	              Restore backup
+	            </Button>
+	            <Button type="button" size="sm" variant="secondary" onClick={() => void refreshHiveEnv()} disabled={hiveEnvLoading}>
+	              {hiveEnvLoading ? <LoaderCircle aria-hidden="true" className={vaultClass("spinIcon")} /> : <RefreshCcw aria-hidden="true" />}
+	              Refresh
+	            </Button>
+	          </div>
+	        </div>
+
+        {hiveEnvStatus ? <p className="mt-3 rounded-md border border-[rgba(148,163,184,0.14)] bg-[rgba(10,14,21,0.55)] px-3 py-2 text-xs text-[var(--foreground)]">{hiveEnvStatus}</p> : null}
+
+        <div className="mt-4 grid gap-4">
+	          <section className="relative grid gap-3 rounded-md border border-[rgba(94,234,212,0.18)] bg-[rgba(20,184,166,0.06)] p-4">
+	            <div className="flex flex-wrap items-end justify-between gap-3">
+		              <div>
+		                <p className="eyebrow">hive-env-add</p>
+		                <h3 className="m-0 text-base font-bold">Shared sync store</h3>
+	                <p className="m-0 mt-1 text-xs text-[var(--muted)]">
+	                  {sharedBackupStatus?.backupExists
+	                    ? "Encrypted backup ready. Saves use hive-env-add sync."
+	                    : "Saves use hive-env-add sync. Encrypted backup will appear after the next successful save."}
+	                </p>
+	              </div>
+	              <div className="flex flex-wrap items-center gap-2">
+	                <span className="rounded-full border border-[rgba(94,234,212,0.22)] bg-[rgba(20,184,166,0.08)] px-3 py-1 text-xs font-bold text-[var(--accent-strong)]">
+	                  {sharedEnvCount} variables
+	                </span>
+	                <Button
+	                  type="button"
+	                  size="sm"
+	                  variant="secondary"
+	                  onClick={() => {
+	                    const body = Object.entries(sharedEnvSource?.values ?? {}).map(([key, value]) => `${key}=${JSON.stringify(value)}`).join("\n");
+	                    const blob = new Blob([body ? `${body}\n` : ""], { type: "text/plain" });
+	                    const url = URL.createObjectURL(blob);
+	                    const anchor = document.createElement("a");
+	                    anchor.href = url;
+	                    anchor.download = "hive.env";
+	                    anchor.click();
+	                    URL.revokeObjectURL(url);
+	                  }}
+		                  disabled={!sharedEnvSource || sharedEnvCount === 0}
+	                >
+	                  <Download aria-hidden="true" />
+	                  Export
+	                </Button>
+	                <Button type="button" size="sm" variant={sharedEnvEditable ? "default" : "secondary"} onClick={() => setSharedEnvEditable((editable) => !editable)}>
+	                  <Pencil aria-hidden="true" />
+	                  {sharedEnvEditable ? "Done" : "Edit"}
+	                </Button>
+	              </div>
+	            </div>
+	            {sharedEnvEditable ? (
+	              <div className="grid gap-2">
+	                <div className="grid grid-cols-[minmax(0,0.8fr)_minmax(0,1fr)_auto] gap-2">
+	                  <input
+	                    value={sharedEnvDraft.key}
+	                    onChange={(event) => setSharedEnvDraft((current) => ({ ...current, key: event.target.value }))}
+	                    placeholder="KEY"
+	                    className="min-w-0 rounded-md border border-[rgba(148,163,184,0.14)] bg-[rgba(15,23,42,0.72)] px-2 py-2 font-mono text-xs text-[var(--foreground)] outline-none focus:border-[rgba(94,234,212,0.45)]"
+	                  />
+	                  <input
+	                    type="password"
+	                    value={sharedEnvDraft.value}
+	                    onChange={(event) => setSharedEnvDraft((current) => ({ ...current, value: event.target.value }))}
+	                    onKeyDown={(event) => {
+	                      if (event.key === "Enter") void addSharedEnvValue();
+	                    }}
+	                    placeholder="value"
+	                    className="min-w-0 rounded-md border border-[rgba(148,163,184,0.14)] bg-[rgba(15,23,42,0.72)] px-2 py-2 font-mono text-xs text-[var(--foreground)] outline-none focus:border-[rgba(94,234,212,0.45)]"
+	                  />
+		                  <div className="relative flex">
+			                    <Button type="button" size="sm" variant="secondary" className="h-full min-h-[2.5rem] rounded-r-none px-4 py-2" title="Stage a single env variable, then save it with hive-env-add." onClick={() => void addSharedEnvValue()}>
+			                      <Plus aria-hidden="true" />
+			                      Add variable
+			                    </Button>
+		                    <Button type="button" size="icon" variant="secondary" className="h-full min-h-[2.5rem] rounded-l-none border-l border-[rgba(148,163,184,0.22)] px-3 py-2" aria-label="More add variable options" aria-expanded={sharedEnvAddMenuOpen} onClick={() => setSharedEnvAddMenuOpen((open) => !open)}>
+	                      <ChevronDown aria-hidden="true" />
+	                    </Button>
+	                    {sharedEnvAddMenuOpen ? (
+	                      <div className="absolute right-0 top-[calc(100%+0.5rem)] z-30 grid min-w-64 gap-1 rounded-md border border-[rgba(148,163,184,0.18)] bg-[rgba(5,8,13,0.98)] p-2 shadow-2xl" role="menu">
+	                        <button type="button" className="flex items-center gap-3 rounded-sm px-3 py-2 text-left text-sm text-[var(--foreground)] hover:bg-[rgba(94,234,212,0.10)]" onClick={generateSharedEnvSecret}>
+	                          <Sparkles aria-hidden="true" className="h-4 w-4" />
+	                          Generate secret
+	                        </button>
+	                        <button type="button" className="flex items-center gap-3 rounded-sm px-3 py-2 text-left text-sm text-[var(--foreground)] hover:bg-[rgba(94,234,212,0.10)]" onClick={() => { setSharedEnvImportOpen(true); setSharedEnvAddMenuOpen(false); }}>
+	                          <FileText aria-hidden="true" className="h-4 w-4" />
+	                          Import from .env
+	                        </button>
+	                      </div>
+	                    ) : null}
+	                  </div>
+	                </div>
+	              </div>
+	            ) : null}
+            <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-3">
+              {Object.entries(sharedEnvSource?.values ?? {}).map(([key, value]) => {
+                const revealKey = `shared:${sharedEnvSource?.id ?? "shared"}:${key}`;
+                return (
+                  <EnvValueRow
+                    key={key}
+                    name={key}
+                    value={value}
+	                    revealKey={revealKey}
+	                    revealed={Boolean(revealedEnvValues[revealKey])}
+	                    saving={hiveEnvSavingKey === revealKey}
+	                    editable={sharedEnvEditable}
+	                    onToggleReveal={toggleEnvValue}
+	                    onSave={(nextValue) => void saveSharedEnvValue(sharedEnvSource!, key, nextValue, value)}
+	                    onRemove={() => void saveSharedEnvValue(sharedEnvSource!, key, "", value)}
+                  />
+                );
+              })}
+              {!sharedEnvSource ? (
+                <div className="rounded-md border border-dashed border-[rgba(148,163,184,0.22)] p-6 text-center text-sm text-[var(--muted)]">
+                  Press Refresh to read hive-env-add variables.
+                </div>
+              ) : sharedEnvCount === 0 ? (
+                <div className="rounded-md border border-dashed border-[rgba(148,163,184,0.22)] p-6 text-center text-sm text-[var(--muted)]">
+                  No shared env variables yet.
+                </div>
+	              ) : null}
+	            </div>
+	          </section>
+
+	          {sharedEnvImportOpen ? (
+	            <div className="fixed inset-0 z-50 grid place-items-center bg-black/70 px-4 py-8" role="dialog" aria-modal="true" aria-label="Add from .env">
+	              <div className="grid max-h-[88vh] w-full max-w-4xl overflow-hidden rounded-md border border-[rgba(148,163,184,0.20)] bg-[rgba(5,8,13,0.98)] shadow-2xl">
+	                <div className="flex items-start justify-between gap-4 border-b border-[rgba(148,163,184,0.14)] p-6">
+	                  <div>
+	                    <p className="eyebrow">Bulk import</p>
+	                    <h3 className="m-0 text-3xl font-bold">Add from .env</h3>
+	                    <p className="m-0 mt-2 max-w-2xl text-sm leading-6 text-[var(--muted)]">
+	                      Paste `.env` contents or choose a file. Values are parsed locally first; only new and changed keys are sent through hive-env-add.
+	                    </p>
+	                  </div>
+	                  <Button type="button" size="icon" variant="ghost" aria-label="Close import dialog" onClick={() => setSharedEnvImportOpen(false)}>
+	                    <X aria-hidden="true" />
+	                  </Button>
+	                </div>
+	                <div className="grid gap-4 overflow-auto p-6">
+	                  <textarea
+	                    value={sharedEnvImportText}
+	                    onChange={(event) => setSharedEnvImportText(event.target.value)}
+	                    placeholder={"KEY_1=VALUE_1\nKEY_2=VALUE_2\nKEY_3=VALUE_3"}
+	                    spellCheck={false}
+	                    className="min-h-72 resize-y rounded-md border border-[rgba(94,234,212,0.34)] bg-[rgba(2,6,23,0.66)] p-4 font-mono text-sm text-[var(--foreground)] outline-none focus:border-[rgba(94,234,212,0.72)]"
+	                  />
+	                  <div className="flex flex-wrap items-center justify-between gap-3">
+	                    <p className="m-0 text-xs text-[var(--muted)]">
+	                      {sharedEnvImport.entries.length
+	                        ? `${sharedEnvImportDiff.length} to set · ${sharedEnvImportNewCount} new · ${sharedEnvImportChangedCount} changed · ${sharedEnvImportSameCount} unchanged`
+	                        : "Paste KEY=value lines to preview changes."}
+	                      {sharedEnvImport.error ? ` ${sharedEnvImport.error}` : ""}
+	                    </p>
+	                    <label className="inline-flex cursor-pointer items-center gap-2 rounded-md px-3 py-2 text-sm font-semibold text-[var(--accent-strong)] hover:bg-[rgba(94,234,212,0.10)]">
+	                      Choose a file
+	                      <FileUp aria-hidden="true" className="h-4 w-4" />
+	                      <input
+	                        type="file"
+	                        accept=".env,text/plain"
+	                        className="sr-only"
+	                        onChange={async (event) => {
+	                          const file = event.currentTarget.files?.[0];
+	                          if (!file) return;
+	                          setSharedEnvImportText(await file.text());
+	                          event.currentTarget.value = "";
+	                        }}
+	                      />
+	                    </label>
+	                  </div>
+	                  {sharedEnvImport.entries.length ? (
+	                    <div className="max-h-48 overflow-auto rounded-md border border-[rgba(148,163,184,0.14)]">
+	                      <div className="grid grid-cols-[minmax(0,1fr)_auto] gap-2 border-b border-[rgba(148,163,184,0.14)] px-3 py-2 text-xs font-bold uppercase tracking-[0.08em] text-[var(--muted)]">
+	                        <span>Key</span>
+	                        <span>Status</span>
+	                      </div>
+	                      {sharedEnvImport.entries.map((entry) => (
+	                        <div key={entry.key} className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-2 px-3 py-2 text-xs">
+	                          <code className="break-all text-[var(--foreground)]">{entry.key}</code>
+	                          <span className={`rounded-full border px-2 py-1 font-bold ${entry.status === "same" ? "border-[rgba(148,163,184,0.18)] text-[var(--muted)]" : "border-[rgba(94,234,212,0.28)] text-[var(--accent-strong)]"}`}>
+	                            {entry.status}
+	                          </span>
+	                        </div>
+	                      ))}
+	                    </div>
+	                  ) : null}
+	                </div>
+		                <div className="flex flex-wrap items-center gap-3 border-t border-[rgba(148,163,184,0.14)] px-6 pb-12 pt-5">
+		                  <Button type="button" size="sm" className="h-9 px-4 text-sm" onClick={() => void importSharedEnvEntries()} disabled={sharedEnvImporting || sharedEnvImportDiff.length === 0}>
+		                    {sharedEnvImporting ? <LoaderCircle aria-hidden="true" className={vaultClass("spinIcon")} /> : <Check aria-hidden="true" />}
+		                    Set variables
+		                  </Button>
+		                  <Button type="button" size="sm" variant="secondary" className="h-9 px-4 text-sm" onClick={() => setSharedEnvImportOpen(false)}>
+		                    Cancel
+		                  </Button>
+	                </div>
+	              </div>
+	            </div>
+	          ) : null}
+
+	          <section className="grid gap-3 rounded-md border border-[rgba(148,163,184,0.14)] bg-[rgba(10,14,21,0.55)] p-4">
+            <div className="flex flex-wrap items-end justify-between gap-3">
+              <div>
+                <p className="eyebrow">Not shared yet</p>
+                <h3 className="m-0 text-base font-bold">Runtime-specific env</h3>
+              </div>
+              <div className={walletClass("walletSegmented")} role="tablist" aria-label="Runtime env source">
+                {runtimeEnvSources.map((source) => (
+                  <button
+                    key={source.id}
+                    type="button"
+                    role="tab"
+                    aria-selected={selectedRuntimeEnvSource?.id === source.id}
+                    className={walletClass("walletSegment", selectedRuntimeEnvSource?.id === source.id && "walletSegmentActive")}
+                    onClick={() => setHiveEnvRuntimeSourceId(source.id)}
+                  >
+                    {source.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+            {selectedRuntimeEnvSource ? (
+              <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-3">
+                {Object.entries(selectedRuntimeEnvSource.values ?? {}).map(([key, value]) => {
+                  const revealKey = `runtime:${selectedRuntimeEnvSource.id}:${key}`;
+                  const saving = hiveEnvSavingKey === revealKey || hiveEnvSavingKey === `promote:${selectedRuntimeEnvSource.id}:${key}`;
+                  return (
+                    <EnvValueRow
+                      key={key}
+                      name={key}
+                      value={value}
+                      revealKey={revealKey}
+                      revealed={Boolean(revealedEnvValues[revealKey])}
+                      saving={saving}
+                      onToggleReveal={toggleEnvValue}
+                      onSave={(nextValue) => void saveSharedEnvValue(selectedRuntimeEnvSource, key, nextValue, value)}
+                      onRemove={() => void saveSharedEnvValue(selectedRuntimeEnvSource, key, "", value)}
+                      extraAction={(
+                        <Button type="button" size="icon" variant="secondary" aria-label={`Add ${key} to shared env`} title="Add to shared env" onClick={() => void promoteRuntimeEnvValue(selectedRuntimeEnvSource, key, value)}>
+                          <Upload aria-hidden="true" />
+                        </Button>
+                      )}
+                    />
+                  );
+                })}
+                {Object.keys(selectedRuntimeEnvSource.values ?? {}).length === 0 ? (
+                  <p className="m-0 rounded-md border border-dashed border-[rgba(148,163,184,0.18)] p-3 text-xs text-[var(--muted)]">
+                    No {selectedRuntimeEnvSource.label} env variables are outside the shared store.
+                  </p>
+                ) : null}
+              </div>
+            ) : (
+              <p className="m-0 rounded-md border border-dashed border-[rgba(148,163,184,0.18)] p-3 text-xs text-[var(--muted)]">
+                Press Refresh to inspect runtime-specific env.
+              </p>
+            )}
+          </section>
+
+          <section className="grid gap-3">
+            <div className="flex flex-wrap items-end justify-between gap-3">
+              <div>
+                <p className="eyebrow">Agent overlays</p>
+                <h3 className="m-0 text-base font-bold">Specific to each agent</h3>
+              </div>
+              <span className="rounded-full border border-[rgba(148,163,184,0.18)] bg-[rgba(10,14,21,0.55)] px-3 py-1 text-xs font-bold text-[var(--muted)]">
+                {agentSpecificEnvCount} variables
+              </span>
+            </div>
+            <div className="grid gap-3 xl:grid-cols-2">
+              {displayAgents.map((agent, agentIndex) => {
+                const renderKey = renderAgentKey(agent, agentIndex);
+                const draft = agentEnvDrafts[agent.id] ?? { key: "", value: "" };
+                const entries = Object.entries(agent.agentEnv ?? {}).sort(([left], [right]) => left.localeCompare(right));
+                return (
+                  <AgentEnvCard
+                    key={renderKey}
+                    agent={agent}
+                    renderKey={renderKey}
+                    entries={entries}
+                    draft={draft}
+                    runtimeModelSelection={runtimeModelSelectionsByRuntime[agent.runtime]}
+                    revealedEnvValues={revealedEnvValues}
+                    onToggleReveal={toggleEnvValue}
+                    onSave={(key, value, previousValue) => saveAgentEnvValue(agent, key, value, previousValue)}
+                    onRemove={(key, previousValue) => saveAgentEnvValue(agent, key, "", previousValue)}
+                    onDraftChange={(nextDraft) => setAgentEnvDrafts((current) => ({ ...current, [agent.id]: nextDraft }))}
+                    onAdd={() => addAgentEnvValue(agent)}
+                  />
+                );
+              })}
+            </div>
+          </section>
+        </div>
+      </section>
+      ) : null}
+
       {activeView === "maintenance" ? (
       <section className={fleetClass("taskPanel", "tabPanel")}>
         <div className={fleetClass("taskPanelHeader")}>
@@ -15318,6 +16827,17 @@ export default function Home() {
                 </label>
 
                 <label>
+                  Agent-specific env
+                  <textarea
+                    value={formatAgentEnvText(selectedAgent.agentEnv)}
+                    onChange={(event) => updateAgent({ agentEnv: parseAgentEnvText(event.target.value) })}
+                    rows={4}
+                    placeholder={"WRITER_STYLE=concise\nRESEARCH_REGION=US"}
+                  />
+                  <small>These overlay shared hive-env-add runtime env values for dashboard-dispatched runs.</small>
+                </label>
+
+                <label>
                   {selectedAgent.runtime === "aeon" ? "A2A Gateway URL" : selectedAgent.runtime === "openclaw" ? "Gateway URL" : "Runtime URL"}
                   <input
                     value={selectedAgent.runtime === "aeon" ? selectedAgent.a2aUrl ?? selectedAgent.gatewayUrl : selectedAgent.gatewayUrl}
@@ -15520,7 +17040,11 @@ export default function Home() {
                 </details>
               </div>
             ) : null}
-            <div className={chatClass("messages", visibleMessages.length === 0 && "empty")}>
+            <div
+              className={chatClass("messages", visibleMessages.length === 0 && "empty")}
+              ref={messagesScrollRef}
+              onScroll={updateChatAutoScroll}
+            >
               {visibleMessages.length === 0 ? (
                 <div className={chatClass("chatEmptyPrompt")}>
                   <strong>No messages yet</strong>
@@ -15529,10 +17053,10 @@ export default function Home() {
               ) : null}
               {visibleMessages.map((message, index) => (
                 <div className={chatClass("message", message.role)} key={`${message.role}-${index}`}>
-                  <span className={chatClass("messageRole")}>{message.role}</span>
+                  {message.role === "user" ? <span className={chatClass("messageRole")}>You</span> : null}
                   <MessageAttachments attachments={message.attachments} />
-                  {message.content ? (
-                    <ChatMarkdown text={message.content} />
+                  {chatDisplayContent(message) ? (
+                    <ChatMarkdown text={chatDisplayContent(message)} />
                   ) : (
                     <p>{message.role === "assistant" && busy ? "Waiting for response..." : ""}</p>
                   )}
@@ -16525,6 +18049,59 @@ export default function Home() {
           </section>
         </div>
       ) : null}
+
+      {duplicateAgentDraft ? (() => {
+        const source = displayAgents.find((agent) => agent.id === duplicateAgentDraft.agentId) ?? null;
+        if (!source) return null;
+        const updateDraft = (patch: Partial<DuplicateAgentDraft>) => setDuplicateAgentDraft((current) => current ? { ...current, ...patch } : current);
+        return (
+          <div
+            className={fleetClass("setupModalBackdrop")}
+            role="presentation"
+            onMouseDown={(event) => {
+              if (event.target === event.currentTarget) setDuplicateAgentDraft(null);
+            }}
+          >
+            <section className={fleetClass("setupModal", "agentSettingsModal")} role="dialog" aria-modal="true" aria-labelledby="duplicate-agent-title">
+              <div className={fleetClass("setupModalHeader")}>
+                <div>
+                  <p className="eyebrow">Duplicate agent</p>
+                  <h2 id="duplicate-agent-title">{source.name}</h2>
+                  <p>The copy gets a new agent identity and its own wallet. Runtime sessions are never reused.</p>
+                </div>
+                <Button type="button" variant="ghost" aria-label="Close duplicate agent" onClick={() => setDuplicateAgentDraft(null)}>
+                  <X aria-hidden="true" />
+                  Close
+                </Button>
+              </div>
+              <div className="grid gap-3">
+                <label className={fleetClass("toggleRow")}>
+                  <input type="checkbox" checked={duplicateAgentDraft.copyMemories} onChange={(event) => updateDraft({ copyMemories: event.target.checked })} />
+                  <span><strong>Copy agent memories</strong><small>Forks private agent memory metadata while still using the shared brain normally.</small></span>
+                </label>
+                <label className={fleetClass("toggleRow")}>
+                  <input type="checkbox" checked={duplicateAgentDraft.copyEnv} onChange={(event) => updateDraft({ copyEnv: event.target.checked })} />
+                  <span><strong>Copy agent-specific env</strong><small>On by default. Shared hive-env-add variables remain available to both agents.</small></span>
+                </label>
+                <label className={fleetClass("toggleRow")}>
+                  <input type="checkbox" checked={duplicateAgentDraft.copyChats} onChange={(event) => updateDraft({ copyChats: event.target.checked })} />
+                  <span><strong>Copy chat history</strong><small>Copies dashboard chat transcripts as reference history for the new agent.</small></span>
+                </label>
+              </div>
+              <div className={fleetClass("setupModalActions")}>
+                <Button type="button" variant="secondary" onClick={() => setDuplicateAgentDraft(null)}>
+                  <X aria-hidden="true" />
+                  Cancel
+                </Button>
+                <Button type="button" onClick={duplicateAgent}>
+                  <CopyPlus aria-hidden="true" />
+                  Duplicate
+                </Button>
+              </div>
+            </section>
+          </div>
+        );
+      })() : null}
 
       {machineInitOpen ? (
         <div

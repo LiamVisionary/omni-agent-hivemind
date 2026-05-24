@@ -181,6 +181,15 @@ function buildWalletToolContext(wallet?: AgentWalletConfig): string {
   return lines.join("\n");
 }
 
+function safeAgentEnv(value: unknown): Record<string, string> | undefined {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
+  const env: Record<string, string> = {};
+  for (const [key, entry] of Object.entries(value as Record<string, unknown>)) {
+    if (/^[A-Za-z_][A-Za-z0-9_]*$/.test(key) && typeof entry === "string") env[key] = entry;
+  }
+  return Object.keys(env).length ? env : undefined;
+}
+
 function extractUserText(messages: IncomingMessage[]): string {
   const lastUserMessage = [...messages].reverse().find((message) => message.role === "user");
   if (!lastUserMessage) return "";
@@ -435,6 +444,7 @@ async function streamHttpRuntime(
         sessionKey: profile.sessionKey,
         provider: profile.provider || undefined,
         model: profile.model || undefined,
+        agentEnv: safeAgentEnv(profile.agentEnv),
         rawUserMessage: inputCheck.text,
         runtimeSessionId: runtimeSessionId || undefined,
         hermesSessionId: runtimeSessionId || undefined,
@@ -814,7 +824,7 @@ export async function POST(request: NextRequest) {
             token,
             text: textWithVaultContext,
             agentId: profile.agentId,
-            ...(profile.sessionKey ? { sessionKey: profile.sessionKey } : {}),
+            ...(runtimeSessionId || profile.sessionKey ? { sessionKey: runtimeSessionId || profile.sessionKey } : {}),
           },
           (chunk) => {
             fullText += chunk;

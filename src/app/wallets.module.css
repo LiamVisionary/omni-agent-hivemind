@@ -530,6 +530,18 @@
   font-weight: 400;
 }
 
+.walletVaultActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.walletVaultActions button {
+  flex: 1 1 112px;
+  justify-content: center;
+}
+
 /* Per-agent honey subsection inside the rail. */
 .hiveRailAgent {
   display: flex;

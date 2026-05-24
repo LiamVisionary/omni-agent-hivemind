@@ -52,6 +52,7 @@ export interface AgentProfile {
   collectorCapabilities?: {
     chat?: boolean;
     directoryBrowsing?: boolean;
+    envHttpSync?: boolean;
     runtimes?: string[];
     syncthing?: boolean;
     defaultSyncPath?: string;
@@ -70,6 +71,8 @@ export interface AgentProfile {
   selectedCustomWorkerClassId?: string;
   skillProfilePrompt?: string;
   preferredSkillSlugs?: string[];
+  agentEnv?: Record<string, string>;
+  memoryForkedFromAgentId?: string;
 }
 
 export interface SharedVaultConfig {

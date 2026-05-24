@@ -257,6 +257,387 @@
   letter-spacing: -0.1px;
 }
 
+/* ─── Core rail stack ───────────────────────────────────────────── */
+
+.railStack {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  border: 1px solid rgba(148, 163, 184, 0.14);
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.035);
+  padding: 12px;
+}
+
+.railStackHeader,
+.railFooter {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.railStackHeader strong {
+  display: block;
+  color: var(--foreground);
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.railStackHeader span,
+.railFooter span {
+  color: var(--muted);
+  font-size: 11.5px;
+  line-height: 1.35;
+}
+
+.railFooter button {
+  display: inline-flex;
+  gap: 6px;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid rgba(94, 234, 212, 0.32);
+  border-radius: 999px;
+  background: rgba(45, 212, 191, 0.10);
+  color: var(--accent-strong);
+  padding: 7px 10px;
+  font-size: 11.5px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.railFooter button:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.railFooter svg {
+  width: 14px;
+  height: 14px;
+}
+
+.railGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.railItem {
+  display: grid;
+  grid-template-columns: 26px minmax(0, 1fr);
+  gap: 8px;
+  align-items: center;
+  min-height: 78px;
+  border: 1px solid rgba(148, 163, 184, 0.12);
+  border-radius: 12px;
+  background: rgba(8, 11, 17, 0.42);
+  color: inherit;
+  padding: 9px;
+  text-align: left;
+}
+
+button.railItem {
+  cursor: pointer;
+  transition: border-color 0.15s ease, background 0.15s ease, transform 0.12s ease;
+}
+
+button.railItem:hover,
+button.railItem:focus-visible {
+  border-color: rgba(94, 234, 212, 0.36);
+  background: rgba(45, 212, 191, 0.06);
+}
+
+button.railItem:active {
+  transform: scale(0.99);
+}
+
+.railItem > svg {
+  width: 20px;
+  height: 20px;
+  color: var(--muted);
+}
+
+.railItem[data-state="ready"] > svg {
+  color: var(--accent-strong);
+}
+
+.railItem[data-state="blocked"] > svg {
+  color: #fda4af;
+}
+
+.railItem strong,
+.railItem span,
+.railItem small {
+  overflow-wrap: anywhere;
+}
+
+.railItem strong {
+  display: block;
+  color: var(--foreground);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.railItem span {
+  display: block;
+  margin-top: 1px;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.35;
+}
+
+.railItem small {
+  grid-column: 1 / -1;
+  border-radius: 999px;
+  width: fit-content;
+  background: rgba(148, 163, 184, 0.10);
+  color: var(--muted);
+  padding: 2px 7px;
+  font-size: 10px;
+  font-weight: 800;
+}
+
+.railItem[data-state="ready"] small {
+  background: rgba(45, 212, 191, 0.12);
+  color: var(--accent-strong);
+}
+
+.railItem[data-state="blocked"] small {
+  background: rgba(251, 113, 133, 0.12);
+  color: #fda4af;
+}
+
+.railFooter {
+  align-items: center;
+}
+
+.railFooter span {
+  display: inline-flex;
+  gap: 5px;
+  align-items: center;
+}
+
+/* ─── MoneyClaw setup modal ─────────────────────────────────────── */
+
+.modalBackdrop {
+  position: fixed;
+  z-index: 60;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  background: rgba(3, 7, 12, 0.68);
+  padding: 18px;
+  backdrop-filter: blur(14px);
+}
+
+.moneyClawModal {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  width: min(440px, 100%);
+  border: 1px solid rgba(148, 163, 184, 0.18);
+  border-radius: 18px;
+  background:
+    radial-gradient(circle at 50% -20%, rgba(45, 212, 191, 0.08), transparent 45%),
+    rgba(8, 11, 17, 0.96);
+  box-shadow: 0 28px 80px rgba(0, 0, 0, 0.54);
+  padding: 18px;
+}
+
+.modalHeader {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.modalEyebrow {
+  margin: 0 0 4px;
+  color: var(--accent-strong);
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.modalHeader h3 {
+  margin: 0;
+  color: var(--foreground);
+  font-size: 18px;
+  font-weight: 850;
+  letter-spacing: 0;
+}
+
+.modalHeader button {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border: 1px solid rgba(148, 163, 184, 0.14);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.modalHeader button:hover {
+  color: var(--foreground);
+}
+
+.modalHeader svg {
+  width: 16px;
+  height: 16px;
+}
+
+.modalField {
+  display: grid;
+  gap: 7px;
+}
+
+.modalField span {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0;
+}
+
+.modalField input {
+  width: 100%;
+  border: 1px solid rgba(148, 163, 184, 0.18);
+  border-radius: 12px;
+  background: rgba(15, 19, 27, 0.72);
+  color: var(--foreground);
+  padding: 12px 13px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 13px;
+  outline: none;
+}
+
+.modalField input:focus {
+  border-color: rgba(94, 234, 212, 0.48);
+}
+
+.modalToggle {
+  display: grid;
+  grid-template-columns: 34px minmax(0, 1fr);
+  gap: 10px;
+  align-items: flex-start;
+  border: 1px solid rgba(148, 163, 184, 0.14);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.035);
+  padding: 11px;
+  cursor: pointer;
+}
+
+.modalToggle input {
+  appearance: none;
+  position: relative;
+  width: 34px;
+  height: 20px;
+  border: 1px solid rgba(148, 163, 184, 0.32);
+  border-radius: 999px;
+  background: rgba(15, 19, 27, 0.82);
+  cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+
+.modalToggle input::after {
+  content: "";
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 12px;
+  height: 12px;
+  border-radius: 999px;
+  background: var(--muted);
+  transition: transform 0.15s ease, background 0.15s ease;
+}
+
+.modalToggle input:checked {
+  border-color: rgba(94, 234, 212, 0.44);
+  background: rgba(45, 212, 191, 0.16);
+}
+
+.modalToggle input:checked::after {
+  transform: translateX(14px);
+  background: var(--accent-strong);
+}
+
+.modalToggle strong,
+.modalToggle small {
+  display: block;
+  overflow-wrap: anywhere;
+}
+
+.modalToggle strong {
+  color: var(--foreground);
+  font-size: 12.5px;
+}
+
+.modalToggle small {
+  margin-top: 3px;
+  color: var(--muted);
+  font-size: 11.5px;
+  line-height: 1.35;
+}
+
+.modalSaveButton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 42px;
+  border: 1px solid rgba(94, 234, 212, 0.32);
+  border-radius: 999px;
+  background: rgba(45, 212, 191, 0.12);
+  color: var(--accent-strong);
+  font-size: 14px;
+  font-weight: 850;
+  cursor: pointer;
+}
+
+.modalSaveButton:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.modalSaveButton svg {
+  width: 17px;
+  height: 17px;
+}
+
+.modalError {
+  margin: 0;
+  color: #fda4af;
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.terminalAlternative {
+  display: grid;
+  gap: 8px;
+  border-top: 1px solid rgba(148, 163, 184, 0.12);
+  padding-top: 14px;
+}
+
+.terminalAlternative strong {
+  color: var(--foreground);
+  font-size: 12px;
+}
+
+.terminalAlternative code {
+  display: block;
+  border: 1px solid rgba(148, 163, 184, 0.14);
+  border-radius: 10px;
+  background: rgba(2, 6, 12, 0.58);
+  color: var(--text-soft);
+  padding: 10px;
+  font-size: 11.5px;
+  line-height: 1.45;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
 /* ─── Action sheet (slides in below the action grid) ─────────────── */
 
 .sheet {
@@ -465,6 +846,11 @@
   color: var(--text-soft);
 }
 
+.tokenIcon svg {
+  width: 18px;
+  height: 18px;
+}
+
 .tokenIcon[data-token="honey"] {
   background: linear-gradient(135deg, var(--bee), var(--honey));
   color: #2a1c05;
@@ -473,6 +859,18 @@
 .tokenIcon[data-token="hive"] {
   background: rgba(242, 183, 5, 0.14);
   color: var(--honey);
+}
+
+.tokenIcon[data-token="hive"] svg {
+  width: 19px;
+  height: 21px;
+}
+
+.tokenIcon[data-token="hive"] polygon {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2.2;
+  stroke-linejoin: round;
 }
 
 .tokenBody {
@@ -650,4 +1048,20 @@
 :global(:root[data-theme="hive-light"]) .tokenIcon[data-token="gas"] {
   background: rgba(92, 75, 45, 0.14);
   color: var(--foreground);
+}
+
+@media (max-width: 420px) {
+  .railStackHeader,
+  .railFooter {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .railFooter button {
+    width: 100%;
+  }
+
+  .railGrid {
+    grid-template-columns: 1fr;
+  }
 }
