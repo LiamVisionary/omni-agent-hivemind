@@ -3,6 +3,14 @@
 This file records user-visible changes before they are committed. New work should
 be added here first, then marked `Committed` or `Pushed` after the git action.
 
+## 2026-05-24 19:41 WITA - Update Machines Through Collectors
+
+- Status: Pushed
+- Areas changed: Fleet update API, changelog
+- Summary: Use a reachable machine collector directly for roster updates instead of trying SSH first, so machines that expose `/update` through Hivemind Link do not fail just because port 22 is closed.
+- Verification: `pnpm exec tsc --noEmit --pretty false`; `git diff --check -- src/app/api/fleet/update/route.ts CHANGELOG.md`; local POST reproduced the previous 502 as an SSH port-22 refusal before the fix.
+- Intended commit message: `Update machines through collectors`
+
 ## 2026-05-24 19:36 WITA - Quiet Hivemind Link Setup
 
 - Status: Pushed

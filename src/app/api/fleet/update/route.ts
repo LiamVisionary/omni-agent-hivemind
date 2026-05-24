@@ -120,6 +120,11 @@ async function startCollectorUpdate(collectorUrl?: string) {
   return payload ?? { ok: true, accepted: true };
 }
 
+async function tryCollectorUpdate(body: UpdateBody) {
+  const result = await startCollectorUpdate(body.collectorUrl);
+  return { ok: true, accepted: true, method: "collector", result };
+}
+
 function shellSingleQuote(value: string) {
   return `'${value.replaceAll("'", "'\\''")}'`;
 }
@@ -354,15 +359,19 @@ export async function POST(request: Request) {
   const parsedBody = await request.json().catch(() => ({})) as UpdateBody;
   const body = await updateBodyWithTarget(parsedBody);
   try {
-    const result = await (await isLocalCheckout(body.appDir) ? tryLocalShell(body) : tryTailscaleSsh(body));
+    const result = await (await isLocalCheckout(body.appDir)
+      ? tryLocalShell(body)
+      : body.collectorUrl
+        ? tryCollectorUpdate(body)
+        : tryTailscaleSsh(body));
     const verification = await waitForCollectorVerification(body);
     if (!verification.verified) {
       return Response.json({
         ok: false,
         error: verificationError(body, verification.health),
         method: result.method,
-        stdout: result.stdout,
-        stderr: result.stderr,
+        stdout: "stdout" in result ? result.stdout : undefined,
+        stderr: "stderr" in result ? result.stderr : undefined,
         health: verification.health,
         fallbackCommand: fallbackScript(body.appDir, false),
       }, { status: 502 });
@@ -376,44 +385,6 @@ export async function POST(request: Request) {
         error: rawError,
         fallbackCommand: fallbackScript(body.appDir, false),
       }, { status: 502 });
-    }
-    if (body.collectorUrl) {
-      try {
-        const collectorResult = await startCollectorUpdate(body.collectorUrl);
-        const verification = await waitForCollectorVerification(body);
-        if (verification.verified) {
-          return Response.json({
-            ok: true,
-            accepted: true,
-            method: "collector-fallback",
-            result: collectorResult,
-            verified: true,
-            health: verification.health,
-            stderr: rawError,
-          });
-        }
-        return Response.json({
-          ok: false,
-          error: combineOutput(
-            "SSH is not available for this machine, so the collector fallback started the update, but verification did not pass before the timeout.",
-            verificationError(body, verification.health),
-          ),
-          method: "collector-fallback",
-          sshError: rawError,
-          result: collectorResult,
-          health: verification.health,
-          fallbackCommand: fallbackScript(body.appDir, false),
-        }, { status: 502 });
-      } catch (collectorError) {
-        return Response.json({
-          ok: false,
-          error: combineOutput(
-            rawError,
-            `Collector fallback failed:\n${collectorError instanceof Error ? collectorError.message : String(collectorError)}`,
-          ),
-          fallbackCommand: fallbackScript(body.appDir, false),
-        }, { status: 502 });
-      }
     }
     return Response.json({
       ok: false,
