@@ -1,11 +1,11 @@
 // src/components/fleet/footers.tsx
 "use client";
 
-import { Copy, MessageSquare, Monitor, Settings2, Trash2, Wallet, X } from "lucide-react";
+import { Copy, MessageSquare, Monitor, Settings2, Smartphone, Trash2, Wallet, X } from "lucide-react";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { BeeIcon } from "./bee-icon";
 import { HexTile } from "./hex-tile";
-import { fleetAgentCanChat, type AgentState, type FleetAgent, type FleetMachine } from "./fleet-data";
+import { fleetAgentCanChat, isFleetMachineMobile, type AgentState, type FleetAgent, type FleetMachine } from "./fleet-data";
 import styles from "./fleet-tokens.module.css";
 
 const stateTone = (s: AgentState) =>
@@ -27,6 +27,7 @@ interface MachineFooterProps {
 }
 
 export function MachineFooter({ machine, onPickAgent }: MachineFooterProps) {
+  const MachineIcon = isFleetMachineMobile(machine) ? Smartphone : Monitor;
   return (
     <div
       className="mt-4 grid items-center"
@@ -37,7 +38,7 @@ export function MachineFooter({ machine, onPickAgent }: MachineFooterProps) {
         background: "rgba(16,20,29,0.78)",
       }}
     >
-      <HexTile size={48} tone="honey"><Monitor aria-hidden="true" size={28} color="var(--accent-strong)" /></HexTile>
+      <HexTile size={48} tone="honey"><MachineIcon aria-hidden="true" size={28} color="var(--accent-strong)" /></HexTile>
       <div>
         <div className={styles.monoCap} style={{ color: "var(--hex-honey-border)" }}>
           {machine.kind} · {machine.role}

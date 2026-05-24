@@ -13,6 +13,7 @@ import { summarizeX402Policy } from "@/lib/services/wallet/x402-agent-fetch";
 import { getRuntimeAdapter } from "@/lib/services/runtime-adapters/registry";
 import { getHoneyWorkspaceId, recordHoneyUsage } from "@/lib/services/wallet/honey-ledger";
 import { recordTelemetryBatch } from "@/lib/services/telemetry/local-telemetry";
+import { normalizeRuntimeStreamEvent, RUNTIME_STREAM_EVENT_TYPES } from "@/lib/services/runtime-stream-events";
 
 export const runtime = "nodejs";
 export const maxDuration = 600;
@@ -215,8 +216,34 @@ function attachmentPromptSummary(message?: IncomingMessage) {
   return pieces.length ? `Please respond to the attached ${pieces.join(" and ")}.` : "";
 }
 
+function streamEventForPayload(payload: unknown) {
+  if (!payload || typeof payload !== "object") return undefined;
+  const record = payload as Record<string, unknown>;
+  if (typeof record.error === "string") {
+    return normalizeRuntimeStreamEvent({ type: RUNTIME_STREAM_EVENT_TYPES.ERROR, error: record.error });
+  }
+  const chunk = extractChunk(payload);
+  if (chunk) {
+    return normalizeRuntimeStreamEvent({ type: RUNTIME_STREAM_EVENT_TYPES.TEXT_DELTA, delta: chunk });
+  }
+  if (record.tool_call && typeof record.tool_call === "object") {
+    return normalizeRuntimeStreamEvent({ type: RUNTIME_STREAM_EVENT_TYPES.TOOL_DONE, ...(record.tool_call as Record<string, unknown>) });
+  }
+  if (record.status && typeof record.status === "object") {
+    return normalizeRuntimeStreamEvent({ type: "chat.status", ...(record.status as Record<string, unknown>) });
+  }
+  if (record.session && typeof record.session === "object") {
+    return normalizeRuntimeStreamEvent({ type: RUNTIME_STREAM_EVENT_TYPES.SESSION, ...(record.session as Record<string, unknown>) });
+  }
+  return undefined;
+}
+
 function ssePayload(payload: unknown): string {
-  return `data: ${JSON.stringify(payload)}\n\n`;
+  const event = streamEventForPayload(payload);
+  const enriched = event && payload && typeof payload === "object" && !("event" in payload)
+    ? { ...(payload as Record<string, unknown>), event }
+    : payload;
+  return `data: ${JSON.stringify(enriched)}\n\n`;
 }
 
 function extractChunk(payload: unknown): string {
@@ -350,6 +377,7 @@ async function streamHttpRuntime(
   workingDirectory?: string,
   wallet?: AgentWalletConfig,
   honeyLedgerEnabled = false,
+  runtimeSessionId = "",
   telemetry?: RuntimeRouteTelemetry,
 ) {
   const inputCheck = proxyInput(userText);
@@ -407,6 +435,9 @@ async function streamHttpRuntime(
         sessionKey: profile.sessionKey,
         provider: profile.provider || undefined,
         model: profile.model || undefined,
+        rawUserMessage: inputCheck.text,
+        runtimeSessionId: runtimeSessionId || undefined,
+        hermesSessionId: runtimeSessionId || undefined,
         message: runtimeMessage,
         messages: runtimeMessages,
         stream: true,
@@ -621,6 +652,7 @@ export async function POST(request: NextRequest) {
   let workingDirectory: string | undefined;
   let wallet: AgentWalletConfig | undefined;
   let honeyLedgerEnabled = false;
+  let runtimeSessionId = "";
   try {
     const body = (await request.json()) as {
       agent?: AgentProfile;
@@ -629,6 +661,8 @@ export async function POST(request: NextRequest) {
       workingDirectory?: string;
       wallet?: AgentWalletConfig;
       honeyLedgerEnabled?: boolean;
+      runtimeSessionId?: string;
+      hermesSessionId?: string;
     };
     if (!body.agent || !Array.isArray(body.messages)) throw new Error("Missing agent or messages");
     profile = body.agent;
@@ -637,6 +671,11 @@ export async function POST(request: NextRequest) {
     workingDirectory = body.workingDirectory;
     wallet = body.wallet;
     honeyLedgerEnabled = body.honeyLedgerEnabled === true;
+    runtimeSessionId = typeof body.runtimeSessionId === "string"
+      ? body.runtimeSessionId
+      : typeof body.hermesSessionId === "string"
+        ? body.hermesSessionId
+        : "";
   } catch {
     await recordRouteTelemetry(request, "agent_runtime.request.invalid", { elapsedMs: Date.now() - routeStartedAt });
     return Response.json({ error: "Expected { agent, messages }" }, { status: 400 });
@@ -645,6 +684,7 @@ export async function POST(request: NextRequest) {
     ...telemetryPayloadForProfile(profile),
     messageCount: messages.length,
     workingDirectorySet: Boolean(workingDirectory?.trim()),
+    runtimeSessionIdSet: Boolean(runtimeSessionId.trim()),
     sharedVaultEnabled: Boolean(sharedVault?.enabled),
     honeyLedgerEnabled,
     elapsedMs: Date.now() - routeStartedAt,
@@ -730,7 +770,7 @@ export async function POST(request: NextRequest) {
       contextLength: runtimeContexts.length,
       elapsedMs: Date.now() - routeStartedAt,
     });
-    return streamHttpRuntime(effectiveProfile, messages, promptCheck.text, vault, workingDirectory, wallet, honeyLedgerEnabled, {
+    return streamHttpRuntime(effectiveProfile, messages, promptCheck.text, vault, workingDirectory, wallet, honeyLedgerEnabled, runtimeSessionId, {
       request,
       routeStartedAt,
     });

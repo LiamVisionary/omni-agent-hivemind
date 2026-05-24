@@ -49,6 +49,7 @@ export interface FleetMachine {
   disk: number;          // %
   version: string;       // "v0.18.2" or "—"
   versionState: MachineVersionState;
+  canUpdate?: boolean;
   location: string;      // "Studio · Brooklyn"
   city: string;          // "Brooklyn"
   lat: number;
@@ -56,6 +57,10 @@ export interface FleetMachine {
   uptime: string;
   networkIssue?: FleetMachineNetworkIssue;
   agents: FleetAgent[];
+}
+
+export function isFleetMachineMobile(machine: Pick<FleetMachine, "kind" | "os">) {
+  return machine.kind === "Mobile" || /^(ios|android)(?:\b|[^a-z])/i.test(machine.os);
 }
 
 export interface FleetTask {

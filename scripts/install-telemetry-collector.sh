@@ -814,6 +814,7 @@ PLIST
 PLIST
     launchctl_bounded 5 bootout "gui/$(id -u)/com.hivemindos.linkd" >/dev/null 2>&1 || launchctl_bounded 5 unload "$LINK_PLIST" >/dev/null 2>&1 || true
     pkill -f hivemind-linkd >/dev/null 2>&1 || true
+    pkill -f "$LINK_BIN" >/dev/null 2>&1 || true
     launchctl_bounded 5 bootstrap "gui/$(id -u)" "$LINK_PLIST" >/dev/null 2>&1 || launchctl_bounded 5 load "$LINK_PLIST"
     launchctl_bounded 5 kickstart -k "gui/$(id -u)/com.hivemindos.linkd" >/dev/null 2>&1 || true
     echo "Installed Hivemind Link macOS LaunchAgent"
@@ -934,8 +935,9 @@ if [[ "$LINK_ACTIVE" == "true" ]]; then
     if [[ "$attempt" == "15" && -x "$LINK_BIN" ]]; then
       echo "Hivemind Link has not answered yet; starting the sidecar directly as a fallback..."
       pkill -f hivemind-linkd >/dev/null 2>&1 || true
+      pkill -f "$LINK_BIN" >/dev/null 2>&1 || true
       HIVE_LINK_TARGET="http://127.0.0.1:$PORT" \
-        HIVE_LINK_LISTEN=":$PORT" \
+        HIVE_LINK_LISTEN=":$LINK_TAILNET_PORT" \
         HIVE_LINK_CONTROL="127.0.0.1:8788" \
         nohup "$LINK_BIN" >>"$HOME/Library/Logs/hivemindos-linkd.log" 2>>"$HOME/Library/Logs/hivemindos-linkd.err.log" &
       sleep 2

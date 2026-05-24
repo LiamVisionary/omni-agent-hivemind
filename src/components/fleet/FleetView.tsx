@@ -8,7 +8,7 @@ import { HexTile } from "./hex-tile";
 import { ListView } from "./list-view";
 import { MapView } from "./map-view";
 import { NetworkGraph } from "./network-graph";
-import { Roster, type MachineUpdateButtonStatus } from "./roster";
+import { Roster, type MachineUpdateButtonDetail, type MachineUpdateButtonStatus } from "./roster";
 import {
   ALERTS,
   MACHINES,
@@ -36,7 +36,9 @@ interface FleetViewProps {
   onAddAgent?: (m: FleetMachine) => void;
   onAddMachine?: () => void;
   updateStatusByMachine?: Record<string, MachineUpdateButtonStatus>;
+  updateDetailByMachine?: Record<string, MachineUpdateButtonDetail>;
   onUpdateMachine?: (m: FleetMachine) => void;
+  onRenameMachine?: (machineId: string, name: string) => void;
   onOpenChat?: (m: FleetMachine, a: FleetAgent) => void;
   onOpenWallet?: (m: FleetMachine, a: FleetAgent) => void;
   onEditSettings?: (m: FleetMachine, a: FleetAgent) => void;
@@ -55,7 +57,9 @@ export function FleetView({
   onAddAgent,
   onAddMachine,
   updateStatusByMachine,
+  updateDetailByMachine,
   onUpdateMachine,
+  onRenameMachine,
   onOpenChat,
   onOpenWallet,
   onEditSettings,
@@ -241,7 +245,9 @@ export function FleetView({
                 onToggleExpand={toggleExpand}
                 onAddAgent={handleAddAgent}
                 updateStatusByMachine={updateStatusByMachine}
+                updateDetailByMachine={updateDetailByMachine}
                 onUpdateMachine={onUpdateMachine}
+                onRenameMachine={onRenameMachine}
                 onOpenChat={onOpenChat}
                 onOpenWallet={onOpenWallet}
                 onEditSettings={onEditSettings}

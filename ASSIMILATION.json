@@ -3,6 +3,48 @@
   "custom_code_assessment": "balanced",
   "entries": [
     {
+      "source_repo": "lucinate-ai/lucinate",
+      "source_path": "docs/backend_hermes.md",
+      "target_path": "scripts/agent-telemetry-collector.mjs",
+      "reuse_type": "adapted_code",
+      "note": "Hermes server-side session continuity and streamed response behavior adapted for dashboard chat parity"
+    },
+    {
+      "source_repo": "xaspx/hermes-control-interface",
+      "source_path": "server.js",
+      "target_path": "scripts/agent-telemetry-collector.mjs",
+      "reuse_type": "adapted_code",
+      "note": "Hermes gateway session resume and live stream forwarding concepts adapted into the local collector bridge"
+    },
+    {
+      "source_repo": "xaspx/hermes-control-interface",
+      "source_path": "lib/tui-gateway-bridge.js",
+      "target_path": "scripts/agent-telemetry-collector.mjs",
+      "reuse_type": "adapted_code",
+      "note": "CLI/TUI transcript, status, reasoning, and tool event parity adapted for the dashboard SSE chat surface"
+    },
+    {
+      "source_repo": "xaspx/hermes-control-interface",
+      "source_path": "lib/session-list.js",
+      "target_path": "src/lib/services/runtime-session-utils.ts",
+      "reuse_type": "adapted_code",
+      "note": "Session title, preview, relative-time, and multi-source merge logic adapted for runtime-neutral session search"
+    },
+    {
+      "source_repo": "xaspx/hermes-control-interface",
+      "source_path": "lib/sse-events.js",
+      "target_path": "src/lib/services/runtime-stream-events.ts",
+      "reuse_type": "adapted_code",
+      "note": "SSE/WebSocket event normalization adapted into a runtime-neutral chat event schema while preserving existing OpenAI-style chunks"
+    },
+    {
+      "source_repo": "xaspx/hermes-control-interface",
+      "source_path": "docs/API.md",
+      "target_path": "src/app/api/runtime-files/route.ts",
+      "reuse_type": "adapted_code",
+      "note": "Root-scoped file explorer API behavior adapted for HivemindOS runtime roots and shared vault browsing"
+    },
+    {
       "source_repo": "castroi/obsidian-clone",
       "source_path": "src/lib/markdown/wikilinks.ts",
       "target_path": "src/lib/services/obsidian/brain-graph.ts",

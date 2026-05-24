@@ -2,11 +2,11 @@
 "use client";
 
 import * as React from "react";
-import { Monitor } from "lucide-react";
+import { Monitor, Smartphone } from "lucide-react";
 import { HexTile } from "./hex-tile";
 import { LottieBee } from "./lottie-bee";
 import { projectLatLon } from "./hex-math";
-import { type FleetAgent, type FleetMachine } from "./fleet-data";
+import { isFleetMachineMobile, type FleetAgent, type FleetMachine } from "./fleet-data";
 
 interface MapViewProps {
   width?: number;
@@ -260,7 +260,9 @@ export function MapView({
           >
             <HexTile size={SZ} tone={tone} onClick={() => onSelectMachine(m.id)}>
               <div className="grid place-items-center gap-px">
-                <Monitor
+                {(() => {
+                  const MachineIcon = isFleetMachineMobile(m) ? Smartphone : Monitor;
+                  return <MachineIcon
                   aria-hidden="true"
                   size={20}
                   style={{
@@ -268,7 +270,8 @@ export function MapView({
                       ? "var(--muted)"
                       : "var(--accent-strong)",
                   }}
-                />
+                  />;
+                })()}
                 <span
                   className="font-semibold leading-none"
                   style={{

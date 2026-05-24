@@ -7,7 +7,7 @@ import { AddHexCell } from "./add-hex-cell";
 import { BeeIcon } from "./bee-icon";
 import { HexTile, type HexTone } from "./hex-tile";
 import { axialToPixel, HEX_H, HEX_W, hexSpiral } from "./hex-math";
-import type { AgentState, FleetAgent, FleetMachine } from "./fleet-data";
+import { isFleetMachineMobile, type AgentState, type FleetAgent, type FleetMachine } from "./fleet-data";
 
 const STATE_TONE: Record<AgentState, HexTone> = {
   working: "active",
@@ -17,12 +17,38 @@ const STATE_TONE: Record<AgentState, HexTone> = {
   failed: "danger",
 };
 
-function MachineScreenIcon({ name, selected, muted }: { name: string; selected: boolean; muted: boolean }) {
+function compactMachineLabel(name: string) {
+  const normalized = name
+    .replace(/^hivemindos[-_]?/i, "")
+    .replace(/['’]/g, "")
+    .trim();
+  const lower = normalized.toLowerCase();
+  const suffix = normalized.match(/(?:^|[-_\s])(\d{1,3})$/)?.[1] ?? "";
+
+  if (/^this\s+mac$/i.test(normalized)) return ["THIS", "MAC"];
+  if (/iphone|android|pixel|galaxy/i.test(normalized)) {
+    const digits = normalized.match(/\d{1,4}/)?.[0] ?? "";
+    return [lower.includes("iphone") ? "iP" : "PH", digits || "MOB"];
+  }
+  if (/macbook|mbp|mac/i.test(normalized)) return ["MBP", suffix || "MAC"];
+  if (/ubuntu|linux|vps|server/i.test(normalized)) return ["VPS", suffix || "LIN"];
+
+  const words = normalized.split(/[^a-zA-Z0-9]+/).filter(Boolean);
+  const letters = words
+    .filter((word) => !/^\d+$/.test(word))
+    .slice(0, 3)
+    .map((word) => word[0]?.toUpperCase() ?? "")
+    .join("");
+  return [letters || "NODE", suffix || words.find((word) => /^\d+$/.test(word)) || ""].filter(Boolean).slice(0, 2);
+}
+
+function MachineScreenIcon({ name, selected, muted, mobile }: { name: string; selected: boolean; muted: boolean; mobile?: boolean }) {
   const color = selected
     ? "var(--hex-honey-border)"
     : muted
       ? "var(--muted)"
       : "var(--accent-strong)";
+  const label = compactMachineLabel(name);
 
   return (
     <div
@@ -40,11 +66,11 @@ function MachineScreenIcon({ name, selected, muted }: { name: string; selected: 
       <div
         className="grid place-items-center text-center"
         style={{
-          width: 46,
-          minHeight: 28,
-          padding: "3px 4px",
+          width: mobile ? 31 : 46,
+          minHeight: mobile ? 42 : 28,
+          padding: mobile ? "4px 3px" : "3px 4px",
           border: `2px solid ${color}`,
-          borderRadius: 4,
+          borderRadius: mobile ? 8 : 4,
           boxShadow: muted ? undefined : "0 0 12px rgba(94,234,212,0.16)",
         }}
       >
@@ -52,31 +78,40 @@ function MachineScreenIcon({ name, selected, muted }: { name: string; selected: 
           className="font-semibold"
           style={{
             color: selected ? "var(--hex-honey-border)" : "var(--foreground)",
-            fontFamily: "var(--f-display)",
-            fontSize: 8.5,
-            lineHeight: 0.98,
+            fontFamily: "var(--f-mono)",
+            fontSize: mobile ? 8.6 : 9,
+            lineHeight: 0.95,
             letterSpacing: 0,
-            overflowWrap: "anywhere",
+            whiteSpace: "normal",
           }}
         >
-          {name}
+          {label.map((line) => (
+            <React.Fragment key={line}>
+              {line}
+              <br />
+            </React.Fragment>
+          ))}
         </span>
       </div>
-      <div
-        style={{
-          width: 2,
-          height: 5,
-          background: color,
-        }}
-      />
-      <div
-        style={{
-          width: 18,
-          height: 2,
-          borderRadius: 999,
-          background: color,
-        }}
-      />
+      {mobile ? null : (
+        <>
+          <div
+            style={{
+              width: 2,
+              height: 5,
+              background: color,
+            }}
+          />
+          <div
+            style={{
+              width: 18,
+              height: 2,
+              borderRadius: 999,
+              background: color,
+            }}
+          />
+        </>
+      )}
     </div>
   );
 }
@@ -186,6 +221,7 @@ export function MachineCluster({
                     name={machine.name}
                     selected={selected && !selectedAgentId}
                     muted={machine.versionState === "needs-setup" && !(selected && !selectedAgentId)}
+                    mobile={isFleetMachineMobile(machine)}
                   />
                 ) : (
                   <>

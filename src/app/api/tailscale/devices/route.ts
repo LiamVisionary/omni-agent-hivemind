@@ -62,6 +62,7 @@ function isGenericHostname(name?: string) {
 
 function displayNameForPeer(peer: TailscalePeer, dnsName: string, ip: string) {
   const magicDnsName = dnsLabel(dnsName);
+  if (normalizeName(peer.HostName).startsWith("hivemindos") && magicDnsName) return magicDnsName;
   return isGenericHostname(peer.HostName)
     ? magicDnsName || ip || "Unknown device"
     : peer.HostName || magicDnsName || ip || "Unknown device";
@@ -71,10 +72,42 @@ function normalizeName(value?: string) {
   return value?.toLowerCase().replace(/[^a-z0-9]+/g, "") ?? "";
 }
 
+function normalizeDnsName(value?: string) {
+  return value?.replace(/\.$/, "").toLowerCase() ?? "";
+}
+
+function isSameTailscalePeer(left?: TailscalePeer, right?: TailscalePeer) {
+  if (!left || !right) return false;
+  const leftIps = new Set(left.TailscaleIPs ?? []);
+  if ((right.TailscaleIPs ?? []).some((ip) => leftIps.has(ip))) return true;
+  const leftDns = normalizeDnsName(left.DNSName);
+  const rightDns = normalizeDnsName(right.DNSName);
+  return Boolean(leftDns && rightDns && leftDns === rightDns);
+}
+
 function deviceIdentityKey(device: ReturnType<typeof simplifyDevice>) {
+  const dnsName = normalizeName(dnsLabel(device.dnsName));
+  const name = normalizeName(device.name) || dnsName;
+  if (name.startsWith("hivemindos")) return dnsName || name;
   if (device.self) return "self";
-  const name = normalizeName(device.name) || normalizeName(dnsLabel(device.dnsName));
   return name || device.ip || device.collectorUrl;
+}
+
+function isHivemindLinkDevice(device: ReturnType<typeof simplifyDevice>) {
+  return normalizeName(device.name).startsWith("hivemindos")
+    || normalizeName(dnsLabel(device.dnsName)).startsWith("hivemindos");
+}
+
+function isMobileDevice(device: ReturnType<typeof simplifyDevice>) {
+  return /^(ios|android)$/i.test(device.os);
+}
+
+function hivemindMachineBase(device: ReturnType<typeof simplifyDevice>) {
+  const normalizedName = normalizeName(device.name);
+  const normalizedDnsName = normalizeName(dnsLabel(device.dnsName));
+  const value = normalizedName.startsWith("hivemindos") ? normalizedName : normalizedDnsName;
+  if (!value.startsWith("hivemindos")) return "";
+  return value.replace(/^hivemindos/, "").replace(/local\d*$/, "");
 }
 
 function isStaleSelfDuplicate(
@@ -82,6 +115,9 @@ function isStaleSelfDuplicate(
   device: ReturnType<typeof simplifyDevice>,
 ) {
   if (!self || device.self || device.online) return false;
+  const selfBase = hivemindMachineBase(self);
+  const deviceBase = hivemindMachineBase(device);
+  if (selfBase && deviceBase && selfBase === deviceBase) return true;
   return normalizeName(self.name) !== "" && normalizeName(self.name) === normalizeName(device.name);
 }
 
@@ -102,7 +138,7 @@ function dedupeDevices(devices: ReturnType<typeof simplifyDevice>[]) {
       byIdentity.set(key, device);
     }
   }
-  return [...byIdentity.values()];
+  return [...byIdentity.values()].filter((device) => isHivemindLinkDevice(device) || isMobileDevice(device));
 }
 
 function linkCollectorUrl(ip: string) {
@@ -115,7 +151,7 @@ function simplifyDevice(peer: TailscalePeer, self = false, viaLink = false) {
   const dnsName = peer.DNSName?.replace(/\.$/, "") ?? "";
   return {
     self,
-    name: displayNameForPeer(peer, dnsName, ip),
+    name: self ? "This Mac" : displayNameForPeer(peer, dnsName, ip),
     dnsName,
     os: peer.OS ?? "unknown",
     online: Boolean(peer.Online),
@@ -145,18 +181,45 @@ async function hivemindLinkStatus(): Promise<HivemindLinkStatus | null> {
   }
 }
 
-function devicesFromStatus(status: TailscaleStatus | HivemindLinkStatus, viaLink = false) {
+async function systemTailscaleSelf(): Promise<TailscalePeer | undefined> {
+  const { stdout } = await execFileAsync("tailscale", ["status", "--json"], {
+    timeout: 5_000,
+    maxBuffer: 1_500_000,
+  }).catch(() => ({ stdout: "" }));
+  if (!stdout) return undefined;
+  try {
+    return (JSON.parse(stdout) as TailscaleStatus).Self;
+  } catch {
+    return undefined;
+  }
+}
+
+function devicesFromStatus(status: TailscaleStatus | HivemindLinkStatus, viaLink = false, ignoredPeer?: TailscalePeer) {
   const isCliStatus = Object.prototype.hasOwnProperty.call(status, "Self") || Object.prototype.hasOwnProperty.call(status, "Peer");
   const selfPeer = isCliStatus ? (status as TailscaleStatus).Self : (status as HivemindLinkStatus).self;
   const peerMap = isCliStatus ? (status as TailscaleStatus).Peer : (status as HivemindLinkStatus).peer;
   const self = selfPeer ? simplifyDevice(selfPeer, true, viaLink) : undefined;
   const peers = Object.values(peerMap ?? {})
+    .filter((peer) => !isSameTailscalePeer(peer, ignoredPeer))
     .map((peer) => simplifyDevice(peer, false, viaLink))
     .filter((device) => !isStaleSelfDuplicate(self, device));
   return dedupeDevices([...(self ? [self] : []), ...peers]);
 }
 
 export async function GET() {
+  const link = await hivemindLinkStatus();
+  if (link) {
+    const localSystemSelf = await systemTailscaleSelf();
+    return Response.json({
+      ok: link.ok === true,
+      backendState: link.backendState,
+      authUrl: link.authUrl,
+      magicDnsSuffix: link.magicDnsSuffix,
+      source: "hivemind-link",
+      devices: devicesFromStatus(link, true, localSystemSelf),
+    });
+  }
+
   const { stdout } = await execFileAsync("tailscale", ["status", "--json"], {
     timeout: 5_000,
     maxBuffer: 1_500_000,
@@ -165,17 +228,6 @@ export async function GET() {
   try {
     const status = JSON.parse(stdout) as TailscaleStatus & { error?: string };
     if (status.error) {
-      const link = await hivemindLinkStatus();
-      if (link) {
-        return Response.json({
-          ok: link.ok === true,
-          backendState: link.backendState,
-          authUrl: link.authUrl,
-          magicDnsSuffix: link.magicDnsSuffix,
-          source: "hivemind-link",
-          devices: devicesFromStatus(link, true),
-        });
-      }
       return Response.json({ ok: false, error: status.error, devices: [localDevice()] });
     }
     return Response.json({
@@ -186,17 +238,6 @@ export async function GET() {
       devices: devicesFromStatus(status),
     });
   } catch {
-    const link = await hivemindLinkStatus();
-    if (link) {
-      return Response.json({
-        ok: link.ok === true,
-        backendState: link.backendState,
-        authUrl: link.authUrl,
-        magicDnsSuffix: link.magicDnsSuffix,
-        source: "hivemind-link",
-        devices: devicesFromStatus(link, true),
-      });
-    }
     return Response.json({ ok: false, error: "Could not parse tailscale status", devices: [localDevice()] });
   }
 }

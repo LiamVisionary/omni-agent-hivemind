@@ -22,6 +22,7 @@ import {
   Cpu,
   Download,
   Eye,
+  ExternalLink,
   FileText,
   FlaskConical,
   Folder,
@@ -174,6 +175,53 @@ type RuntimeSessionSearchResult = {
   updatedAt?: string;
   excerpt: string;
   path?: string;
+};
+
+type RuntimeUsageAnalytics = {
+  ok?: boolean;
+  error?: string;
+  rows?: Array<{
+    runtime: "hermes" | "openclaw";
+    agentId: string;
+    sessionId: string;
+    source: string;
+    model: string;
+    updatedAt: string;
+    inputTokens: number;
+    outputTokens: number;
+    cacheTokens: number;
+    reasoningTokens: number;
+    totalTokens: number;
+  }>;
+  totals?: {
+    sessions: number;
+    tokens: number;
+    inputTokens: number;
+    outputTokens: number;
+    cacheTokens: number;
+    reasoningTokens: number;
+    estimatedCostUsd: number;
+  };
+  models?: Array<{ model: string; sessions: number; tokens: number; estimatedCostUsd: number }>;
+  runtimes?: Array<{ runtime: string; sessions: number; tokens: number }>;
+  sources?: Array<{ source: string; sessions: number; tokens: number }>;
+};
+
+type MaintenanceReport = {
+  ok?: boolean;
+  error?: string;
+  checkedAt?: string;
+  checks?: Array<{ id: string; label: string; ok: boolean; detail: string; repairAction?: string }>;
+};
+
+type RuntimeFileRoot = { key: string; label: string; path: string; writable: boolean };
+type RuntimeFileEntry = { name: string; path: string; relativePath: string; type: "file" | "dir"; size?: number; updatedAt?: number };
+type RuntimeFilePayload = {
+  ok?: boolean;
+  error?: string;
+  roots?: RuntimeFileRoot[];
+  files?: RuntimeFileEntry[];
+  file?: RuntimeFileEntry & { content?: string };
 };
 
 type RuntimeSetupAction = {
@@ -516,6 +564,13 @@ type TailscaleDevice = {
   relay?: string;
 };
 
+type HivemindLinkClientStatus = {
+  ok?: boolean;
+  backendState?: string;
+  authUrl?: string;
+  source?: string;
+};
+
 type MachineGroup = {
   key: string;
   name: string;
@@ -523,6 +578,7 @@ type MachineGroup = {
   collectorUrl: string;
   dnsName?: string;
   ip?: string;
+  os?: string;
   relay?: string;
   lastHandshake?: string;
   curAddr?: string;
@@ -1475,7 +1531,7 @@ function swarmMarketFromItems(items: Record<string, unknown>[], timelineItems: R
   };
 }
 
-type DashboardView = "agents" | "kanban" | "scheduler" | "swarm" | "wallet" | "vault" | "notifications" | "chat";
+type DashboardView = "agents" | "kanban" | "scheduler" | "swarm" | "wallet" | "vault" | "maintenance" | "files" | "notifications" | "chat";
 type DashboardTheme = "dark" | "hive-light";
 
 const STORAGE_KEY = "hivemindos.agentProfiles.v1";
@@ -1487,6 +1543,8 @@ const HONEY_LEDGER_ENABLED_STORAGE_KEY = "hivemindos.honeyLedger.enabled.v1";
 const THEME_STORAGE_KEY = "hivemindos.theme.v1";
 const CHAT_MESSAGES_STORAGE_KEY = "hivemindos.chatMessages.v1";
 const CHAT_FOLDER_STORAGE_KEY = "hivemindos.chatFolders.v1";
+const MACHINE_NAME_ALIAS_STORAGE_KEY = "hivemindos.machineNameAliases.v1";
+const CHAT_RESPONSE_STALL_TIMEOUT_MS = 130 * 1000;
 const DISCOVERED_MACHINES_STORAGE_KEY = "hivemindos.discoveredMachines.v1";
 const KANBAN_STALE_WORK_MS = 30 * 60 * 1000;
 const KANBAN_TOOL_OUTPUT_STALL_MS = 5 * 60 * 1000;
@@ -1510,6 +1568,7 @@ const STORAGE_SUFFIXES = {
   theme: ".theme.v1",
   chatMessages: ".chatMessages.v1",
   chatFolders: ".chatFolders.v1",
+  machineNameAliases: ".machineNameAliases.v1",
 };
 const STARTER_AGENT_IDS = new Set([
   "openclaw-main",
@@ -1898,6 +1957,25 @@ function parseStoredDiscoveredMachines(): DiscoveredMachine[] {
   }
 }
 
+function parseStoredMachineNameAliases(): Record<string, string> {
+  if (typeof window === "undefined") return {};
+  const raw = readStoredValue(MACHINE_NAME_ALIAS_STORAGE_KEY, STORAGE_SUFFIXES.machineNameAliases);
+  if (!raw) return {};
+  try {
+    const parsed = JSON.parse(raw) as Record<string, string>;
+    if (!parsed || typeof parsed !== "object") return {};
+    return Object.fromEntries(Object.entries(parsed)
+      .filter(([key, value]) => key.trim() && typeof value === "string" && value.trim())
+      .map(([key, value]) => [key, value.trim()]));
+  } catch {
+    return {};
+  }
+}
+
+function mergeMachineNameAliases(local: Record<string, string>, remote: Record<string, string>) {
+  return { ...local, ...remote };
+}
+
 function runtimeCount(agents: AgentProfile[], runtime: AgentRuntime) {
   return agents.filter((agent) => agent.runtime === runtime).length;
 }
@@ -2201,7 +2279,8 @@ function collectorKey(url?: string) {
   if (!url?.trim()) return "";
   try {
     const parsed = new URL(url);
-    return `${parsed.hostname}:${parsed.port || "80"}`;
+    const path = parsed.pathname.replace(/\/+$/, "");
+    return `${parsed.hostname}:${parsed.port || "80"}${path && path !== "/" ? path : ""}`;
   } catch {
     return url.trim();
   }
@@ -2221,6 +2300,39 @@ function normalizeMachineName(value?: string) {
   return value?.toLowerCase().replace(/[^a-z0-9]+/g, "") ?? "";
 }
 
+function isHivemindMachineName(name?: string, dnsName?: string) {
+  const dnsLabel = dnsName?.replace(/\.$/, "").split(".")[0] ?? "";
+  return normalizeMachineName(name).startsWith("hivemindos")
+    || normalizeMachineName(dnsLabel).startsWith("hivemindos");
+}
+
+function isMobileMachineOs(os?: string) {
+  return /^(ios|android)$/i.test(os ?? "");
+}
+
+function isVisibleFleetMachine(machine: Pick<MachineGroup, "name" | "dnsName" | "os">) {
+  return isHivemindMachineName(machine.name, machine.dnsName) || isMobileMachineOs(machine.os);
+}
+
+function displayMachineName(name: string, self?: boolean) {
+  if (self) return "This Mac";
+  return name.replace(/^hivemindos[-_]?/i, "") || name;
+}
+
+function shouldPreserveMissingDiscoveredMachine(machine: DiscoveredMachine) {
+  if (!isVisibleFleetMachine({
+    name: machine.device.name,
+    dnsName: machine.device.dnsName,
+    os: machine.device.os,
+  })) {
+    return false;
+  }
+  if (isHivemindMachineName(machine.device.name, machine.device.dnsName)) {
+    return machine.agents.length > 0 || machine.snapshots.length > 0;
+  }
+  return true;
+}
+
 function machineIdentityFromParts({
   self,
   name,
@@ -2234,9 +2346,11 @@ function machineIdentityFromParts({
   collectorUrl?: string;
   ip?: string;
 }) {
-  if (self) return "self";
   const dnsLabel = dnsName?.replace(/\.$/, "").split(".")[0] ?? "";
-  const normalizedName = normalizeMachineName(name) || normalizeMachineName(dnsLabel);
+  const normalizedDnsName = normalizeMachineName(dnsLabel);
+  const normalizedName = normalizeMachineName(name) || normalizedDnsName;
+  if (normalizedName.startsWith("hivemindos")) return normalizedDnsName || normalizedName;
+  if (self) return "self";
   return normalizedName || collectorKey(collectorUrl) || ip || "";
 }
 
@@ -2538,6 +2652,8 @@ function viewIcon(view: DashboardView) {
   if (view === "swarm") return <Activity aria-hidden="true" />;
   if (view === "wallet") return <WalletCards aria-hidden="true" />;
   if (view === "vault") return <BrainCircuit aria-hidden="true" />;
+  if (view === "maintenance") return <ShieldCheck aria-hidden="true" />;
+  if (view === "files") return <FolderOpen aria-hidden="true" />;
   if (view === "notifications") return <Bell aria-hidden="true" />;
   return <MessageSquare aria-hidden="true" />;
 }
@@ -2639,6 +2755,16 @@ function chatSeedMessagesForTask(task: AgentTask): ChatMessage[] {
 
 function taskChatLeafKey(agentId: string, task: AgentTask, taskIndex = 0) {
   return `task-${agentId}-${task.id}-${task.source ?? "unknown"}-${task.updatedAt || task.startedAt || taskIndex}`;
+}
+
+function hermesRuntimeSessionIdFromTask(task: AgentTask) {
+  if (task.source !== "hermes-state") return "";
+  return task.id.startsWith("hermes-state:") ? task.id.slice("hermes-state:".length) : "";
+}
+
+function chatMessageStorageKey(agentId: string, leafKey?: string) {
+  if (!leafKey || leafKey === `agent-${agentId}`) return agentId;
+  return `${agentId}::${leafKey}`;
 }
 
 function chatTaskMatchKey(value: string) {
@@ -3272,7 +3398,11 @@ function machineVersionCopy(machine: MachineGroup, latestCommit?: string) {
   const versionState = machineVersionState(machine, latestCommit);
   if (!versionState) return null;
   if (versionState.state === "current") return { label: "Synced", detail: "Latest dashboard tools", state: "current" };
-  if (versionState.state === "stale") return { label: "Update ready", detail: "New dashboard tools available", state: "stale" };
+  if (versionState.state === "stale") {
+    return machine.self
+      ? { label: "Local update ready", detail: "New dashboard tools available for this checkout", state: "stale" }
+      : { label: "Update ready", detail: "New dashboard tools available", state: "stale" };
+  }
   return { label: "Refresh setup", detail: "Collector needs one update", state: "unknown" };
 }
 
@@ -3294,6 +3424,7 @@ function tailnetPeerLooksUnreachable(machine: MachineGroup) {
 
 function machineNetworkIssue(machine: MachineGroup, tailscaleStatus: string): FleetMachine["networkIssue"] {
   if (machine.key === "unassigned") return undefined;
+  if (/^(ios|android)$/i.test(machine.os ?? "") && machine.collector !== "ready") return undefined;
   if (machine.self && (machine.ip === "127.0.0.1" || tailscaleStatus.startsWith("Tailscale not configured"))) {
     return {
       label: "Tailscale not configured. Fix?",
@@ -3532,6 +3663,7 @@ function mergeDiscoveredMachines(current: DiscoveredMachine[], incoming: Discove
 
   const preserved = current
     .filter((machine) => !incomingKeys.has(discoveredMachineIdentity(machine)))
+    .filter(shouldPreserveMissingDiscoveredMachine)
     .filter((machine) => !(incomingHasTailnetSelf && machine.device.self && isLoopbackCollector(machine.device.collectorUrl)))
     .map((machine) => ({
       ...machine,
@@ -3986,11 +4118,29 @@ export default function Home() {
   const [honeyTreasury, setHoneyTreasury] = useState<HoneyTreasuryConfig>(createDefaultHoneyTreasuryConfig);
   const [honeyLedgerEnabled, setHoneyLedgerEnabled] = useState(false);
   const [walletActionsByAgent, setWalletActionsByAgent] = useState<Record<string, WalletActionState>>({});
+  const [walletPanelMode, setWalletPanelMode] = useState<"wallets" | "usage">("wallets");
+  const [runtimeUsage, setRuntimeUsage] = useState<RuntimeUsageAnalytics | null>(null);
+  const [runtimeUsageLoading, setRuntimeUsageLoading] = useState(false);
+  const [maintenanceReport, setMaintenanceReport] = useState<MaintenanceReport | null>(null);
+  const [maintenanceBusy, setMaintenanceBusy] = useState("");
+  const [maintenanceMessage, setMaintenanceMessage] = useState("");
+  const [runtimeFileRoots, setRuntimeFileRoots] = useState<RuntimeFileRoot[]>([]);
+  const [runtimeFileRootKey, setRuntimeFileRootKey] = useState("");
+  const [runtimeFilePath, setRuntimeFilePath] = useState("");
+  const [runtimeFiles, setRuntimeFiles] = useState<RuntimeFileEntry[]>([]);
+  const [runtimeFileOpen, setRuntimeFileOpen] = useState<RuntimeFilePayload["file"] | null>(null);
+  const [runtimeFileDraft, setRuntimeFileDraft] = useState("");
+  const [runtimeFileStatus, setRuntimeFileStatus] = useState("");
   const [fleetSnapshots, setFleetSnapshots] = useState<Record<string, AgentSnapshot>>({});
   const [fleetCheckedAt, setFleetCheckedAt] = useState<number | null>(null);
   const [tailscaleDevices, setTailscaleDevices] = useState<TailscaleDevice[]>([]);
   const [tailscaleStatus, setTailscaleStatus] = useState("Checking Tailnet...");
+  const [hivemindLinkStatus, setHivemindLinkStatus] = useState<HivemindLinkClientStatus | null>(null);
+  const [hivemindLinkBannerDismissed, setHivemindLinkBannerDismissed] = useState(false);
+  const [hivemindLinkConnectedUntil, setHivemindLinkConnectedUntil] = useState(0);
+  const [hivemindLinkSignInPolling, setHivemindLinkSignInPolling] = useState(false);
   const [discoveredMachines, setDiscoveredMachines] = useState<DiscoveredMachine[]>([]);
+  const [machineNameAliases, setMachineNameAliases] = useState<Record<string, string>>({});
   const [appVersion, setAppVersion] = useState<AppVersion | null>(null);
   const [updateStatusByMachine, setUpdateStatusByMachine] = useState<Record<string, MachineUpdateStatus>>({});
   const [copiedUpdateDetailKey, setCopiedUpdateDetailKey] = useState("");
@@ -4148,6 +4298,7 @@ export default function Home() {
   const [hasStreamingChunk, setHasStreamingChunk] = useState(false);
   const [chatMessageWindow, setChatMessageWindow] = useState<{ agentId: string; limit: number } | null>(null);
   const [selectedChatLeafKey, setSelectedChatLeafKey] = useState("");
+  const [selectedChatRuntimeSessionId, setSelectedChatRuntimeSessionId] = useState("");
   const [selectedChatPreview, setSelectedChatPreview] = useState<{ agentId: string; leafKey: string; messages: ChatMessage[] } | null>(null);
   const [expandedChatFolders, setExpandedChatFolders] = useState<Set<string>>(() => new Set());
   const [chatContextMenu, setChatContextMenu] = useState<"machine" | "directory" | "">("");
@@ -4177,6 +4328,9 @@ export default function Home() {
   const kanbanSteerTargetMenuRef = useRef<HTMLDivElement | null>(null);
   const attachmentMenuRef = useRef<HTMLDivElement | null>(null);
   const chatContextMenuRef = useRef<HTMLDivElement | null>(null);
+  const hivemindLinkStatusRef = useRef<HivemindLinkClientStatus | null>(null);
+  const hivemindLinkConnectedTimeoutRef = useRef<number | null>(null);
+  const hivemindLinkSignInPollingRef = useRef(false);
   const voiceRecognitionRef = useRef<SpeechRecognitionLike | null>(null);
   const voiceStreamRef = useRef<MediaStream | null>(null);
   const voiceAudioContextRef = useRef<AudioContext | null>(null);
@@ -4205,6 +4359,60 @@ export default function Home() {
   } | null>(null);
   const brainDragMovedRef = useRef(false);
 
+  const applyHivemindLinkStatus = useCallback((status: HivemindLinkClientStatus | null) => {
+    const previous = hivemindLinkStatusRef.current;
+    const reachedRunning = status?.ok === true && previous?.ok !== true;
+    const wasWaitingForSignIn = Boolean(previous?.authUrl) || hivemindLinkSignInPollingRef.current;
+    hivemindLinkStatusRef.current = status;
+    setHivemindLinkStatus(status);
+
+    if (status) {
+      setTailscaleStatus(status.ok
+        ? "Hivemind Link connected"
+        : `Hivemind Link ${status.backendState ?? "not connected"}`);
+    }
+
+    if (status?.ok === true) {
+      hivemindLinkSignInPollingRef.current = false;
+      setHivemindLinkSignInPolling(false);
+    }
+
+    if (reachedRunning && wasWaitingForSignIn) {
+      setHivemindLinkBannerDismissed(false);
+      setHivemindLinkConnectedUntil(Date.now() + 10_000);
+      if (hivemindLinkConnectedTimeoutRef.current) {
+        window.clearTimeout(hivemindLinkConnectedTimeoutRef.current);
+      }
+      hivemindLinkConnectedTimeoutRef.current = window.setTimeout(() => {
+        setHivemindLinkConnectedUntil(0);
+      }, 10_000);
+    }
+  }, []);
+
+  const refreshTailscaleDevices = useCallback(async () => {
+    const response = await fetch("/api/tailscale/devices", { cache: "no-store" }).catch(() => null);
+    const data = await response?.json().catch(() => null) as {
+      ok?: boolean;
+      backendState?: string;
+      authUrl?: string;
+      source?: string;
+      devices?: TailscaleDevice[];
+      error?: string;
+    } | null;
+    setTailscaleDevices(data?.devices ?? []);
+    if (data?.source === "hivemind-link") {
+      applyHivemindLinkStatus({
+        ok: data.ok,
+        backendState: data.backendState,
+        authUrl: data.authUrl,
+        source: data.source,
+      });
+      return;
+    }
+    applyHivemindLinkStatus(null);
+    setTailscaleStatus(data?.ok ? `Tailscale ${data.backendState}` : "Tailscale not configured. Running locally.");
+  }, [applyHivemindLinkStatus]);
+
   // Hydrate persisted state on the client after the first render. Reading
   // localStorage inside useState init would diverge from SSR and trigger
   // a hydration mismatch — this is the canonical pattern to avoid it,
@@ -4230,6 +4438,7 @@ export default function Home() {
     setHoneyTreasury(parseStoredHoneyTreasury());
     setChatCustomFolders(parseStoredChatFolders());
     setDiscoveredMachines(parseStoredDiscoveredMachines());
+    setMachineNameAliases(parseStoredMachineNameAliases());
     const storedTheme = readStoredValue(THEME_STORAGE_KEY, STORAGE_SUFFIXES.theme);
     setDashboardTheme(storedTheme === "hive-light" ? "hive-light" : "dark");
     setHydrated(true);
@@ -4376,6 +4585,26 @@ export default function Home() {
   }, [discoveredMachines, hydrated]);
 
   useEffect(() => {
+    if (!hydrated) return;
+    window.localStorage.setItem(MACHINE_NAME_ALIAS_STORAGE_KEY, JSON.stringify(machineNameAliases));
+  }, [hydrated, machineNameAliases]);
+
+  useEffect(() => {
+    if (!hydrated || !sharedVault.enabled) return;
+    const vaultPath = sharedVault.vaultPath.trim();
+    let cancelled = false;
+    const params = vaultPath ? `?vaultPath=${encodeURIComponent(vaultPath)}` : "";
+    void fetch(`/api/obsidian/machine-aliases${params}`, { cache: "no-store" })
+      .then((response) => response.ok ? response.json() : null)
+      .then((data: { aliases?: Record<string, string> } | null) => {
+        if (cancelled || !data?.aliases) return;
+        setMachineNameAliases((current) => mergeMachineNameAliases(current, data.aliases ?? {}));
+      })
+      .catch(() => { /* shared vault aliases are optional */ });
+    return () => { cancelled = true; };
+  }, [hydrated, sharedVault.enabled, sharedVault.vaultPath]);
+
+  useEffect(() => {
     notificationCursorRef.current = notificationCursor;
     notificationCountRef.current = notifications.length;
   }, [notificationCursor, notifications.length]);
@@ -4494,19 +4723,41 @@ export default function Home() {
   }, [activeView, agents, hydrated, sharedVault]);
 
   useEffect(() => {
-    async function refreshTailscaleDevices() {
-      const response = await fetch("/api/tailscale/devices", { cache: "no-store" }).catch(() => null);
-      const data = await response?.json().catch(() => null) as {
-        ok?: boolean;
-        backendState?: string;
-        devices?: TailscaleDevice[];
-        error?: string;
-      } | null;
-      setTailscaleDevices(data?.devices ?? []);
-      setTailscaleStatus(data?.ok ? `Tailscale ${data.backendState}` : "Tailscale not configured. Running locally.");
+    const timer = window.setTimeout(() => {
+      void refreshTailscaleDevices();
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, [refreshTailscaleDevices]);
+
+  useEffect(() => () => {
+    if (hivemindLinkConnectedTimeoutRef.current) {
+      window.clearTimeout(hivemindLinkConnectedTimeoutRef.current);
     }
-    refreshTailscaleDevices();
   }, []);
+
+  useEffect(() => {
+    if (!hivemindLinkSignInPolling) return undefined;
+    let cancelled = false;
+    const startedAt = Date.now();
+    const firstRefresh = window.setTimeout(() => {
+      if (!cancelled) void refreshTailscaleDevices();
+    }, 0);
+    const timer = window.setInterval(() => {
+      if (cancelled) return;
+      if (Date.now() - startedAt > 120_000) {
+        hivemindLinkSignInPollingRef.current = false;
+        setHivemindLinkSignInPolling(false);
+        window.clearInterval(timer);
+        return;
+      }
+      void refreshTailscaleDevices();
+    }, 2_000);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(firstRefresh);
+      window.clearInterval(timer);
+    };
+  }, [hivemindLinkSignInPolling, refreshTailscaleDevices]);
 
   useEffect(() => {
     if (!hydrated || activeView !== "agents") return;
@@ -4515,8 +4766,12 @@ export default function Home() {
       const response = await fetch("/api/fleet/discover", { cache: "no-store" }).catch(() => null);
       const data = await response?.json().catch(() => null) as {
         machines?: DiscoveredMachine[];
+        hivemindLink?: HivemindLinkClientStatus;
       } | null;
       if (cancelled || !data?.machines) return;
+      if (data.hivemindLink) {
+        applyHivemindLinkStatus(data.hivemindLink);
+      }
       const machines = data.machines;
       setDiscoveredMachines((current) => mergeDiscoveredMachines(current, machines));
       const discoveredSnapshots = data.machines.flatMap((machine) => machine.snapshots ?? []);
@@ -4530,7 +4785,7 @@ export default function Home() {
       cancelled = true;
       window.clearInterval(timer);
     };
-  }, [activeView, hydrated]);
+  }, [activeView, applyHivemindLinkStatus, hydrated]);
 
   useEffect(() => {
     async function refreshVersion() {
@@ -5701,6 +5956,32 @@ export default function Home() {
   }, [activeView, brainSkills, brainSkillsLoading, hydrated, refreshBrainSkills]);
 
   useEffect(() => {
+    if (!hydrated || activeView !== "wallet" || walletPanelMode !== "usage") return;
+    const timer = window.setTimeout(() => {
+      void refreshRuntimeUsage();
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, [activeView, hydrated, walletPanelMode]);
+
+  useEffect(() => {
+    if (!hydrated || activeView !== "maintenance") return;
+    const timer = window.setTimeout(() => {
+      void refreshMaintenanceReport();
+    }, 0);
+    return () => window.clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeView, hydrated]);
+
+  useEffect(() => {
+    if (!hydrated || activeView !== "files") return;
+    const timer = window.setTimeout(() => {
+      void refreshRuntimeFileRoots();
+    }, 0);
+    return () => window.clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeView, hydrated]);
+
+  useEffect(() => {
     if (!hydrated || agentWorkerClassView !== "create" || brainSkills || brainSkillsLoading) return;
     const timer = window.setTimeout(() => {
       void refreshBrainSkills();
@@ -6067,6 +6348,15 @@ export default function Home() {
           ? selectedChatPreview.messages.slice(-chatMessageWindow.limit)
           : selectedChatPreview.messages;
       }
+      const selectedStorageKey = chatMessageStorageKey(selectedAgent.id, selectedChatLeafKey);
+      const selectedLeafMessages = selectedStorageKey !== selectedAgent.id
+        ? messagesByAgent[selectedStorageKey]?.filter(isManualAgentChatMessage) ?? []
+        : [];
+      if (selectedLeafMessages.length) {
+        return chatMessageWindow?.agentId === selectedAgent.id
+          ? selectedLeafMessages.slice(-chatMessageWindow.limit)
+          : selectedLeafMessages;
+      }
       const relatedIds = [selectedAgent.id, ...[...agentAliases.entries()]
         .filter(([, canonicalId]) => canonicalId === selectedAgent.id)
         .map(([aliasId]) => aliasId)];
@@ -6110,11 +6400,12 @@ export default function Home() {
       const discovered = discoveryByKey.get(collectorKey(device.collectorUrl));
       return {
       key: collectorKey(device.collectorUrl) || device.name,
-      name: device.self ? "This Mac" : device.name,
+      name: displayMachineName(device.name, device.self),
       address: device.ip || device.dnsName,
       collectorUrl: device.collectorUrl,
       dnsName: device.dnsName,
       ip: device.ip,
+      os: device.os,
       relay: device.relay,
       lastHandshake: device.lastHandshake,
       curAddr: device.curAddr,
@@ -6142,11 +6433,12 @@ export default function Home() {
       }
       groups.push({
         key,
-        name: machine.device.self ? "This machine" : machine.device.name,
+        name: displayMachineName(machine.device.name, machine.device.self),
         address: machine.device.ip || machine.device.dnsName || "Local collector",
         collectorUrl: machine.device.collectorUrl,
         dnsName: machine.device.dnsName,
         ip: machine.device.ip,
+        os: machine.device.os,
         relay: machine.device.relay,
         lastHandshake: machine.device.lastHandshake,
         curAddr: machine.device.curAddr,
@@ -6191,6 +6483,7 @@ export default function Home() {
       collectorUrl: "",
       dnsName: "",
       ip: "",
+      os: "",
       relay: "",
       online: false,
       self: false,
@@ -6213,8 +6506,37 @@ export default function Home() {
       }
     }
 
-    return dedupeMachineGroups(groups);
-  }, [displayAgents, discoveredMachines, tailscaleDevices]);
+    return dedupeMachineGroups(groups)
+      .filter(isVisibleFleetMachine)
+      .map((machine) => ({
+        ...machine,
+        name: machineNameAliases[machine.key]?.trim() || machine.name,
+      }));
+  }, [displayAgents, discoveredMachines, machineNameAliases, tailscaleDevices]);
+
+  const renameMachine = useCallback((machineId: string, nextName: string) => {
+    const normalized = nextName.trim();
+    setMachineNameAliases((current) => {
+      const next = { ...current };
+      if (normalized) {
+        next[machineId] = normalized;
+      } else {
+        delete next[machineId];
+      }
+      return next;
+    });
+    if (sharedVault.enabled) {
+      void fetch("/api/obsidian/machine-aliases", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          vaultPath: sharedVault.vaultPath.trim() || undefined,
+          machineKey: machineId,
+          name: normalized,
+        }),
+      }).catch(() => { /* local alias still persists */ });
+    }
+  }, [sharedVault.enabled, sharedVault.vaultPath]);
 
   const kanbanMachineTargets = useMemo<KanbanMachineTarget[]>(() => machineGroups
     .filter((machine) => machine.key !== "unassigned" && machine.collector === "ready" && machine.agents.length > 0)
@@ -6254,12 +6576,14 @@ export default function Home() {
   const fleetViewData = useMemo(() => {
     const machines: FleetMachine[] = machineGroups.map((machine, index) => {
       const location = fleetMachineLocation(machine, index);
+      const mobile = isMobileMachineOs(machine.os);
+      const canUpdate = !mobile;
       return {
         id: machine.key,
         name: machine.self ? "This Mac" : machine.name,
-        kind: machine.self ? "Desktop" : machine.collector === "ready" ? "Tailnet Node" : "Setup Target",
-        role: machine.self ? "Primary" : machine.collector === "ready" ? "Workhorse" : "Pending",
-        os: machine.version?.branch ? `${machine.version.branch} · ${machine.version.shortCommit ?? "local"}` : machine.collector === "ready" ? "Collector online" : "Collector pending",
+        kind: mobile ? "Mobile" : machine.self ? "Desktop" : machine.collector === "ready" ? "Tailnet Node" : "Setup Target",
+        role: mobile ? "Roaming" : machine.self ? "Primary" : machine.collector === "ready" ? "Workhorse" : "Pending",
+        os: mobile ? machine.os ?? "Mobile" : machine.version?.branch ? `${machine.version.branch} · ${machine.version.shortCommit ?? "local"}` : machine.collector === "ready" ? "Collector online" : "Collector pending",
         tailnet: machine.dnsName || machine.collectorUrl || machine.address || "not connected",
         ip: machine.ip || machine.address || "—",
         ping: machine.online ? fleetMetric(machine.key, 4, 68) : 0,
@@ -6268,6 +6592,7 @@ export default function Home() {
         disk: fleetMetric(`${machine.key}:disk`, 12, 88),
         version: machine.version?.shortCommit ? `build ${machine.version.shortCommit}` : machine.collector === "ready" ? "current" : "—",
         versionState: fleetVersionState(machine),
+        canUpdate,
         location: location.location,
         city: location.city,
         lat: location.lat,
@@ -6382,6 +6707,12 @@ export default function Home() {
       status.tone === "working" ? "updating" : status.tone === "success" ? "updated" : "failed",
     ]));
   }, [updateStatusByMachine]);
+
+  const fleetUpdateDetailByMachine = useMemo(() => (
+    Object.fromEntries(Object.entries(updateStatusByMachine)
+      .filter(([, status]) => status.detail)
+      .map(([key, status]) => [key, { label: status.label, detail: status.detail }]))
+  ), [updateStatusByMachine]);
 
   const kanbanColumns = useMemo(
     () => groupKanbanTasks(kanbanBoard?.tasks ?? [], kanbanIncludeArchived),
@@ -6557,7 +6888,7 @@ export default function Home() {
     },
     {
       id: "scheduler" as const,
-      label: "Scheduler",
+      label: "Automations",
       detail: `${schedules.filter((schedule) => schedule.enabled).length} active`,
     },
     {
@@ -6568,12 +6899,22 @@ export default function Home() {
     {
       id: "wallet" as const,
       label: "Wallets",
-      detail: walletStats.critical > 0 ? `${walletStats.critical} need funding` : `${walletStats.enabled} ready`,
+      detail: runtimeUsage?.totals ? `${runtimeUsage.totals.tokens.toLocaleString()} tokens` : walletStats.critical > 0 ? `${walletStats.critical} need funding` : `${walletStats.enabled} ready`,
     },
     {
       id: "vault" as const,
       label: "Brain",
       detail: sharedVault.enabled ? "enabled" : "off",
+    },
+    {
+      id: "maintenance" as const,
+      label: "Diagnostics",
+      detail: maintenanceReport?.ok === false ? "repairs available" : "checks",
+    },
+    {
+      id: "files" as const,
+      label: "Files",
+      detail: runtimeFileRoots.length ? `${runtimeFileRoots.length} roots` : "runtime roots",
     },
     {
       id: "notifications" as const,
@@ -6587,7 +6928,7 @@ export default function Home() {
       label: "Chat",
       detail: selectedAgent?.name ?? "none",
     },
-  ], [kanbanBoard?.tasks.length, mirosharkStatus?.ok, notificationSummary, schedules, selectedAgent?.name, sharedVault.enabled, visibleAgentCount, walletStats.critical, walletStats.enabled]);
+  ], [kanbanBoard?.tasks.length, maintenanceReport?.ok, mirosharkStatus?.ok, notificationSummary, runtimeFileRoots.length, runtimeUsage?.totals, schedules, selectedAgent?.name, sharedVault.enabled, visibleAgentCount, walletStats.critical, walletStats.enabled]);
 
   const activeNavItem = navItems.find((item) => item.id === activeView);
   const activeHeader = useMemo(() => {
@@ -6595,10 +6936,12 @@ export default function Home() {
     const headers: Record<DashboardView, { label: string; title: string }> = {
       agents: { label: "Fleet", title: "Where the hive is deployed" },
       kanban: { label: "Work Board", title: "What the hive is up to" },
-      scheduler: { label: "Scheduler", title: "What the hive will do next" },
+      scheduler: { label: "Automations", title: "What the hive will do next" },
       swarm: { label: "Swarm Theater", title: "What the hive is simulating" },
-      wallet: { label: "Wallets", title: "What keeps agents funded" },
+      wallet: { label: "Wallets", title: "What agents spend and consume" },
       vault: { label: "Brain Graph", title: "What the hive remembers" },
+      maintenance: { label: "Fleet Diagnostics", title: "What needs repair" },
+      files: { label: "Brain Files", title: "What agents can inspect" },
       notifications: { label: "Alerts", title: "What needs attention" },
       chat: { label: "Agent Chat", title: selectedAgent?.name ? `Talking with ${selectedAgent.name}` : "Choose an agent to chat with" },
     };
@@ -8258,6 +8601,114 @@ export default function Home() {
     await refreshHoneyLedger();
   }
 
+  async function refreshRuntimeUsage() {
+    setRuntimeUsageLoading(true);
+    const response = await fetch("/api/runtime-usage", { cache: "no-store" }).catch(() => null);
+    const data = await response?.json().catch(() => null) as RuntimeUsageAnalytics | null;
+    setRuntimeUsage(data ?? { ok: false, error: "Could not read runtime usage." });
+    setRuntimeUsageLoading(false);
+  }
+
+  async function refreshMaintenanceReport() {
+    setMaintenanceBusy("check");
+    setMaintenanceMessage("");
+    const response = await fetch("/api/maintenance", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ agents: displayAgents, sharedVault }),
+    }).catch(() => null);
+    const data = await response?.json().catch(() => null) as MaintenanceReport | null;
+    setMaintenanceReport(data ?? { ok: false, error: "Could not run maintenance checks." });
+    setMaintenanceBusy("");
+  }
+
+  async function runMaintenanceAction(action: string) {
+    setMaintenanceBusy(action);
+    setMaintenanceMessage("");
+    const response = await fetch("/api/maintenance", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action, sharedVault }),
+    }).catch(() => null);
+    const data = await response?.json().catch(() => null) as { ok?: boolean; message?: string; error?: string } | null;
+    setMaintenanceMessage(data?.ok ? data.message ?? "Repair completed." : data?.error ?? "Repair failed.");
+    setMaintenanceBusy("");
+    await refreshMaintenanceReport();
+  }
+
+  async function runtimeFileRequest(body: Record<string, unknown>) {
+    const response = await fetch("/api/runtime-files", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ agents: displayAgents, sharedVault, ...body }),
+    }).catch(() => null);
+    return response?.json().catch(() => null) as Promise<RuntimeFilePayload | null>;
+  }
+
+  async function refreshRuntimeFileRoots() {
+    setRuntimeFileStatus("");
+    const data = await runtimeFileRequest({ action: "roots" });
+    if (!data?.ok) {
+      setRuntimeFileStatus(data?.error ?? "Could not load runtime file roots.");
+      return;
+    }
+    const roots = data.roots ?? [];
+    setRuntimeFileRoots(roots);
+    const nextRoot = runtimeFileRootKey || roots[0]?.key || "";
+    setRuntimeFileRootKey(nextRoot);
+    if (nextRoot) await listRuntimeFiles(nextRoot, runtimeFilePath);
+  }
+
+  async function listRuntimeFiles(rootKey = runtimeFileRootKey, path = runtimeFilePath) {
+    if (!rootKey) return;
+    setRuntimeFileStatus("Loading files...");
+    const data = await runtimeFileRequest({ action: "list", rootKey, path });
+    if (!data?.ok) {
+      setRuntimeFiles([]);
+      setRuntimeFileStatus(data?.error ?? "Could not list files.");
+      return;
+    }
+    setRuntimeFileRoots(data.roots ?? runtimeFileRoots);
+    setRuntimeFiles(data.files ?? []);
+    setRuntimeFilePath(path);
+    setRuntimeFileStatus("");
+  }
+
+  async function openRuntimeFile(file: RuntimeFileEntry) {
+    if (file.type === "dir") {
+      await listRuntimeFiles(runtimeFileRootKey, file.relativePath);
+      return;
+    }
+    setRuntimeFileStatus("Opening file...");
+    const data = await runtimeFileRequest({ action: "read", rootKey: runtimeFileRootKey, path: file.relativePath });
+    if (!data?.ok || !data.file) {
+      setRuntimeFileStatus(data?.error ?? "Could not open file.");
+      return;
+    }
+    setRuntimeFileOpen(data.file);
+    setRuntimeFileDraft(data.file.content ?? "");
+    setRuntimeFileStatus("");
+  }
+
+  async function saveRuntimeFile() {
+    if (!runtimeFileOpen) return;
+    setRuntimeFileStatus("Saving file...");
+    const data = await runtimeFileRequest({
+      action: "write",
+      rootKey: runtimeFileRootKey,
+      path: runtimeFileOpen.relativePath,
+      content: runtimeFileDraft,
+    });
+    if (!data?.ok || !data.file) {
+      setRuntimeFileStatus(data?.error ?? "Could not save file.");
+      return;
+    }
+    setRuntimeFileOpen(data.file);
+    setRuntimeFileDraft(data.file.content ?? "");
+    setRuntimeFileStatus("Saved.");
+    await listRuntimeFiles(runtimeFileRootKey, runtimeFilePath);
+  }
+
   async function exchangeHoneyForHive(agentId: string) {
     if (!honeyLedgerEnabled) return;
     await fetch("/api/honey-ledger", {
@@ -8462,9 +8913,10 @@ export default function Home() {
     });
   }
 
-  function appendMessage(agentId: string, message: ChatMessage) {
+  function appendMessage(agentId: string, message: ChatMessage, storageKey = agentId) {
     logClientTelemetry("chat.message.appended", {
       agentId,
+      storageKey,
       role: message.role,
       kanbanTaskId: message.kanbanTaskId ?? null,
       surface: message.surface ?? null,
@@ -8473,7 +8925,7 @@ export default function Home() {
     });
     setMessagesByAgent((current) => ({
       ...current,
-      [agentId]: [...(current[agentId] ?? []), { ...message, createdAt: message.createdAt ?? Date.now() }],
+      [storageKey]: [...(current[storageKey] ?? []), { ...message, createdAt: message.createdAt ?? Date.now() }],
     }));
   }
 
@@ -8492,13 +8944,14 @@ export default function Home() {
     return firstUserMessage ? firstUserMessage.slice(0, 56) : "Previous chat";
   }, [messagesByAgent]);
 
-  const startAgentChat = useCallback((agentId: string, options: { fresh?: boolean; messageLimit?: number; seedMessages?: ChatMessage[]; chatLeafKey?: string; workingDirectoryPath?: string } = {}) => {
+  const startAgentChat = useCallback((agentId: string, options: { fresh?: boolean; messageLimit?: number; seedMessages?: ChatMessage[]; chatLeafKey?: string; workingDirectoryPath?: string; runtimeSessionId?: string } = {}) => {
     const leafKey = options.chatLeafKey ?? `agent-${agentId}`;
     const agent = displayAgents.find((item) => item.id === agentId);
     if (!runtimeCan(agent, "chat")) return;
     const machine = machineGroups.find((group) => group.agents.some((item) => item.id === agentId));
     setSelectedAgentId(agentId);
     setSelectedChatLeafKey(leafKey);
+    setSelectedChatRuntimeSessionId(options.runtimeSessionId ?? "");
     setSelectedChatDirectoryPath(options.workingDirectoryPath ?? machine?.version?.appDir ?? agent?.localDataDir ?? "");
     setSelectedChatPreview(options.seedMessages?.length ? { agentId, leafKey, messages: options.seedMessages } : null);
     setActiveView("chat");
@@ -8512,10 +8965,11 @@ export default function Home() {
         return nextMessages;
       });
     } else if (options.seedMessages?.length) {
+      const storageKey = chatMessageStorageKey(agentId, leafKey);
       setMessagesByAgent((current) => {
-        const existing = current[agentId] ?? [];
+        const existing = current[storageKey] ?? [];
         const hasExistingConversation = existing.some((message) => message.role !== "system" && message.content.trim());
-        return hasExistingConversation ? current : { ...current, [agentId]: options.seedMessages ?? [] };
+        return hasExistingConversation ? current : { ...current, [storageKey]: options.seedMessages ?? [] };
       });
     }
   }, [displayAgents, machineGroups]);
@@ -8533,6 +8987,7 @@ export default function Home() {
       seedMessages: chatSeedMessagesForTask(task),
       chatLeafKey: taskChatLeafKey(agentId, task, taskIndex),
       workingDirectoryPath: task.workingDirectory,
+      runtimeSessionId: hermesRuntimeSessionIdFromTask(task),
     });
   }, [agentWorkById, startAgentChat]);
 
@@ -8661,7 +9116,13 @@ export default function Home() {
             updatedAt: task.updatedAt > 0 ? task.updatedAt : task.startedAt > 0 ? task.startedAt : undefined,
             rank: workPriority(task) + (task.messages?.length ? 3 : 0),
             active: selectedChatLeafKey === taskChatKey,
-            onOpen: () => startAgentChat(agent.id, { messageLimit: 5, seedMessages, chatLeafKey: taskChatKey, workingDirectoryPath: task.workingDirectory }),
+            onOpen: () => startAgentChat(agent.id, {
+              messageLimit: 5,
+              seedMessages,
+              chatLeafKey: taskChatKey,
+              workingDirectoryPath: task.workingDirectory,
+              runtimeSessionId: hermesRuntimeSessionIdFromTask(task),
+            }),
           });
         }
       }
@@ -8899,7 +9360,9 @@ export default function Home() {
     } | null;
     const verified = Boolean(data?.ok && data.verified);
     const detail = verified
-      ? "The update command finished. The machine pulled the latest changes, installed dependencies, and restarted the collector."
+      ? machine.self
+        ? "The local checkout update finished, dependencies were installed, and the local collector was restarted."
+        : "The update command finished. The machine pulled the latest changes, installed dependencies, and restarted the collector."
       : [data?.error ?? "Update failed", data?.fallbackCommand ? `Fallback script:\n${data.fallbackCommand}` : ""].filter(Boolean).join("\n\n");
     setUpdateStatusByMachine((current) => ({
       ...current,
@@ -11395,7 +11858,6 @@ export default function Home() {
     setBusy(true);
     setBusyAgentId(selectedAgent.id);
     setHasStreamingChunk(false);
-    setSelectedChatPreview(null);
     setText("");
     setChatAttachments([]);
     setChatDirectories([]);
@@ -11403,7 +11865,8 @@ export default function Home() {
     setAttachmentMenuOpen(false);
     const taskId = `${selectedAgent.id}-${Date.now()}`;
     const workingDirectory = selectedChatDirectoryPath || selectedAgent.localDataDir || "";
-    const contextMessages = (messagesByAgent[selectedAgent.id] ?? [])
+    const selectedStorageKey = chatMessageStorageKey(selectedAgent.id, selectedChatLeafKey);
+    const contextMessages = messages
       .filter((message) => (
         message.role !== "system"
         && isManualAgentChatMessage(message)
@@ -11421,17 +11884,48 @@ export default function Home() {
       updatedAt: Date.now(),
       workingDirectory,
     });
-    appendMessage(selectedAgent.id, { role: "user", content: outgoingLabel, attachments: outgoingAttachments, surface: "chat" });
-    appendMessage(selectedAgent.id, { role: "assistant", content: "", surface: "chat" });
+    const outgoingUserMessage: ChatMessage = { role: "user", content: outgoingLabel, attachments: outgoingAttachments, surface: "chat" };
+    const pendingAssistantMessage: ChatMessage = { role: "assistant", content: "", surface: "chat" };
+    appendMessage(selectedAgent.id, outgoingUserMessage, selectedStorageKey);
+    appendMessage(selectedAgent.id, pendingAssistantMessage, selectedStorageKey);
+    setSelectedChatPreview((current) => (
+      current && current.agentId === selectedAgent.id && current.leafKey === selectedChatLeafKey
+        ? { ...current, messages: [...current.messages, outgoingUserMessage, pendingAssistantMessage] }
+        : current
+    ));
+
+    const replacePendingAssistant = (message: ChatMessage) => {
+      setMessagesByAgent((current) => {
+        const existing = current[selectedStorageKey] ?? [];
+        const next = [...existing];
+        if (next.length) next[next.length - 1] = message;
+        else next.push(message);
+        return { ...current, [selectedStorageKey]: next };
+      });
+      setSelectedChatPreview((current) => {
+        if (!current || current.agentId !== selectedAgent.id || current.leafKey !== selectedChatLeafKey) return current;
+        const next = [...current.messages];
+        if (next.length) next[next.length - 1] = message;
+        else next.push(message);
+        return { ...current, messages: next };
+      });
+    };
+    const abortController = new AbortController();
+    const stallTimer = window.setTimeout(() => abortController.abort("chat-response-stall"), CHAT_RESPONSE_STALL_TIMEOUT_MS);
+    let sawAssistantContent = false;
+    let sawDone = false;
 
     try {
       const response = await fetch("/api/chat/agent-runtime", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
+        signal: abortController.signal,
         body: JSON.stringify({
           agent: selectedAgent,
           sharedVault,
           workingDirectory,
+          runtimeSessionId: selectedChatRuntimeSessionId || undefined,
+          hermesSessionId: selectedChatRuntimeSessionId || undefined,
           wallet: walletsByAgent[selectedAgent.id] ?? createDefaultAgentWallet(selectedAgent.id),
           honeyLedgerEnabled,
           messages: [
@@ -11464,7 +11958,10 @@ export default function Home() {
           const line = eventText.split("\n").find((entry) => entry.startsWith("data: "));
           if (!line) continue;
           const payload = line.slice(6);
-          if (payload === "[DONE]") continue;
+          if (payload === "[DONE]") {
+            sawDone = true;
+            continue;
+          }
           const parsed = JSON.parse(payload) as {
             choices?: Array<{ delta?: { content?: string } }>;
             error?: string;
@@ -11478,30 +11975,53 @@ export default function Home() {
           const chunk = parsed.choices?.[0]?.delta?.content;
           if (chunk) {
             setHasStreamingChunk(true);
+            sawAssistantContent = true;
             let nextTaskMessage = "";
             setMessagesByAgent((current) => {
-              const existing = current[selectedAgent.id] ?? [];
+              const existing = current[selectedStorageKey] ?? [];
               const next = [...existing];
               const last = next[next.length - 1];
-              nextTaskMessage = last.content + chunk;
-              next[next.length - 1] = { ...last, content: nextTaskMessage };
-              return { ...current, [selectedAgent.id]: next };
+              if (!last) {
+                nextTaskMessage = chunk;
+                next.push({ role: "assistant", content: chunk, surface: "chat" });
+              } else {
+                nextTaskMessage = last.content + chunk;
+                next[next.length - 1] = { ...last, content: nextTaskMessage };
+              }
+              return { ...current, [selectedStorageKey]: next };
+            });
+            setSelectedChatPreview((current) => {
+              if (!current || current.agentId !== selectedAgent.id || current.leafKey !== selectedChatLeafKey) return current;
+              const next = [...current.messages];
+              const last = next[next.length - 1];
+              if (!last) next.push({ role: "assistant", content: chunk, surface: "chat" });
+              else next[next.length - 1] = { ...last, content: (last.content ?? "") + chunk };
+              return { ...current, messages: next };
             });
             updateTask(taskId, { lastMessage: nextTaskMessage || chunk });
           }
         }
+        if (sawDone) {
+          await reader.cancel().catch(() => undefined);
+          break;
+        }
+      }
+      if (!sawAssistantContent) {
+        replacePendingAssistant({ role: "assistant", content: "Hermes finished without returning any text for this message.", surface: "chat" });
+        updateTask(taskId, { status: "failed", lastMessage: "Hermes finished without returning any text.", completedAt: Date.now() });
+        return;
       }
       updateTask(taskId, { status: "completed", completedAt: Date.now() });
     } catch (error) {
-      const message = error instanceof Error ? error.message : "Unknown runtime error";
-      setMessagesByAgent((current) => {
-        const existing = current[selectedAgent.id] ?? [];
-        const next = [...existing];
-        next[next.length - 1] = { role: "assistant", content: `Error: ${message}`, surface: "chat" };
-        return { ...current, [selectedAgent.id]: next };
-      });
+      const aborted = abortController.signal.aborted;
+      const message = aborted
+        ? `Hermes did not return a chat response within ${Math.round(CHAT_RESPONSE_STALL_TIMEOUT_MS / 1000)} seconds. The task may still be running in Hermes; check the agent activity before retrying.`
+        : error instanceof Error ? error.message : "Unknown runtime error";
+      const errorMessage: ChatMessage = { role: "assistant", content: `Error: ${message}`, surface: "chat" };
+      replacePendingAssistant(errorMessage);
       updateTask(taskId, { status: "failed", lastMessage: message, completedAt: Date.now() });
     } finally {
+      window.clearTimeout(stallTimer);
       setBusy(false);
       setBusyAgentId("");
       setHasStreamingChunk(false);
@@ -11667,6 +12187,13 @@ export default function Home() {
     () => HETZNER_SERVER_TYPE_OPTIONS.find((option) => option.value === machineInitDraft.serverType) ?? HETZNER_SERVER_TYPE_OPTIONS[0],
     [machineInitDraft.serverType],
   );
+  const showHivemindLinkConnectedBanner = !hivemindLinkBannerDismissed
+    && hivemindLinkStatus?.ok === true
+    && hivemindLinkConnectedUntil > Date.now();
+  const showHivemindLinkSignInBanner = !hivemindLinkBannerDismissed
+    && !showHivemindLinkConnectedBanner
+    && Boolean(hivemindLinkStatus?.authUrl)
+    && hivemindLinkStatus?.ok !== true;
 
   return (
     <motion.main
@@ -11750,6 +12277,76 @@ export default function Home() {
         <div className="commandMain">
       {activeView === "agents" ? (
       <section className={fleetClass("fleetConstellationPanel", "tabPanel")}>
+        {showHivemindLinkConnectedBanner ? (
+          <div className="relative mb-3 flex flex-wrap items-center justify-between gap-3 rounded-md border border-[rgba(20,184,166,0.38)] bg-[rgba(20,184,166,0.12)] px-4 py-3 pr-12 text-sm text-[var(--foreground)]">
+            <div>
+              <strong>Hivemind Link connected</strong>
+              <p className="mt-1 text-[var(--muted)]">This app-managed node is authorized. Fleet will refresh Link peers automatically.</p>
+            </div>
+            <Check aria-hidden="true" className="h-5 w-5 text-[rgb(45,212,191)]" />
+            <Button
+              type="button"
+              size="icon"
+              variant="ghost"
+              className="absolute right-2 top-2 h-7 w-7"
+              aria-label="Dismiss Hivemind Link connection message"
+              onClick={() => {
+                setHivemindLinkBannerDismissed(true);
+                setHivemindLinkConnectedUntil(0);
+              }}
+            >
+              <X aria-hidden="true" />
+            </Button>
+          </div>
+        ) : showHivemindLinkSignInBanner ? (
+          <div className="relative mb-3 flex flex-wrap items-center justify-between gap-3 rounded-md border border-[rgba(245,158,11,0.35)] bg-[rgba(245,158,11,0.10)] px-4 py-3 pr-12 text-sm text-[var(--foreground)]">
+            <div>
+              <strong>Hivemind Link needs sign-in</strong>
+              <p className="mt-1 text-[var(--muted)]">Authorize this app-managed Tailscale node before new Link machines can appear in Fleet.</p>
+            </div>
+            <Button
+              type="button"
+              size="sm"
+              onClick={() => {
+                setHivemindLinkBannerDismissed(false);
+                hivemindLinkSignInPollingRef.current = true;
+                setHivemindLinkSignInPolling(true);
+                window.open(hivemindLinkStatus?.authUrl, "_blank", "noopener,noreferrer");
+              }}
+            >
+              <ExternalLink aria-hidden="true" />
+              {hivemindLinkSignInPolling ? "Waiting..." : "Sign in"}
+            </Button>
+            <Button
+              type="button"
+              size="icon"
+              variant="ghost"
+              className="absolute right-2 top-2 h-7 w-7"
+              aria-label="Dismiss Hivemind Link sign-in message"
+              onClick={() => {
+                setHivemindLinkBannerDismissed(true);
+                hivemindLinkSignInPollingRef.current = false;
+                setHivemindLinkSignInPolling(false);
+              }}
+            >
+              <X aria-hidden="true" />
+            </Button>
+          </div>
+        ) : null}
+        <div className="mb-3 flex flex-wrap items-center justify-end gap-2">
+          <Button
+            type="button"
+            size="sm"
+            variant="secondary"
+            onClick={() => {
+              setActiveView("maintenance");
+              void refreshMaintenanceReport();
+            }}
+          >
+            <ShieldCheck aria-hidden="true" />
+            Diagnostics
+          </Button>
+        </div>
         <FleetView
           machines={fleetViewData.machines}
           tasks={fleetViewData.tasks}
@@ -11764,10 +12361,12 @@ export default function Home() {
           }}
           onAddMachine={openMachineInitModal}
           updateStatusByMachine={fleetUpdateStatusByMachine}
+          updateDetailByMachine={fleetUpdateDetailByMachine}
           onUpdateMachine={(machine) => {
             const group = machineGroups.find((item) => item.key === machine.id);
             if (group) void runMachineUpdate(group);
           }}
+          onRenameMachine={renameMachine}
           onOpenChat={(_, agent) => startAgentWorkChat(agent.id, agent.task)}
           onOpenWallet={(_, agent) => {
             setSelectedAgentId(agent.id);
@@ -13470,7 +14069,7 @@ export default function Home() {
             <p className="eyebrow">Spending safety</p>
             <h2>Wallets</h2>
             <p>
-              Decide which agents can spend, how much they can spend, and when they must stop or ask you.
+              Manage payment rails by default, with runtime usage one click away when you need the bill of materials.
             </p>
           </div>
           <div className={walletClass("walletTotals")} aria-label="Wallet summary">
@@ -13489,6 +14088,80 @@ export default function Home() {
           </div>
         </div>
 
+        <div className={walletClass("walletSegmented")} role="tablist" aria-label="Wallet panel mode">
+          {[
+            ["wallets", "Wallets"],
+            ["usage", "Usage"],
+          ].map(([mode, label]) => (
+            <button
+              key={mode}
+              type="button"
+              role="tab"
+              aria-selected={walletPanelMode === mode}
+              className={walletClass("walletSegment", walletPanelMode === mode && "walletSegmentActive")}
+              onClick={() => setWalletPanelMode(mode as "wallets" | "usage")}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+
+        {walletPanelMode === "usage" ? (
+        <section className={walletClass("usagePanel")}>
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <p className="eyebrow">Runtime analytics</p>
+              <h3 className="m-0 text-base font-bold">Token usage</h3>
+            </div>
+            <Button type="button" size="sm" variant="secondary" onClick={() => void refreshRuntimeUsage()} disabled={runtimeUsageLoading}>
+              {runtimeUsageLoading ? <LoaderCircle aria-hidden="true" className={vaultClass("spinIcon")} /> : <RefreshCcw aria-hidden="true" />}
+              Refresh
+            </Button>
+          </div>
+          {runtimeUsage?.error ? <p className="m-0 text-xs text-[#fecdd3]">{runtimeUsage.error}</p> : null}
+          <div className="grid gap-3 md:grid-cols-4">
+            {[
+              ["Sessions", runtimeUsage?.totals?.sessions?.toLocaleString() ?? "0"],
+              ["Tokens", runtimeUsage?.totals?.tokens?.toLocaleString() ?? "0"],
+              ["Output", runtimeUsage?.totals?.outputTokens?.toLocaleString() ?? "0"],
+              ["Est. cost", `$${(runtimeUsage?.totals?.estimatedCostUsd ?? 0).toFixed(4)}`],
+            ].map(([label, value]) => (
+              <div key={label} className="rounded-md border border-[rgba(148,163,184,0.12)] bg-[rgba(15,23,42,0.55)] p-3">
+                <span className="block font-mono text-[10px] uppercase tracking-[0.12em] text-[var(--muted)]">{label}</span>
+                <strong className="mt-1 block text-xl">{value}</strong>
+              </div>
+            ))}
+          </div>
+          <div className="grid gap-4 lg:grid-cols-2">
+            <div>
+              <strong className="text-sm">Models</strong>
+              <div className="mt-2 grid gap-2">
+                {(runtimeUsage?.models ?? []).slice(0, 6).map((model) => (
+                  <div key={model.model} className="flex items-center justify-between gap-3 rounded-md border border-[rgba(148,163,184,0.10)] px-3 py-2 text-xs">
+                    <span className="min-w-0 break-words">{model.model}</span>
+                    <b>{model.tokens.toLocaleString()}</b>
+                  </div>
+                ))}
+                {runtimeUsage?.models?.length ? null : <p className="m-0 text-xs text-[var(--muted)]">No token rows found yet.</p>}
+              </div>
+            </div>
+            <div>
+              <strong className="text-sm">Recent sessions</strong>
+              <div className="mt-2 grid gap-2">
+                {(runtimeUsage?.rows ?? []).slice(0, 6).map((row) => (
+                  <div key={`${row.runtime}-${row.sessionId}`} className="grid gap-1 rounded-md border border-[rgba(148,163,184,0.10)] px-3 py-2 text-xs">
+                    <span className="font-semibold">{RUNTIME_LABELS[row.runtime]} · {row.model}</span>
+                    <span className="text-[var(--muted)]">{row.totalTokens.toLocaleString()} tokens · {formatRelativeTime(Date.parse(row.updatedAt))}</span>
+                  </div>
+                ))}
+                {runtimeUsage?.rows?.length ? null : <p className="m-0 text-xs text-[var(--muted)]">Hermes/OpenClaw usage appears here when local counters are readable.</p>}
+              </div>
+            </div>
+          </div>
+        </section>
+        ) : null}
+
+        {walletPanelMode === "wallets" ? (
         <div className={walletClass("walletWorkspace")}>
           {walletExpanded && selectedAgent && selectedWallet && selectedWalletSnapshot ? (
             (() => {
@@ -13637,6 +14310,7 @@ export default function Home() {
 
           </aside>
         </div>
+        ) : null}
       </section>
       ) : null}
 
@@ -13651,6 +14325,18 @@ export default function Home() {
           <Button type="button" size="sm" variant="secondary" onClick={() => refreshBrainGraph(true)} disabled={brainGraphLoading}>
             {brainGraphLoading ? <LoaderCircle aria-hidden="true" className={vaultClass("spinIcon")} /> : <RefreshCcw aria-hidden="true" />}
             {brainGraphLoading ? "Reading graph" : "Refresh graph"}
+          </Button>
+          <Button
+            type="button"
+            size="sm"
+            variant="secondary"
+            onClick={() => {
+              setActiveView("files");
+              void refreshRuntimeFileRoots();
+            }}
+          >
+            <FolderOpen aria-hidden="true" />
+            Files
           </Button>
         </div>
 
@@ -14206,6 +14892,137 @@ export default function Home() {
               </li>
             </ul>
           </Cell>
+        </div>
+      </section>
+      ) : null}
+
+      {activeView === "maintenance" ? (
+      <section className={fleetClass("taskPanel", "tabPanel")}>
+        <div className={fleetClass("taskPanelHeader")}>
+          <div>
+            <p className="eyebrow">Fleet diagnostics</p>
+            <h2>Diagnostics</h2>
+            <p>Run local checks and conservative repairs for the dashboard, runtime stores, and shared brain.</p>
+          </div>
+          <Button type="button" size="sm" variant="secondary" onClick={() => void refreshMaintenanceReport()} disabled={maintenanceBusy === "check"}>
+            {maintenanceBusy === "check" ? <LoaderCircle aria-hidden="true" className={vaultClass("spinIcon")} /> : <RefreshCcw aria-hidden="true" />}
+            Check
+          </Button>
+        </div>
+        {maintenanceMessage ? <p className="mt-3 rounded-md border border-[rgba(148,163,184,0.14)] bg-[rgba(10,14,21,0.55)] px-3 py-2 text-xs text-[var(--foreground)]">{maintenanceMessage}</p> : null}
+        {maintenanceReport?.error ? <p className="mt-3 text-xs text-[#fecdd3]">{maintenanceReport.error}</p> : null}
+        <div className="mt-4 grid gap-3">
+          {(maintenanceReport?.checks ?? []).map((check) => (
+            <article key={check.id} className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-[rgba(148,163,184,0.14)] bg-[rgba(10,14,21,0.55)] p-4">
+              <div className="min-w-0">
+                <strong className={check.ok ? "text-[#bbf7d0]" : "text-[#fecdd3]"}>{check.ok ? "OK" : "Needs repair"} · {check.label}</strong>
+                <p className="m-0 mt-1 break-words text-xs text-[var(--muted)]">{check.detail}</p>
+              </div>
+              {check.repairAction ? (
+                <Button type="button" size="sm" variant="secondary" onClick={() => void runMaintenanceAction(check.repairAction!)} disabled={Boolean(maintenanceBusy)}>
+                  {maintenanceBusy === check.repairAction ? <LoaderCircle aria-hidden="true" className={vaultClass("spinIcon")} /> : <ShieldCheck aria-hidden="true" />}
+                  Repair
+                </Button>
+              ) : null}
+            </article>
+          ))}
+          {maintenanceReport?.checks?.length ? null : (
+            <div className="rounded-md border border-dashed border-[rgba(148,163,184,0.22)] p-6 text-center text-sm text-[var(--muted)]">
+              Press Check to run diagnostics.
+            </div>
+          )}
+        </div>
+      </section>
+      ) : null}
+
+      {activeView === "files" ? (
+      <section className={fleetClass("taskPanel", "tabPanel")}>
+        <div className={fleetClass("taskPanelHeader")}>
+          <div>
+            <p className="eyebrow">Brain files</p>
+            <h2>Scoped files</h2>
+            <p>Browse allowlisted runtime roots, shared brain files, and HivemindOS state without exposing the whole filesystem.</p>
+          </div>
+          <Button type="button" size="sm" variant="secondary" onClick={() => void refreshRuntimeFileRoots()}>
+            <RefreshCcw aria-hidden="true" />
+            Refresh
+          </Button>
+        </div>
+        <div className="mt-4 grid gap-4 lg:grid-cols-[280px_minmax(0,1fr)]">
+          <aside className="grid content-start gap-3 rounded-md border border-[rgba(148,163,184,0.14)] bg-[rgba(10,14,21,0.55)] p-3">
+            <label className="grid gap-1 text-xs text-[var(--muted)]">
+              Root
+              <select
+                value={runtimeFileRootKey}
+                onChange={(event) => {
+                  setRuntimeFileRootKey(event.target.value);
+                  setRuntimeFilePath("");
+                  setRuntimeFileOpen(null);
+                  void listRuntimeFiles(event.target.value, "");
+                }}
+                className="rounded-md border border-[rgba(148,163,184,0.18)] bg-[rgba(10,14,21,0.7)] px-2 py-2 text-[var(--foreground)]"
+              >
+                {runtimeFileRoots.map((root) => <option value={root.key} key={root.key}>{root.label}</option>)}
+              </select>
+            </label>
+            <div className="grid gap-2">
+              {runtimeFilePath ? (
+                <Button type="button" size="sm" variant="secondary" onClick={() => {
+                  const parent = runtimeFilePath.split("/").slice(0, -1).join("/");
+                  void listRuntimeFiles(runtimeFileRootKey, parent);
+                  setRuntimeFileOpen(null);
+                }}>
+                  <ChevronLeft aria-hidden="true" />
+                  Parent
+                </Button>
+              ) : null}
+              <small className="break-words text-[var(--muted)]">
+                {runtimeFileRoots.find((root) => root.key === runtimeFileRootKey)?.path ?? "No root selected"}
+              </small>
+            </div>
+            {runtimeFileStatus ? <p className="m-0 text-xs text-[var(--muted)]">{runtimeFileStatus}</p> : null}
+          </aside>
+          <div className="grid gap-4 lg:grid-cols-[minmax(0,360px)_minmax(0,1fr)]">
+            <div className="max-h-[620px] overflow-auto rounded-md border border-[rgba(148,163,184,0.14)] bg-[rgba(10,14,21,0.55)]">
+              {runtimeFiles.map((file) => (
+                <button
+                  type="button"
+                  key={file.relativePath}
+                  onClick={() => void openRuntimeFile(file)}
+                  className="flex w-full items-start gap-2 border-b border-[rgba(148,163,184,0.08)] px-3 py-2 text-left text-xs hover:bg-[rgba(45,212,191,0.08)]"
+                >
+                  {file.type === "dir" ? <FolderOpen aria-hidden="true" className="mt-0.5 h-4 w-4 text-[var(--accent)]" /> : <FileText aria-hidden="true" className="mt-0.5 h-4 w-4 text-[var(--muted)]" />}
+                  <span className="min-w-0">
+                    <strong className="block break-words text-[var(--foreground)]">{file.name}</strong>
+                    <small className="break-words text-[var(--muted)]">{file.type}{file.size ? ` · ${Math.round(file.size / 1024)} KB` : ""}</small>
+                  </span>
+                </button>
+              ))}
+              {runtimeFiles.length ? null : <p className="m-0 p-4 text-sm text-[var(--muted)]">No files loaded.</p>}
+            </div>
+            <section className="grid min-h-[460px] grid-rows-[auto_1fr_auto] gap-3 rounded-md border border-[rgba(148,163,184,0.14)] bg-[rgba(10,14,21,0.55)] p-3">
+              <div>
+                <strong>{runtimeFileOpen?.name ?? "No file selected"}</strong>
+                <p className="m-0 mt-1 break-words text-xs text-[var(--muted)]">{runtimeFileOpen?.relativePath ?? "Choose a text file to preview or edit."}</p>
+              </div>
+              <textarea
+                value={runtimeFileDraft}
+                onChange={(event) => setRuntimeFileDraft(event.target.value)}
+                disabled={!runtimeFileOpen}
+                className="min-h-[360px] resize-none rounded-md border border-[rgba(148,163,184,0.14)] bg-[rgba(2,6,23,0.65)] p-3 font-mono text-xs text-[var(--foreground)]"
+              />
+              <div className="flex flex-wrap justify-end gap-2">
+                <Button type="button" size="sm" variant="secondary" disabled={!runtimeFileOpen} onClick={() => setRuntimeFileDraft(runtimeFileOpen?.content ?? "")}>
+                  <RotateCcw aria-hidden="true" />
+                  Reset
+                </Button>
+                <Button type="button" size="sm" disabled={!runtimeFileOpen || !runtimeFileRoots.find((root) => root.key === runtimeFileRootKey)?.writable} onClick={() => void saveRuntimeFile()}>
+                  <Check aria-hidden="true" />
+                  Save
+                </Button>
+              </div>
+            </section>
+          </div>
         </div>
       </section>
       ) : null}
@@ -15614,6 +16431,29 @@ export default function Home() {
                             <strong>{session.title}</strong>
                             <span>{[session.source, session.model, session.startedAt ? new Date(session.startedAt).toLocaleString() : ""].filter(Boolean).join(" · ")}</span>
                             <p>{session.excerpt || session.path || "No preview available."}</p>
+                            <div className="mt-2 flex flex-wrap gap-2">
+                              <Button
+                                type="button"
+                                size="sm"
+                                variant="secondary"
+                                onClick={() => {
+                                  closeAgentSettingsModal();
+                                  startAgentChat(roleModalAgent.id, { fresh: true, runtimeSessionId: session.id });
+                                }}
+                              >
+                                <MessageSquare aria-hidden="true" />
+                                Resume in chat
+                              </Button>
+                              <Button
+                                type="button"
+                                size="sm"
+                                variant="ghost"
+                                onClick={() => navigator.clipboard?.writeText(session.id)}
+                              >
+                                <Copy aria-hidden="true" />
+                                Copy id
+                              </Button>
+                            </div>
                           </article>
                         ))}
                       </div>

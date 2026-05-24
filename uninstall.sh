@@ -231,7 +231,7 @@ if ask "Remove copied karpathy-guidelines skill from local agent skill folders?"
   done
 fi
 
-if ask "Remove Aeon shared-brain skill manifest entries created by HivemindOS?" "yes"; then
+if ask "Remove Aeon shared-brain skill manifest entries created by HivemindOS? This only edits skills.json." "no"; then
   aeon_root="${AEON_LOCAL_PATH:-${AEON_HOME:-$HOME/.aeon}}"
   if [[ -f "$aeon_root/skills.json" ]] && run_if_exists node; then
     node - "$aeon_root/skills.json" <<'NODE'
@@ -244,6 +244,10 @@ fs.writeFileSync(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
 NODE
     ok "Removed shared-brain skills from $aeon_root/skills.json"
   fi
+fi
+
+if ask "Remove Aeon skill folders mirrored from the shared Skills shelf by HivemindOS?" "no"; then
+  aeon_root="${AEON_LOCAL_PATH:-${AEON_HOME:-$HOME/.aeon}}"
   if [[ -d "$aeon_root/skills" ]]; then
     find "$aeon_root/skills" -mindepth 2 -maxdepth 2 -name .hivemind-skill-source.json -type f 2>/dev/null |
       while IFS= read -r marker; do

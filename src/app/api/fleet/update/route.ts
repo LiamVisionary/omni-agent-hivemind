@@ -333,6 +333,18 @@ async function isLocalCheckout(appDir?: string) {
 }
 
 async function tryLocalShell(body: UpdateBody) {
+  if (body.appDir?.trim()) {
+    const status = await runProcess("git", ["-C", body.appDir.trim(), "status", "--porcelain"], null, 10_000);
+    const dirtyFiles = status.stdout.trim();
+    if (dirtyFiles) {
+      throw new Error([
+        "This Mac has uncommitted local changes, so HivemindOS will not run an automatic git pull over them.",
+        "Commit, stash, or discard the local changes, then try Update again.",
+        "",
+        dirtyFiles.split("\n").slice(0, 24).join("\n"),
+      ].join("\n"));
+    }
+  }
   const script = fallbackScript(body.appDir, false);
   const { stdout, stderr } = await runProcess("bash", ["-s"], script, 300_000);
   return { ok: true, accepted: true, method: "local-shell", target: "this machine", stdout, stderr, command: script };

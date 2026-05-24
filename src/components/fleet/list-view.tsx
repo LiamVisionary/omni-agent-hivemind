@@ -3,10 +3,10 @@
 
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import * as React from "react";
-import { ChevronDown, Copy, MessageSquare, Monitor, Settings2, Trash2, Wallet } from "lucide-react";
+import { ChevronDown, Copy, MessageSquare, Monitor, Settings2, Smartphone, Trash2, Wallet } from "lucide-react";
 import { BeeIcon } from "./bee-icon";
 import { HexTile } from "./hex-tile";
-import { fleetAgentCanChat, type AgentState, type FleetAgent, type FleetMachine } from "./fleet-data";
+import { fleetAgentCanChat, isFleetMachineMobile, type AgentState, type FleetAgent, type FleetMachine } from "./fleet-data";
 import styles from "./fleet-tokens.module.css";
 
 interface ListViewProps {
@@ -103,7 +103,9 @@ export function ListView({
                     <td className="px-4 py-2.5">
                       <div className={styles.listEntity}>
                         <HexTile className={styles.listAvatarHex} size={26} tone={isMSel ? "honey" : "default"}>
-                          <Monitor
+                          {(() => {
+                            const MachineIcon = isFleetMachineMobile(m) ? Smartphone : Monitor;
+                            return <MachineIcon
                             aria-hidden="true"
                             size={14}
                             style={{
@@ -111,7 +113,8 @@ export function ListView({
                                 ? "var(--muted)"
                                 : "var(--accent-strong)",
                             }}
-                          />
+                            />;
+                          })()}
                         </HexTile>
                         <div className={styles.listEntityText}>
                           <div className="font-semibold"

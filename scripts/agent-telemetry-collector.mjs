@@ -24,6 +24,7 @@ const hermesApiPort = Number(process.env.AGENT_TELEMETRY_HERMES_API_PORT || proc
 const hermesApiBaseUrl = `http://${hermesApiHost}:${hermesApiPort}`;
 const hermesApiKey = process.env.AGENT_TELEMETRY_HERMES_API_KEY || process.env.API_SERVER_KEY || "";
 const hermesApiStartTimeoutMs = Number(process.env.AGENT_TELEMETRY_HERMES_API_START_TIMEOUT_MS || 15_000);
+const hermesChatMode = (process.env.AGENT_TELEMETRY_HERMES_CHAT_MODE || "cli").toLowerCase();
 const syncthingApiBaseUrl = process.env.SYNCTHING_API_URL || "http://127.0.0.1:8384";
 const defaultSyncPath = expandHome(
   process.env.HIVEMINDOS_SYNC_PATH
@@ -536,6 +537,17 @@ async function resolveHermesBin() {
     }
   }
   return "hermes";
+}
+
+async function resolveChatWorkingDirectory(input) {
+  const candidate = typeof input === "string" ? expandHome(input.trim()) : "";
+  if (!candidate) return appDir;
+  try {
+    const entry = await stat(candidate);
+    return entry.isDirectory() ? candidate : appDir;
+  } catch {
+    return appDir;
+  }
 }
 
 function escapeRegExp(value) {
@@ -1192,8 +1204,8 @@ async function proxyHermesApiChat(body, response, text, hermesHome) {
         }
         try {
           const parsed = JSON.parse(raw);
-          const content = parsed?.choices?.[0]?.delta?.content;
-          if (typeof content === "string" && content.length > 0) {
+          const content = readableChatContent(parsed);
+          if (content) {
             wroteContent = true;
             ensureHeaders();
             response.write(ssePayload({ choices: [{ delta: { content } }] }));
@@ -1233,11 +1245,12 @@ async function streamHermesChat(body, response) {
     return;
   }
 
-  const message = typeof body.message === "string"
+  const rawMessage = typeof body.rawUserMessage === "string" ? body.rawUserMessage : "";
+  const message = rawMessage || (typeof body.message === "string"
     ? body.message
     : Array.isArray(body.messages)
       ? extractUserTextFromMessages(body.messages)
-      : "";
+      : "");
   const text = (typeof message === "string" ? message.trim() : "") || (Array.isArray(body.messages) ? attachmentPromptFromMessages(body.messages) : "");
   if (!text) {
     response.writeHead(400, { "content-type": "text/event-stream", "cache-control": "no-cache", connection: "keep-alive" });
@@ -1252,12 +1265,19 @@ async function streamHermesChat(body, response) {
 
   const agent = body.agent && typeof body.agent === "object" ? body.agent : {};
   const hermesHome = expandHome(agent.localDataDir || body.localDataDir || defaultHermesDir);
-  if (await proxyHermesApiChat(body, response, text, hermesHome)) return;
+  if (hermesChatMode === "api" && await proxyHermesApiChat(body, response, text, hermesHome)) return;
 
-  const child = spawn(await resolveHermesBin(), ["-z", text], {
+  const runtimeSessionId = normalizeHermesSessionId(body.runtimeSessionId || body.hermesSessionId || "");
+  const args = ["chat", "-q", text, "--accept-hooks", "--source", "hivemindos"];
+  if (runtimeSessionId) args.push("--resume", runtimeSessionId);
+  const cwd = await resolveChatWorkingDirectory(body.workingDirectory);
+
+  const child = spawn(await resolveHermesBin(), args, {
+    cwd,
     env: {
       ...process.env,
       HERMES_HOME: hermesHome,
+      HERMES_ACCEPT_HOOKS: "1",
       PAGER: "cat",
     },
     stdio: ["ignore", "pipe", "pipe"],
@@ -1270,7 +1290,7 @@ async function streamHermesChat(body, response) {
     "content-type": "text/event-stream",
     "cache-control": "no-cache",
     connection: "keep-alive",
-    "x-hermes-stream-source": "oneshot-fallback",
+    "x-hermes-stream-source": "cli-chat",
   });
 
   const finish = (payload = null) => {
@@ -1297,7 +1317,9 @@ async function streamHermesChat(body, response) {
   });
 
   child.stderr.on("data", (chunk) => {
-    stderr += chunk.toString("utf8");
+    const textChunk = chunk.toString("utf8");
+    stderr += textChunk;
+    response.write(ssePayload({ choices: [{ delta: { content: textChunk } }] }));
   });
 
   child.on("error", (error) => {

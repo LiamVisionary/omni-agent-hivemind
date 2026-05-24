@@ -6,6 +6,7 @@ import { dirname, join } from "node:path";
 import { promisify } from "node:util";
 import type { AgentProfile, AgentRuntime, RuntimeCapabilities } from "@/lib/types/agent-runtime";
 import { RUNTIME_CAPABILITIES } from "@/lib/types/agent-runtime";
+import { mergeRuntimeSessions, previewSessionText } from "@/lib/services/runtime-session-utils";
 import type { RuntimeModelSelection } from "./runtime-adapters/types";
 
 const execFileAsync = promisify(execFile);
@@ -238,16 +239,29 @@ async function searchHermesSessions(query: string, limit: number) {
   `;
   const { stdout } = await execFileAsync("sqlite3", ["-json", HERMES_DB, sql], { timeout: 5_000, maxBuffer: 2_000_000 });
   const rows = JSON.parse(stdout || "[]") as HermesSessionRow[];
-  return rows.map((row) => ({
+  return mergeRuntimeSessions({
+    secondary: rows.map((row) => ({
+      id: row.id,
+      title: row.title || row.id,
+      preview: previewSessionText(row.system_prompt),
+      lastActive: toIso(row.updated_at || row.started_at),
+      messageCount: 0,
+      source: row.source,
+      sortTimestamp: Number(row.updated_at || row.started_at || 0),
+    })),
+  }).map((session) => {
+    const row = rows.find((item) => item.id === session.id)!;
+    return {
     id: row.id,
     runtime: "hermes" as const,
-    title: row.title || row.id,
+    title: String(session.title || row.id),
     source: row.source,
     model: row.model,
     startedAt: toIso(row.started_at),
     updatedAt: toIso(row.updated_at || row.started_at),
-    excerpt: (row.system_prompt || "").replace(/\s+/g, " ").slice(0, 280),
-  }));
+    excerpt: String(session.preview || row.system_prompt || "").replace(/\s+/g, " ").slice(0, 280),
+    };
+  });
 }
 
 async function getHermesModelSelection(): Promise<RuntimeModelSelection | undefined> {

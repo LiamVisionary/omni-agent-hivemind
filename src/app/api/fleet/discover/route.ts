@@ -31,6 +31,8 @@ type TailscaleStatus = {
 type HivemindLinkStatus = {
   ok?: boolean;
   backendState?: string;
+  authUrl?: string;
+  magicDnsSuffix?: string;
   self?: TailscalePeer;
   peer?: Record<string, TailscalePeer>;
 };
@@ -50,6 +52,12 @@ type Device = {
   txBytes?: number;
   active?: boolean;
   relay?: string;
+};
+
+type FleetDeviceStatus = {
+  devices: Device[];
+  source: string;
+  link?: HivemindLinkStatus;
 };
 
 type CollectorVersion = {
@@ -104,6 +112,7 @@ function isGenericHostname(name?: string) {
 
 function displayNameForPeer(peer: TailscalePeer, dnsName: string, ip: string) {
   const magicDnsName = dnsLabel(dnsName);
+  if (normalizeName(peer.HostName).startsWith("hivemindos") && magicDnsName) return magicDnsName;
   return isGenericHostname(peer.HostName)
     ? magicDnsName || ip || "Unknown device"
     : peer.HostName || magicDnsName || ip || "Unknown device";
@@ -113,14 +122,49 @@ function normalizeName(value?: string) {
   return value?.toLowerCase().replace(/[^a-z0-9]+/g, "") ?? "";
 }
 
+function normalizeDnsName(value?: string) {
+  return value?.replace(/\.$/, "").toLowerCase() ?? "";
+}
+
+function isSameTailscalePeer(left?: TailscalePeer, right?: TailscalePeer) {
+  if (!left || !right) return false;
+  const leftIps = new Set(left.TailscaleIPs ?? []);
+  if ((right.TailscaleIPs ?? []).some((ip) => leftIps.has(ip))) return true;
+  const leftDns = normalizeDnsName(left.DNSName);
+  const rightDns = normalizeDnsName(right.DNSName);
+  return Boolean(leftDns && rightDns && leftDns === rightDns);
+}
+
 function deviceIdentityKey(device: Device) {
+  const dnsName = normalizeName(dnsLabel(device.dnsName));
+  const name = normalizeName(device.name) || dnsName;
+  if (name.startsWith("hivemindos")) return dnsName || name;
   if (device.self) return "self";
-  const name = normalizeName(device.name) || normalizeName(dnsLabel(device.dnsName));
   return name || device.ip || device.collectorUrl;
+}
+
+function isHivemindLinkDevice(device: Device) {
+  return normalizeName(device.name).startsWith("hivemindos")
+    || normalizeName(dnsLabel(device.dnsName)).startsWith("hivemindos");
+}
+
+function isMobileDevice(device: Device) {
+  return /^(ios|android)$/i.test(device.os);
+}
+
+function hivemindMachineBase(device: Device) {
+  const normalizedName = normalizeName(device.name);
+  const normalizedDnsName = normalizeName(dnsLabel(device.dnsName));
+  const value = normalizedName.startsWith("hivemindos") ? normalizedName : normalizedDnsName;
+  if (!value.startsWith("hivemindos")) return "";
+  return value.replace(/^hivemindos/, "").replace(/local\d*$/, "");
 }
 
 function isStaleSelfDuplicate(self: Device | undefined, device: Device) {
   if (!self || device.self || device.online) return false;
+  const selfBase = hivemindMachineBase(self);
+  const deviceBase = hivemindMachineBase(device);
+  if (selfBase && deviceBase && selfBase === deviceBase) return true;
   return normalizeName(self.name) !== "" && normalizeName(self.name) === normalizeName(device.name);
 }
 
@@ -141,7 +185,7 @@ function dedupeDevices(devices: Device[]) {
       byIdentity.set(key, device);
     }
   }
-  return [...byIdentity.values()];
+  return [...byIdentity.values()].filter((device) => isHivemindLinkDevice(device) || isMobileDevice(device));
 }
 
 function linkCollectorUrl(ip: string) {
@@ -154,7 +198,7 @@ function simplifyDevice(peer: TailscalePeer, self = false, viaLink = false): Dev
   const dnsName = peer.DNSName?.replace(/\.$/, "") ?? "";
   return {
     self,
-    name: displayNameForPeer(peer, dnsName, ip),
+    name: self ? "This Mac" : displayNameForPeer(peer, dnsName, ip),
     dnsName,
     os: peer.OS ?? "unknown",
     online: Boolean(peer.Online),
@@ -184,32 +228,55 @@ async function hivemindLinkStatus(): Promise<HivemindLinkStatus | null> {
   }
 }
 
-function devicesFromStatus(status: TailscaleStatus | HivemindLinkStatus, viaLink = false) {
+async function systemTailscaleSelf(): Promise<TailscalePeer | undefined> {
+  const { stdout } = await execFileAsync("tailscale", ["status", "--json"], {
+    timeout: 5_000,
+    maxBuffer: 1_500_000,
+  }).catch(() => ({ stdout: "" }));
+  if (!stdout) return undefined;
+  try {
+    return (JSON.parse(stdout) as TailscaleStatus).Self;
+  } catch {
+    return undefined;
+  }
+}
+
+function devicesFromStatus(status: TailscaleStatus | HivemindLinkStatus, viaLink = false, ignoredPeer?: TailscalePeer) {
   const isCliStatus = Object.prototype.hasOwnProperty.call(status, "Self") || Object.prototype.hasOwnProperty.call(status, "Peer");
   const selfPeer = isCliStatus ? (status as TailscaleStatus).Self : (status as HivemindLinkStatus).self;
   const peerMap = isCliStatus ? (status as TailscaleStatus).Peer : (status as HivemindLinkStatus).peer;
   const self = selfPeer ? simplifyDevice(selfPeer, true, viaLink) : undefined;
   const peers = Object.values(peerMap ?? {})
+    .filter((peer) => !isSameTailscalePeer(peer, ignoredPeer))
     .map((peer) => simplifyDevice(peer, false, viaLink))
     .filter((device) => !isStaleSelfDuplicate(self, device));
   const devices = dedupeDevices([...(self ? [self] : []), ...peers]);
   return devices.length ? devices : [localDevice()];
 }
 
-async function tailscaleDevices() {
+async function tailscaleDevices(): Promise<FleetDeviceStatus> {
+  const link = await hivemindLinkStatus();
+  if (link) {
+    const localSystemSelf = await systemTailscaleSelf();
+    return {
+      devices: devicesFromStatus(link, true, localSystemSelf),
+      link,
+      source: "hivemind-link",
+    };
+  }
+
   const { stdout } = await execFileAsync("tailscale", ["status", "--json"], {
     timeout: 5_000,
     maxBuffer: 1_500_000,
   }).catch(() => ({ stdout: "" }));
-  if (!stdout) {
-    const link = await hivemindLinkStatus();
-    return link ? devicesFromStatus(link, true) : [localDevice()];
-  }
+  if (!stdout) return { devices: [localDevice()], source: "local" };
   try {
-    return devicesFromStatus(JSON.parse(stdout) as TailscaleStatus);
+    return {
+      devices: devicesFromStatus(JSON.parse(stdout) as TailscaleStatus),
+      source: "tailscale-cli",
+    };
   } catch {
-    const link = await hivemindLinkStatus();
-    return link ? devicesFromStatus(link, true) : [localDevice()];
+    return { devices: [localDevice()], source: "local" };
   }
 }
 
@@ -261,7 +328,8 @@ function defaultQueenAgent(device: Device, agents: AgentProfile[], capabilities?
 }
 
 export async function GET() {
-  const devices = await tailscaleDevices().catch(() => [localDevice()]);
+  const fleetStatus = await tailscaleDevices().catch((): FleetDeviceStatus => ({ devices: [localDevice()], source: "local" }));
+  const devices = fleetStatus.devices;
   const discovered = await Promise.all(devices.map(async (device) => {
     if (!device.collectorUrl) {
       return { device, collector: "missing", agents: [], snapshots: [] };
@@ -333,7 +401,17 @@ export async function GET() {
   }));
   const machines = dedupeMachines(discovered);
 
-  return Response.json({ ok: true, machines });
+  return Response.json({
+    ok: true,
+    source: fleetStatus.source,
+    hivemindLink: fleetStatus.link ? {
+      ok: fleetStatus.link.ok === true,
+      backendState: fleetStatus.link.backendState,
+      authUrl: fleetStatus.link.authUrl,
+      magicDnsSuffix: fleetStatus.link.magicDnsSuffix,
+    } : undefined,
+    machines,
+  });
 }
 
 function machineScore(machine: {

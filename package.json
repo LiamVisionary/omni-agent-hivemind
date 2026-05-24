@@ -5,7 +5,7 @@
   "type": "module",
   "packageManager": "pnpm@8.6.12",
   "scripts": {
-    "dev": "scripts/run-with-memory-limit.sh --limit-mb 5000 -- next dev --webpack -p 5020",
+    "dev": "node scripts/dev-server.mjs",
     "build": "scripts/run-with-memory-limit.sh --limit-mb 5000 --timeout-seconds 300 -- next build --webpack",
     "start": "next start -p 5020",
     "lint": "eslint",

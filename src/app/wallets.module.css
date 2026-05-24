@@ -72,6 +72,52 @@
   text-transform: none;
 }
 
+.walletSegmented {
+  display: inline-flex;
+  width: fit-content;
+  max-width: 100%;
+  gap: 2px;
+  border: 1px solid rgba(148, 163, 184, 0.16);
+  border-radius: 8px;
+  background: rgba(15, 23, 42, 0.48);
+  padding: 3px;
+}
+
+.walletSegment {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 104px;
+  min-height: 32px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted);
+  padding: 6px 12px;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+.walletSegment:hover {
+  color: var(--foreground);
+}
+
+.walletSegmentActive {
+  background: rgba(45, 212, 191, 0.16);
+  color: var(--accent-strong);
+}
+
+.usagePanel {
+  display: grid;
+  gap: 16px;
+  border: 1px solid rgba(148, 163, 184, 0.14);
+  border-radius: 8px;
+  background: rgba(10, 14, 21, 0.52);
+  padding: 16px;
+}
+
 /* ─── Hive ledger band ────────────────────────────────────────────── */
 
 .hiveLedger {

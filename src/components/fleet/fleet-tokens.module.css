@@ -111,6 +111,99 @@
   background: rgba(45, 212, 191, 0.22) !important;
 }
 
+.rosterMachineRow {
+  display: grid;
+  grid-template-columns: 26px minmax(0, 1fr) 22px;
+  gap: 8px 10px;
+  align-items: start;
+  padding: 9px 10px;
+}
+
+.rosterMachineBody {
+  min-width: 0;
+  display: grid;
+  gap: 6px;
+}
+
+.rosterMachineSummary {
+  min-width: 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: start;
+  justify-content: space-between;
+  gap: 6px 10px;
+}
+
+.rosterMachineIdentity {
+  flex: 1 1 9rem;
+  min-width: min(100%, 9rem);
+}
+
+.rosterMachineName {
+  overflow-wrap: anywhere;
+  font-family: var(--f-display);
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1.2;
+}
+
+.rosterMachineMeta {
+  margin-top: 2px;
+  color: var(--muted);
+  font-family: var(--f-mono);
+  font-size: 10px;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+.rosterMachineStatus {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  min-height: 24px;
+}
+
+.rosterMachineCount {
+  font-family: var(--f-mono);
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.rosterMachineToggle {
+  width: 22px;
+  height: 22px;
+  margin-top: 1px;
+}
+
+.rosterNetworkIssue {
+  display: inline-flex;
+  max-width: 100%;
+  min-height: 22px;
+  align-items: center;
+  gap: 5px;
+  justify-self: start;
+  padding: 4px 7px;
+  border-radius: 7px;
+  font-family: var(--f-mono);
+  font-size: 9px;
+  font-weight: 800;
+  line-height: 1.25;
+  letter-spacing: 0;
+  text-align: left;
+  white-space: normal;
+}
+
+.rosterNetworkIssue svg {
+  flex: 0 0 auto;
+}
+
+.rosterNetworkIssue span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
 .rosterUpdateButton {
   transition:
     border-color 160ms ease,

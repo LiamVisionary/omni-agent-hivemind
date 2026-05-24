@@ -2,11 +2,11 @@
 "use client";
 
 import * as React from "react";
-import { AlertTriangle, ChevronDown, ChevronRight, Copy, LoaderCircle, MessageSquare, Monitor, Plus, Settings2, Trash2, Wallet, X } from "lucide-react";
+import { AlertTriangle, ChevronDown, ChevronRight, Copy, LoaderCircle, MessageSquare, Monitor, Pencil, Plus, Settings2, Smartphone, Trash2, Wallet, X } from "lucide-react";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { BeeIcon } from "./bee-icon";
 import { HexTile } from "./hex-tile";
-import { fleetAgentCanChat, type AgentState, type FleetAgent, type FleetMachine } from "./fleet-data";
+import { fleetAgentCanChat, isFleetMachineMobile, type AgentState, type FleetAgent, type FleetMachine } from "./fleet-data";
 import styles from "./fleet-tokens.module.css";
 
 const STATE_COLOR: Record<AgentState, string> = {
@@ -18,6 +18,10 @@ const STATE_COLOR: Record<AgentState, string> = {
 };
 
 export type MachineUpdateButtonStatus = "idle" | "updating" | "updated" | "failed";
+export type MachineUpdateButtonDetail = {
+  label?: string;
+  detail?: string;
+};
 
 interface RosterRowProps {
   machine: FleetMachine;
@@ -25,11 +29,13 @@ interface RosterRowProps {
   expanded: boolean;
   selectedAgentId: string | null;
   updateStatus?: MachineUpdateButtonStatus;
+  updateDetail?: MachineUpdateButtonDetail;
   onSelectMachine: () => void;
   onSelectAgent: (a: FleetAgent) => void;
   onToggle: () => void;
   onAddAgent: () => void;
   onUpdateMachine?: () => void;
+  onRenameMachine?: (name: string) => void;
   onOpenNetworkIssue?: () => void;
   onOpenChat?: (a: FleetAgent) => void;
   onOpenWallet?: (a: FleetAgent) => void;
@@ -41,13 +47,17 @@ interface RosterRowProps {
 function RosterRow({
   machine, selected, expanded, selectedAgentId,
   updateStatus,
+  updateDetail,
   onSelectMachine, onSelectAgent, onToggle, onAddAgent,
   onUpdateMachine,
+  onRenameMachine,
   onOpenNetworkIssue,
   onOpenChat, onOpenWallet, onEditSettings, onDuplicate, onRemove,
 }: RosterRowProps) {
   const [expandedTaskIds, setExpandedTaskIds] = React.useState<Set<string>>(() => new Set());
   const [successDismissed, setSuccessDismissed] = React.useState(false);
+  const [editingName, setEditingName] = React.useState(false);
+  const [nameDraft, setNameDraft] = React.useState(machine.name);
   const roleIconDim = (state: AgentState) => state === "ready" || state === "setup" || state === "failed";
   const fire = (agent: FleetAgent, fn?: (a: FleetAgent) => void) => (event: React.MouseEvent) => {
     event.stopPropagation();
@@ -71,8 +81,18 @@ function RosterRow({
     return () => window.clearTimeout(timeout);
   }, [updateStatus]);
 
+  React.useEffect(() => {
+    if (!editingName) setNameDraft(machine.name);
+  }, [editingName, machine.name]);
+
+  const commitName = () => {
+    setEditingName(false);
+    onRenameMachine?.(nameDraft);
+  };
+
   const showUpdateButton = Boolean(
     onUpdateMachine
+      && machine.canUpdate !== false
       && (
         updateStatus === "updating"
         || (updateStatus === "updated" && !successDismissed)
@@ -81,6 +101,7 @@ function RosterRow({
       ),
   );
   const updateDisabled = updateStatus === "updating" || updateStatus === "updated";
+  const MachineIcon = isFleetMachineMobile(machine) ? Smartphone : Monitor;
 
   return (
     <div
@@ -92,14 +113,13 @@ function RosterRow({
     >
       <div
         onClick={onSelectMachine}
-        className="grid items-center gap-3 px-2.5 py-2 cursor-pointer"
+        className={`${styles.rosterMachineRow} cursor-pointer`}
         style={{
-          gridTemplateColumns: "26px 1fr auto auto",
           color: selected ? "var(--hex-honey-border)" : "var(--foreground)",
         }}
       >
         <HexTile size={22} tone={selected ? "honey" : "default"}>
-          <Monitor
+          <MachineIcon
             aria-hidden="true"
             size={13}
             style={{
@@ -107,12 +127,163 @@ function RosterRow({
             }}
           />
         </HexTile>
-        <div className="min-w-0">
-          <div className="font-semibold" style={{ fontFamily: "var(--f-display)", fontSize: 13 }}>
-            {machine.name}
-          </div>
-          <div style={{ fontFamily: "var(--f-mono)", fontSize: 10, color: "var(--muted)" }}>
-            {machine.kind} · {machine.city}
+        <div className={styles.rosterMachineBody}>
+          <div className={styles.rosterMachineSummary}>
+            <div className={styles.rosterMachineIdentity}>
+              <div className={`${styles.rosterMachineName} flex items-center gap-1.5`}>
+                {editingName ? (
+                  <input
+                    value={nameDraft}
+                    autoFocus
+                    onClick={(event) => event.stopPropagation()}
+                    onChange={(event) => setNameDraft(event.target.value)}
+                    onBlur={commitName}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter") {
+                        event.preventDefault();
+                        commitName();
+                      }
+                      if (event.key === "Escape") {
+                        event.preventDefault();
+                        setNameDraft(machine.name);
+                        setEditingName(false);
+                      }
+                    }}
+                    aria-label={`Rename ${machine.name}`}
+                    style={{
+                      width: "100%",
+                      minWidth: 0,
+                      border: "1px solid rgba(94,234,212,0.46)",
+                      borderRadius: 6,
+                      background: "rgba(2,6,23,0.72)",
+                      color: "var(--foreground)",
+                      font: "inherit",
+                      letterSpacing: 0,
+                      padding: "2px 5px",
+                      outline: "none",
+                    }}
+                  />
+                ) : (
+                  <>
+                    <span>{machine.name}</span>
+                    {onRenameMachine ? (
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <button
+                            type="button"
+                            aria-label={`Rename ${machine.name}`}
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              setNameDraft(machine.name);
+                              setEditingName(true);
+                            }}
+                            style={{
+                              width: 20,
+                              height: 20,
+                              display: "inline-grid",
+                              placeItems: "center",
+                              border: 0,
+                              borderRadius: 6,
+                              background: "transparent",
+                              color: "var(--muted)",
+                              cursor: "pointer",
+                              flex: "0 0 auto",
+                            }}
+                          >
+                            <Pencil size={11} aria-hidden="true" />
+                          </button>
+                        </TooltipTrigger>
+                        <TooltipContent>Rename machine</TooltipContent>
+                      </Tooltip>
+                    ) : null}
+                  </>
+                )}
+              </div>
+              <div className={styles.rosterMachineMeta}>
+                {machine.kind} · {machine.city}
+              </div>
+            </div>
+            <div className={styles.rosterMachineStatus}>
+              {showUpdateButton ? (
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                <button
+                  type="button"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    if (!updateDisabled) {
+                      setSuccessDismissed(false);
+                      onUpdateMachine?.();
+                    }
+                  }}
+                  disabled={updateDisabled}
+                  aria-label={
+                    updateStatus === "updating"
+                      ? `Updating ${machine.name}`
+                      : updateStatus === "updated"
+                        ? `${machine.name} updated`
+                        : updateStatus === "failed"
+                          ? `${updateDetail?.label ?? `Update failed for ${machine.name}`}. Retry update`
+                          : `Update ${machine.name}`
+                  }
+                  title={updateDetail?.detail}
+                  aria-live="polite"
+                  className={`${styles.rosterUpdateButton} inline-flex items-center justify-center`}
+                  style={{
+                    minWidth: updateStatus === "updated" ? 70 : 62,
+                    minHeight: 24,
+                    padding: "4px 8px",
+                    borderRadius: 7,
+                    border: updateStatus === "failed"
+                      ? "1px solid rgba(251,113,133,0.46)"
+                      : updateStatus === "updated"
+                        ? "1px solid rgba(94,234,212,0.54)"
+                        : "1px solid rgba(255,212,90,0.46)",
+                    background: updateStatus === "failed"
+                      ? "rgba(251,113,133,0.14)"
+                      : updateStatus === "updated"
+                        ? "rgba(45,212,191,0.16)"
+                        : "rgba(255,212,90,0.14)",
+                    color: updateStatus === "failed"
+                      ? "#fecdd3"
+                      : updateStatus === "updated"
+                        ? "var(--accent-strong)"
+                        : "var(--hex-honey-border)",
+                    fontFamily: "var(--f-mono)",
+                    fontSize: 9.5,
+                    fontWeight: 800,
+                    letterSpacing: 0,
+                    cursor: updateDisabled ? "default" : "pointer",
+                  }}
+                >
+                  {updateStatus === "updating" ? (
+                    <LoaderCircle size={12} className="animate-spin" aria-hidden="true" />
+                  ) : updateStatus === "updated" ? (
+                    "Updated!"
+                  ) : updateStatus === "failed" ? (
+                    "Failed"
+                  ) : (
+                    "Update"
+                  )}
+                </button>
+                  </TooltipTrigger>
+                  {updateDetail?.detail ? (
+                    <TooltipContent side="top" style={{ maxWidth: 320, whiteSpace: "pre-wrap" }}>
+                      {updateDetail.detail}
+                    </TooltipContent>
+                  ) : null}
+                </Tooltip>
+              ) : (
+                <span
+                  className={styles.rosterMachineCount}
+                  style={{
+                    color: selected ? "var(--hex-honey-border)" : "var(--accent-strong)",
+                  }}
+                >
+                  {machine.agents.length}
+                </span>
+              )}
+            </div>
           </div>
           {machine.networkIssue ? (
             <button
@@ -121,102 +292,25 @@ function RosterRow({
                 event.stopPropagation();
                 onOpenNetworkIssue?.();
               }}
-              className="mt-1 inline-flex items-center gap-1"
+              className={styles.rosterNetworkIssue}
               style={{
-                maxWidth: "100%",
-                height: 20,
-                padding: "0 6px",
-                borderRadius: 6,
                 border: "1px solid rgba(251,191,36,0.42)",
                 background: "rgba(251,191,36,0.12)",
                 color: "#fde68a",
-                fontFamily: "var(--f-mono)",
-                fontSize: 9,
-                fontWeight: 800,
-                letterSpacing: 0,
                 cursor: "pointer",
               }}
             >
               <AlertTriangle size={10} aria-hidden="true" />
-              <span className="truncate">{machine.networkIssue.label}</span>
+              <span>{machine.networkIssue.label}</span>
             </button>
           ) : null}
         </div>
-        {showUpdateButton ? (
-          <button
-            type="button"
-            onClick={(event) => {
-              event.stopPropagation();
-              if (!updateDisabled) {
-                setSuccessDismissed(false);
-                onUpdateMachine?.();
-              }
-            }}
-            disabled={updateDisabled}
-            aria-label={
-              updateStatus === "updating"
-                ? `Updating ${machine.name}`
-                : updateStatus === "updated"
-                  ? `${machine.name} updated`
-                  : updateStatus === "failed"
-                    ? `Update failed for ${machine.name}. Retry update`
-                  : `Update ${machine.name}`
-            }
-            aria-live="polite"
-            className={`${styles.rosterUpdateButton} inline-flex items-center justify-center`}
-            style={{
-              minWidth: updateStatus === "updated" ? 70 : 62,
-              height: 24,
-              padding: "0 8px",
-              borderRadius: 7,
-              border: updateStatus === "failed"
-                ? "1px solid rgba(251,113,133,0.46)"
-                : updateStatus === "updated"
-                  ? "1px solid rgba(94,234,212,0.54)"
-                  : "1px solid rgba(255,212,90,0.46)",
-              background: updateStatus === "failed"
-                ? "rgba(251,113,133,0.14)"
-                : updateStatus === "updated"
-                  ? "rgba(45,212,191,0.16)"
-                  : "rgba(255,212,90,0.14)",
-              color: updateStatus === "failed"
-                ? "#fecdd3"
-                : updateStatus === "updated"
-                  ? "var(--accent-strong)"
-                  : "var(--hex-honey-border)",
-              fontFamily: "var(--f-mono)",
-              fontSize: 9.5,
-              fontWeight: 800,
-              letterSpacing: 0,
-              cursor: updateDisabled ? "default" : "pointer",
-            }}
-          >
-            {updateStatus === "updating" ? (
-              <LoaderCircle size={12} className="animate-spin" aria-hidden="true" />
-            ) : updateStatus === "updated" ? (
-              "Updated!"
-            ) : updateStatus === "failed" ? (
-              "Failed"
-            ) : (
-              "Update"
-            )}
-          </button>
-        ) : (
-        <span
-          style={{
-            fontFamily: "var(--f-mono)", fontSize: 11,
-            color: selected ? "var(--hex-honey-border)" : "var(--accent-strong)",
-          }}
-        >
-          {machine.agents.length}
-        </span>
-        )}
         <button
           onClick={(e) => { e.stopPropagation(); onToggle(); }}
           aria-label={expanded ? "Collapse" : "Expand"}
-          className="grid place-items-center"
+          className={`${styles.rosterMachineToggle} grid place-items-center`}
           style={{
-            width: 20, height: 20, border: 0, background: "transparent",
+            border: 0, background: "transparent",
             color: "var(--muted)", cursor: "pointer",
             transform: expanded ? "rotate(90deg)" : "rotate(0)",
             transition: "transform 160ms ease",
@@ -438,11 +532,13 @@ interface RosterProps {
   selectedAgentId: string | null;
   expanded: Set<string>;
   updateStatusByMachine?: Record<string, MachineUpdateButtonStatus>;
+  updateDetailByMachine?: Record<string, MachineUpdateButtonDetail>;
   onSelectMachine: (id: string) => void;
   onSelectAgent: (m: FleetMachine, a: FleetAgent) => void;
   onToggleExpand: (id: string) => void;
   onAddAgent: (m: FleetMachine) => void;
   onUpdateMachine?: (m: FleetMachine) => void;
+  onRenameMachine?: (machineId: string, name: string) => void;
   onOpenChat?: (m: FleetMachine, a: FleetAgent) => void;
   onOpenWallet?: (m: FleetMachine, a: FleetAgent) => void;
   onEditSettings?: (m: FleetMachine, a: FleetAgent) => void;
@@ -453,8 +549,10 @@ interface RosterProps {
 export function Roster({
   machines, selected, selectedAgentId, expanded,
   updateStatusByMachine,
+  updateDetailByMachine,
   onSelectMachine, onSelectAgent, onToggleExpand, onAddAgent,
   onUpdateMachine,
+  onRenameMachine,
   onOpenChat, onOpenWallet, onEditSettings, onDuplicate, onRemove,
 }: RosterProps) {
   const [activeIssueMachine, setActiveIssueMachine] = React.useState<FleetMachine | null>(null);
@@ -469,11 +567,13 @@ export function Roster({
           expanded={expanded.has(m.id) || (m.id === selected && !!selectedAgentId)}
           selectedAgentId={m.id === selected ? selectedAgentId : null}
           updateStatus={updateStatusByMachine?.[m.id]}
+          updateDetail={updateDetailByMachine?.[m.id]}
           onSelectMachine={() => onSelectMachine(m.id)}
           onSelectAgent={(a) => onSelectAgent(m, a)}
           onToggle={() => onToggleExpand(m.id)}
           onAddAgent={() => onAddAgent(m)}
           onUpdateMachine={onUpdateMachine ? () => onUpdateMachine(m) : undefined}
+          onRenameMachine={onRenameMachine ? (name) => onRenameMachine(m.id, name) : undefined}
           onOpenNetworkIssue={m.networkIssue ? () => setActiveIssueMachine(m) : undefined}
           onOpenChat={(a) => onOpenChat?.(m, a)}
           onOpenWallet={(a) => onOpenWallet?.(m, a)}
