@@ -3,6 +3,14 @@
 This file records user-visible changes before they are committed. New work should
 be added here first, then marked `Committed` or `Pushed` after the git action.
 
+## 2026-05-24 19:07 WITA - Clarify Collector Reachability States
+
+- Status: Pushed
+- Areas changed: Fleet reachability badges, changelog
+- Summary: Stop showing the collector fix badge while discovery is still checking a machine, and classify online peers with no Tailscale handshake as Tailnet unreachable instead of a generic collector failure.
+- Verification: `pnpm exec tsc --noEmit --pretty false`; `git diff --check -- src/app/page.tsx CHANGELOG.md`; live discovery confirmed Ubuntu is reachable through Hivemind Link while the MacBook Link peer times out and has no handshake from this dashboard node.
+- Intended commit message: `Clarify collector reachability states`
+
 ## 2026-05-24 18:59 WITA - Mark Merged Changelog Entries Pushed
 
 - Status: Pushed

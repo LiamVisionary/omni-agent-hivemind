@@ -3417,7 +3417,6 @@ function hasNeverHandshake(value?: string) {
 function tailnetPeerLooksUnreachable(machine: MachineGroup) {
   return !machine.self
     && machine.online
-    && !machine.curAddr
     && hasNeverHandshake(machine.lastHandshake)
     && (machine.rxBytes ?? 0) === 0;
 }
@@ -3448,6 +3447,7 @@ function machineNetworkIssue(machine: MachineGroup, tailscaleStatus: string): Fl
       ],
     };
   }
+  if (machine.collector === "unknown") return undefined;
   if (!machine.online) {
     return {
       label: "Tailscale disconnected. Fix?",
