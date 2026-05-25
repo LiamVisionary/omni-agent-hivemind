@@ -1,4 +1,4 @@
-import { Activity, Bell, BrainCircuit, FolderOpen, KanbanSquare, KeyRound, Layers3, MessageSquare, Network, Repeat2, ShieldCheck, WalletCards } from "lucide-react";
+import { Activity, Bell, BrainCircuit, FolderOpen, KanbanSquare, KeyRound, Layers3, MessageSquare, Network, PlugZap, Repeat2, ShieldCheck, WalletCards } from "lucide-react";
 
 import { beeRoleIconPath } from "@/lib/config/bee-role-icons";
 import { RUNTIME_LABELS, type AgentProfile, type BeeWorkerClass } from "@/lib/types/agent-runtime";
@@ -318,6 +318,7 @@ export function viewIcon(view: DashboardView) {
   if (view === "swarm") return <Activity aria-hidden="true" />;
   if (view === "wallet") return <WalletCards aria-hidden="true" />;
   if (view === "vault") return <BrainCircuit aria-hidden="true" />;
+  if (view === "integrations") return <PlugZap aria-hidden="true" />;
   if (view === "maintenance") return <ShieldCheck aria-hidden="true" />;
   if (view === "files") return <FolderOpen aria-hidden="true" />;
   if (view === "notifications") return <Bell aria-hidden="true" />;

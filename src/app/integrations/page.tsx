@@ -1,5 +1,5 @@
-import NangoIntegrationsView from "@/features/integrations/NangoIntegrationsView";
+import { redirect } from "next/navigation";
 
-export default function IntegrationsPage() {
-  return <NangoIntegrationsView />;
+export default function IntegrationsRoute() {
+  redirect("/?view=integrations");
 }

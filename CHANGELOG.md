@@ -3,6 +3,14 @@
 This file records user-visible changes before they are committed. New work should
 be added here first, then marked `Committed` or `Pushed` after the git action.
 
+## 2026-05-25 21:08 WITA - Repair Collector Update Verification
+
+- Status: Pushed
+- Areas changed: Fleet update API, telemetry collector self-update command, dashboard machine update capability checks, changelog
+- Summary: Make collector self-updates rerun the telemetry collector installer after setup so the systemd service restarts onto the newest route set, teach the dashboard update flow to detect missing shared-skill collector capabilities, and require `skillInventory`/`skillAutoSync` during update verification when a machine is missing those endpoints.
+- Verification: `node --check scripts/agent-telemetry-collector.mjs`; `pnpm exec eslint src/app/api/fleet/update/route.ts src/features/dashboard/DashboardApp.tsx src/features/dashboard/dashboard-display-helpers.tsx src/features/dashboard/hooks/use-dashboard-derived-state.tsx src/features/dashboard/hooks/use-fleet-notifications-controller.tsx scripts/agent-telemetry-collector.mjs --max-warnings=999` passed with pre-existing dashboard split warnings and no errors; `pnpm exec tsc --noEmit --pretty false --skipLibCheck`; `git diff --check`
+- Intended commit message: `Repair collector update verification`
+
 ## 2026-05-25 20:51 WITA - Gate Hetzner Machine Creation
 
 - Status: Pushed
@@ -10,6 +18,14 @@ be added here first, then marked `Committed` or `Pushed` after the git action.
 - Summary: Split the New Hetzner agent box into an env setup step and a machine creation step, validate HCLOUD_TOKEN against Hetzner Cloud before saving it locally, and keep Next disabled until the token has passed the live validation call.
 - Verification: `pnpm exec eslint src/app/api/fleet/hetzner/token/route.ts src/features/dashboard/hooks/use-fleet-notifications-controller.tsx src/features/dashboard/views/DashboardModals.tsx src/features/dashboard/dashboard-types.ts --max-warnings=0`; `pnpm exec tsc --noEmit --pretty false`; `git diff --check -- src/app/api/fleet/hetzner/token/route.ts src/features/dashboard/hooks/use-fleet-notifications-controller.tsx src/features/dashboard/views/DashboardModals.tsx src/features/dashboard/dashboard-types.ts src/app/fleet.module.css CHANGELOG.md`; fake-token POST to `http://localhost:5020/api/fleet/hetzner/token` returned Hetzner's invalid-token response; Playwright with the token route mocked successful confirmed Next starts disabled, enables after validation, opens the machine creation view, keeps the modal body-portaled and centered, and logs no console errors.
 - Intended commit message: `Gate Hetzner machine creation on token validation`
+
+## 2026-05-25 21:02 WITA - Embed Integrations In Dashboard
+
+- Status: Pushed
+- Areas changed: Shared button primitive, dashboard navigation/view routing, More utility panel, dashboard app page search params, Nango integrations client view, integrations redirect route, changelog
+- Summary: Put Integrations under the More utilities view instead of the primary dashboard nav, keep More highlighted while viewing integrations, redirect `/integrations` into `/?view=integrations`, preserve direct-link support through a server-provided dashboard initial view, and fix the shared button primitive so `asChild` does not inject a loading sibling that trips Radix Slot's single-child requirement.
+- Verification: `pnpm exec eslint src/components/ui/button.tsx src/app/page.tsx src/features/integrations/NangoIntegrationsView.tsx src/app/integrations/page.tsx src/features/dashboard/DashboardApp.tsx src/features/dashboard/MorePanel.tsx src/features/dashboard/views/UtilityPanels.tsx src/features/dashboard/views/DashboardHeader.tsx src/features/dashboard/hooks/use-dashboard-derived-state.tsx src/features/dashboard/dashboard-light-helpers.tsx src/features/dashboard/dashboard-types.ts --max-warnings=999`; `pnpm exec tsc --noEmit --pretty false --skipLibCheck`; `git diff --check -- src/components/ui/button.tsx src/app/page.tsx src/features/integrations/NangoIntegrationsView.tsx src/app/integrations/page.tsx src/features/dashboard/DashboardApp.tsx src/features/dashboard/MorePanel.tsx src/features/dashboard/views/UtilityPanels.tsx src/features/dashboard/views/DashboardHeader.tsx src/features/dashboard/hooks/use-dashboard-derived-state.tsx src/features/dashboard/dashboard-light-helpers.tsx src/features/dashboard/dashboard-types.ts CHANGELOG.md`; Playwright smoke against `http://127.0.0.1:5020/?view=integrations` confirmed the React runtime crash no longer appears and the embedded Integrations panel renders.
+- Intended commit message: `Embed integrations in dashboard`
 
 ## 2026-05-25 20:48 WITA - Add Nango Integration Host View
 

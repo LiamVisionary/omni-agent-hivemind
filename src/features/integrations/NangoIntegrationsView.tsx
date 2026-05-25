@@ -59,7 +59,11 @@ const PROVIDERS: Array<{
   { key: "google", label: "Google", icon: <Cloud size={19} />, detail: "Drive, Gmail labels, Calendar context." },
 ];
 
-export default function IntegrationsPage() {
+type NangoIntegrationsViewProps = {
+  embedded?: boolean;
+};
+
+export default function NangoIntegrationsView({ embedded = false }: NangoIntegrationsViewProps) {
   const [payload, setPayload] = React.useState<NangoIntegrationPayload | null>(null);
   const [machines, setMachines] = React.useState<MachineChoice[]>([]);
   const [selectedId, setSelectedId] = React.useState("");
@@ -168,7 +172,7 @@ export default function IntegrationsPage() {
   const configured = Boolean(payload?.config.hostMachineId && payload.config.baseUrl);
 
   return (
-    <main className={styles.page}>
+    <main className={`${styles.page} ${embedded ? styles.embedded : ""}`}>
       <div className={styles.shell}>
         <header className={styles.topbar}>
           <div>
@@ -247,7 +251,7 @@ export default function IntegrationsPage() {
               {payload?.config.baseUrl ? (
                 <Button asChild variant="ghost">
                   <a href={payload.config.baseUrl} target="_blank" rel="noreferrer">
-                    <Link2 /> Open Nango
+                    <span className="inline-flex items-center gap-2"><Link2 /> Open Nango</span>
                   </a>
                 </Button>
               ) : null}

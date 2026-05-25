@@ -16,6 +16,8 @@ type UpdateBody = {
   requiredCapabilities?: {
     chat?: boolean;
     envHttpSync?: boolean;
+    skillInventory?: boolean;
+    skillAutoSync?: boolean;
   };
 };
 
@@ -24,6 +26,8 @@ type CollectorHealth = {
   capabilities?: {
     chat?: boolean;
     envHttpSync?: boolean;
+    skillInventory?: boolean;
+    skillAutoSync?: boolean;
     runtimes?: string[];
   };
   version?: {
@@ -53,6 +57,8 @@ async function fetchCollectorHealth(collectorUrl?: string): Promise<CollectorHea
 function hasRequiredCapabilities(health: CollectorHealth | null, required?: UpdateBody["requiredCapabilities"]) {
   if (required?.chat && health?.capabilities?.chat !== true) return false;
   if (required?.envHttpSync && health?.capabilities?.envHttpSync !== true) return false;
+  if (required?.skillInventory && health?.capabilities?.skillInventory !== true) return false;
+  if (required?.skillAutoSync && health?.capabilities?.skillAutoSync !== true) return false;
   return true;
 }
 
@@ -66,7 +72,13 @@ function hasExpectedVersion(health: CollectorHealth | null, expectedCommit?: str
 }
 
 function hasVerificationTarget(body: UpdateBody) {
-  return Boolean(body.expectedCommit?.trim() || body.requiredCapabilities?.chat || body.requiredCapabilities?.envHttpSync);
+  return Boolean(
+    body.expectedCommit?.trim()
+    || body.requiredCapabilities?.chat
+    || body.requiredCapabilities?.envHttpSync
+    || body.requiredCapabilities?.skillInventory
+    || body.requiredCapabilities?.skillAutoSync
+  );
 }
 
 async function updateBodyWithTarget(body: UpdateBody): Promise<UpdateBody> {
@@ -88,6 +100,8 @@ function verificationError(body: UpdateBody, health: CollectorHealth | null) {
   }
   if (body.requiredCapabilities?.chat && health?.capabilities?.chat !== true) return "The update command finished, but the collector still does not report the Hermes chat bridge.";
   if (body.requiredCapabilities?.envHttpSync && health?.capabilities?.envHttpSync !== true) return "The update command finished, but the collector still does not report the shared-env sync endpoint.";
+  if (body.requiredCapabilities?.skillInventory && health?.capabilities?.skillInventory !== true) return "The update command finished, but the collector still does not report the skill inventory endpoint.";
+  if (body.requiredCapabilities?.skillAutoSync && health?.capabilities?.skillAutoSync !== true) return "The update command finished, but the collector still does not report skill auto-sync.";
   if (!body.expectedCommit?.trim()) return "The update request did not include or expose a target commit to verify.";
   return "The update command finished, but collector verification did not pass.";
 }

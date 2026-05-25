@@ -150,6 +150,7 @@ export function UtilityPanels(props: UtilityPanelsProps) {
           notificationTotal={notificationSummary?.total ?? 0}
           onNavigate={(target) => {
             setActiveView(target);
+            if (target === "integrations") return;
             if (target === "env") void refreshHiveEnv();
             if (target === "maintenance") void refreshMaintenanceReport();
             if (target === "files") void refreshRuntimeFileRoots();

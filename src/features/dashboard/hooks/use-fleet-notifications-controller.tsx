@@ -5,7 +5,7 @@
 import { useEffect } from "react";
 
 export function useFleetNotificationsController(props: any) {
-  const { DEFAULT_SHARED_VAULT, addKanbanStorageParams, appVersion, hydrated, isCollectorAutoUpdateable, kanbanAssigneeFilter, kanbanBoardSlug, kanbanIncludeArchived, kanbanSearch, kanbanTenantFilter, cleanActivityTitle, localDashboardHasUnpublishedChanges, machineInitDraft, machineInitToken, machineNeedsChatBridgeRepair, machineNeedsEnvHttpSyncRepair, machineVersionCopy, mergeDiscoveredMachines, mergeSnapshotRecord, noteIntakeAutoInFlightRef, notifications, setAppVersion, setCopiedUpdateDetailKey, setDiscoveredMachines, setFleetSnapshots, setKanbanAssignees, setKanbanBoard, setKanbanBoards, setKanbanError, setKanbanStorage, setKanbanTenants, setActiveView, setSelectedKanbanTaskId, setMachineInitCopiedKey, setMachineInitOpen, setMachineInitStatus, setMachineInitToken, setMachineInitTokenStatus, setNoteIntakePending, setNoteIntakePreview, setNoteIntakeStatus, setNotificationCursor, setNotificationSummary, setNotifications, setNotificationsStatus, setTasks, setUpdateStatusByMachine, sharedVault, summarizeHermesAuthError, updateStatusByMachine } = props;
+  const { DEFAULT_SHARED_VAULT, addKanbanStorageParams, appVersion, hydrated, isCollectorAutoUpdateable, kanbanAssigneeFilter, kanbanBoardSlug, kanbanIncludeArchived, kanbanSearch, kanbanTenantFilter, cleanActivityTitle, localDashboardHasUnpublishedChanges, machineInitDraft, machineInitToken, machineNeedsChatBridgeRepair, machineNeedsEnvHttpSyncRepair, machineNeedsSkillSyncRepair, machineVersionCopy, mergeDiscoveredMachines, mergeSnapshotRecord, noteIntakeAutoInFlightRef, notifications, setAppVersion, setCopiedUpdateDetailKey, setDiscoveredMachines, setFleetSnapshots, setKanbanAssignees, setKanbanBoard, setKanbanBoards, setKanbanError, setKanbanStorage, setKanbanTenants, setActiveView, setSelectedKanbanTaskId, setMachineInitCopiedKey, setMachineInitOpen, setMachineInitStatus, setMachineInitToken, setMachineInitTokenStatus, setNoteIntakePending, setNoteIntakePreview, setNoteIntakeStatus, setNotificationCursor, setNotificationSummary, setNotifications, setNotificationsStatus, setTasks, setUpdateStatusByMachine, sharedVault, summarizeHermesAuthError, updateStatusByMachine } = props;
   function openMachineInitModal() {
     setMachineInitOpen(true);
     setMachineInitStatus({});
@@ -104,8 +104,9 @@ export function useFleetNotificationsController(props: any) {
     const versionCopy = machineVersionCopy(machine, appVersion?.latestCommit || appVersion?.commit);
     const needsChatBridgeRepair = machineNeedsChatBridgeRepair(machine);
     const needsEnvHttpSyncRepair = machineNeedsEnvHttpSyncRepair(machine);
-    if ((needsChatBridgeRepair || needsEnvHttpSyncRepair) && localDashboardHasUnpublishedChanges(appVersion)) {
-      const missingFeature = needsEnvHttpSyncRepair ? "shared-env sync endpoint" : "Hermes chat bridge";
+    const needsSkillSyncRepair = machineNeedsSkillSyncRepair(machine);
+    if ((needsChatBridgeRepair || needsEnvHttpSyncRepair || needsSkillSyncRepair) && localDashboardHasUnpublishedChanges(appVersion)) {
+      const missingFeature = needsSkillSyncRepair ? "shared skills collector" : needsEnvHttpSyncRepair ? "shared-env sync endpoint" : "Hermes chat bridge";
       setUpdateStatusByMachine((current) => ({
         ...current,
         [machine.key]: {
@@ -116,7 +117,7 @@ export function useFleetNotificationsController(props: any) {
       }));
       return;
     }
-    if (!isCollectorAutoUpdateable(versionCopy) && !needsChatBridgeRepair && !needsEnvHttpSyncRepair) {
+    if (!isCollectorAutoUpdateable(versionCopy) && !needsChatBridgeRepair && !needsEnvHttpSyncRepair && !needsSkillSyncRepair) {
       setUpdateStatusByMachine((current) => ({
         ...current,
         [machine.key]: {
@@ -142,6 +143,8 @@ export function useFleetNotificationsController(props: any) {
         requiredCapabilities: {
           chat: needsChatBridgeRepair || undefined,
           envHttpSync: needsEnvHttpSyncRepair || undefined,
+          skillInventory: needsSkillSyncRepair || undefined,
+          skillAutoSync: needsSkillSyncRepair || undefined,
         },
       }),
     }).catch(() => null);

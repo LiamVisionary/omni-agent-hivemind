@@ -851,7 +851,7 @@ export type MiroSharkSurfaceView = "x" | "reddit" | "polymarket" | "timeline";
 
 export type MiroSharkWorkspaceMode = "new" | "run";
 
-export type DashboardView = "agents" | "kanban" | "scheduler" | "swarm" | "wallet" | "vault" | "maintenance" | "files" | "notifications" | "chat" | "more" | "env";
+export type DashboardView = "agents" | "kanban" | "scheduler" | "swarm" | "wallet" | "vault" | "integrations" | "maintenance" | "files" | "notifications" | "chat" | "more" | "env";
 
 export type WorkView = Extract<DashboardView, "kanban" | "scheduler" | "swarm">;
 

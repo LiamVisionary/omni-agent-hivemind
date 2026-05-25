@@ -8,11 +8,25 @@
   padding: 28px;
 }
 
+.embedded {
+  min-height: auto;
+  background: transparent;
+  padding: 0;
+}
+
 .shell {
   width: min(1380px, 100%);
   margin: 0 auto;
   display: grid;
   gap: 18px;
+}
+
+.embedded .shell {
+  width: 100%;
+}
+
+.embedded .topbar {
+  display: none;
 }
 
 .topbar,

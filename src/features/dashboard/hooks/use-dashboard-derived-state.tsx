@@ -7,7 +7,7 @@
 import { useCallback, useEffect, useMemo } from "react";
 
 export function useDashboardDerivedState(props: any) {
-  const { RUNTIME_LABELS, activeView, agentAliasMap, agentCreateDraft, agentCreateMachineKey, agentRoleModalId, agentSettingsPanel, agents, beeRoleLabel, brainGraph, brainGraphLayout, brainSkills, busy, chatAutoScrollRef, chatDisplayContent, chatMessageStorageKey, chatMessageWindow, cleanActivityTitle, collectorKey, createAgentProfile, createDefaultAgentWallet, dedupeAgents, discoveredMachines, displayMachineName, fleetAgentState, fleetMachineLocation, fleetMetric, fleetSnapshots, fleetVersionState, formatRelativeTime, getHoneyAgentRewards, getSurvivalSnapshot, groupKanbanTasks, groupNotifications, hermesUpdateRequiredDetail, hiveEnv, hiveEnvRuntimeSourceId, honeyTreasury, hydrated, inferCurrentTask, inferLatestAgentMessage, isChatSidebarTask, isLoopbackCollector, isManualAgentChatMessage, isMeaningfulActive, isMobileMachineOs, isStarterPlaceholder, isVisibleFleetMachine, isWorkView, kanbanAssignees, kanbanBoard, kanbanBoardScrollRef, kanbanError, kanbanIncludeArchived, kanbanLoading, kanbanTaskAssigneeAgent, machineIdentityFromParts, machineNameAliases, machineNeedsChatBridgeRepair, machineNeedsEnvHttpSyncRepair, machineNetworkIssue, maintenanceReport, messagesByAgent, messagesScrollRef, mirosharkAnalysisAgentId, mirosharkStatus, moneyClawLoadingEnvName, moneyClawStatusByEnvName, normalizeAgentProfile, notificationActorMeta, notificationDisplayBody, notificationDisplayTitle, notificationSourceLabel, notificationSummary, notifications, parseEnvImportText, quickAddMachineTargets, refreshMoneyClawStatus, refreshRuntimeIntegrations, refreshSharedSchedulesFromVault, runtimeCan, runtimeCount, runtimeFileRoots, runtimeModelSelectionsByRuntime, runtimeUsage, schedulerSkillSearch, schedules, selectedAgentId, selectedBrainNodeId, selectedChatLeafKey, selectedChatPreview, selectedKanbanTaskId, selectedKanbanTaskIds, setKanbanBoardScrollState, setMachineNameAliases, setScheduleDraft, setupMachineKey, sharedEnvImportText, sharedVault, skillBrowserSearch, skillBrowserSkills, tailscaleDevices, tailscaleStatus, tasks, updateStatusByMachine, walletExpanded, walletsByAgent, workPriority } = props;
+  const { RUNTIME_LABELS, activeView, agentAliasMap, agentCreateDraft, agentCreateMachineKey, agentRoleModalId, agentSettingsPanel, agents, beeRoleLabel, brainGraph, brainGraphLayout, brainSkills, busy, chatAutoScrollRef, chatDisplayContent, chatMessageStorageKey, chatMessageWindow, cleanActivityTitle, collectorKey, createAgentProfile, createDefaultAgentWallet, dedupeAgents, discoveredMachines, displayMachineName, fleetAgentState, fleetMachineLocation, fleetMetric, fleetSnapshots, fleetVersionState, formatRelativeTime, getHoneyAgentRewards, getSurvivalSnapshot, groupKanbanTasks, groupNotifications, hermesUpdateRequiredDetail, hiveEnv, hiveEnvRuntimeSourceId, honeyTreasury, hydrated, inferCurrentTask, inferLatestAgentMessage, isChatSidebarTask, isLoopbackCollector, isManualAgentChatMessage, isMeaningfulActive, isMobileMachineOs, isStarterPlaceholder, isVisibleFleetMachine, isWorkView, kanbanAssignees, kanbanBoard, kanbanBoardScrollRef, kanbanError, kanbanIncludeArchived, kanbanLoading, kanbanTaskAssigneeAgent, machineIdentityFromParts, machineNameAliases, machineNeedsChatBridgeRepair, machineNeedsEnvHttpSyncRepair, machineNeedsSkillSyncRepair, machineNetworkIssue, maintenanceReport, messagesByAgent, messagesScrollRef, mirosharkAnalysisAgentId, mirosharkStatus, moneyClawLoadingEnvName, moneyClawStatusByEnvName, normalizeAgentProfile, notificationActorMeta, notificationDisplayBody, notificationDisplayTitle, notificationSourceLabel, notificationSummary, notifications, parseEnvImportText, quickAddMachineTargets, refreshMoneyClawStatus, refreshRuntimeIntegrations, refreshSharedSchedulesFromVault, runtimeCan, runtimeCount, runtimeFileRoots, runtimeModelSelectionsByRuntime, runtimeUsage, schedulerSkillSearch, schedules, selectedAgentId, selectedBrainNodeId, selectedChatLeafKey, selectedChatPreview, selectedKanbanTaskId, selectedKanbanTaskIds, setKanbanBoardScrollState, setMachineNameAliases, setScheduleDraft, setupMachineKey, sharedEnvImportText, sharedVault, skillBrowserSearch, skillBrowserSkills, tailscaleDevices, tailscaleStatus, tasks, updateStatusByMachine, walletExpanded, walletsByAgent, workPriority } = props;
   const discoveredAgents = useMemo(
     () => discoveredMachines.flatMap((machine) => machine.agents ?? []).map(normalizeAgentProfile),
     [discoveredMachines],
@@ -429,6 +429,7 @@ export function useDashboardDerivedState(props: any) {
         versionState === "stale"
         || machineNeedsChatBridgeRepair(machine)
         || machineNeedsEnvHttpSyncRepair(machine)
+        || machineNeedsSkillSyncRepair(machine)
       );
       return {
         id: machine.key,
@@ -815,6 +816,11 @@ export function useDashboardDerivedState(props: any) {
       detail: sharedVault.enabled ? "enabled" : "off",
     },
     {
+      id: "integrations" as const,
+      label: "Integrations",
+      detail: "Nango host",
+    },
+    {
       id: "maintenance" as const,
       label: "Diagnostics",
       detail: maintenanceReport?.ok === false ? "repairs available" : "checks",
@@ -850,7 +856,7 @@ export function useDashboardDerivedState(props: any) {
   const activeNavItem = navItems.find((item) => (
     item.id === activeView
     || (item.id === "kanban" && isWorkView(activeView))
-    || (item.id === "more" && (activeView === "maintenance" || activeView === "files" || activeView === "notifications" || activeView === "env"))
+    || (item.id === "more" && (activeView === "maintenance" || activeView === "files" || activeView === "notifications" || activeView === "env" || activeView === "integrations"))
   ));
   const activeHeader = (() => {
     const detail = activeNavItem?.detail ?? "";
@@ -861,6 +867,7 @@ export function useDashboardDerivedState(props: any) {
       swarm: { label: "Work", title: "What the hive is simulating" },
       wallet: { label: "Wallets", title: "What agents spend and consume" },
       vault: { label: "Brain Graph", title: "What the hive remembers" },
+      integrations: { label: "Integrations", title: "Where external API access lives" },
       maintenance: { label: "Fleet Diagnostics", title: "What needs repair" },
       files: { label: "Brain Files", title: "What agents can inspect" },
       notifications: { label: "Alerts", title: "What needs attention" },

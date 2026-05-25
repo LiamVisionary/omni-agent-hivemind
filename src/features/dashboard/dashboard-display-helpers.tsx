@@ -170,6 +170,13 @@ export function machineNeedsEnvHttpSyncRepair(machine: MachineGroup) {
   return machine.collector === "ready" && machine.capabilities?.envHttpSync !== true;
 }
 
+export function machineNeedsSkillSyncRepair(machine: MachineGroup) {
+  return machine.collector === "ready" && (
+    machine.capabilities?.skillInventory !== true
+    || machine.capabilities?.skillAutoSync !== true
+  );
+}
+
 export function localDashboardHasUnpublishedChanges(version?: AppVersion | null) {
   if (!version) return false;
   if (version.dirty) return true;

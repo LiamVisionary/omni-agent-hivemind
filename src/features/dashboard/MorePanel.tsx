@@ -1,11 +1,11 @@
-import { Bell, FolderOpen, KeyRound, ShieldCheck } from "lucide-react";
+import { Bell, FolderOpen, KeyRound, PlugZap, ShieldCheck } from "lucide-react";
 
 import fleetStyles from "@/app/fleet.module.css";
 import { createStyleClass } from "@/features/dashboard/style-classes";
 
 const fleetClass = createStyleClass(fleetStyles);
 
-type MorePanelTarget = "env" | "maintenance" | "files" | "notifications";
+type MorePanelTarget = "integrations" | "env" | "maintenance" | "files" | "notifications";
 
 export type MorePanelProps = {
   sharedEnvCount: number;
@@ -27,6 +27,13 @@ export function MorePanel({
   onNavigate,
 }: MorePanelProps) {
   const items = [
+    {
+      id: "integrations" as const,
+      icon: <PlugZap aria-hidden="true" />,
+      eyebrow: "Nango host",
+      title: "Integrations",
+      body: "Choose the always-on machine for shared external API access.",
+    },
     {
       id: "env" as const,
       icon: <KeyRound aria-hidden="true" />,
@@ -63,10 +70,10 @@ export function MorePanel({
         <div>
           <p className="eyebrow">More</p>
           <h2>Utilities</h2>
-          <p>Diagnostics, scoped files, and agent notifications live here so the main navigation stays focused.</p>
+          <p>Integrations, diagnostics, scoped files, and agent notifications live here so the main navigation stays focused.</p>
         </div>
       </div>
-      <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+      <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-5">
         {items.map((item) => (
           <button
             type="button"
