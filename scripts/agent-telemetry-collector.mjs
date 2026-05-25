@@ -2432,7 +2432,7 @@ createServer(async (request, response) => {
   }
   if (pathname === "/skills" && request.method === "GET") {
     try {
-      const includeSourceFiles = parsedUrl.searchParams.get("includeSourceFiles") === "true";
+      const includeSourceFiles = requestUrl.searchParams.get("includeSourceFiles") === "true";
       jsonResponse(response, 200, await listInstalledSkills({ includeSourceFiles }));
     } catch (error) {
       jsonResponse(response, 500, {

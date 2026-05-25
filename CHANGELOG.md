@@ -11,6 +11,14 @@ be added here first, then marked `Committed` or `Pushed` after the git action.
 - Verification: `node --check scripts/agent-telemetry-collector.mjs`; `pnpm exec eslint src/lib/services/fleet/remote-skill-providers.ts src/app/api/obsidian/skills/route.ts scripts/agent-telemetry-collector.mjs --max-warnings=0`; `git diff --check`
 - Intended commit message: `Keep remote skill inventory lightweight`
 
+## 2026-05-25 21:47 WITA - Fix Collector Skill Query Parsing
+
+- Status: Pushed
+- Areas changed: Telemetry collector skills endpoint
+- Summary: Fix the `/skills` endpoint to read `includeSourceFiles` from the live request URL object instead of an undefined parser variable so updated remote collectors can return lightweight inventories.
+- Verification: `node --check scripts/agent-telemetry-collector.mjs`; `pnpm exec eslint scripts/agent-telemetry-collector.mjs --max-warnings=0`; `git diff --check -- scripts/agent-telemetry-collector.mjs CHANGELOG.md`
+- Intended commit message: `Fix collector skill query parsing`
+
 ## 2026-05-25 21:08 WITA - Repair Collector Update Verification
 
 - Status: Pushed
