@@ -772,12 +772,12 @@ async function scanHermesState(agent, hermesDir) {
     from sessions order by started_at desc limit 12;
   `], []);
 
-  return Promise.all(sessions.map(async (session) => {
+  const tasks = await Promise.all(sessions.map(async (session) => {
     const messages = await execJson("sqlite3", ["-json", dbPath, `
-      select role, substr(content,1,900) as content, tool_name, timestamp
+      select role, substr(content,1,8000) as content, tool_name, timestamp
       from messages
       where session_id = '${String(session.id).replaceAll("'", "''")}'
-      order by timestamp desc limit 8;
+      order by timestamp desc limit 30;
     `], []);
     const readableMessages = messages.map((message) => ({
       ...message,
@@ -787,6 +787,17 @@ async function scanHermesState(agent, hermesDir) {
     const latestUser = readableMessages.find((message) => message.role === "user");
     const latestTool = readableMessages.find((message) => message.role === "tool");
     const latest = latestAssistant ?? latestTool ?? readableMessages[0];
+    const chatMessages = readableMessages
+      .filter((message) => (
+        (message.role === "user" || message.role === "assistant")
+        && message.content.trim()
+      ))
+      .sort((a, b) => a.timestamp - b.timestamp)
+      .map((message) => ({
+        role: message.role,
+        content: compact(message.content, "", maxChatChars),
+      }));
+    if (!chatMessages.length) return null;
     return {
       id: `hermes-state:${session.id}`,
       agentId: agent.id,
@@ -796,8 +807,10 @@ async function scanHermesState(agent, hermesDir) {
       source: "hermes-state",
       startedAt: session.started_at * 1000,
       updatedAt: (latest?.timestamp ?? session.started_at) * 1000,
+      messages: chatMessages,
     };
   }));
+  return tasks.filter(Boolean);
 }
 
 async function scanFiles(agent, dataDir) {
@@ -1666,9 +1679,14 @@ createServer(async (request, response) => {
     const sessionId = requestUrl.searchParams.get("sessionId") || requestUrl.searchParams.get("id") || "";
     const hermesHome = expandHome(requestUrl.searchParams.get("localDataDir") || defaultHermesDir);
     const sinceMs = Number(requestUrl.searchParams.get("sinceMs") || 0);
-    const session = sessionId
-      ? await readHermesApiSession(hermesHome, sessionId) ?? await readHermesDbSession(hermesHome, sessionId)
-      : (await listRecentHermesApiSessions(hermesHome, sinceMs))[0] ?? null;
+    let session = null;
+    if (sessionId) {
+      const apiSession = await readHermesApiSession(hermesHome, sessionId);
+      const dbSession = apiSession?.messages?.length ? null : await readHermesDbSession(hermesHome, sessionId);
+      session = dbSession ?? apiSession;
+    } else {
+      session = (await listRecentHermesApiSessions(hermesHome, sinceMs))[0] ?? null;
+    }
     jsonResponse(response, session ? 200 : 404, session ? { ok: true, session } : { ok: false, error: "session not found" });
     return;
   }

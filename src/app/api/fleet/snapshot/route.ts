@@ -271,7 +271,7 @@ async function scanHermesStateDb(agent: AgentProfile, hermesDir: string): Promis
     limit 10;
   `], []);
 
-  const tasks = await Promise.all(sessions.map(async (session) => {
+  const tasks = await Promise.all(sessions.map(async (session): Promise<FleetTask | null> => {
     const messages = await execJson<Array<{
       role: string;
       content: string | null;
@@ -302,6 +302,7 @@ async function scanHermesStateDb(agent: AgentProfile, hermesDir: string): Promis
         role: message.role as "user" | "assistant",
         content: compact(message.content, "", 8_000),
       }));
+    if (!chatMessages.length) return null;
     return {
       id: `hermes-state:${session.id}`,
       agentId: agent.id,
@@ -315,7 +316,7 @@ async function scanHermesStateDb(agent: AgentProfile, hermesDir: string): Promis
     };
   }));
 
-  return tasks;
+  return tasks.filter((task): task is FleetTask => Boolean(task));
 }
 
 async function readIfExists(path: string) {

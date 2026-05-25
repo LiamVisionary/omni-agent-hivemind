@@ -3,6 +3,22 @@
 This file records user-visible changes before they are committed. New work should
 be added here first, then marked `Committed` or `Pushed` after the git action.
 
+## 2026-05-25 15:10 WITA - Link README Bankr Badge To Token
+
+- Status: Pushed
+- Areas changed: README launch badge, changelog
+- Summary: Point the README Bankr badge at the current HivemindOS token launch page for `0xa382c83e2a3b79368f372c2eb9b6925ffaf45ba3` instead of the generic Bankr homepage.
+- Verification: `curl -I -L --max-time 15 https://bankr.bot/launches/0xa382c83e2a3b79368f372c2eb9b6925ffaf45ba3`; `git diff --check README.md CHANGELOG.md`.
+- Intended commit message: `Link Bankr badge to token`
+
+## 2026-05-25 15:05 WITA - Hide Empty Hermes Chat Rows
+
+- Status: Pushed
+- Areas changed: chat sidebar conversation filtering, telemetry collector Hermes session scanning, local fleet snapshot Hermes session scanning, changelog
+- Summary: Stop advertising empty starter rows and Hermes sessions as chat rows when they have no readable user/assistant transcript, and make the collector fall back from an empty API session file to the Hermes DB session so resumable chats can hydrate their messages.
+- Verification: `node --check scripts/agent-telemetry-collector.mjs`; `pnpm exec tsc --noEmit --pretty false`; `pnpm exec eslint src/app/page.tsx --max-warnings=999` passed with 30 pre-existing warnings; `git diff --check -- src/app/page.tsx scripts/agent-telemetry-collector.mjs src/app/api/fleet/snapshot/route.ts CHANGELOG.md`; Playwright smoke against `http://localhost:5020` showed the Chat sidebar no longer renders `Hermes chat` placeholder rows; local Hermes DB inspection found 24 of 102 sessions had no readable user/assistant chat and should not render as chat rows.
+- Intended commit message: `Hide empty Hermes chat rows`
+
 ## 2026-05-25 12:55 WITA - Add README Screenshots
 
 - Status: Pushed

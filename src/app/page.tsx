@@ -10082,7 +10082,7 @@ export default function Home() {
         const latestAgentWork = agentWork.find((task) => task.updatedAt > 0);
         const hasRecentHistory = agentWork.some((task) => task.source !== "dashboard-chat");
         const agentChatKey = `agent-${agent.id}`;
-        const shouldShowDirectChat = !hasRecentHistory;
+        const shouldShowDirectChat = hasDirectConversation;
         if (shouldShowDirectChat) {
           folder.chats.push({
             key: agentChatKey,
