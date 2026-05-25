@@ -57,7 +57,7 @@ export async function POST(request: NextRequest) {
     const result = await importBrainSkills({
       vaultPath: body.vaultPath,
       provider: body.provider ?? "all",
-      remoteProviders: await remoteSkillProviders(request),
+      remoteProviders: await remoteSkillProviders(request, { includeSourceFiles: true }),
     });
     return NextResponse.json({ ok: true, ...result });
   } catch (error) {

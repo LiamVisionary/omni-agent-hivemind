@@ -1261,12 +1261,12 @@ async function collectSkillFiles(skillDir) {
   return files;
 }
 
-async function skillSummaryForProvider(provider, skillPath) {
+async function skillSummaryForProvider(provider, skillPath, options = {}) {
   const markdown = await readFile(skillPath, "utf-8").catch(() => "");
   const stats = await stat(skillPath).catch(() => null);
   const slug = skillSlug(basename(dirname(skillPath)));
   const frontmatter = parseSkillFrontmatter(markdown);
-  return {
+  const summary = {
     id: `${provider.id}:${hostname()}:${skillPath}`,
     slug,
     name: frontmatter.get("name") || titleFromSlug(slug),
@@ -1280,14 +1280,17 @@ async function skillSummaryForProvider(provider, skillPath) {
     checksum: skillChecksum(markdown),
     updatedAt: stats?.mtimeMs ?? 0,
     imported: false,
-    sourceFiles: await collectSkillFiles(dirname(skillPath)),
   };
+  if (options.includeSourceFiles) {
+    summary.sourceFiles = await collectSkillFiles(dirname(skillPath));
+  }
+  return summary;
 }
 
-async function listInstalledSkills() {
+async function listInstalledSkills(options = {}) {
   const providers = await Promise.all(skillProviderRoots.map(async (provider) => {
     const skillFiles = [...new Set((await Promise.all(provider.roots.map((root) => findSkillFiles(root.path, root.maxDepth)))).flat())];
-    const skills = await Promise.all(skillFiles.map((skillPath) => skillSummaryForProvider(provider, skillPath)));
+    const skills = await Promise.all(skillFiles.map((skillPath) => skillSummaryForProvider(provider, skillPath, options)));
     return {
       id: provider.id,
       label: provider.label,
@@ -2429,7 +2432,8 @@ createServer(async (request, response) => {
   }
   if (pathname === "/skills" && request.method === "GET") {
     try {
-      jsonResponse(response, 200, await listInstalledSkills());
+      const includeSourceFiles = parsedUrl.searchParams.get("includeSourceFiles") === "true";
+      jsonResponse(response, 200, await listInstalledSkills({ includeSourceFiles }));
     } catch (error) {
       jsonResponse(response, 500, {
         ok: false,

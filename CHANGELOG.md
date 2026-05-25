@@ -3,6 +3,14 @@
 This file records user-visible changes before they are committed. New work should
 be added here first, then marked `Committed` or `Pushed` after the git action.
 
+## 2026-05-25 21:43 WITA - Keep Remote Skill Inventory Lightweight
+
+- Status: Pushed
+- Areas changed: Telemetry collector skills endpoint, remote skill provider fetcher, Obsidian skills API
+- Summary: Stop ordinary `/skills` inventory scans from embedding every skill source file, add an explicit `includeSourceFiles=true` mode for import operations, and give remote imports a longer timeout while keeping dashboard provider-card aggregation fast enough to include remote machines.
+- Verification: `node --check scripts/agent-telemetry-collector.mjs`; `pnpm exec eslint src/lib/services/fleet/remote-skill-providers.ts src/app/api/obsidian/skills/route.ts scripts/agent-telemetry-collector.mjs --max-warnings=0`; `git diff --check`
+- Intended commit message: `Keep remote skill inventory lightweight`
+
 ## 2026-05-25 21:08 WITA - Repair Collector Update Verification
 
 - Status: Pushed
