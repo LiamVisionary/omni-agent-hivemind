@@ -17,8 +17,17 @@ export type BrainSkillSummary = {
   path: string;
   relativePath: string;
   checksum: string;
+  updatedAt: number;
   imported: boolean;
   importedAs?: string;
+  sourceMachine?: string;
+  sourcePath?: string;
+  sourceFiles?: BrainSkillSourceFile[];
+};
+
+export type BrainSkillSourceFile = {
+  path: string;
+  contentBase64: string;
 };
 
 export type BrainSkillProviderInventory = {
@@ -46,6 +55,21 @@ export type BrainSkillImportResult = BrainSkillInventory & {
   imported: BrainSkillSummary[];
   skipped: BrainSkillSummary[];
   provider: BrainSkillProviderId | "all";
+};
+
+export type BrainSkillProviderAutoSyncPolicy = {
+  autoImport?: boolean;
+  autoUpdate?: boolean;
+  trackRemovals?: boolean;
+  allowDelete?: boolean;
+};
+
+export type BrainSkillReconcileResult = BrainSkillInventory & {
+  imported: BrainSkillSummary[];
+  updated: BrainSkillSummary[];
+  markedMissing: BrainSkillSummary[];
+  skipped: Array<BrainSkillSummary & { reason: string }>;
+  deletionFreeze: boolean;
 };
 
 export type BrainSkillAeonSyncResult = {
@@ -84,6 +108,8 @@ type GitHubContentEntry = {
   content?: string;
   encoding?: string;
 };
+
+export type RemoteBrainSkillProviderInventory = BrainSkillProviderInventory;
 
 const PROVIDERS: Array<{
   id: BrainSkillProviderId;
@@ -150,7 +176,7 @@ const PROVIDERS: Array<{
   },
 ];
 
-const SKIPPED_DIRS = new Set([".git", "node_modules", ".next", "dist", "build", ".cache"]);
+const SKIPPED_DIRS = new Set([".git", "node_modules", ".next", "dist", "build", ".cache", ".archive"]);
 const SOURCE_METADATA_FILE = ".hivemind-skill-source.json";
 const GITHUB_API_BASE = "https://api.github.com";
 const GITHUB_API_VERSION = "2022-11-28";
@@ -254,6 +280,7 @@ async function skillSummary(input: {
   const slug = sanitizeSlug(basename(dirname(input.skillPath)));
   const sourceMetadata = input.provider === "shared" ? await readSourceMetadata(dirname(input.skillPath)) : null;
   const existing = input.sharedByChecksum.get(checksum(markdown)) ?? input.sharedBySlug.get(slug);
+  const updatedAt = (await stat(input.skillPath).catch(() => null))?.mtimeMs ?? 0;
   return {
     id: `${input.provider}:${input.skillPath}`,
     slug,
@@ -264,6 +291,7 @@ async function skillSummary(input: {
     path: input.skillPath,
     relativePath: relative(input.basePath, input.skillPath),
     checksum: checksum(markdown),
+    updatedAt,
     imported: input.provider === "shared" || Boolean(existing),
     importedAs: existing?.slug,
   };
@@ -514,7 +542,74 @@ function sourcePriority(skill: BrainSkillSummary) {
   return 1;
 }
 
-export async function getBrainSkillInventory(vaultPath?: string): Promise<BrainSkillInventory> {
+function newestSkill(left: BrainSkillSummary, right: BrainSkillSummary) {
+  if ((right.updatedAt ?? 0) !== (left.updatedAt ?? 0)) {
+    return (right.updatedAt ?? 0) > (left.updatedAt ?? 0) ? right : left;
+  }
+  return right.providerLabel.localeCompare(left.providerLabel) > 0 ? right : left;
+}
+
+function markProviderSkillImports(
+  skill: BrainSkillSummary,
+  sharedByChecksum: Map<string, BrainSkillSummary>,
+  sharedBySlug: Map<string, BrainSkillSummary>,
+): BrainSkillSummary {
+  const existing = sharedByChecksum.get(skill.checksum) ?? sharedBySlug.get(skill.slug);
+  return {
+    ...skill,
+    imported: Boolean(existing),
+    importedAs: existing?.slug,
+  };
+}
+
+function mergeProviderInventories(
+  localProviders: BrainSkillProviderInventory[],
+  remoteProviders: RemoteBrainSkillProviderInventory[] | undefined,
+  sharedByChecksum: Map<string, BrainSkillSummary>,
+  sharedBySlug: Map<string, BrainSkillSummary>,
+) {
+  const providerMap = new Map<BrainSkillProviderId, BrainSkillProviderInventory>();
+  for (const provider of localProviders) {
+    providerMap.set(provider.id, { ...provider, skills: [...provider.skills] });
+  }
+
+  for (const remoteProvider of remoteProviders ?? []) {
+    const existing = providerMap.get(remoteProvider.id);
+    if (!existing) {
+      providerMap.set(remoteProvider.id, {
+        ...remoteProvider,
+        skills: remoteProvider.skills.map((skill) => markProviderSkillImports(skill, sharedByChecksum, sharedBySlug)),
+      });
+      continue;
+    }
+    existing.installed = existing.installed || remoteProvider.installed;
+    existing.skills.push(...remoteProvider.skills.map((skill) => markProviderSkillImports(skill, sharedByChecksum, sharedBySlug)));
+  }
+
+  return PROVIDERS.map((provider) => {
+    const merged = providerMap.get(provider.id) ?? {
+      id: provider.id,
+      label: provider.label,
+      home: provider.home,
+      skills: [],
+      installed: false,
+    };
+    const latestBySlug = new Map<string, BrainSkillSummary>();
+    for (const skill of merged.skills) {
+      const existing = latestBySlug.get(skill.slug);
+      latestBySlug.set(skill.slug, existing ? newestSkill(existing, skill) : skill);
+    }
+    return {
+      ...merged,
+      skills: [...latestBySlug.values()].sort((a, b) => a.name.localeCompare(b.name)),
+    };
+  });
+}
+
+export async function getBrainSkillInventory(
+  vaultPath?: string,
+  remoteProviders?: RemoteBrainSkillProviderInventory[],
+): Promise<BrainSkillInventory> {
   const resolvedVault = resolveObsidianVaultPath(vaultPath);
   const skillsFolder = join(resolvedVault, "Skills");
   const readmePath = join(skillsFolder, "README.md");
@@ -523,7 +618,7 @@ export async function getBrainSkillInventory(vaultPath?: string): Promise<BrainS
   const sharedByChecksum = new Map(shared.map((skill) => [skill.checksum, skill]));
   const sharedBySlug = new Map(shared.map((skill) => [skill.slug, skill]));
 
-  const providers = await Promise.all(PROVIDERS.map(async (provider) => {
+  const localProviders = await Promise.all(PROVIDERS.map(async (provider) => {
     const skillFiles = [...new Set((await Promise.all(
       provider.roots.map((root) => findSkillFiles(root.path, root.maxDepth)),
     )).flat())];
@@ -547,6 +642,7 @@ export async function getBrainSkillInventory(vaultPath?: string): Promise<BrainS
     };
   }));
 
+  const providers = mergeProviderInventories(localProviders, remoteProviders, sharedByChecksum, sharedBySlug);
   const providerSkills = providers.reduce((sum, provider) => sum + provider.skills.length, 0);
   const importable = providers.reduce((sum, provider) => sum + provider.skills.filter((skill) => !skill.imported).length, 0);
 
@@ -590,12 +686,66 @@ export async function getSharedBrainSkills(vaultPath?: string): Promise<{
   return { vaultPath: resolvedVault, skillsFolder, readmePath, shared };
 }
 
+async function writeSourceFiles(destinationDir: string, files: BrainSkillSourceFile[]) {
+  const root = resolve(destinationDir);
+  await mkdir(root, { recursive: true });
+  for (const file of files) {
+    if (!file.path || file.path.startsWith("/") || file.path.split(/[\\/]+/).some((part) => part === ".." || SKIPPED_DIRS.has(part))) {
+      continue;
+    }
+    const destination = resolve(root, file.path);
+    if (destination !== root && !destination.startsWith(`${root}/`)) continue;
+    await mkdir(dirname(destination), { recursive: true });
+    const content = Buffer.from(file.contentBase64, "base64");
+    await writeFile(destination, new Uint8Array(content.buffer, content.byteOffset, content.byteLength));
+  }
+}
+
+async function copySkillSource(source: BrainSkillSummary, destinationDir: string) {
+  if (source.sourceFiles?.length) {
+    await writeSourceFiles(destinationDir, source.sourceFiles);
+    return;
+  }
+  await cp(dirname(source.path), destinationDir, {
+    recursive: true,
+    errorOnExist: false,
+    force: true,
+    filter: (path) => !path.split("/").some((part) => SKIPPED_DIRS.has(part)),
+  });
+}
+
+async function writeImportedMetadata(destinationDir: string, source: BrainSkillSummary, extra: Record<string, unknown> = {}) {
+  await writeFile(join(destinationDir, SOURCE_METADATA_FILE), JSON.stringify({
+    provider: source.provider,
+    providerLabel: source.providerLabel,
+    sourcePath: source.sourcePath ?? source.path,
+    sourceMachine: source.sourceMachine,
+    sourceChecksum: source.checksum,
+    sourceUpdatedAt: source.updatedAt,
+    importedAt: new Date().toISOString(),
+    ...extra,
+  }, null, 2), "utf8");
+}
+
+async function archiveSharedSkill(skillsFolder: string, slug: string, sourceDir: string) {
+  const archiveDir = join(skillsFolder, ".archive", `${slug}-${new Date().toISOString().replace(/[:.]/g, "-")}`);
+  await mkdir(dirname(archiveDir), { recursive: true });
+  await cp(sourceDir, archiveDir, {
+    recursive: true,
+    errorOnExist: false,
+    force: false,
+    filter: (path) => !path.split("/").some((part) => SKIPPED_DIRS.has(part)),
+  });
+  return archiveDir;
+}
+
 export async function importBrainSkills(input: {
   vaultPath?: string;
   provider?: BrainSkillProviderId | "all";
+  remoteProviders?: RemoteBrainSkillProviderInventory[];
 }): Promise<BrainSkillImportResult> {
   const provider = input.provider ?? "all";
-  const before = await getBrainSkillInventory(input.vaultPath);
+  const before = await getBrainSkillInventory(input.vaultPath, input.remoteProviders);
   await mkdir(before.skillsFolder, { recursive: true });
 
   const selectedProviders = before.providers.filter((item) => provider === "all" || item.id === provider);
@@ -610,34 +760,124 @@ export async function importBrainSkills(input: {
       continue;
     }
 
-    const sourceDir = dirname(source.path);
     const destinationSlug = await nextDestinationSlug(before.skillsFolder, source.slug, source.provider, sharedBySlug);
     const destinationDir = join(before.skillsFolder, destinationSlug);
-    await cp(sourceDir, destinationDir, {
-      recursive: true,
-      errorOnExist: false,
-      force: false,
-      filter: (path) => !path.split("/").some((part) => SKIPPED_DIRS.has(part)),
-    });
-    await writeFile(join(destinationDir, SOURCE_METADATA_FILE), JSON.stringify({
-      provider: source.provider,
-      providerLabel: source.providerLabel,
-      sourcePath: source.path,
-      importedAt: new Date().toISOString(),
-    }, null, 2), "utf8");
+    await copySkillSource(source, destinationDir);
+    await writeImportedMetadata(destinationDir, source);
     const copied = { ...source, imported: true, importedAs: destinationSlug };
     imported.push(copied);
     sharedBySlug.set(destinationSlug, copied);
     sharedBySlug.set(source.slug, copied);
   }
 
-  const after = await getBrainSkillInventory(input.vaultPath);
+  const after = await getBrainSkillInventory(input.vaultPath, input.remoteProviders);
   if (imported.length) await writeSkillsReadme(after);
   return {
     ...after,
     imported,
     skipped,
     provider,
+  };
+}
+
+export async function reconcileBrainSkills(input: {
+  vaultPath?: string;
+  remoteProviders?: RemoteBrainSkillProviderInventory[];
+  policies?: Partial<Record<BrainSkillProviderId, BrainSkillProviderAutoSyncPolicy>>;
+}): Promise<BrainSkillReconcileResult> {
+  const before = await getBrainSkillInventory(input.vaultPath, input.remoteProviders);
+  await mkdir(before.skillsFolder, { recursive: true });
+
+  const sharedBySlug = new Map(before.shared.map((skill) => [skill.slug, skill]));
+  const imported: BrainSkillSummary[] = [];
+  const updated: BrainSkillSummary[] = [];
+  const markedMissing: BrainSkillSummary[] = [];
+  const skipped: Array<BrainSkillSummary & { reason: string }> = [];
+  const activeSources = new Map<string, BrainSkillSummary>();
+
+  for (const provider of before.providers) {
+    const policy = input.policies?.[provider.id];
+    if (!policy?.autoImport && !policy?.autoUpdate && !policy?.trackRemovals) continue;
+    for (const source of provider.skills) {
+      activeSources.set(`${source.provider}:${source.slug}`, source);
+      const shared = sharedBySlug.get(source.slug);
+      if (!shared) {
+        if (!policy.autoImport) {
+          skipped.push({ ...source, reason: "auto-import disabled" });
+          continue;
+        }
+        const destinationSlug = await nextDestinationSlug(before.skillsFolder, source.slug, source.provider, sharedBySlug);
+        const destinationDir = join(before.skillsFolder, destinationSlug);
+        await copySkillSource(source, destinationDir);
+        await writeImportedMetadata(destinationDir, source, { autoSyncedAt: new Date().toISOString() });
+        const copied = { ...source, imported: true, importedAs: destinationSlug };
+        imported.push(copied);
+        sharedBySlug.set(destinationSlug, copied);
+        sharedBySlug.set(source.slug, copied);
+        continue;
+      }
+
+      if (shared.checksum === source.checksum) continue;
+      if (!policy.autoUpdate) {
+        skipped.push({ ...source, reason: "auto-update disabled" });
+        continue;
+      }
+      if ((source.updatedAt ?? 0) < (shared.updatedAt ?? 0)) {
+        skipped.push({ ...source, reason: "shared copy is newer" });
+        continue;
+      }
+      const destinationDir = dirname(shared.path);
+      const archivedTo = await archiveSharedSkill(before.skillsFolder, shared.slug, destinationDir);
+      await rm(destinationDir, { recursive: true, force: true });
+      await copySkillSource(source, destinationDir);
+      await writeImportedMetadata(destinationDir, source, {
+        autoSyncedAt: new Date().toISOString(),
+        previousChecksum: shared.checksum,
+        archivedTo,
+      });
+      updated.push({ ...source, imported: true, importedAs: shared.slug });
+    }
+  }
+
+  const managedMetadata = await Promise.all(before.shared.map(async (skill) => ({
+    skill,
+    metadata: await readManagedMetadata(dirname(skill.path)),
+  })));
+  const missing = managedMetadata.filter(({ skill, metadata }) => {
+    const provider = metadata?.provider;
+    if (!provider || typeof provider !== "string" || !(provider in (input.policies ?? {}))) return false;
+    const policy = input.policies?.[provider as BrainSkillProviderId];
+    if (!policy?.trackRemovals) return false;
+    return !activeSources.has(`${provider}:${skill.slug}`);
+  });
+  const deletionFreeze = missing.length >= 20 || missing.length > Math.max(5, before.shared.length * 0.25);
+  if (!deletionFreeze) {
+    for (const { skill, metadata } of missing) {
+      const currentStatus = typeof metadata?.status === "string" ? metadata.status : "";
+      if (currentStatus === "missing-upstream") continue;
+      await writeFile(join(dirname(skill.path), SOURCE_METADATA_FILE), JSON.stringify({
+        ...metadata,
+        status: "missing-upstream",
+        missingAt: new Date().toISOString(),
+        deletionPolicy: "archive-only",
+      }, null, 2), "utf8");
+      markedMissing.push(skill);
+    }
+  } else {
+    for (const { skill } of missing) {
+      skipped.push({ ...skill, reason: "deletion freeze: too many upstream skills disappeared at once" });
+    }
+  }
+
+  const after = await getBrainSkillInventory(input.vaultPath, input.remoteProviders);
+  if (imported.length || updated.length || markedMissing.length) await writeSkillsReadme(after);
+  return {
+    ...after,
+    imported,
+    updated,
+    markedMissing,
+    skipped,
+    deletionFreeze,
   };
 }
 

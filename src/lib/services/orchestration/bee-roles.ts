@@ -32,25 +32,55 @@ type BeeAssignmentOptions = {
   preferQueen?: boolean;
 };
 
-const CLASS_KEYWORDS: Array<{ workerClass: BeeWorkerClass; keywords: RegExp[] }> = [
-  { workerClass: "planner", keywords: [/plan/i, /decompos/i, /architect/i, /strategy/i, /roadmap/i, /coordinate/i, /orchestrat/i] },
-  { workerClass: "code", keywords: [/code/i, /bug/i, /api/i, /test/i, /repo/i, /typescript/i, /css/i, /component/i, /build/i, /implement/i] },
-  { workerClass: "vision", keywords: [/screenshot/i, /image/i, /visual/i, /inspect/i, /ui/i, /ux/i, /screen/i] },
-  { workerClass: "writer", keywords: [/write/i, /copy/i, /docs?/i, /readme/i, /summary/i, /article/i, /prompt/i] },
-  { workerClass: "research", keywords: [/research/i, /find/i, /compare/i, /latest/i, /source/i, /market/i, /investigate/i] },
-  { workerClass: "artist", keywords: [/art/i, /image gen/i, /illustrat/i, /logo/i, /asset/i, /poster/i, /style/i] },
-  { workerClass: "ops", keywords: [/deploy/i, /server/i, /cron/i, /websocket/i, /mcp/i, /fleet/i, /tailscale/i, /collector/i] },
-  { workerClass: "qa", keywords: [/qa/i, /verify/i, /review/i, /playwright/i, /lint/i, /typecheck/i, /screenshot test/i] },
+const CLASS_KEYWORDS: Array<{ workerClass: BeeWorkerClass; priority: number; keywords: Array<{ pattern: RegExp; weight?: number }> }> = [
+  { workerClass: "planner", priority: 80, keywords: [/plan/i, /decompos/i, /architect/i, /strategy/i, /roadmap/i, /coordinate/i, /orchestrat/i].map((pattern) => ({ pattern })) },
+  { workerClass: "code", priority: 75, keywords: [/code/i, /bug/i, /api/i, /test/i, /repo/i, /typescript/i, /css/i, /component/i, /build/i, /implement/i].map((pattern) => ({ pattern })) },
+  {
+    workerClass: "writer",
+    priority: 70,
+    keywords: [
+      { pattern: /linkedin|social post|social copy|thread|caption/i, weight: 4 },
+      { pattern: /\bpost\b|\bcopy\b|\bwrite\b|docs?|readme|summary|article|prompt/i, weight: 2 },
+      { pattern: /editorial|newsletter|announcement|launch copy|tone/i, weight: 2 },
+    ],
+  },
+  { workerClass: "research", priority: 60, keywords: [/research/i, /find/i, /compare/i, /latest/i, /source/i, /market/i, /investigate/i].map((pattern) => ({ pattern })) },
+  {
+    workerClass: "artist",
+    priority: 55,
+    keywords: [
+      { pattern: /image gen|generate (?:an? )?image|create (?:an? )?image|illustrat|visual asset|poster|logo/i, weight: 4 },
+      { pattern: /\bart\b|style|image concept|art direction/i, weight: 2 },
+    ],
+  },
+  {
+    workerClass: "vision",
+    priority: 50,
+    keywords: [
+      { pattern: /screenshot|inspect|ui|ux|screen/i, weight: 3 },
+      { pattern: /\bimage\b|visual/i, weight: 1 },
+    ],
+  },
+  { workerClass: "ops", priority: 45, keywords: [/deploy/i, /server/i, /cron/i, /websocket/i, /mcp/i, /fleet/i, /tailscale/i, /collector/i].map((pattern) => ({ pattern })) },
+  { workerClass: "qa", priority: 40, keywords: [/qa/i, /verify/i, /review/i, /playwright/i, /lint/i, /typecheck/i, /screenshot test/i].map((pattern) => ({ pattern })) },
 ];
 
 // Adapted from Conway-Research/automaton's role-to-harness registry:
 // use lightweight role/class matching first, then fall back to a general worker.
 export function inferWorkerClass(task: Pick<KanbanTask, "title" | "body" | "skills">): BeeWorkerClass {
-  const text = [task.title, task.body, ...(task.skills ?? [])].join(" ");
-  for (const entry of CLASS_KEYWORDS) {
-    if (entry.keywords.some((keyword) => keyword.test(text))) return entry.workerClass;
+  if (/^\s*(?:generate|create|make|design)\s+(?:an?\s+)?(?:image|visual|illustration|art|asset)\b/i.test(task.title)) {
+    return "artist";
   }
-  return "general";
+  const text = [task.title, task.body, ...(task.skills ?? [])].join(" ");
+  const scored = CLASS_KEYWORDS
+    .map((entry) => ({
+      workerClass: entry.workerClass,
+      priority: entry.priority,
+      score: entry.keywords.reduce((score, keyword) => score + (keyword.pattern.test(text) ? keyword.weight ?? 1 : 0), 0),
+    }))
+    .filter((entry) => entry.score > 0)
+    .sort((left, right) => right.score - left.score || right.priority - left.priority);
+  return scored[0]?.workerClass ?? "general";
 }
 
 function agentDispatchScore(agent: AgentProfile) {
@@ -84,6 +114,17 @@ export function chooseBeeAssignment(task: KanbanTask, agents: AgentProfile[], op
       workerClass,
       mode: "worker",
       reason: `${queen.name} is online as Queen Bee and delegated this ${workerClass} work to ${worker.name}.`,
+    };
+  }
+  if (worker) {
+    return {
+      queen,
+      worker,
+      workerClass,
+      mode: "worker",
+      reason: queen
+        ? `${queen.name} is online as Queen Bee and delegated this ${workerClass} work to ${worker.name}.`
+        : `No Queen Bee is online, so the dashboard pickup loop chose ${worker.name} as the best available ${workerClass} worker.`,
     };
   }
   const fallbackWorker = available.find((agent) => agent.beeRole === "worker")

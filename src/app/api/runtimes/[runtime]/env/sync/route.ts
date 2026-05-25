@@ -10,13 +10,13 @@ export async function POST(
   { params }: { params: Promise<{ runtime: string }> },
 ) {
   const { runtime } = await params;
-  if (!["openclaw", "hermes", "aeon"].includes(runtime)) {
+  const runtimeId = runtime as AgentRuntime;
+  const adapter = getRuntimeAdapter(runtimeId);
+  if (!adapter) {
     return NextResponse.json({ ok: false, error: `Unknown runtime: ${runtime}` }, { status: 404 });
   }
 
-  const runtimeId = runtime as AgentRuntime;
   const body = await request.json().catch(() => ({})) as { agent?: AgentProfile; keys?: string[] };
-  const adapter = getRuntimeAdapter(runtimeId);
   if (!adapter?.syncEnv) {
     return NextResponse.json({ ok: false, error: `${adapter?.label ?? runtimeId} does not expose env sync.` }, { status: 501 });
   }

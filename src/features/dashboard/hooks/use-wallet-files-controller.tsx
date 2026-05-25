@@ -1,0 +1,559 @@
+// eslint-disable-next-line @typescript-eslint/ban-ts-comment
+// @ts-nocheck
+"use client";
+
+/* eslint-disable react-hooks/immutability, react-hooks/purity */
+
+import { useCallback, useEffect, useMemo } from "react";
+
+export function useWalletFilesController(props: any) {
+  const { buildAgentPaymentPrompt, createDefaultAgentWallet, createDefaultHoneyTreasuryConfig, displayAgents, duplicateAgentDraft, agents, honeyLedgerEnabled, normalizeMoney, openAgentCreationModal, runtimeFileDraft, runtimeFileOpen, runtimeFilePath, runtimeFileRootKey, runtimeFileRoots, selectedAgent, selectedAgentId, setAgents, setDuplicateAgentDraft, setHoneyLedgerEnabled, setHoneyTreasury, setMaintenanceBusy, setMaintenanceMessage, setMaintenanceReport, setMessagesByAgent, setMoneyClawLoadingEnvName, setMoneyClawStatusByEnvName, setRuntimeFileDraft, setRuntimeFileOpen, setRuntimeFilePath, setRuntimeFileRootKey, setRuntimeFileRoots, setRuntimeFileStatus, setRuntimeFiles, setRuntimeUsage, setRuntimeUsageLoading, setSelectedAgentId, setSharedVault, setWalletActionsByAgent, setWalletVaultBackupBusy, setWalletVaultBackupMessage, setWalletVaultBackupStatus, setWalletsByAgent, sharedVault, updateAgentProfile, walletActionsByAgent, walletsByAgent } = props;
+  function updateSharedVault(patch: Partial<SharedVaultConfig>) {
+    setSharedVault((current) => ({ ...current, ...patch }));
+  }
+
+  function updateWallet(agentId: string, patch: Partial<AgentWalletConfig>) {
+    setWalletsByAgent((current) => {
+      const existing = current[agentId] ?? createDefaultAgentWallet(agentId);
+      return {
+        ...current,
+        [agentId]: {
+          ...existing,
+          ...patch,
+          updatedAt: Date.now(),
+        },
+      };
+    });
+  }
+
+  function resetWalletBurnClock(agentId: string) {
+    const wallet = walletsByAgent[agentId] ?? createDefaultAgentWallet(agentId);
+    updateWallet(agentId, {
+      currentBalanceUsd: normalizeMoney(wallet.currentBalanceUsd, wallet.seedBalanceUsd),
+      survivalStartedAt: Date.now(),
+    });
+  }
+
+  async function copyPaymentPrompt(config: AgentWalletConfig) {
+    await navigator.clipboard?.writeText(buildAgentPaymentPrompt(config)).catch(() => undefined);
+  }
+
+  async function refreshMoneyClawStatus(agentId: string) {
+    const wallet = walletsByAgent[agentId] ?? createDefaultAgentWallet(agentId);
+    const envName = wallet.moneyClawEnvName?.trim() || "MONEYCLAW_API_KEY";
+    setMoneyClawLoadingEnvName(envName);
+    const response = await fetch(`/api/wallet/moneyclaw?envName=${encodeURIComponent(envName)}`, { cache: "no-store" }).catch(() => null);
+    const data = await response?.json().catch(() => null) as {
+      ok?: boolean;
+      status?: WalletMoneyClawStatus;
+      error?: string;
+    } | null;
+    setMoneyClawStatusByEnvName((current) => ({
+      ...current,
+      [envName]: data?.status ?? {
+        configured: false,
+        apiKeyEnvName: envName,
+        errors: { status: data?.error ?? "Could not check MoneyClaw." },
+      },
+    }));
+    setMoneyClawLoadingEnvName("");
+  }
+
+  async function saveMoneyClawKey(
+    agentId: string,
+    apiKey: string,
+    options: { shareWithAllAgents: boolean },
+  ): Promise<{ ok: boolean; error?: string }> {
+    const wallet = walletsByAgent[agentId] ?? createDefaultAgentWallet(agentId);
+    const agent = displayAgents.find((item) => item.id === agentId);
+    const envName = wallet.moneyClawEnvName?.trim() || "MONEYCLAW_API_KEY";
+    const key = apiKey.trim();
+    if (!key.startsWith("mcl_")) return { ok: false, error: "MoneyClaw keys should start with mcl_." };
+
+    const validateResponse = await fetch("/api/wallet/moneyclaw", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ apiKey: key, envName }),
+    }).catch(() => null);
+    const validateData = await validateResponse?.json().catch(() => null) as {
+      ok?: boolean;
+      status?: WalletMoneyClawStatus;
+      error?: string;
+    } | null;
+    if (!validateResponse?.ok || !validateData?.ok) {
+      return { ok: false, error: validateData?.error ?? "MoneyClaw could not validate this key." };
+    }
+
+    if (options.shareWithAllAgents) {
+      const saveResponse = await fetch("/api/env", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          sourceId: "shared",
+          key: envName,
+          value: key,
+          promoteToShared: true,
+        }),
+      }).catch(() => null);
+      const saveData = await saveResponse?.json().catch(() => null) as { ok?: boolean; error?: string } | null;
+      if (!saveResponse?.ok || !saveData?.ok) {
+        return { ok: false, error: saveData?.error ?? "Could not save the MoneyClaw key." };
+      }
+    } else {
+      if (!agent) return { ok: false, error: "Could not find this agent." };
+      updateAgentProfile(agentId, {
+        agentEnv: {
+          ...(agent.agentEnv ?? {}),
+          [envName]: key,
+        },
+      });
+    }
+
+    if (validateData.status) {
+      setMoneyClawStatusByEnvName((current) => ({ ...current, [envName]: validateData.status! }));
+    }
+    return { ok: true };
+  }
+
+  async function initializeCoreWalletRails(agentId: string) {
+    const wallet = walletsByAgent[agentId] ?? createDefaultAgentWallet(agentId);
+    updateWalletAction(agentId, { busy: true, error: "", message: "Initializing payment rails..." });
+    updateWallet(agentId, {
+      enabled: false,
+      provider: "moneyclaw",
+      tokenSymbol: wallet.tokenSymbol || "USDC",
+      maxPaymentUsd: wallet.maxPaymentUsd > 0 ? wallet.maxPaymentUsd : 0.5,
+      approvalRequiredOverUsd: wallet.approvalRequiredOverUsd > 0 ? wallet.approvalRequiredOverUsd : 2,
+      moneyClawEnvName: wallet.moneyClawEnvName || "MONEYCLAW_API_KEY",
+      autoPayEnabled: false,
+      survivalStartedAt: wallet.survivalStartedAt || Date.now(),
+    });
+    if (!wallet.walletAddress && !wallet.vaultAddress) {
+      await createLocalWallet(agentId, wallet.network || "eip155:8453");
+    } else {
+      updateWalletAction(agentId, { busy: false, error: "", message: "Core rails initialized. Refresh balances after funding." });
+    }
+    await refreshMoneyClawStatus(agentId);
+  }
+
+  async function refreshHoneyLedger() {
+    if (!honeyLedgerEnabled) return;
+    const response = await fetch("/api/honey-ledger", { cache: "no-store" }).catch(() => null);
+    const data = await response?.json().catch(() => null) as { ok?: boolean; ledger?: HoneyTreasuryConfig } | null;
+    if (data?.ok && data.ledger) {
+      setHoneyTreasury({
+        ...createDefaultHoneyTreasuryConfig(),
+        ...data.ledger,
+        agentTokenUsage: data.ledger.agentTokenUsage ?? {},
+        agentHoneyExchanged: data.ledger.agentHoneyExchanged ?? {},
+        agentHiveBalances: data.ledger.agentHiveBalances ?? {},
+      });
+    }
+  }
+
+  async function observeHoneyUsage(force = false) {
+    if (!force && !honeyLedgerEnabled) return;
+    const response = await fetch("/api/honey-ledger", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "observe" }),
+    }).catch(() => null);
+    const data = await response?.json().catch(() => null) as { ok?: boolean; ledger?: HoneyTreasuryConfig } | null;
+    if (data?.ledger) {
+      setHoneyTreasury({
+        ...createDefaultHoneyTreasuryConfig(),
+        ...data.ledger,
+        agentTokenUsage: data.ledger.agentTokenUsage ?? {},
+        agentHoneyExchanged: data.ledger.agentHoneyExchanged ?? {},
+        agentHiveBalances: data.ledger.agentHiveBalances ?? {},
+      });
+      return;
+    }
+    await refreshHoneyLedger();
+  }
+
+  async function refreshRuntimeUsage() {
+    setRuntimeUsageLoading(true);
+    const response = await fetch("/api/runtime-usage", { cache: "no-store" }).catch(() => null);
+    const data = await response?.json().catch(() => null) as RuntimeUsageAnalytics | null;
+    setRuntimeUsage(data ?? { ok: false, error: "Could not read runtime usage." });
+    setRuntimeUsageLoading(false);
+  }
+
+  async function refreshWalletVaultBackupStatus() {
+    const vaultPath = sharedVault.enabled ? sharedVault.vaultPath.trim() : "";
+    const params = vaultPath ? `?vaultPath=${encodeURIComponent(vaultPath)}` : "";
+    const response = await fetch(`/api/wallet/vault-backup${params}`, { cache: "no-store" }).catch(() => null);
+    const data = await response?.json().catch(() => null) as {
+      ok?: boolean;
+      status?: WalletVaultBackupStatus;
+      error?: string;
+    } | null;
+    if (data?.status) {
+      setWalletVaultBackupStatus(data.status);
+      if (!data.ok && data.error) setWalletVaultBackupMessage(data.error);
+      return;
+    }
+    if (data?.error) setWalletVaultBackupMessage(data.error);
+  }
+
+  async function runWalletVaultBackupAction(action: "refresh" | "restore") {
+    setWalletVaultBackupBusy(action);
+    setWalletVaultBackupMessage(action === "refresh" ? "Syncing encrypted wallet vault..." : "Restoring wallet vault locally...");
+    const response = await fetch("/api/wallet/vault-backup", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        action,
+        vaultPath: sharedVault.enabled ? sharedVault.vaultPath.trim() : undefined,
+      }),
+    }).catch(() => null);
+    const data = await response?.json().catch(() => null) as {
+      ok?: boolean;
+      status?: WalletVaultBackupStatus;
+      error?: string;
+    } | null;
+    if (!response?.ok || !data?.ok || !data.status) {
+      setWalletVaultBackupMessage(data?.error ?? "Wallet vault backup action failed.");
+      setWalletVaultBackupBusy("");
+      return;
+    }
+    setWalletVaultBackupStatus(data.status);
+    setWalletVaultBackupMessage(action === "refresh"
+      ? "Encrypted wallet vault synced to the shared brain."
+      : "Wallet vault restored locally. Refresh balances before spending.");
+    setWalletVaultBackupBusy("");
+  }
+
+  async function refreshMaintenanceReport() {
+    setMaintenanceBusy("check");
+    setMaintenanceMessage("");
+    const response = await fetch("/api/maintenance", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ agents: displayAgents, sharedVault }),
+    }).catch(() => null);
+    const data = await response?.json().catch(() => null) as MaintenanceReport | null;
+    setMaintenanceReport(data ?? { ok: false, error: "Could not run maintenance checks." });
+    setMaintenanceBusy("");
+  }
+
+  async function runMaintenanceAction(action: string) {
+    setMaintenanceBusy(action);
+    setMaintenanceMessage("");
+    const response = await fetch("/api/maintenance", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action, sharedVault }),
+    }).catch(() => null);
+    const data = await response?.json().catch(() => null) as { ok?: boolean; message?: string; error?: string } | null;
+    setMaintenanceMessage(data?.ok ? data.message ?? "Repair completed." : data?.error ?? "Repair failed.");
+    setMaintenanceBusy("");
+    await refreshMaintenanceReport();
+  }
+
+  async function runtimeFileRequest(body: Record<string, unknown>) {
+    const response = await fetch("/api/runtime-files", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ agents: displayAgents, sharedVault, ...body }),
+    }).catch(() => null);
+    return response?.json().catch(() => null) as Promise<RuntimeFilePayload | null>;
+  }
+
+  async function refreshRuntimeFileRoots() {
+    setRuntimeFileStatus("");
+    const data = await runtimeFileRequest({ action: "roots" });
+    if (!data?.ok) {
+      setRuntimeFileStatus(data?.error ?? "Could not load runtime file roots.");
+      return;
+    }
+    const roots = data.roots ?? [];
+    setRuntimeFileRoots(roots);
+    const nextRoot = runtimeFileRootKey || roots[0]?.key || "";
+    setRuntimeFileRootKey(nextRoot);
+    if (nextRoot) await listRuntimeFiles(nextRoot, runtimeFilePath);
+  }
+
+  async function listRuntimeFiles(rootKey = runtimeFileRootKey, path = runtimeFilePath) {
+    if (!rootKey) return;
+    setRuntimeFileStatus("Loading files...");
+    const data = await runtimeFileRequest({ action: "list", rootKey, path });
+    if (!data?.ok) {
+      setRuntimeFiles([]);
+      setRuntimeFileStatus(data?.error ?? "Could not list files.");
+      return;
+    }
+    setRuntimeFileRoots(data.roots ?? runtimeFileRoots);
+    setRuntimeFiles(data.files ?? []);
+    setRuntimeFilePath(path);
+    setRuntimeFileStatus("");
+  }
+
+  async function openRuntimeFile(file: RuntimeFileEntry) {
+    if (file.type === "dir") {
+      await listRuntimeFiles(runtimeFileRootKey, file.relativePath);
+      return;
+    }
+    setRuntimeFileStatus("Opening file...");
+    const data = await runtimeFileRequest({ action: "read", rootKey: runtimeFileRootKey, path: file.relativePath });
+    if (!data?.ok || !data.file) {
+      setRuntimeFileStatus(data?.error ?? "Could not open file.");
+      return;
+    }
+    setRuntimeFileOpen(data.file);
+    setRuntimeFileDraft(data.file.content ?? "");
+    setRuntimeFileStatus("");
+  }
+
+  async function saveRuntimeFile() {
+    if (!runtimeFileOpen) return;
+    setRuntimeFileStatus("Saving file...");
+    const data = await runtimeFileRequest({
+      action: "write",
+      rootKey: runtimeFileRootKey,
+      path: runtimeFileOpen.relativePath,
+      content: runtimeFileDraft,
+    });
+    if (!data?.ok || !data.file) {
+      setRuntimeFileStatus(data?.error ?? "Could not save file.");
+      return;
+    }
+    setRuntimeFileOpen(data.file);
+    setRuntimeFileDraft(data.file.content ?? "");
+    setRuntimeFileStatus("Saved.");
+    await listRuntimeFiles(runtimeFileRootKey, runtimeFilePath);
+  }
+
+  async function exchangeHoneyForHive(agentId: string) {
+    if (!honeyLedgerEnabled) return;
+    await fetch("/api/honey-ledger", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "exchange", agentId }),
+    }).catch(() => null);
+    await refreshHoneyLedger();
+  }
+
+  async function exchangeAllHoneyForHive() {
+    if (!honeyLedgerEnabled) return;
+    await fetch("/api/honey-ledger", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "exchange" }),
+    }).catch(() => null);
+    await refreshHoneyLedger();
+  }
+
+  async function enableHoneyLedger() {
+    setHoneyLedgerEnabled(true);
+    await observeHoneyUsage(true);
+  }
+
+  function updateWalletAction(agentId: string, patch: Partial<WalletActionState>) {
+    setWalletActionsByAgent((current) => ({
+      ...current,
+      [agentId]: { ...(current[agentId] ?? {}), ...patch },
+    }));
+  }
+
+  async function createLocalWallet(agentId: string, network: string) {
+    updateWalletAction(agentId, { busy: true, error: "", message: "Creating local wallet..." });
+    const response = await fetch("/api/wallet/create", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        agentId,
+        network,
+        vaultPath: sharedVault.enabled ? sharedVault.vaultPath.trim() : undefined,
+      }),
+    }).catch(() => null);
+    const data = await response?.json().catch(() => null) as {
+      ok?: boolean;
+      wallet?: { address: string; network: string };
+      vaultSync?: { ok?: boolean; error?: string };
+      error?: string;
+    } | null;
+    if (!response?.ok || !data?.ok || !data.wallet) {
+      updateWalletAction(agentId, { busy: false, error: data?.error ?? "Could not create wallet.", message: "" });
+      return;
+    }
+    updateWallet(agentId, {
+      custodyMode: "local",
+      vaultAddress: data.wallet.address,
+      walletAddress: data.wallet.address,
+      network: data.wallet.network,
+      enabled: false,
+      survivalStartedAt: Date.now(),
+    });
+    updateWalletAction(agentId, {
+      busy: false,
+      error: "",
+      message: data.vaultSync?.ok
+        ? "Wallet created and encrypted vault synced to the shared brain."
+        : `Wallet created. Encrypted vault sync needs attention: ${data.vaultSync?.error ?? "not refreshed"}`,
+    });
+    await refreshWalletVaultBackupStatus();
+  }
+
+  async function refreshWalletBalance(agentId: string) {
+    const wallet = walletsByAgent[agentId] ?? createDefaultAgentWallet(agentId);
+    const address = wallet.walletAddress || wallet.vaultAddress;
+    if (!address) {
+      updateWalletAction(agentId, { error: "Create or paste a wallet address first.", message: "" });
+      return;
+    }
+    updateWalletAction(agentId, { busy: true, error: "", message: "Checking on-chain balance..." });
+    const response = await fetch("/api/wallet/balance", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ address, network: wallet.network }),
+    }).catch(() => null);
+    const data = await response?.json().catch(() => null) as {
+      ok?: boolean;
+      balance?: { tokenBalance: number; nativeBalance: number; fetchedAt: number };
+      error?: string;
+    } | null;
+    if (!response?.ok || !data?.ok || !data.balance) {
+      updateWalletAction(agentId, { busy: false, error: data?.error ?? "Could not fetch balance.", message: "" });
+      return;
+    }
+    updateWallet(agentId, {
+      currentBalanceUsd: normalizeMoney(data.balance.tokenBalance),
+      onchainBalanceUsd: normalizeMoney(data.balance.tokenBalance),
+      nativeBalance: data.balance.nativeBalance,
+      lastOnchainSyncAt: data.balance.fetchedAt,
+      survivalStartedAt: Date.now(),
+    });
+    updateWalletAction(agentId, { busy: false, error: "", message: `Balance refreshed: ${data.balance.tokenBalance.toFixed(6)} USDC.` });
+  }
+
+  async function sendWalletUsdc(agentId: string) {
+    const wallet = walletsByAgent[agentId] ?? createDefaultAgentWallet(agentId);
+    const action = walletActionsByAgent[agentId] ?? {};
+    const amount = Number(action.sendAmount);
+    updateWalletAction(agentId, { busy: true, error: "", message: "Sending USDC..." });
+    const response = await fetch("/api/wallet/send", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        agentId,
+        toAddress: action.sendTo,
+        amountUsd: amount,
+        maxPaymentUsd: wallet.maxPaymentUsd,
+        confirmation: action.confirmation,
+      }),
+    }).catch(() => null);
+    const data = await response?.json().catch(() => null) as {
+      ok?: boolean;
+      signature?: string;
+      network?: string;
+      error?: string;
+    } | null;
+    if (!response?.ok || !data?.ok) {
+      updateWalletAction(agentId, { busy: false, error: data?.error ?? "Could not send USDC.", message: "" });
+      return;
+    }
+    updateWalletAction(agentId, { busy: false, error: "", message: `Sent. Transaction: ${data.signature}`, confirmation: "" });
+    await refreshWalletBalance(agentId);
+  }
+
+  async function testX402Fetch(agentId: string) {
+    const wallet = walletsByAgent[agentId] ?? createDefaultAgentWallet(agentId);
+    const action = walletActionsByAgent[agentId] ?? {};
+    const url = (action.x402Url || wallet.x402BaseUrl || "http://localhost:5020/api/wallet/x402/mock-paid").trim();
+    updateWalletAction(agentId, { busy: true, error: "", message: "Calling paid x402 endpoint..." });
+    const response = await fetch("/api/wallet/x402", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        agentId,
+        url,
+        method: action.x402Method || "GET",
+        policy: wallet,
+        confirmation: action.x402Confirmation,
+      }),
+    }).catch(() => null);
+    const data = await response?.json().catch(() => null) as {
+      ok?: boolean;
+      error?: string;
+      result?: { status?: number; amountUsd?: number; paid?: boolean };
+    } | null;
+    if (!response?.ok || !data?.ok) {
+      updateWalletAction(agentId, { busy: false, error: data?.error ?? "x402 request failed.", message: "" });
+      return;
+    }
+    updateWalletAction(agentId, {
+      busy: false,
+      error: "",
+      x402Confirmation: "",
+      message: `x402 returned ${data.result?.status ?? "ok"}${data.result?.paid ? ` after $${(data.result.amountUsd ?? 0).toFixed(4)} payment` : ""}.`,
+    });
+    await refreshWalletBalance(agentId);
+  }
+
+  function addAgentToMachine(machine: MachineGroup, runtime: AgentRuntime = "hermes") {
+    openAgentCreationModal(machine, runtime);
+  }
+
+  function requestDuplicateAgent(agentId?: string) {
+    const source = agentId
+      ? displayAgents.find((agent) => agent.id === agentId) ?? selectedAgent
+      : selectedAgent;
+    if (!source) return;
+    setDuplicateAgentDraft({
+      agentId: source.id,
+      copyMemories: false,
+      copyEnv: true,
+      copyChats: false,
+    });
+  }
+
+  function duplicateAgent() {
+    if (!duplicateAgentDraft) return;
+    const source = displayAgents.find((agent) => agent.id === duplicateAgentDraft.agentId) ?? selectedAgent;
+    if (!source) return;
+    const nextId = `${source.runtime}-${Date.now()}`;
+    const next = {
+      ...source,
+      // eslint-disable-next-line react-hooks/purity
+      id: nextId,
+      name: `${source.name} Copy`,
+      sessionKey: undefined,
+      agentEnv: duplicateAgentDraft.copyEnv ? { ...(source.agentEnv ?? {}) } : undefined,
+      memoryForkedFromAgentId: duplicateAgentDraft.copyMemories ? source.id : undefined,
+    };
+    setAgents((current) => [...current, next]);
+    setSelectedAgentId(next.id);
+    if (duplicateAgentDraft.copyChats) {
+      setMessagesByAgent((current) => {
+        const additions: Record<string, ChatMessage[]> = {};
+        for (const [key, messages] of Object.entries(current)) {
+          if (key === source.id) {
+            additions[nextId] = messages.map((message) => ({ ...message }));
+          } else if (key.startsWith(`${source.id}::`)) {
+            additions[`${nextId}${key.slice(source.id.length)}`] = messages.map((message) => ({ ...message }));
+          }
+        }
+        return Object.keys(additions).length ? { ...current, ...additions } : current;
+      });
+    }
+    setDuplicateAgentDraft(null);
+  }
+
+  function deleteAgent(agentId = selectedAgent?.id) {
+    if (!agentId || agents.length <= 1) return;
+    const next = agents.filter((agent) => agent.id !== agentId);
+    setAgents(next);
+    if (selectedAgentId === agentId) {
+      setSelectedAgentId(next[0]?.id ?? "");
+    }
+    setMessagesByAgent((current) => {
+      const nextMessages = { ...current };
+      delete nextMessages[agentId];
+      return nextMessages;
+    });
+  }
+
+  return { updateSharedVault, updateWallet, resetWalletBurnClock, copyPaymentPrompt, refreshMoneyClawStatus, saveMoneyClawKey, initializeCoreWalletRails, refreshHoneyLedger, observeHoneyUsage, refreshRuntimeUsage, refreshWalletVaultBackupStatus, runWalletVaultBackupAction, refreshMaintenanceReport, runMaintenanceAction, runtimeFileRequest, refreshRuntimeFileRoots, listRuntimeFiles, openRuntimeFile, saveRuntimeFile, exchangeHoneyForHive, exchangeAllHoneyForHive, enableHoneyLedger, updateWalletAction, createLocalWallet, refreshWalletBalance, sendWalletUsdc, testX402Fetch, addAgentToMachine, requestDuplicateAgent, duplicateAgent, deleteAgent };
+}

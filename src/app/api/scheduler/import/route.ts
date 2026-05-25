@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import type { AgentProfile } from "@/lib/types/agent-runtime";
-import { getRuntimeAdapter, type RuntimeSchedule } from "@/lib/services/runtime-adapters/registry";
+import { getRuntimeAdapter, runtimeSupports, type RuntimeSchedule } from "@/lib/services/runtime-adapters/registry";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -11,7 +11,7 @@ export async function POST(request: NextRequest) {
   const schedules: RuntimeSchedule[] = [];
   const errors: string[] = [];
 
-  const scheduleAgents = agents.filter((agent) => getRuntimeAdapter(agent.runtime).capabilities.schedules);
+  const scheduleAgents = agents.filter((agent) => runtimeSupports(agent.runtime, "schedules"));
   const adapterResults = await Promise.all(scheduleAgents.map((agent) => importAdapterSchedules(agent, request)));
   for (const result of adapterResults) {
     schedules.push(...result.schedules);
@@ -19,7 +19,7 @@ export async function POST(request: NextRequest) {
   }
 
   const collectorUrls = [...new Set(agents
-    .filter((agent) => !getRuntimeAdapter(agent.runtime).capabilities.schedules && agent.telemetryUrl?.trim())
+    .filter((agent) => !runtimeSupports(agent.runtime, "schedules") && agent.telemetryUrl?.trim())
     .map((agent) => agent.telemetryUrl!.replace(/\/+$/, "")))];
   const collectorResults = await Promise.all(collectorUrls.map(importCollectorSchedules));
   for (const result of collectorResults) {
@@ -40,7 +40,7 @@ export async function POST(request: NextRequest) {
 
 async function importAdapterSchedules(agent: AgentProfile, request: NextRequest): Promise<{ schedules: RuntimeSchedule[]; errors: string[] }> {
   const adapter = getRuntimeAdapter(agent.runtime);
-  if (!adapter.listSchedules) return { schedules: [], errors: [] };
+  if (!adapter?.listSchedules) return { schedules: [], errors: [] };
   try {
     return { schedules: await adapter.listSchedules(agent, { requestUrl: request.url, agents: [agent] }), errors: [] };
   } catch (error) {

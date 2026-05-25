@@ -1059,6 +1059,40 @@
   grid-column: 1 / -1;
 }
 
+.machineInitSteps {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 18px;
+}
+
+.machineInitStep {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  border: 1px solid rgba(148, 163, 184, 0.18);
+  border-radius: 999px;
+  background: rgba(15, 23, 42, 0.34);
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+  padding: 7px 10px;
+  text-transform: uppercase;
+}
+
+.machineInitStep svg {
+  width: 14px;
+  height: 14px;
+}
+
+.machineInitStep.active,
+.machineInitStep.done {
+  border-color: rgba(94, 234, 212, 0.36);
+  background: rgba(45, 212, 191, 0.1);
+  color: var(--accent-strong);
+}
+
 .machineInitError {
   border: 1px solid rgba(251, 191, 36, 0.26);
   border-radius: 7px;
@@ -1100,6 +1134,10 @@
   flex-wrap: wrap;
   gap: 8px;
   align-items: center;
+}
+
+.machineInitViewActions {
+  margin-top: 4px;
 }
 
 .machineInitTokenOk,
@@ -3405,6 +3443,7 @@
 :global(:root[data-theme="hive-light"]) .agentBubble,
 :global(:root[data-theme="hive-light"]) .setupModal,
 :global(:root[data-theme="hive-light"]) .setupStep,
+:global(:root[data-theme="hive-light"]) .machineInitStep,
 :global(:root[data-theme="hive-light"]) .machineInitEmpty,
 :global(:root[data-theme="hive-light"]) .machineInitCost,
 :global(:root[data-theme="hive-light"]) .machineInitCommand,

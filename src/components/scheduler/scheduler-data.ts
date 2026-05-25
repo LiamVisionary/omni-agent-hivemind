@@ -48,5 +48,5 @@ export function minutesFromLabel(s: string | null | undefined): number | null {
   const re = /(\d+)\s*([hm])/g;
   let m: RegExpExecArray | null, total = 0;
   while ((m = re.exec(s))) total += parseInt(m[1], 10) * (m[2] === "h" ? 60 : 1);
-  return total || 0;
+  return total || null;
 }

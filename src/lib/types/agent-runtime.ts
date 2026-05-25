@@ -1,4 +1,5 @@
-export type AgentRuntime = "openclaw" | "hermes" | "aeon";
+export type KnownAgentRuntime = "openclaw" | "hermes" | "aeon" | "openai-compatible";
+export type AgentRuntime = KnownAgentRuntime | (string & {});
 export type AgentRuntimeKind = "interactive" | "background" | "gateway" | "collector";
 
 export interface RuntimeCapabilities {
@@ -54,6 +55,8 @@ export interface AgentProfile {
     directoryBrowsing?: boolean;
     envHttpSync?: boolean;
     runtimeAgentCreation?: boolean;
+    skillInventory?: boolean;
+    skillAutoSync?: boolean;
     runtimes?: string[];
     syncthing?: boolean;
     defaultSyncPath?: string;
@@ -92,6 +95,13 @@ export interface SharedVaultConfig {
   scheduledFolder: string;
   noteTaskImportFolders: string;
   noteTaskImportEnabled: boolean;
+  skillAutoSyncAll: boolean;
+  skillAutoSync: Record<string, {
+    autoImport: boolean;
+    autoUpdate: boolean;
+    trackRemovals: boolean;
+    allowDelete: boolean;
+  }>;
   controlRoomPath: string;
   instructions: string;
 }
@@ -114,20 +124,22 @@ export const DEFAULT_SHARED_VAULT: SharedVaultConfig = {
   scheduledFolder: process.env.NEXT_PUBLIC_OBSIDIAN_SCHEDULED_FOLDER ?? "Scheduled",
   noteTaskImportFolders: "Projects\nInbox",
   noteTaskImportEnabled: false,
+  skillAutoSyncAll: false,
+  skillAutoSync: {},
   controlRoomPath: process.env.NEXT_PUBLIC_HERMES_CONTROL_ROOM_PATH ?? "~/agent-control-room",
   instructions: "Use this vault as the shared memory and handoff space for all local agents. Read AGENTS.md before durable edits. Use HivemindOS as the operating manual, registry, runbook library, and task-bus template.",
 };
 
-export const RUNTIME_LABELS: Record<AgentRuntime, string> = {
+export const KNOWN_AGENT_RUNTIMES: KnownAgentRuntime[] = ["openclaw", "hermes", "aeon", "openai-compatible"];
+
+export const RUNTIME_LABELS: Record<string, string> = {
   openclaw: "OpenClaw",
   hermes: "Hermes",
   aeon: "Aeon",
+  "openai-compatible": "Local OpenAI",
 };
 
-export const RUNTIME_DEFAULTS: Record<
-  AgentRuntime,
-  Pick<AgentProfile, "gatewayUrl" | "chatPath" | "statusPath">
-> = {
+export const RUNTIME_DEFAULTS: Record<string, Pick<AgentProfile, "gatewayUrl" | "chatPath" | "statusPath">> = {
   openclaw: {
     gatewayUrl: "ws://127.0.0.1:18789",
     chatPath: "",
@@ -143,9 +155,14 @@ export const RUNTIME_DEFAULTS: Record<
     chatPath: "",
     statusPath: "/health",
   },
+  "openai-compatible": {
+    gatewayUrl: process.env.NEXT_PUBLIC_LOCAL_OPENAI_BASE_URL ?? "http://127.0.0.1:1234",
+    chatPath: "/v1/chat/completions",
+    statusPath: "/v1/models",
+  },
 };
 
-export const RUNTIME_CAPABILITIES: Record<AgentRuntime, RuntimeCapabilities> = {
+export const RUNTIME_CAPABILITIES: Record<string, RuntimeCapabilities> = {
   openclaw: {
     status: true,
     chat: true,
@@ -186,32 +203,39 @@ export const RUNTIME_CAPABILITIES: Record<AgentRuntime, RuntimeCapabilities> = {
     notifications: true,
     setup: true,
   },
+  "openai-compatible": {
+    status: true,
+    chat: true,
+    modelSelection: true,
+  },
 };
 
-export const RUNTIME_KINDS: Record<AgentRuntime, AgentRuntimeKind> = {
+export const RUNTIME_KINDS: Record<string, AgentRuntimeKind> = {
   openclaw: "gateway",
   hermes: "interactive",
   aeon: "background",
+  "openai-compatible": "interactive",
 };
 
 export function createAgentProfile(runtime: AgentRuntime, index = 1): AgentProfile {
-  const defaults = RUNTIME_DEFAULTS[runtime];
+  const defaults = RUNTIME_DEFAULTS[runtime] ?? RUNTIME_DEFAULTS["openai-compatible"];
+  const label = RUNTIME_LABELS[runtime] ?? runtime;
   return {
     id: `${runtime}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-    name: `${RUNTIME_LABELS[runtime]} Agent ${index}`,
+    name: `${label} Agent ${index}`,
     runtime,
     gatewayUrl: defaults.gatewayUrl,
     chatPath: defaults.chatPath,
     statusPath: defaults.statusPath,
     agentId: runtime === "openclaw" ? "main" : "",
-    provider: runtime === "hermes" ? "openai-codex" : "",
-    model: "",
+    provider: runtime === "hermes" ? "openai-codex" : runtime === "openai-compatible" ? "lm-studio" : "",
+    model: runtime === "openai-compatible" ? process.env.NEXT_PUBLIC_LOCAL_OPENAI_MODEL ?? "" : "",
     localDataDir: runtime === "hermes" && index === 1 ? "~/.hermes" : "",
     machineName: "local",
     telemetryUrl: "",
     useSharedVault: true,
-    runtimeKind: RUNTIME_KINDS[runtime],
-    runtimeCapabilities: RUNTIME_CAPABILITIES[runtime],
+    runtimeKind: RUNTIME_KINDS[runtime] ?? "interactive",
+    runtimeCapabilities: RUNTIME_CAPABILITIES[runtime] ?? { chat: true },
     aeonRepo: runtime === "aeon" ? process.env.NEXT_PUBLIC_AEON_REPO ?? "" : undefined,
     aeonBranch: runtime === "aeon" ? "main" : undefined,
     aeonLocalPath: runtime === "aeon" ? process.env.NEXT_PUBLIC_AEON_LOCAL_PATH ?? "" : undefined,

@@ -2,6 +2,7 @@
 "use client";
 
 import * as React from "react";
+import { X } from "lucide-react";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { BeeIcon } from "./bee-icon";
 import { HexTile } from "./hex-tile";
@@ -25,7 +26,7 @@ import styles from "./fleet-tokens.module.css";
 
 type ViewMode = "graph" | "map" | "list";
 
-interface FleetViewProps {
+export interface FleetViewProps {
   machines?: FleetMachine[];
   tasks?: FleetTask[];
   alerts?: FleetAlert[];
@@ -46,6 +47,7 @@ interface FleetViewProps {
   onEditSettings?: (m: FleetMachine, a: FleetAgent) => void;
   onDuplicate?: (m: FleetMachine, a: FleetAgent) => void;
   onRemove?: (m: FleetMachine, a: FleetAgent) => void;
+  onDismissAlert?: (alert: FleetAlert) => void;
 }
 
 export function FleetView({
@@ -68,6 +70,7 @@ export function FleetView({
   onEditSettings,
   onDuplicate,
   onRemove,
+  onDismissAlert,
 }: FleetViewProps = {}) {
   const [selected, setSelected] = React.useState<string>(() => machines[0]?.id ?? "");
   const [selectedAgentId, setSelectedAgentId] = React.useState<string | null>(null);
@@ -75,6 +78,7 @@ export function FleetView({
   const [expanded, setExpanded] = React.useState<Set<string>>(() => new Set(["nimbus"]));
   const [dispatchIdx, setDispatchIdx] = React.useState(0);
   const [addToast, setAddToast] = React.useState<string | null>(null);
+  const [dismissedAlertIds, setDismissedAlertIds] = React.useState<Set<string>>(() => new Set());
 
   React.useEffect(() => {
     const t = setInterval(() => setDispatchIdx((i) => ticker.length ? (i + 1) % ticker.length : 0), 2200);
@@ -119,13 +123,21 @@ export function FleetView({
     (n, m) => n + m.agents.filter((a) => a.state === "working").length,
     0,
   );
-  const highPriorityAlerts = alerts.filter((alert) => (
-    alert.priority === "urgent" || alert.priority === "high" || alert.tone === "danger"
-  ));
+  const highPriorityAlerts = alerts
+    .filter((alert) => (
+      !dismissedAlertIds.has(alert.id)
+      && (alert.priority === "urgent" || alert.priority === "high" || alert.tone === "danger")
+    ))
+    .sort((a, b) => (b.timestamp ?? 0) - (a.timestamp ?? 0));
   const headlineAlert = highPriorityAlerts[0] ?? null;
   const today = new Date().toLocaleDateString("en-US", {
     weekday: "long", month: "short", day: "numeric", year: "numeric",
   });
+  const dismissHeadlineAlert = React.useCallback(() => {
+    if (!headlineAlert) return;
+    setDismissedAlertIds((current) => new Set(current).add(headlineAlert.id));
+    onDismissAlert?.(headlineAlert);
+  }, [headlineAlert, onDismissAlert]);
 
   return (
     <TooltipProvider delayDuration={120}>
@@ -261,20 +273,45 @@ export function FleetView({
 
             <section>
               <div className={styles.monoCap} style={{ color: "var(--muted)", marginBottom: 10 }}>
-                Today&apos;s headline
+                Priority headline
               </div>
               <div
-                className="rounded-xl"
+                className="relative rounded-xl"
                 style={{
                   border: `1px solid ${headlineAlert ? "rgba(251,113,133,0.34)" : "rgba(148,163,184,0.16)"}`,
-                  padding: 14,
+                  padding: headlineAlert ? "14px 42px 14px 14px" : 14,
                   background: headlineAlert
                     ? "linear-gradient(180deg, rgba(251,113,133,0.10), transparent)"
                     : "rgba(16,20,29,0.48)",
                 }}
               >
+                {headlineAlert ? (
+                  <button
+                    type="button"
+                    onClick={dismissHeadlineAlert}
+                    aria-label="Dismiss priority headline"
+                    title="Dismiss"
+                    className="absolute cursor-pointer"
+                    style={{
+                      top: 10,
+                      right: 10,
+                      width: 26,
+                      height: 26,
+                      display: "grid",
+                      placeItems: "center",
+                      borderRadius: 9999,
+                      border: "1px solid rgba(251,113,133,0.32)",
+                      background: "rgba(16,20,29,0.72)",
+                      color: "var(--muted)",
+                    }}
+                  >
+                    <X aria-hidden="true" size={14} />
+                  </button>
+                ) : null}
                 <div className={styles.monoCap} style={{ color: headlineAlert ? "var(--danger)" : "var(--muted)", marginBottom: 6 }}>
-                  {headlineAlert ? `${headlineAlert.priority === "urgent" ? "URGENT" : "HIGH"} · ${headlineAlert.since}` : "CLEAR · NOW"}
+                  {headlineAlert
+                    ? `${headlineAlert.priority === "urgent" ? "URGENT" : "HIGH"} · ${headlineAlert.since}${highPriorityAlerts.length > 1 ? ` · 1/${highPriorityAlerts.length}` : ""}`
+                    : "CLEAR · NOW"}
                 </div>
                 <div className="font-bold mb-1.5" style={{ fontFamily: "var(--f-display)", fontSize: 17, lineHeight: 1.2 }}>
                   {headlineAlert?.title ?? "No high-priority alerts."}

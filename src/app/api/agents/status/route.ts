@@ -32,7 +32,7 @@ export async function POST(request: NextRequest) {
   }
 
   const adapter = getRuntimeAdapter(profile.runtime);
-  if (adapter.getStatus) {
+  if (adapter?.getStatus) {
     const status = await adapter.getStatus(profile, { requestUrl: request.url, agents: [profile] });
     return Response.json({ ok: true, runtime: profile.runtime, status });
   }

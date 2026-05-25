@@ -346,7 +346,10 @@ export async function patchTask(slug: string | null, taskId: string, patch: Patc
     nextStatus && nextStatus !== fromStatus ? `Moved ${changed.title} from ${fromStatus} to ${nextStatus}` : `Updated ${changed.title}`,
     taskId,
   ));
-  if (changed.status === "done") promoteReadyChildren(board, "dependency.auto-promote");
+  if (changed.status === "done") {
+    createVisualHandoffChild(board, changed, changed.result);
+    promoteReadyChildren(board, "dependency.auto-promote");
+  }
   await writeBoard(touch(board), options);
   return { board, task: changed };
 }
@@ -470,6 +473,7 @@ export async function completeTask(slug: string | null, taskId: string, input: F
   };
   board.tasks = board.tasks.map((item) => item.id === taskId ? changed : item);
   board.events.unshift(event("task.completed", `Completed ${task.title}`, task.id, { summary: input.summary ?? result }, input.runId ?? task.currentRunId));
+  createVisualHandoffChild(board, changed, result);
   promoteReadyChildren(board, "dependency.auto-promote");
   await writeBoard(touch(board), options);
   return { board, task: changed };
@@ -684,6 +688,63 @@ function cleanOptional(value?: string | null) {
 function positiveNumber(value?: number | null) {
   const numeric = Number(value);
   return Number.isFinite(numeric) && numeric > 0 ? numeric : undefined;
+}
+
+function simpleStableHash(value: string) {
+  let hash = 0x811c9dc5;
+  for (let index = 0; index < value.length; index += 1) {
+    hash ^= value.charCodeAt(index);
+    hash = Math.imul(hash, 0x01000193);
+  }
+  return (hash >>> 0).toString(36);
+}
+
+function extractVisualBrief(text?: string) {
+  const match = text?.match(/(?:^|\n)\s*VISUAL[\s_-]*BRIEF\s*:\s*([\s\S]*?)(?=\n\s*(?:[A-Z][A-Z0-9_ -]{2,}|Resume this session with|Session|Duration|Messages|---RESULT_LENGTH---)\s*:|\n\s*╰|$)/i);
+  const brief = match?.[1]?.replace(/\s+/g, " ").trim() ?? "";
+  return brief.length > 20 ? brief.slice(0, 2000) : "";
+}
+
+function isVisualHandoffTask(task: KanbanTask) {
+  return Boolean(task.idempotencyKey?.startsWith("handoff:visual:"))
+    || (/^generate image for:/i.test(task.title) && task.skills.some((skill) => /image generation|visual asset|art direction/i.test(skill)));
+}
+
+function createVisualHandoffChild(board: KanbanBoard, parent: KanbanTask, result?: string) {
+  if (isVisualHandoffTask(parent)) return null;
+  const visualBrief = extractVisualBrief(result ?? parent.result);
+  if (!visualBrief) return null;
+  const idempotencyKey = `handoff:visual:${parent.id}:${simpleStableHash(visualBrief)}`;
+  const existing = board.tasks.find((task) => task.idempotencyKey === idempotencyKey);
+  if (existing) return existing;
+  const now = Date.now();
+  const task: KanbanTask = {
+    id: `t_${now.toString(36)}_${Math.random().toString(36).slice(2, 7)}`,
+    title: `Generate image for: ${parent.title}`,
+    body: [
+      `Source task: ${parent.title}`,
+      parent.assignee ? `Source agent: ${parent.assignee}` : "",
+      "Create the image or image asset that best fits this handoff brief. Use image-generation/art tools when available. If raster generation is unavailable, create the best concrete visual asset your runtime can produce and report the exact file path.",
+      `VISUAL_BRIEF: ${visualBrief}`,
+      result || parent.result ? `Source result:\n${(result || parent.result || "").slice(0, 4000)}` : "",
+    ].filter(Boolean).join("\n\n"),
+    assignee: undefined,
+    tenant: undefined,
+    status: "ready",
+    priority: parent.priority,
+    workspace: parent.workspace,
+    skills: ["image generation", "art direction", "visual asset", "handoff"],
+    attachments: parent.attachments ?? [],
+    linkedDirectories: parent.linkedDirectories ?? [],
+    targetMachine: null,
+    idempotencyKey,
+    createdAt: now,
+    updatedAt: now,
+  };
+  board.tasks.unshift(task);
+  board.links.push({ parentId: parent.id, childId: task.id, createdAt: now });
+  board.events.unshift(event("task.handoff-created", `Created artist handoff for ${parent.title}`, task.id, { parentId: parent.id, visualBrief }));
+  return task;
 }
 
 function unfinishedParentIds(board: KanbanBoard, taskId: string) {

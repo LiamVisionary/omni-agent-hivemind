@@ -21,7 +21,7 @@ export type SetupStep = {
   action?: ReactNode;
 };
 
-type SetupCellProps = {
+export type SetupCellProps = {
   title: string;
   subtitle?: string;
   steps: SetupStep[];

@@ -22,6 +22,7 @@ export type ScheduleSnapshot = {
   externalSource?: string | null;
   externalJobId?: string | null;
   updatedAt?: number;
+  nextRunAt?: number;
   usePastRuns?: boolean;
   pastRunLimit?: number;
   sharedSchedulePath?: string;
@@ -87,6 +88,89 @@ function fenced(label: string, value: unknown) {
 function extractFencedSection(content: string, label: string) {
   const match = content.match(new RegExp(`## ${label}\\s+\\\`\\\`\\\`text\\n([\\s\\S]*?)\\n\\\`\\\`\\\``));
   return match?.[1]?.trim() ?? "";
+}
+
+function extractFrontmatterString(content: string, key: string) {
+  const match = content.match(new RegExp(`^${key}:\\s*(.+)$`, "m"));
+  const value = match?.[1]?.trim();
+  if (!value || value === "null") return "";
+  if (value.startsWith('"') && value.endsWith('"')) {
+    try {
+      return JSON.parse(value) as string;
+    } catch {
+      return value.slice(1, -1);
+    }
+  }
+  return value;
+}
+
+function decodeJsonStringFragment(value: string) {
+  const trimmed = value.trim();
+  try {
+    return JSON.parse(`"${trimmed.replace(/"$/, "")}"`) as string;
+  } catch {
+    return trimmed
+      .replace(/\\"/g, '"')
+      .replace(/\\n/g, "\n")
+      .replace(/\\u2014/g, "-");
+  }
+}
+
+function repairHermesJobsSchedule(content: string, file: string, vault: string): ScheduleSnapshot | null {
+  const config = extractFencedSection(content, "Config JSON");
+  const promptBlock = extractFencedSection(content, "Prompt");
+  const source = config || promptBlock || content;
+  if (!/"jobs"\s*:/.test(source)) return null;
+  const name = source.match(/"name"\s*:\s*"([^"]+)"/)?.[1];
+  const every = source.match(/"schedule_display"\s*:\s*"([^"]+)"/)?.[1]
+    || source.match(/"display"\s*:\s*"([^"]+)"/)?.[1]
+    || source.match(/"expr"\s*:\s*"([^"]+)"/)?.[1]
+    || extractFrontmatterString(content, "every");
+  const nextRunAt = Date.parse(source.match(/"next_run_at"\s*:\s*"([^"]+)"/)?.[1] || "");
+  const promptMatch = source.match(/"prompt"\s*:\s*"([\s\S]*?)(?:",\s*\n\s*"model"|",\s*\n\s*"schedule"|",\s*\n\s*"enabled"|"\s*\n\s*}|\n```|$)/);
+  const prompt = promptMatch ? decodeJsonStringFragment(promptMatch[1]) : promptBlock;
+  const scheduleId = extractFrontmatterString(content, "scheduleId") || `shared:${basename(dirname(file))}`;
+  const externalJobId = extractFrontmatterString(content, "externalJobId") || scheduleId;
+  return {
+    id: scheduleId,
+    name: name || extractFrontmatterString(content, "scheduleName") || basename(dirname(file)),
+    agentId: extractFrontmatterString(content, "agentId"),
+    agentName: extractFrontmatterString(content, "agentName"),
+    machineName: extractFrontmatterString(content, "device"),
+    runtime: extractFrontmatterString(content, "runtime") || "hermes",
+    enabled: extractFrontmatterString(content, "enabled") !== "false",
+    every: every || "custom",
+    mode: "prompt",
+    prompt: prompt || "Imported runtime schedule.",
+    model: "",
+    skills: [],
+    paths: [],
+    steps: [],
+    externalSource: extractFrontmatterString(content, "externalSource") || "hermes",
+    externalJobId,
+    updatedAt: Date.parse(extractFrontmatterString(content, "updatedAt")) || undefined,
+    nextRunAt: Number.isFinite(nextRunAt) ? nextRunAt : undefined,
+    usePastRuns: extractFrontmatterString(content, "usePastRuns") === "true",
+    pastRunLimit: Number(extractFrontmatterString(content, "pastRunLimit")) || 3,
+    sharedSchedulePath: relative(vault, file),
+    sharedRunFolder: relative(vault, dirname(file)),
+  };
+}
+
+function normalizeScheduleSnapshot(schedule: ScheduleSnapshot, content: string, file: string, vault: string): ScheduleSnapshot {
+  if (schedule.name !== "{" && !/^\s*\{\s*"jobs"\s*:/.test(schedule.prompt || "")) {
+    return schedule;
+  }
+  const repaired = repairHermesJobsSchedule(content, file, vault);
+  if (!repaired) return schedule;
+  return {
+    ...schedule,
+    ...repaired,
+    id: schedule.id,
+    externalJobId: schedule.externalJobId,
+    sharedSchedulePath: relative(vault, file),
+    sharedRunFolder: relative(vault, dirname(file)),
+  };
 }
 
 async function exists(path: string) {
@@ -269,13 +353,17 @@ export async function listScheduledSchedules(input: {
   const schedules: Array<ScheduleSnapshot | null> = await Promise.all(files.map(async (file) => {
     const content = await readFile(file, "utf8");
     const rawJson = extractFencedSection(content, "Config JSON");
-    if (!rawJson) return null;
-    const parsed = JSON.parse(rawJson) as ScheduleSnapshot;
-    return {
-      ...parsed,
-      sharedSchedulePath: relative(vault, file),
-      sharedRunFolder: relative(vault, dirname(file)),
-    };
+    if (!rawJson) return repairHermesJobsSchedule(content, file, vault);
+    try {
+      const parsed = JSON.parse(rawJson) as ScheduleSnapshot;
+      return normalizeScheduleSnapshot({
+        ...parsed,
+        sharedSchedulePath: relative(vault, file),
+        sharedRunFolder: relative(vault, dirname(file)),
+      }, content, file, vault);
+    } catch {
+      return repairHermesJobsSchedule(content, file, vault);
+    }
   }));
   return schedules
     .filter((schedule): schedule is ScheduleSnapshot => Boolean(schedule?.id && schedule?.name))

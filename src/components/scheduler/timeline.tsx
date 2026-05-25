@@ -43,6 +43,7 @@ export function Timeline({ jobs, selectedId, onSelect }: TimelineProps) {
       return { job: j, t, mins: m, isPaused: !j.enabled || j.nextRun === "paused" };
     })
     .filter((x): x is Pin => x != null);
+  const floatingJobs = jobs.filter((j) => j.enabled && j.nextRun !== "paused" && minutesFromLabel(j.nextRun) == null);
 
   const bucketed: Pin[] = [];
   const colLastT: number[] = [];
@@ -166,6 +167,61 @@ export function Timeline({ jobs, selectedId, onSelect }: TimelineProps) {
               </span>
             </button>
           ))}
+          {floatingJobs.length ? (
+            <div className="grid" style={{
+              position: "absolute", left: JOB_GUTTER, right: 12, bottom: 18,
+              gap: 8, maxWidth: COL_W * 2 + COL_GAP,
+            }}>
+              <div className="uppercase font-bold" style={{
+                fontFamily: "var(--f-mono)", fontSize: 9, letterSpacing: 0.08,
+                color: "var(--muted)",
+              }}>Runtime-managed schedules</div>
+              {floatingJobs.map((job) => (
+                <button key={job.id}
+                  onClick={() => onSelect(job.id)}
+                  aria-pressed={selectedId === job.id}
+                  className="grid items-center text-left cursor-pointer"
+                  style={{
+                    gridTemplateColumns: "28px 1fr", gap: 8,
+                    width: COL_W, padding: "6px 10px 6px 6px", borderRadius: 999,
+                    border: `1px solid ${selectedId === job.id ? "var(--hex-honey-border)" : "rgba(148,163,184,0.16)"}`,
+                    background: selectedId === job.id
+                      ? "linear-gradient(90deg, rgba(255,212,90,0.16), var(--panel-bg))"
+                      : "var(--panel-card-grad)",
+                    color: "var(--foreground)",
+                    boxShadow: selectedId === job.id
+                      ? "0 12px 32px rgba(255,212,90,0.18)"
+                      : "0 4px 12px rgba(0,0,0,0.18)",
+                    backdropFilter: "blur(8px) saturate(140%)",
+                    WebkitBackdropFilter: "blur(8px) saturate(140%)",
+                    transition: "border-color 160ms ease, transform 160ms ease",
+                  }}>
+                  <span aria-hidden className="relative grid place-items-center"
+                    style={{
+                      width: 28, height: 28, borderRadius: 999,
+                      background: "rgba(255,212,90,0.16)",
+                      border: "1px solid var(--hex-honey-border)",
+                    }}>
+                    <BeeIcon role="worker" size={18} />
+                  </span>
+                  <span style={{ minWidth: 0 }}>
+                    <span className="block truncate font-semibold"
+                      style={{
+                        fontFamily: "var(--f-display)", fontSize: 12,
+                        color: selectedId === job.id ? "var(--hex-honey-border)" : "var(--foreground)",
+                      }}>{job.name}</span>
+                    <span className="flex items-center" style={{
+                      gap: 6, fontFamily: "var(--f-mono)", fontSize: 9.5, color: "var(--muted)",
+                    }}>
+                      <span>{job.nextRun}</span>
+                      <span>·</span>
+                      <span className="truncate">{job.machine} · {job.bee}</span>
+                    </span>
+                  </span>
+                </button>
+              ))}
+            </div>
+          ) : null}
         </div>
       </div>
     </div>

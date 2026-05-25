@@ -91,6 +91,7 @@ export interface FleetAlert {
   machine: string;
   text: string;
   since: string;
+  timestamp?: number;
 }
 
 export const MACHINES: FleetMachine[] = [

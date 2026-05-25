@@ -142,6 +142,18 @@ OPENAI_API_KEY=hive-v1.<workspace-id>.<bankr-llm-key>
 
 Your workspace id is stored at `~/.hivemindos/install-id` after setup. The gateway forwards the request through Bankr, reads the provider-returned token usage, signs the Honey receipt server-side, and credits official Honey without requiring the dashboard chat surface.
 
+### Local OpenAI-Compatible Runtimes
+
+HivemindOS can register a generic `openai-compatible` agent runtime for local model servers that expose OpenAI-style endpoints. LM Studio works with the default base URL:
+
+```txt
+LOCAL_OPENAI_BASE_URL=http://127.0.0.1:1234
+LOCAL_OPENAI_API_KEY=
+LOCAL_OPENAI_MODEL=<loaded-model-id>
+```
+
+The adapter calls `POST /v1/chat/completions` for chat and `GET /v1/models` for model discovery. Point the same runtime at Ollama, vLLM, llama.cpp server, LocalAI, or another compatible service by changing the base URL and model.
+
 ## Features
 
 | Feature | What it does |
@@ -150,6 +162,7 @@ Your workspace id is stored at `~/.hivemindos/install-id` after setup. The gatew
 | **Tailscale agent network** | Connects agents across your machines through your private Tailscale VPN |
 | **Machine monitor** | Lightweight local service that reports agent status and runtime health to the dashboard |
 | **Runtime adapters** | Supports Hermes, OpenClaw, Aeon, MiroShark, and generic machine-backed agents through a neutral adapter layer |
+| **Local model runtimes** | Adds a generic OpenAI-compatible adapter for LM Studio, Ollama, vLLM, llama.cpp server, LocalAI, and similar `/v1/chat/completions` services |
 | **Shared Obsidian brain** | Stores memory, handoffs, shared context, Kanban state, and reusable skills in a local markdown vault |
 | **Shared env sync** | Adds keys once with `hive-env-add` and syncs them to trusted machines over Tailscale SSH |
 | **Work board** | Gives agents a shared Kanban queue for tasks, delegation, retries, stale work, and human handoff |

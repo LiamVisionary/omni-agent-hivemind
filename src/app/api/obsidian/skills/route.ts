@@ -6,13 +6,15 @@ import {
   importRemoteBrainSkill,
   type BrainSkillProviderId,
 } from "@/lib/services/obsidian/brain-skills";
+import { remoteSkillProviders } from "@/lib/services/fleet/remote-skill-providers";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 export async function GET(request: NextRequest) {
   try {
-    const inventory = await getBrainSkillInventory(request.nextUrl.searchParams.get("vaultPath") ?? undefined);
+    const remoteProviders = await remoteSkillProviders(request);
+    const inventory = await getBrainSkillInventory(request.nextUrl.searchParams.get("vaultPath") ?? undefined, remoteProviders);
     return NextResponse.json({ ok: true, ...inventory });
   } catch (error) {
     return errorResponse(error);
@@ -55,6 +57,7 @@ export async function POST(request: NextRequest) {
     const result = await importBrainSkills({
       vaultPath: body.vaultPath,
       provider: body.provider ?? "all",
+      remoteProviders: await remoteSkillProviders(request),
     });
     return NextResponse.json({ ok: true, ...result });
   } catch (error) {

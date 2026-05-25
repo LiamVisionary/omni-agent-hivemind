@@ -8,7 +8,7 @@ import { getDisplayWalletBalanceUsd } from "@/lib/utils/agent-wallet";
 
 import styles from "./AgentWalletCardCompact.module.css";
 
-type Props = {
+export type AgentWalletCardCompactProps = {
   agentName: string;
   wallet: AgentWalletConfig;
   survival: AgentSurvivalSnapshot;
@@ -39,7 +39,7 @@ function formatMoney(value: number): string {
   return `$${Math.max(0, value).toFixed(2)}`;
 }
 
-export function AgentWalletCardCompact({ agentName, wallet, survival, onOpen, onInitialize }: Props) {
+export function AgentWalletCardCompact({ agentName, wallet, survival, onOpen, onInitialize }: AgentWalletCardCompactProps) {
   const tier = wallet.enabled ? survival.tier : "off";
   const safeBalance = getDisplayWalletBalanceUsd(wallet);
   const status = statusFor(wallet, survival);

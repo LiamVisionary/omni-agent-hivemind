@@ -850,6 +850,180 @@ details[open] > summary .treeDisclosure::before {
   color: #d8deea;
 }
 
+.messageActions {
+  position: sticky;
+  top: 0;
+  z-index: 6;
+  display: flex;
+  justify-content: flex-end;
+  min-height: 0;
+  pointer-events: none;
+}
+
+.generateKanbanButton {
+  position: absolute;
+  top: 0;
+  right: 0;
+  display: inline-grid;
+  width: 30px;
+  height: 30px;
+  place-items: center;
+  border: 1px solid rgba(148, 163, 184, 0.18);
+  border-radius: 8px;
+  background: rgba(11, 16, 24, 0.82);
+  color: #a9b8cc;
+  opacity: 0;
+  pointer-events: auto;
+  transform: translateY(-2px);
+  transition: opacity 160ms ease, transform 160ms ease, border-color 160ms ease, color 160ms ease;
+}
+
+.message:hover .generateKanbanButton,
+.generateKanbanButton:focus-visible,
+.generateKanbanButton.active {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.generateKanbanButton:hover,
+.generateKanbanButton.active {
+  border-color: rgba(45, 212, 191, 0.44);
+  color: #c8fff8;
+}
+
+.generateKanbanButton svg {
+  width: 15px;
+  height: 15px;
+}
+
+.generateKanbanButton:disabled svg {
+  animation: chatKanbanSpin 900ms linear infinite;
+}
+
+.generateKanbanPopover {
+  position: absolute;
+  top: 36px;
+  right: 0;
+  z-index: 8;
+  display: grid;
+  width: min(260px, calc(100vw - 48px));
+  gap: 10px;
+  border: 1px solid rgba(148, 163, 184, 0.2);
+  border-radius: 8px;
+  background: rgba(13, 18, 28, 0.96);
+  padding: 10px;
+  box-shadow: 0 18px 40px rgba(0, 0, 0, 0.34);
+  pointer-events: auto;
+  animation: chatKanbanPopoverIn 160ms ease-out both;
+}
+
+.generateKanbanPopover::before {
+  content: "";
+  position: absolute;
+  top: -5px;
+  right: 10px;
+  width: 9px;
+  height: 9px;
+  border-top: 1px solid rgba(148, 163, 184, 0.2);
+  border-left: 1px solid rgba(148, 163, 184, 0.2);
+  background: rgba(13, 18, 28, 0.96);
+  transform: rotate(45deg);
+}
+
+.generateKanbanHeader {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: #e7edf6;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.generateKanbanHeader svg {
+  width: 14px;
+  height: 14px;
+  color: #5eead4;
+}
+
+.generateKanbanActions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.generateKanbanActions button {
+  border: 1px solid rgba(148, 163, 184, 0.18);
+  border-radius: 8px;
+  background: rgba(21, 29, 42, 0.86);
+  color: #dbe6f4;
+  padding: 8px 10px;
+  font-size: 12px;
+  font-weight: 800;
+  transition: transform 140ms ease, border-color 140ms ease, background 140ms ease;
+}
+
+.generateKanbanActions button:hover {
+  border-color: rgba(45, 212, 191, 0.42);
+  background: rgba(20, 64, 58, 0.7);
+  transform: translateY(-1px);
+}
+
+.generateKanbanProgress {
+  position: relative;
+  display: grid;
+  gap: 8px;
+  overflow: hidden;
+}
+
+.generateKanbanProgress span {
+  position: relative;
+  height: 4px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: rgba(148, 163, 184, 0.12);
+}
+
+.generateKanbanProgress span::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  width: 46%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, rgba(45, 212, 191, 0.2), rgba(94, 234, 212, 0.88), rgba(125, 211, 252, 0.76));
+  animation: chatKanbanSweep 1.2s ease-in-out infinite;
+}
+
+.generateKanbanProgress small {
+  color: #aeb9ca;
+  font-size: 11px;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+.generateKanbanPopover.phase-done {
+  border-color: rgba(34, 197, 94, 0.34);
+}
+
+.generateKanbanPopover.phase-done .generateKanbanProgress span::after {
+  width: 100%;
+  background: #34d399;
+  animation: none;
+}
+
+.generateKanbanPopover.phase-error {
+  border-color: rgba(248, 113, 113, 0.34);
+}
+
+.generateKanbanPopover.phase-error .generateKanbanHeader svg {
+  color: #fca5a5;
+}
+
+.generateKanbanPopover.phase-error .generateKanbanProgress span::after {
+  width: 100%;
+  background: #f87171;
+  animation: none;
+}
+
 .messageRole {
   display: block;
   margin-bottom: 5px;
@@ -937,6 +1111,33 @@ details[open] > summary .treeDisclosure::before {
   padding: 10px;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
+}
+
+@keyframes chatKanbanPopoverIn {
+  from {
+    opacity: 0;
+    transform: translateY(-4px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes chatKanbanSweep {
+  0% {
+    transform: translateX(-110%);
+  }
+  55%,
+  100% {
+    transform: translateX(220%);
+  }
+}
+
+@keyframes chatKanbanSpin {
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 .messageMarkdown pre code {

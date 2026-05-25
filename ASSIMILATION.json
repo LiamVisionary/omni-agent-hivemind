@@ -1,5 +1,5 @@
 {
-  "created_at": "2026-05-25T08:16:05.792417+00:00",
+  "created_at": "2026-05-25T11:21:09.005960+00:00",
   "custom_code_assessment": "balanced",
   "entries": [
     {
@@ -673,6 +673,48 @@
       "target_path": "scripts/test-kanban-workflow.mjs",
       "reuse_type": "test_adapted",
       "note": "task run claim/heartbeat/complete smoke coverage adapted for HivemindOS"
+    },
+    {
+      "source_repo": "elastic/llm-debug-proxy",
+      "source_path": "src/formatters.ts",
+      "target_path": "src/app/api/chat/agent-runtime/route.ts",
+      "reuse_type": "adapted_code",
+      "note": "OpenAI SSE data-line parsing and chunk content extraction adapted for local OpenAI-compatible runtime streaming"
+    },
+    {
+      "source_repo": "dandibbert/kurishiro-api-worker",
+      "source_path": "src/index.ts",
+      "target_path": "src/app/api/chat/agent-runtime/route.ts",
+      "reuse_type": "adapted_code",
+      "note": "ReadableStream text/event-stream response framing adapted for dashboard SSE forwarding"
+    },
+    {
+      "source_repo": "Loongphy/fal-openai-cf-proxy",
+      "source_path": "src/index.ts",
+      "target_path": "src/lib/services/runtime-adapters/openai-compatible.ts",
+      "reuse_type": "adapted_code",
+      "note": "/v1/models model-list response shape adapted into runtime model discovery status"
+    },
+    {
+      "source_repo": "NangoHQ/nango",
+      "source_path": "packages/node-client/lib/utils.ts",
+      "target_path": "src/lib/services/integrations/nango-client.ts",
+      "reuse_type": "adapted_code",
+      "note": "Proxy configuration validation, query parameter application, and user-agent construction adapted for HivemindOS Nango requests"
+    },
+    {
+      "source_repo": "NangoHQ/nango",
+      "source_path": "packages/node-client/lib/index.ts",
+      "target_path": "src/lib/services/integrations/nango-client.ts",
+      "reuse_type": "adapted_code",
+      "note": "Nango host normalization, bearer-header enrichment, connections listing, and proxy endpoint conventions adapted into a fetch-based local helper"
+    },
+    {
+      "source_repo": "NangoHQ/nango",
+      "source_path": "packages/server/lib/routes.ts",
+      "target_path": "src/lib/services/integrations/nango-client.ts",
+      "reuse_type": "adapted_code",
+      "note": "Unauthenticated /health route contract adapted for the integration host readiness check"
     }
   ]
 }

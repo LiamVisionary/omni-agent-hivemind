@@ -122,6 +122,19 @@ a {
   align-items: start;
   margin: 0;
   padding: 0 0 38px;
+  animation: commandShellEnter 0.28s ease-out both;
+}
+
+@keyframes commandShellEnter {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 .commandMain {

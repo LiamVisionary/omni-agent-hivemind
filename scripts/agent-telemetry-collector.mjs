@@ -1,11 +1,11 @@
 #!/usr/bin/env node
 import { createServer } from "node:http";
 import { execFile, spawn } from "node:child_process";
-import { randomBytes } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 import { access, mkdir, readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
-import { constants } from "node:fs";
+import { constants, watch } from "node:fs";
 import { homedir, hostname, userInfo } from "node:os";
-import { join, resolve, sep } from "node:path";
+import { basename, dirname, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 
@@ -18,7 +18,7 @@ const defaultAeonDir = process.env.AEON_LOCAL_PATH || process.env.AEON_HOME || j
 const maxChars = 1000;
 const HERMES_EMPTY_TRANSCRIPT_MESSAGE = "Hermes session found. Send a message to resume it.";
 const maxChatChars = 12_000;
-const chatTimeoutMs = Number(process.env.AGENT_TELEMETRY_CHAT_TIMEOUT_MS || 10 * 60_000);
+const chatTimeoutMs = Number(process.env.AGENT_TELEMETRY_CHAT_TIMEOUT_MS || 20 * 60_000);
 const sessionDiscoveryTimeoutMs = Number(process.env.AGENT_TELEMETRY_SESSION_DISCOVERY_TIMEOUT_MS || 15_000);
 const hermesApiHost = process.env.AGENT_TELEMETRY_HERMES_API_HOST || "127.0.0.1";
 const hermesApiPort = Number(process.env.AGENT_TELEMETRY_HERMES_API_PORT || process.env.API_SERVER_PORT || 8642);
@@ -34,9 +34,29 @@ const defaultSyncPath = expandHome(
 );
 const runLogRoot = join(homedir(), ".hivemindos", "runtime-runs");
 const runtimeAgentRegistryPath = join(homedir(), ".hivemindos", "runtime-agents.json");
+const skillAutoSyncConfigPath = join(homedir(), ".hivemindos", "skill-auto-sync.json");
 const hermesProfilesDir = join(defaultHermesDir, "profiles");
+const skillProviderRoots = [
+  { id: "claude", label: "Claude", home: "~/.claude", roots: [{ path: "~/.claude/skills", maxDepth: 3 }, { path: "~/.claude/plugins", maxDepth: 8 }] },
+  { id: "codex", label: "Codex", home: "~/.codex", roots: [{ path: "~/.codex/skills", maxDepth: 4 }, { path: "~/.codex/plugins/cache", maxDepth: 8 }] },
+  { id: "hermes", label: "Hermes", home: "~/.hermes", roots: [{ path: "~/.hermes/skills", maxDepth: 4 }, { path: "~/.hermes/plugins", maxDepth: 8 }, { path: "~/.hermes/agents", maxDepth: 6 }] },
+  { id: "gemini", label: "Gemini", home: "~/.gemini", roots: [{ path: "~/.gemini/skills", maxDepth: 4 }, { path: "~/.gemini/extensions", maxDepth: 8 }] },
+  { id: "openclaw", label: "OpenClaw", home: "~/.openclaw", roots: [{ path: "~/.openclaw/skills", maxDepth: 4 }, { path: "~/Documents/code/projects/hivemind-os/openclaw-next/skills", maxDepth: 4 }] },
+  { id: "aeon", label: "Aeon", home: "~/.aeon", roots: [{ path: "~/.aeon/skills", maxDepth: 4 }, { path: "~/.aeon/plugins", maxDepth: 8 }, { path: "~/.aeon/agents", maxDepth: 6 }, { path: process.env.AEON_LOCAL_PATH ? `${process.env.AEON_LOCAL_PATH}/skills` : "~/.aeon/repo/skills", maxDepth: 3 }] },
+];
+const skippedSkillDirs = new Set([".git", "node_modules", ".next", "dist", "build", ".cache", ".archive"]);
+const maxSkillFiles = Number(process.env.AGENT_TELEMETRY_MAX_SKILL_FILES || 160);
+const maxSkillFileBytes = Number(process.env.AGENT_TELEMETRY_MAX_SKILL_FILE_BYTES || 5 * 1024 * 1024);
+const skillAutoSyncPollMs = Number(process.env.AGENT_TELEMETRY_SKILL_AUTO_SYNC_POLL_MS || 10_000);
+const skillAutoSyncDebounceMs = Number(process.env.AGENT_TELEMETRY_SKILL_AUTO_SYNC_DEBOUNCE_MS || 2_500);
 let hermesApiProcess = null;
 let hermesApiStartPromise = null;
+let skillAutoSyncConfig = null;
+let skillAutoSyncPoll = null;
+let skillAutoSyncDebounce = null;
+let skillAutoSyncInFlight = false;
+const skillAutoSyncWatchers = new Map();
+const skillAutoSyncSignatures = new Map();
 
 function expandHome(path) {
   return path?.replace(/^~(?=$|\/)/, homedir());
@@ -52,12 +72,51 @@ function slugify(value) {
   return String(value || "agent").trim().toLowerCase().replace(/[^a-z0-9_-]+/g, "-").replace(/^-|-$/g, "").slice(0, 48) || "agent";
 }
 
+function skillSlug(value) {
+  return String(value || "skill").trim().toLowerCase().replace(/[^a-z0-9._-]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 80) || "skill";
+}
+
+function titleFromSlug(slug) {
+  return String(slug || "skill").split(/[-_]/).filter(Boolean).map((word) => word.slice(0, 1).toUpperCase() + word.slice(1)).join(" ");
+}
+
+function parseSkillFrontmatter(markdown) {
+  const match = String(markdown || "").match(/^---\n([\s\S]*?)\n---/);
+  const fields = new Map();
+  if (!match) return fields;
+  for (const line of match[1].split("\n")) {
+    const field = line.match(/^([A-Za-z0-9_-]+):\s*(.*)$/);
+    if (field) fields.set(field[1].toLowerCase(), field[2].replace(/^["']|["']$/g, "").trim());
+  }
+  return fields;
+}
+
+function firstSkillParagraph(markdown) {
+  return String(markdown || "").replace(/^---\n[\s\S]*?\n---/, "").split(/\n{2,}/).map((part) => part.trim()).find((part) => part && !part.startsWith("#")) || "";
+}
+
+function skillChecksum(value) {
+  return createHash("sha256").update(value).digest("hex");
+}
+
 function yamlScalar(value) {
   return JSON.stringify(String(value || ""));
 }
 
 function uniqueAgentId(runtime, name) {
   return `${runtime}-${slugify(name)}-${randomBytes(3).toString("hex")}`;
+}
+
+const knownRuntimeIds = ["hermes", "openclaw", "aeon", "openai-compatible"];
+
+function normalizeRuntimeId(runtime, fallback = "hermes") {
+  const value = String(runtime || "").trim();
+  return knownRuntimeIds.includes(value) ? value : fallback;
+}
+
+function runtimeAgentKey(agent) {
+  const runtime = normalizeRuntimeId(agent?.runtime);
+  return `${runtime}:${slugify(agent?.agentId || agent?.profile || agent?.name)}`;
 }
 
 async function readRuntimeAgentRegistry() {
@@ -122,11 +181,18 @@ function runtimeCapabilitiesFor(runtime) {
       setup: true,
     };
   }
+  if (runtime === "openai-compatible") {
+    return {
+      status: true,
+      chat: true,
+      modelSelection: true,
+    };
+  }
   return {};
 }
 
 function normalizeRuntimeAgent(entry) {
-  const runtime = ["hermes", "openclaw", "aeon"].includes(entry?.runtime) ? entry.runtime : "hermes";
+  const runtime = normalizeRuntimeId(entry?.runtime, "openai-compatible");
   return {
     ...entry,
     id: String(entry?.id || uniqueAgentId(runtime, entry?.name)),
@@ -136,7 +202,7 @@ function normalizeRuntimeAgent(entry) {
     agentId: String(entry?.agentId || entry?.profile || entry?.id || ""),
     localDataDir: typeof entry?.localDataDir === "string" ? entry.localDataDir : "",
     machineName: hostname(),
-    runtimeKind: runtime === "hermes" ? "interactive" : runtime === "openclaw" ? "gateway" : "background",
+    runtimeKind: runtime === "openclaw" ? "gateway" : runtime === "aeon" ? "background" : "interactive",
     runtimeCapabilities: runtimeCapabilitiesFor(runtime),
     beeRole: ["queen", "worker", "observer", "human"].includes(entry?.beeRole) ? entry.beeRole : "worker",
     workerClass: ["general", "planner", "code", "vision", "writer", "research", "artist", "ops", "qa"].includes(entry?.workerClass) ? entry.workerClass : "general",
@@ -163,6 +229,11 @@ async function createHermesProfileAgent(input) {
     `  default: ${yamlScalar(model)}`,
     `  provider: ${yamlScalar(provider)}`,
     provider === "openai-codex" ? "  base_url: https://chatgpt.com/backend-api/codex" : "",
+    "image_gen:",
+    "  provider: openai-codex",
+    "  model: gpt-image-2-medium",
+    "  openai-codex:",
+    "    model: gpt-image-2-medium",
     "agent:",
     "  auto_approve: true",
     "",
@@ -183,25 +254,32 @@ async function createHermesProfileAgent(input) {
 }
 
 async function createRuntimeAgent(input) {
-  const runtime = ["hermes", "openclaw", "aeon"].includes(input.runtime) ? input.runtime : "hermes";
+  const runtime = normalizeRuntimeId(input.runtime);
   const name = String(input.name || "").trim();
   if (!name) throw new Error("Agent name is required.");
-  const id = uniqueAgentId(runtime, name);
   let runtimeResult = {};
   if (runtime === "hermes") {
     runtimeResult = await createHermesProfileAgent(input);
   }
   const profile = runtimeResult.profile || slugify(name);
+  const agents = await readRuntimeAgentRegistry();
+  const incomingKey = `${runtime}:${profile}`;
+  const existing = agents.find((item) => runtimeAgentKey(item) === incomingKey);
   const agent = normalizeRuntimeAgent({
-    id,
+    ...existing,
+    id: existing?.id || uniqueAgentId(runtime, name),
     name,
     runtime,
-    gatewayUrl: runtime === "openclaw" ? String(input.gatewayUrl || "ws://127.0.0.1:18789") : "",
+    gatewayUrl: runtime === "openclaw"
+      ? String(input.gatewayUrl || "ws://127.0.0.1:18789")
+      : runtime === "openai-compatible"
+        ? String(input.gatewayUrl || process.env.LOCAL_OPENAI_BASE_URL || "http://127.0.0.1:1234")
+        : "",
     agentId: profile,
-    chatPath: runtime === "hermes" ? "/chat" : "",
-    statusPath: runtime === "hermes" ? "/health" : "",
-    provider: input.provider,
-    model: input.model,
+    chatPath: runtime === "hermes" ? "/chat" : runtime === "openai-compatible" ? "/v1/chat/completions" : "",
+    statusPath: runtime === "hermes" ? "/health" : runtime === "openai-compatible" ? "/v1/models" : "",
+    provider: input.provider || (runtime === "openai-compatible" ? "lm-studio" : undefined),
+    model: input.model || (runtime === "openai-compatible" ? process.env.LOCAL_OPENAI_MODEL : undefined),
     localDataDir: runtimeResult.profileDir || (runtime === "hermes" ? join(hermesProfilesDir, profile) : ""),
     beeRole: input.beeRole,
     workerClass: input.workerClass,
@@ -212,9 +290,52 @@ async function createRuntimeAgent(input) {
     preferredSkillSlugs: input.preferredSkillSlugs,
     useSharedVault: input.useSharedVault,
   });
-  const agents = await readRuntimeAgentRegistry();
-  await writeRuntimeAgentRegistry([...agents.filter((item) => item.id !== agent.id), agent]);
+  await writeRuntimeAgentRegistry([
+    ...agents.filter((item) => item.id !== agent.id && runtimeAgentKey(item) !== incomingKey),
+    agent,
+  ]);
   return agent;
+}
+
+async function deleteRuntimeAgent(input) {
+  const id = String(input.id || "").trim();
+  const runtime = input.runtime ? normalizeRuntimeId(input.runtime) : "";
+  const profile = slugify(input.profile || input.agentId || input.name || "");
+  if (!id && !profile) throw new Error("Agent id or profile is required.");
+
+  const agents = await readRuntimeAgentRegistry();
+  const target = agents.find((agent) => (
+    (id && agent.id === id)
+    || (runtime && profile && runtimeAgentKey(agent) === `${runtime}:${profile}`)
+    || (!runtime && profile && slugify(agent.agentId || agent.profile || agent.name) === profile)
+  ));
+  if (!target) return { deleted: false };
+
+  const normalized = normalizeRuntimeAgent(target);
+  const managedProfile = slugify(normalized.agentId || normalized.name);
+  const canRemoveHermesProfile = normalized.runtime === "hermes"
+    && managedProfile
+    && managedProfile !== "default"
+    && managedProfile !== "hermes"
+    && (managedProfile.startsWith("hive-e2e-") || input.allowProfileRemoval === true);
+
+  await writeRuntimeAgentRegistry(agents.filter((agent) => agent.id !== target.id));
+
+  let removedProfileDir = false;
+  if (canRemoveHermesProfile) {
+    const profileDir = resolve(join(hermesProfilesDir, managedProfile));
+    const safeRoot = resolve(hermesProfilesDir);
+    if (profileDir.startsWith(`${safeRoot}${sep}`)) {
+      await rm(profileDir, { recursive: true, force: true });
+      removedProfileDir = true;
+    }
+  }
+
+  return {
+    deleted: true,
+    agent: normalized,
+    removedProfileDir,
+  };
 }
 
 function jsonResponse(response, status, payload) {
@@ -504,6 +625,53 @@ function runHiveEnvImport({ entries, scope = "agent", runtime = "generic" }) {
       rejectImport(new Error(errorText.trim() || "hive-env-add could not import env variables."));
     });
     child.stdin.end(encodeEnvEntries(entries));
+  });
+}
+
+function runHiveEnvE2eSync({ key, value, scope = "all", runtime = "generic" }) {
+  return new Promise(async (resolveSync, rejectSync) => {
+    if (!/^HIVE_E2E_[A-Z0-9_]+$/.test(key)) {
+      rejectSync(new Error("E2E env sync only accepts HIVE_E2E_* keys."));
+      return;
+    }
+    const envSync = await resolveHiveEnvAdd();
+    if (!envSync.ready) {
+      rejectSync(new Error(envSync.error || "hive-env-add is not installed or executable."));
+      return;
+    }
+    const child = spawn(envSync.command, [
+      `${key}=${value}`,
+      "--scope",
+      scope,
+      "--runtime",
+      runtime,
+      "--no-backup",
+    ], {
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+    let output = "";
+    const timeout = setTimeout(() => {
+      child.kill("SIGTERM");
+      rejectSync(new Error("Timed out while running hive-env-add."));
+    }, 90_000);
+    child.stdout.on("data", (chunk) => {
+      output += chunk.toString();
+    });
+    child.stderr.on("data", (chunk) => {
+      output += chunk.toString();
+    });
+    child.on("error", (error) => {
+      clearTimeout(timeout);
+      rejectSync(error);
+    });
+    child.on("close", (code) => {
+      clearTimeout(timeout);
+      if (code === 0) {
+        resolveSync(output.trim());
+        return;
+      }
+      rejectSync(new Error(output.trim() || "hive-env-add failed."));
+    });
   });
 }
 
@@ -1041,6 +1209,279 @@ async function listDirectories(pathValue = "~") {
   };
 }
 
+async function findSkillFiles(rootPath, maxDepth) {
+  const root = resolve(expandHome(rootPath));
+  await access(root, constants.R_OK).catch(() => null);
+  const found = [];
+
+  async function walk(current, depth) {
+    if (depth > maxDepth) return;
+    const entries = await readdir(current, { withFileTypes: true }).catch(() => []);
+    for (const entry of entries) {
+      if (entry.name === "SKILL.md") {
+        found.push(join(current, entry.name));
+        continue;
+      }
+      if (!entry.isDirectory() || skippedSkillDirs.has(entry.name)) continue;
+      await walk(join(current, entry.name), depth + 1);
+    }
+  }
+
+  await walk(root, 0);
+  return found;
+}
+
+async function collectSkillFiles(skillDir) {
+  const root = resolve(skillDir);
+  const files = [];
+
+  async function walk(current) {
+    if (files.length >= maxSkillFiles) return;
+    const entries = await readdir(current, { withFileTypes: true }).catch(() => []);
+    for (const entry of entries) {
+      if (files.length >= maxSkillFiles) return;
+      if (skippedSkillDirs.has(entry.name)) continue;
+      const fullPath = join(current, entry.name);
+      if (entry.isDirectory()) {
+        await walk(fullPath);
+        continue;
+      }
+      if (!entry.isFile()) continue;
+      const stats = await stat(fullPath).catch(() => null);
+      if (!stats || stats.size > maxSkillFileBytes) continue;
+      const relativePath = relative(root, fullPath).split(sep).join("/");
+      if (!relativePath || relativePath.startsWith("..")) continue;
+      const content = await readFile(fullPath).catch(() => null);
+      if (!content) continue;
+      files.push({ path: relativePath, contentBase64: content.toString("base64") });
+    }
+  }
+
+  await walk(root);
+  return files;
+}
+
+async function skillSummaryForProvider(provider, skillPath) {
+  const markdown = await readFile(skillPath, "utf-8").catch(() => "");
+  const stats = await stat(skillPath).catch(() => null);
+  const slug = skillSlug(basename(dirname(skillPath)));
+  const frontmatter = parseSkillFrontmatter(markdown);
+  return {
+    id: `${provider.id}:${hostname()}:${skillPath}`,
+    slug,
+    name: frontmatter.get("name") || titleFromSlug(slug),
+    description: frontmatter.get("description") || firstSkillParagraph(markdown),
+    provider: provider.id,
+    providerLabel: provider.label,
+    path: skillPath,
+    sourcePath: skillPath,
+    sourceMachine: hostname(),
+    relativePath: relative(resolve(expandHome(provider.home)), skillPath),
+    checksum: skillChecksum(markdown),
+    updatedAt: stats?.mtimeMs ?? 0,
+    imported: false,
+    sourceFiles: await collectSkillFiles(dirname(skillPath)),
+  };
+}
+
+async function listInstalledSkills() {
+  const providers = await Promise.all(skillProviderRoots.map(async (provider) => {
+    const skillFiles = [...new Set((await Promise.all(provider.roots.map((root) => findSkillFiles(root.path, root.maxDepth)))).flat())];
+    const skills = await Promise.all(skillFiles.map((skillPath) => skillSummaryForProvider(provider, skillPath)));
+    return {
+      id: provider.id,
+      label: provider.label,
+      home: provider.home,
+      installed: await access(resolve(expandHome(provider.home)), constants.R_OK).then(() => true).catch(() => false),
+      skills: skills.sort((left, right) => left.name.localeCompare(right.name)),
+    };
+  }));
+  return { ok: true, host: hostname(), providers };
+}
+
+function e2eSkillProvider(providerId) {
+  const provider = skillProviderRoots.find((item) => item.id === providerId);
+  if (!provider) throw new Error(`Unsupported skill provider: ${providerId}`);
+  return provider;
+}
+
+async function writeE2eProviderSkill(input) {
+  const provider = e2eSkillProvider(String(input.provider || ""));
+  const slug = skillSlug(input.slug);
+  if (!slug.startsWith("hive-e2e-")) throw new Error("E2E skill slugs must start with hive-e2e-.");
+  const root = resolve(expandHome(provider.roots[0]?.path || ""));
+  const skillDir = resolve(join(root, slug));
+  if (!skillDir.startsWith(`${root}${sep}`)) throw new Error("Unsafe skill path.");
+  await mkdir(skillDir, { recursive: true, mode: 0o700 });
+  const title = String(input.name || titleFromSlug(slug));
+  const description = String(input.description || "Real fleet E2E propagation test skill.");
+  const body = String(input.body || `# ${title}\n\n${description}\n`);
+  const markdown = body.startsWith("---")
+    ? body
+    : [
+      "---",
+      `name: ${title}`,
+      `description: ${description}`,
+      "---",
+      "",
+      body,
+    ].join("\n");
+  await writeFile(join(skillDir, "SKILL.md"), markdown.endsWith("\n") ? markdown : `${markdown}\n`, { mode: 0o600 });
+  return { ok: true, provider: provider.id, slug, path: join(skillDir, "SKILL.md") };
+}
+
+async function removeE2eProviderSkill(input) {
+  const provider = e2eSkillProvider(String(input.provider || ""));
+  const slug = skillSlug(input.slug);
+  if (!slug.startsWith("hive-e2e-")) throw new Error("E2E skill slugs must start with hive-e2e-.");
+  const root = resolve(expandHome(provider.roots[0]?.path || ""));
+  const skillDir = resolve(join(root, slug));
+  if (!skillDir.startsWith(`${root}${sep}`)) throw new Error("Unsafe skill path.");
+  await rm(skillDir, { recursive: true, force: true });
+  return { ok: true, provider: provider.id, slug, removed: true };
+}
+
+function providerSignature(provider) {
+  return (provider?.skills ?? [])
+    .map((skill) => `${skill.slug}:${skill.checksum}:${Math.trunc(skill.updatedAt || 0)}`)
+    .sort()
+    .join("|");
+}
+
+function enabledSkillAutoSyncProviders(config = skillAutoSyncConfig) {
+  const policies = config?.policies && typeof config.policies === "object" ? config.policies : {};
+  return skillProviderRoots.filter((provider) => {
+    const policy = policies[provider.id];
+    return policy?.autoImport || policy?.autoUpdate || policy?.trackRemovals;
+  });
+}
+
+async function readSkillAutoSyncConfig() {
+  const raw = await readFile(skillAutoSyncConfigPath, "utf-8").catch(() => "");
+  if (!raw.trim()) return { enabled: false, policies: {}, dashboardUrl: process.env.HIVEMINDOS_DASHBOARD_URL || "http://127.0.0.1:5020", vaultPath: defaultSyncPath };
+  try {
+    const parsed = JSON.parse(raw);
+    return {
+      enabled: parsed.enabled === true,
+      policies: parsed.policies && typeof parsed.policies === "object" ? parsed.policies : {},
+      dashboardUrl: String(parsed.dashboardUrl || process.env.HIVEMINDOS_DASHBOARD_URL || "http://127.0.0.1:5020"),
+      vaultPath: String(parsed.vaultPath || defaultSyncPath),
+    };
+  } catch {
+    return { enabled: false, policies: {}, dashboardUrl: process.env.HIVEMINDOS_DASHBOARD_URL || "http://127.0.0.1:5020", vaultPath: defaultSyncPath };
+  }
+}
+
+async function writeSkillAutoSyncConfig(config) {
+  await mkdir(dirname(skillAutoSyncConfigPath), { recursive: true, mode: 0o700 });
+  await writeFile(skillAutoSyncConfigPath, `${JSON.stringify(config, null, 2)}\n`, { mode: 0o600 });
+}
+
+async function configuredProviderInventory(providerIds) {
+  const inventory = await listInstalledSkills();
+  const wanted = new Set(providerIds);
+  return {
+    ...inventory,
+    providers: inventory.providers.filter((provider) => wanted.has(provider.id)),
+  };
+}
+
+async function triggerSkillAutoSync(reason = "change") {
+  if (skillAutoSyncDebounce) clearTimeout(skillAutoSyncDebounce);
+  skillAutoSyncDebounce = setTimeout(() => {
+    void runSkillAutoSync(reason);
+  }, skillAutoSyncDebounceMs);
+}
+
+async function runSkillAutoSync(reason = "change") {
+  if (skillAutoSyncInFlight) return;
+  const config = skillAutoSyncConfig ?? await readSkillAutoSyncConfig();
+  if (!config.enabled) return;
+  const providers = enabledSkillAutoSyncProviders(config);
+  if (!providers.length) return;
+  skillAutoSyncInFlight = true;
+  try {
+    const inventory = await configuredProviderInventory(providers.map((provider) => provider.id));
+    let changed = reason === "configure";
+    for (const provider of inventory.providers) {
+      const signature = providerSignature(provider);
+      if (skillAutoSyncSignatures.get(provider.id) !== signature) changed = true;
+      skillAutoSyncSignatures.set(provider.id, signature);
+    }
+    if (!changed) return;
+    const dashboardUrl = String(config.dashboardUrl || "http://127.0.0.1:5020").replace(/\/+$/, "");
+    await fetch(`${dashboardUrl}/api/obsidian/skills/reconcile`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        vaultPath: config.vaultPath || defaultSyncPath,
+        providers: inventory.providers,
+        policies: config.policies,
+        source: { host: hostname(), reason },
+      }),
+      signal: AbortSignal.timeout(30_000),
+    }).catch(() => null);
+  } finally {
+    skillAutoSyncInFlight = false;
+  }
+}
+
+function stopSkillAutoSyncWatchers() {
+  for (const watcher of skillAutoSyncWatchers.values()) {
+    try { watcher.close(); } catch {}
+  }
+  skillAutoSyncWatchers.clear();
+  if (skillAutoSyncPoll) clearInterval(skillAutoSyncPoll);
+  skillAutoSyncPoll = null;
+}
+
+function startSkillAutoSyncWatchers() {
+  stopSkillAutoSyncWatchers();
+  const config = skillAutoSyncConfig;
+  if (!config?.enabled) return;
+  const providers = enabledSkillAutoSyncProviders(config);
+  for (const provider of providers) {
+    for (const root of provider.roots) {
+      const rootPath = resolve(expandHome(root.path));
+      try {
+        const watcher = watch(rootPath, { persistent: false }, () => {
+          void triggerSkillAutoSync(`watch:${provider.id}`);
+        });
+        skillAutoSyncWatchers.set(`${provider.id}:${rootPath}`, watcher);
+      } catch {}
+    }
+  }
+  skillAutoSyncPoll = setInterval(() => {
+    void runSkillAutoSync("poll");
+  }, skillAutoSyncPollMs);
+  void runSkillAutoSync("configure");
+}
+
+async function configureSkillAutoSync(input) {
+  const policies = input.policies && typeof input.policies === "object" ? input.policies : {};
+  const enabled = Object.values(policies).some((policy) => policy?.autoImport || policy?.autoUpdate || policy?.trackRemovals);
+  skillAutoSyncConfig = {
+    enabled,
+    policies,
+    vaultPath: String(input.vaultPath || defaultSyncPath),
+    dashboardUrl: String(input.dashboardUrl || process.env.HIVEMINDOS_DASHBOARD_URL || "http://127.0.0.1:5020"),
+    updatedAt: new Date().toISOString(),
+  };
+  await writeSkillAutoSyncConfig(skillAutoSyncConfig);
+  startSkillAutoSyncWatchers();
+  return {
+    ok: true,
+    host: hostname(),
+    enabled,
+    watchedProviders: enabledSkillAutoSyncProviders(skillAutoSyncConfig).map((provider) => provider.id),
+  };
+}
+
+async function initializeSkillAutoSync() {
+  skillAutoSyncConfig = await readSkillAutoSyncConfig();
+  startSkillAutoSyncWatchers();
+}
+
 async function scanRuntimeSchedules(agent, dataDir) {
   const safeDir = resolve(expandHome(dataDir || ""));
   if (agent.runtime === "aeon") {
@@ -1083,9 +1524,29 @@ async function scanRuntimeSchedules(agent, dataDir) {
     if (/\.json$/i.test(entry.name)) {
       try { parsed = JSON.parse(content); } catch { parsed = {}; }
     }
+    if (Array.isArray(parsed.jobs)) {
+      for (const [index, job] of parsed.jobs.filter((item) => item && typeof item === "object").entries()) {
+        const jobId = typeof job.id === "string" && job.id.trim() ? job.id : String(index);
+        const every = scheduleTextFromJob(job);
+        schedules.push({
+          id: `${agent.runtime}:${agent.id}:${entry.name}:${jobId}`,
+          runtime: agent.runtime,
+          agentId: agent.id,
+          name: stringFrom(job.name) || stringFrom(job.title) || entry.name.replace(/\.[^.]+$/, ""),
+          every,
+          schedule: every || undefined,
+          message: stringFrom(job.message) || stringFrom(job.prompt) || stringFrom(job.task) || content.slice(0, 1200),
+          enabled: job.enabled !== false,
+          nextRunMs: dateMsFrom(job.next_run_at) ?? dateMsFrom(job.nextRunAt),
+          updatedAt: stats?.mtimeMs ?? Date.now(),
+          source: `collector/${entry.name}`,
+        });
+      }
+      continue;
+    }
     const firstLine = content.split(/\r?\n/).find((line) => line.trim())?.replace(/^#+\s*/, "").trim();
     const name = parsed.name || parsed.title || firstLine || entry.name.replace(/\.[^.]+$/, "");
-    const every = parsed.every || parsed.interval || parsed.schedule || "";
+    const every = parsed.every || parsed.interval || scheduleTextFromJob(parsed);
     const message = parsed.message || parsed.prompt || parsed.task || content.slice(0, 1200);
     schedules.push({
       id: `${agent.runtime}:${agent.id}:${entry.name}`,
@@ -1093,14 +1554,40 @@ async function scanRuntimeSchedules(agent, dataDir) {
       agentId: agent.id,
       name,
       every,
-      schedule: every || "runtime file",
+      schedule: every || undefined,
       message,
       enabled: parsed.enabled !== false,
+      nextRunMs: dateMsFrom(parsed.next_run_at) ?? dateMsFrom(parsed.nextRunAt),
       updatedAt: stats?.mtimeMs ?? Date.now(),
       source: `collector/${entry.name}`,
     });
   }
   return schedules;
+}
+
+function stringFrom(value) {
+  return typeof value === "string" ? value : "";
+}
+
+function scheduleTextFromJob(job) {
+  const direct = stringFrom(job.every) || stringFrom(job.interval) || stringFrom(job.schedule_display);
+  if (direct) return direct;
+  const schedule = job.schedule;
+  if (typeof schedule === "string") return schedule;
+  if (schedule && typeof schedule === "object") {
+    return stringFrom(schedule.display)
+      || stringFrom(schedule.value)
+      || stringFrom(schedule.expr)
+      || stringFrom(schedule.run_at);
+  }
+  return "";
+}
+
+function dateMsFrom(value) {
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (typeof value !== "string" || !value.trim()) return undefined;
+  const parsed = Date.parse(value);
+  return Number.isFinite(parsed) ? parsed : undefined;
 }
 
 async function processSeen(agent) {
@@ -1366,12 +1853,32 @@ async function readHermesDbSession(hermesHome, sessionId) {
   return {
     sessionId: normalized,
     source: session.source || "state.db",
+    endedAt: Number(session.ended_at || 0) > 0 ? Number(session.ended_at) * 1000 : 0,
+    endReason: session.end_reason || "",
     title: session.title || "",
     startedAt: Number(session.started_at || 0) > 0 ? Number(session.started_at) * 1000 : 0,
     updatedAt: messages.at(-1)?.createdAt || (Number(session.started_at || 0) > 0 ? Number(session.started_at) * 1000 : 0),
     messageCount: session.message_count ?? messages.length,
     messages,
   };
+}
+
+async function listRecentHermesDbSessions(hermesHome, sinceMs = 0) {
+  const dbPath = join(hermesHome, "state.db");
+  try {
+    await access(dbPath, constants.R_OK);
+  } catch {
+    return [];
+  }
+  const sinceSeconds = Math.max(0, Math.floor(Number(sinceMs || 0) / 1000));
+  const rows = await execJson("sqlite3", ["-json", dbPath, `
+    select id
+    from sessions
+    where started_at >= ${sinceSeconds}
+    order by started_at desc
+    limit 20;
+  `], []);
+  return (await Promise.all(rows.map((row) => readHermesDbSession(hermesHome, row.id)))).filter(Boolean);
 }
 
 async function listRecentHermesApiSessions(hermesHome, sinceMs = 0) {
@@ -1389,6 +1896,22 @@ async function listRecentHermesApiSessions(hermesHome, sinceMs = 0) {
   return (await Promise.all(files.slice(0, 20).map((file) => (
     readHermesApiSession(hermesHome, hermesSessionIdFromFile(file.name))
   )))).filter(Boolean);
+}
+
+async function waitForHermesCliSession(hermesHome, sinceMs, text) {
+  const needle = text.trim().slice(0, 80);
+  const deadline = Date.now() + sessionDiscoveryTimeoutMs;
+  while (Date.now() < deadline) {
+    const sessions = await listRecentHermesDbSessions(hermesHome, sinceMs);
+    const matched = sessions.find((session) => (
+      !needle || session.messages.some((message) => message.role === "user" && message.content.includes(needle))
+    ));
+    if (matched) return matched;
+    const openSession = sessions.find((session) => !session.endedAt);
+    if (openSession) return openSession;
+    await sleep(250);
+  }
+  return null;
 }
 
 async function waitForHermesApiSession(hermesHome, sinceMs, text, requestMarker = "") {
@@ -1569,6 +2092,7 @@ async function streamHermesChat(body, response) {
   const args = hermesCliArgs(agent, ["chat", "-q", text, "--accept-hooks", "--source", "hivemindos"]);
   if (runtimeSessionId) args.push("--resume", runtimeSessionId);
   const cwd = await resolveChatWorkingDirectory(body.workingDirectory);
+  const requestStartedAt = Date.now();
 
   const child = spawn(await resolveHermesBin(), args, {
     cwd,
@@ -1585,6 +2109,8 @@ async function streamHermesChat(body, response) {
   let stdout = "";
   let stderr = "";
   let settled = false;
+  let emittedSession = false;
+  let sessionTimer = null;
   response.writeHead(200, {
     "content-type": "text/event-stream",
     "cache-control": "no-cache",
@@ -1596,29 +2122,69 @@ async function streamHermesChat(body, response) {
     if (settled) return;
     settled = true;
     clearTimeout(timeout);
-    if (payload) response.write(ssePayload(payload));
-    response.end("data: [DONE]\n\n");
+    if (sessionTimer) clearInterval(sessionTimer);
+    if (!response.writableEnded && !response.destroyed) {
+      if (payload) response.write(ssePayload(payload));
+      response.end("data: [DONE]\n\n");
+    }
   };
 
+  async function emitSession() {
+    if (emittedSession || settled || response.writableEnded || response.destroyed) return;
+    const session = await waitForHermesCliSession(hermesHome, requestStartedAt - 2_000, text);
+    if (!session) return;
+    emittedSession = true;
+    response.write(ssePayload({
+      session: {
+        id: session.sessionId,
+        startedAt: session.startedAt,
+        updatedAt: session.updatedAt,
+        messageCount: session.messages.length,
+      },
+    }));
+  }
+
+  sessionTimer = setInterval(() => {
+    void emitSession().catch(() => undefined);
+  }, 1_000);
+  void emitSession().catch(() => undefined);
+
   const timeout = setTimeout(() => {
+    if (emittedSession) {
+      child.unref();
+      finish();
+      return;
+    }
     child.kill("SIGTERM");
-    finish({ error: `Hermes chat timed out after ${chatTimeoutMs}ms.` });
+    finish({ error: `Hermes chat timed out after ${chatTimeoutMs}ms before a pollable session was created.` });
   }, chatTimeoutMs);
 
   response.on("close", () => {
-    if (!settled) child.kill("SIGTERM");
+    if (settled) return;
+    if (emittedSession) {
+      settled = true;
+      clearTimeout(timeout);
+      if (sessionTimer) clearInterval(sessionTimer);
+      child.unref();
+      return;
+    }
+    child.kill("SIGTERM");
   });
 
   child.stdout.on("data", (chunk) => {
     const textChunk = chunk.toString("utf8");
     stdout += textChunk;
-    response.write(ssePayload({ choices: [{ delta: { content: textChunk } }] }));
+    if (!settled && !response.writableEnded && !response.destroyed) {
+      response.write(ssePayload({ choices: [{ delta: { content: textChunk } }] }));
+    }
   });
 
   child.stderr.on("data", (chunk) => {
     const textChunk = chunk.toString("utf8");
     stderr += textChunk;
-    response.write(ssePayload({ choices: [{ delta: { content: textChunk } }] }));
+    if (!settled && !response.writableEnded && !response.destroyed) {
+      response.write(ssePayload({ choices: [{ delta: { content: textChunk } }] }));
+    }
   });
 
   child.on("error", (error) => {
@@ -1710,6 +2276,8 @@ createServer(async (request, response) => {
         runtimes,
         runtimeIntegrations: true,
         runtimeAgentCreation: true,
+        skillInventory: true,
+        skillAutoSync: true,
         syncthing: syncthing.installed,
         defaultSyncPath,
       },
@@ -1798,6 +2366,55 @@ createServer(async (request, response) => {
     }
     return;
   }
+  if (pathname === "/agents" && request.method === "DELETE") {
+    try {
+      const rawBody = await readBody(request);
+      const body = rawBody ? JSON.parse(rawBody) : {};
+      const result = await deleteRuntimeAgent(body);
+      jsonResponse(response, 200, { ok: true, host: hostname(), ...result });
+    } catch (error) {
+      jsonResponse(response, 400, {
+        ok: false,
+        error: error instanceof Error ? error.message : "Could not delete runtime agent.",
+      });
+    }
+    return;
+  }
+  if (pathname === "/e2e/env-sync" && request.method === "POST") {
+    try {
+      const rawBody = await readBody(request);
+      const body = rawBody ? JSON.parse(rawBody) : {};
+      const key = String(body.key || "");
+      const value = String(body.value ?? "");
+      const scope = ["all", "app", "agent"].includes(body.scope) ? body.scope : "all";
+      const runtime = ["generic", "hermes", "aeon", "openclaw"].includes(body.runtime) ? body.runtime : "generic";
+      const output = await runHiveEnvE2eSync({ key, value, scope, runtime });
+      jsonResponse(response, 200, { ok: true, host: hostname(), key, scope, runtime, output });
+    } catch (error) {
+      jsonResponse(response, 400, {
+        ok: false,
+        error: error instanceof Error ? error.message : "Could not run E2E env sync.",
+      });
+    }
+    return;
+  }
+  if (pathname === "/e2e/skills" && request.method === "POST") {
+    try {
+      const rawBody = await readBody(request);
+      const body = rawBody ? JSON.parse(rawBody) : {};
+      const result = body.action === "remove"
+        ? await removeE2eProviderSkill(body)
+        : await writeE2eProviderSkill(body);
+      void triggerSkillAutoSync(`e2e:${body.action || "write"}`).catch(() => undefined);
+      jsonResponse(response, 200, { host: hostname(), ...result });
+    } catch (error) {
+      jsonResponse(response, 400, {
+        ok: false,
+        error: error instanceof Error ? error.message : "Could not mutate E2E skill.",
+      });
+    }
+    return;
+  }
   if (pathname === "/directories" && request.method === "GET") {
     try {
       const result = await listDirectories(requestUrl.searchParams.get("path") || "~");
@@ -1806,6 +2423,40 @@ createServer(async (request, response) => {
       jsonResponse(response, 400, {
         ok: false,
         error: error instanceof Error ? error.message : "Could not list directories.",
+      });
+    }
+    return;
+  }
+  if (pathname === "/skills" && request.method === "GET") {
+    try {
+      jsonResponse(response, 200, await listInstalledSkills());
+    } catch (error) {
+      jsonResponse(response, 500, {
+        ok: false,
+        error: error instanceof Error ? error.message : "Could not list installed skills.",
+      });
+    }
+    return;
+  }
+  if (pathname === "/skills/auto-sync" && request.method === "GET") {
+    skillAutoSyncConfig = skillAutoSyncConfig ?? await readSkillAutoSyncConfig();
+    jsonResponse(response, 200, {
+      ok: true,
+      host: hostname(),
+      ...skillAutoSyncConfig,
+      watchedProviders: enabledSkillAutoSyncProviders(skillAutoSyncConfig).map((provider) => provider.id),
+    });
+    return;
+  }
+  if (pathname === "/skills/auto-sync" && request.method === "POST") {
+    try {
+      const rawBody = await readBody(request);
+      const body = rawBody ? JSON.parse(rawBody) : {};
+      jsonResponse(response, 200, await configureSkillAutoSync(body));
+    } catch (error) {
+      jsonResponse(response, 400, {
+        ok: false,
+        error: error instanceof Error ? error.message : "Could not configure skill auto-sync.",
       });
     }
     return;
@@ -1916,4 +2567,5 @@ createServer(async (request, response) => {
   jsonResponse(response, 200, { ok: true, snapshot: snapshots[0], snapshots });
 }).listen(port, host, () => {
   console.log(`agent telemetry collector listening on ${host}:${port}`);
+  void initializeSkillAutoSync();
 });

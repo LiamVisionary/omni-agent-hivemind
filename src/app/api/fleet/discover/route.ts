@@ -76,6 +76,8 @@ type CollectorCapabilities = {
   chat?: boolean;
   envHttpSync?: boolean;
   runtimeAgentCreation?: boolean;
+  skillInventory?: boolean;
+  skillAutoSync?: boolean;
   runtimes?: string[];
   syncthing?: boolean;
   defaultSyncPath?: string;
@@ -88,7 +90,7 @@ type CollectorEnvSync = {
   error?: string;
 };
 
-const QUEEN_RUNTIME_PRIORITY: AgentRuntime[] = ["hermes", "openclaw", "aeon"];
+const QUEEN_RUNTIME_PRIORITY: AgentRuntime[] = ["hermes", "openclaw", "openai-compatible", "aeon"];
 const COLLECTOR_FETCH_TIMEOUT_MS = 2_500;
 
 function localDevice(): Device {
@@ -320,7 +322,7 @@ function queenRuntimeRank(runtime: AgentRuntime) {
 function defaultQueenAgent(device: Device, agents: AgentProfile[], capabilities?: CollectorCapabilities): AgentProfile | null {
   if (hasQueenAgent(agents)) return null;
   const configuredRuntimes = new Set((capabilities?.runtimes ?? [])
-    .filter((runtime): runtime is AgentRuntime => ["hermes", "openclaw", "aeon"].includes(runtime)));
+    .filter((runtime): runtime is AgentRuntime => typeof runtime === "string" && runtime.trim().length > 0));
   const candidates = agents
     .filter((agent) => configuredRuntimes.size === 0 || configuredRuntimes.has(agent.runtime))
     .sort((left, right) => queenRuntimeRank(left.runtime) - queenRuntimeRank(right.runtime));

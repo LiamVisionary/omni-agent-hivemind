@@ -55,7 +55,7 @@ type MoneyClawStatus = {
 };
 type MoneyClawSaveOptions = { shareWithAllAgents: boolean };
 
-type Props = {
+export type AgentWalletCardProps = {
   agentName: string;
   machineName?: string;
   wallet: AgentWalletConfig;
@@ -148,7 +148,7 @@ export function AgentWalletCard({
   onSendUsdc,
   onCallX402,
   onExchangeHoney,
-}: Props) {
+}: AgentWalletCardProps) {
   const [sheet, setSheet] = useState<Sheet>(null);
   const [moneyClawModalOpen, setMoneyClawModalOpen] = useState(false);
   const [moneyClawKeyDraft, setMoneyClawKeyDraft] = useState("");
