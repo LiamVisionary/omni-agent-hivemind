@@ -57,12 +57,23 @@ export async function recordHoneyUsage(input: {
 
   const remote = getRemoteLedgerConfig();
   if (remote) {
-    const remoteResult = await recordRemoteHoneyUsage(remote, {
-      agentId: input.agentId,
-      model: input.model ?? "hivemindos/private-runtime",
-      source: input.source ?? "chat",
-      tokensUsed,
-    }).catch(() => null);
+    const model = input.model ?? "hivemindos/private-runtime";
+    const timestamp = new Date().toISOString();
+    const remoteResult = remote.signingSecret
+      ? await recordRemoteHoneyUsage(remote, {
+        agentId: input.agentId,
+        model,
+        source: input.source ?? "chat",
+        tokensUsed,
+      }).catch(() => null)
+      : await recordRemoteHoneyObservation(remote, {
+        eventId: randomUUID(),
+        agentId: input.agentId,
+        model,
+        source: "observed-runtime-usage",
+        tokensUsed,
+        timestamp,
+      }).catch(() => null);
     if (remoteResult) {
       return {
         ledger: remoteResult.ledger,
@@ -71,8 +82,8 @@ export async function recordHoneyUsage(input: {
           agentId: input.agentId,
           agentName: input.agentName,
           kind: "usage" as const,
-          source: input.source ?? "chat",
-          tokensUsed,
+          source: remote.signingSecret ? input.source ?? "chat" : "observed-runtime-usage",
+          tokensUsed: remote.signingSecret ? tokensUsed : remoteResult.acceptedTokens,
           honeyDelta: remoteResult.honeyDelta,
           hiveDelta: 0,
           createdAt: remoteResult.createdAt,
@@ -297,6 +308,7 @@ async function recordRemoteHoneyUsage(
     ledger,
     eventId: receipt.eventId,
     honeyDelta: Number(data.honeyDelta) || 0,
+    acceptedTokens: input.tokensUsed,
     createdAt: timestamp,
   };
 }
@@ -329,6 +341,7 @@ async function recordRemoteHoneyObservation(
   if (!data?.ok || !ledger) return null;
   return {
     ledger,
+    eventId: input.eventId,
     honeyDelta: Number(data.honeyDelta) || 0,
     acceptedTokens: Math.max(0, Math.round(Number(data.acceptedTokens ?? input.tokensUsed) || 0)),
     createdAt: input.timestamp,

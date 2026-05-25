@@ -19,6 +19,7 @@
     "test:e2e:kanban": "node scripts/e2e-real-fleet.mjs --suite=kanban",
     "test:e2e:dashboard-smoke": "node scripts/e2e-real-fleet.mjs --suite=smoke",
     "test:honey-economics": "node scripts/simulate-honey-economics.mjs",
+    "test:gbrain-foundation": "node scripts/test-gbrain-foundation.mjs",
     "typecheck": "tsc --noEmit",
     "remotion:studio": "remotion studio remotion/index.ts",
     "remotion:capture": "node scripts/capture-remotion-showcase.mjs",

@@ -2,10 +2,81 @@
 // @ts-nocheck
 "use client";
 
-/* eslint-disable react-hooks/immutability, react-hooks/purity */
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type { WorkHistoryPayload } from "@/lib/types/work-history";
+
+const EMPTY_WORK_HISTORY: WorkHistoryPayload = { projects: [], entries: [] };
+const WORK_HISTORY_PAGE_SIZE = 10;
 
 export function KanbanPanel(props: any) {
-  const { AttachmentListMenuContent, AttachmentMenuContent, CellMenu, ChatMarkdown, Check, ChevronDown, ChevronRight, ComposerField, DEFAULT_SHARED_VAULT, Image, KANBAN_COLUMNS, KANBAN_STEER_TARGETS, MessageAttachments, MessageSquare, Paperclip, Plus, RotateCcw, Search, Settings2, X, activeView, addKanbanComment, attachKanbanCardDirectory, attachKanbanCardRecentDirectory, attachKanbanSteerDirectory, attachKanbanSteerRecentDirectory, attachQuickAddDirectory, attachQuickAddRecentDirectory, bulkPatchKanbanTasks, chatClass, commentDraft, createKanbanBoard, createKanbanTask, displayAgents, editAndInterruptKanbanTask, expandedKanbanCards, formatDurationShort, formatMessageTimestamp, formatRelativeTime, handleKanbanCardFileChange, handleKanbanCardImageChange, handleKanbanSteerFileChange, handleKanbanSteerImageChange, handleQuickAddFileChange, handleQuickAddImageChange, importNoteIntake, isKanbanStaleWorkingTask, isKanbanTerminalMessage, isWorkView, kanbanAssigneeFilter, kanbanAssigneeOptions, kanbanBoard, kanbanBoardScrollRef, kanbanBoardScrollState, kanbanBoardSlug, kanbanBoards, kanbanBulkAssignee, kanbanBulkPending, kanbanCardAttachmentListOpen, kanbanCardAttachmentMenuOpen, kanbanCardFileInputRef, kanbanCardImageInputRef, kanbanCardMachineMenuOpen, kanbanCardMessage, kanbanCardRecentsExpanded, kanbanClass, kanbanEditDraft, kanbanEditPendingTaskId, kanbanError, kanbanEventLabel, kanbanIncludeArchived, kanbanInitialLoading, kanbanLoading, kanbanMachineTargets, kanbanPickupPreviewByTask, kanbanSearch, kanbanStaleAge, kanbanSteerAttachmentError, kanbanSteerAttachmentMenuOpen, kanbanSteerAttachmentMenuRef, kanbanSteerAttachments, kanbanSteerDirectories, kanbanSteerDraft, kanbanSteerFileInputRef, kanbanSteerImageInputRef, kanbanSteerTargetMenuOpen, kanbanSteerTargetMenuRef, kanbanSteerTargetStatus, kanbanSteeringTaskId, kanbanStorage, kanbanTaskBee, kanbanTaskMenuItems, kanbanTaskModal, kanbanTenantFilter, kanbanTenants, kanbanViewColumns, markKanbanTaskReviewed, moveKanbanTask, newBoardDraft, noteIntakePending, noteIntakePreview, noteIntakeStatus, openKanbanCardFilePicker, openKanbanTaskModal, patchKanbanTask, quickAddAttachmentError, quickAddAttachmentMenuOpen, quickAddAttachmentMenuRef, quickAddAttachments, quickAddDirectories, quickAddDrafts, quickAddFileInputRef, quickAddImageInputRef, quickAddMachineMenuOpen, quickAddMachineMenuRef, quickAddMachineTarget, quickAddMachineTargets, quickAddStatus, recentDirectories, recentDirectoriesExpanded, recording, removeKanbanCardAttachment, removeKanbanCardDirectory, removeKanbanSteerAttachment, removeKanbanSteerDirectory, removeQuickAddAttachment, removeQuickAddDirectory, scanNoteIntake, selectedKanbanAgent, selectedKanbanAgentMessages, selectedKanbanBulkIds, selectedKanbanComments, selectedKanbanEvents, selectedKanbanTask, selectedKanbanTaskId, selectedKanbanTaskIds, setActiveView, setCommentDraft, setExpandedKanbanCards, setKanbanAssigneeFilter, setKanbanBoardSlug, setKanbanBulkAssignee, setKanbanCardAttachmentListOpen, setKanbanCardAttachmentMenuOpen, setKanbanCardMachineMenuOpen, setKanbanCardRecentsExpanded, setKanbanEditDraft, setKanbanIncludeArchived, setKanbanLoading, setKanbanSearch, setKanbanSteerAttachmentMenuOpen, setKanbanSteerDraft, setKanbanSteerTargetMenuOpen, setKanbanSteerTargetStatus, setKanbanTaskModal, setKanbanTenantFilter, setNewBoardDraft, setQuickAddAttachmentError, setQuickAddAttachmentMenuOpen, setQuickAddDrafts, setQuickAddMachineMenuOpen, setQuickAddMachineTargets, setQuickAddStatus, setRecentDirectoriesExpanded, setSelectedKanbanTaskId, setSelectedKanbanTaskIds, sharedVault, startAudioRecording, steerSelectedKanbanTask, stopAudioRecording, updateKanbanTaskMachine, updateSharedVault, voiceBands, voiceTarget, voiceTranscript, walletClass, workBoardStats } = props;
+  const { AttachmentListMenuContent, AttachmentMenuContent, CellMenu, ChatMarkdown, Check, ChevronDown, ChevronRight, ComposerField, DEFAULT_SHARED_VAULT, Image, KANBAN_COLUMNS, KANBAN_STEER_TARGETS, MessageAttachments, MessageSquare, Paperclip, Plus, RotateCcw, Search, Settings2, X, activeView, addKanbanComment, attachKanbanCardDirectory, attachKanbanCardRecentDirectory, attachKanbanSteerDirectory, attachKanbanSteerRecentDirectory, attachQuickAddDirectory, attachQuickAddRecentDirectory, bulkPatchKanbanTasks, chatClass, commentDraft, createKanbanBoard, createKanbanTask, displayAgents, editAndInterruptKanbanTask, expandedKanbanCards, formatDurationShort, formatMessageTimestamp, formatRelativeTime, handleKanbanCardFileChange, handleKanbanCardImageChange, handleKanbanSteerFileChange, handleKanbanSteerImageChange, handleQuickAddFileChange, handleQuickAddImageChange, importNoteIntake, initialWorkHistory, isKanbanStaleWorkingTask, isKanbanTerminalMessage, isWorkView, kanbanAssigneeFilter, kanbanAssigneeOptions, kanbanBoard, kanbanBoardScrollRef, kanbanBoardScrollState, kanbanBoardSlug, kanbanBoards, kanbanBulkAssignee, kanbanBulkPending, kanbanCardAttachmentListOpen, kanbanCardAttachmentMenuOpen, kanbanCardFileInputRef, kanbanCardImageInputRef, kanbanCardMachineMenuOpen, kanbanCardMessage, kanbanCardRecentsExpanded, kanbanClass, kanbanEditDraft, kanbanEditPendingTaskId, kanbanError, kanbanEventLabel, kanbanIncludeArchived, kanbanInitialLoading, kanbanLoading, kanbanMachineTargets, kanbanPickupPreviewByTask, kanbanSearch, kanbanStaleAge, kanbanSteerAttachmentError, kanbanSteerAttachmentMenuOpen, kanbanSteerAttachmentMenuRef, kanbanSteerAttachments, kanbanSteerDirectories, kanbanSteerDraft, kanbanSteerFileInputRef, kanbanSteerImageInputRef, kanbanSteerTargetMenuOpen, kanbanSteerTargetMenuRef, kanbanSteerTargetStatus, kanbanSteeringTaskId, kanbanStorage, kanbanTaskBee, kanbanTaskMenuItems, kanbanTaskModal, kanbanTenantFilter, kanbanTenants, kanbanViewColumns, markKanbanTaskReviewed, moveKanbanTask, newBoardDraft, noteIntakePending, noteIntakePreview, noteIntakeStatus, openKanbanCardFilePicker, openKanbanTaskModal, patchKanbanTask, quickAddAttachmentError, quickAddAttachmentMenuOpen, quickAddAttachmentMenuRef, quickAddAttachments, quickAddDirectories, quickAddDrafts, quickAddFileInputRef, quickAddImageInputRef, quickAddMachineMenuOpen, quickAddMachineMenuRef, quickAddMachineTarget, quickAddMachineTargets, quickAddStatus, recentDirectories, recentDirectoriesExpanded, recording, removeKanbanCardAttachment, removeKanbanCardDirectory, removeKanbanSteerAttachment, removeKanbanSteerDirectory, removeQuickAddAttachment, removeQuickAddDirectory, scanNoteIntake, selectedKanbanAgent, selectedKanbanAgentMessages, selectedKanbanBulkIds, selectedKanbanComments, selectedKanbanEvents, selectedKanbanTask, selectedKanbanTaskId, selectedKanbanTaskIds, setActiveView, setCommentDraft, setExpandedKanbanCards, setKanbanAssigneeFilter, setKanbanBoardSlug, setKanbanBulkAssignee, setKanbanCardAttachmentListOpen, setKanbanCardAttachmentMenuOpen, setKanbanCardMachineMenuOpen, setKanbanCardRecentsExpanded, setKanbanEditDraft, setKanbanIncludeArchived, setKanbanLoading, setKanbanSearch, setKanbanSteerAttachmentMenuOpen, setKanbanSteerDraft, setKanbanSteerTargetMenuOpen, setKanbanSteerTargetStatus, setKanbanTaskModal, setKanbanTenantFilter, setNewBoardDraft, setQuickAddAttachmentError, setQuickAddAttachmentMenuOpen, setQuickAddDrafts, setQuickAddMachineMenuOpen, setQuickAddMachineTargets, setQuickAddStatus, setRecentDirectoriesExpanded, setSelectedKanbanTaskId, setSelectedKanbanTaskIds, sharedVault, startAudioRecording, steerSelectedKanbanTask, stopAudioRecording, updateKanbanTaskMachine, updateSharedVault, voiceBands, voiceTarget, voiceTranscript, walletClass, workBoardStats } = props;
+  const [workHistory, setWorkHistory] = useState<WorkHistoryPayload>(initialWorkHistory ?? EMPTY_WORK_HISTORY);
+  const [workHistoryLoading, setWorkHistoryLoading] = useState(false);
+  const [workHistoryLoadingMore, setWorkHistoryLoadingMore] = useState(false);
+  const [workHistoryError, setWorkHistoryError] = useState("");
+  const [workHistoryProject, setWorkHistoryProject] = useState("");
+  const [workHistoryQuery, setWorkHistoryQuery] = useState("");
+  const workHistorySkipInitialFetchRef = useRef(Boolean(initialWorkHistory?.generatedAt));
+  const workHistoryEntryCountRef = useRef(workHistory.entries.length);
+  const sharedVaultPath = sharedVault?.vaultPath;
+  const workHistoryInitialLoading = activeView === "history" && !workHistory.generatedAt && !workHistory.entries.length && !workHistoryError;
+  const workHistoryShowingLoading = workHistoryLoading || workHistoryInitialLoading;
+  const workHistoryOpenCount = useMemo(
+    () => workHistory.entries.filter((entry) => entry.status === "Uncommitted").length,
+    [workHistory.entries],
+  );
+
+  useEffect(() => {
+    workHistoryEntryCountRef.current = workHistory.entries.length;
+  }, [workHistory.entries.length]);
+
+  const loadWorkHistory = useCallback((options: { append?: boolean; signal?: AbortSignal } = {}) => {
+    const append = Boolean(options.append);
+    const params = new URLSearchParams({ limit: String(WORK_HISTORY_PAGE_SIZE) });
+    if (append) params.set("offset", String(workHistoryEntryCountRef.current));
+    if (sharedVaultPath) params.set("vaultPath", sharedVaultPath);
+    if (workHistoryProject) params.set("project", workHistoryProject);
+    if (workHistoryQuery.trim()) params.set("q", workHistoryQuery.trim());
+    if (append) setWorkHistoryLoadingMore(true);
+    else setWorkHistoryLoading(true);
+    setWorkHistoryError("");
+    return fetch(`/api/work-history?${params.toString()}`, { signal: options.signal })
+      .then((response) => response.json())
+      .then((data: WorkHistoryPayload) => {
+        if (!data?.ok) throw new Error(data?.error || "Could not load work history.");
+        setWorkHistory((current) => append
+          ? {
+            ...data,
+            projects: data.projects?.length ? data.projects : current.projects,
+            entries: [...current.entries, ...(data.entries ?? [])],
+          }
+          : data);
+      })
+      .catch((error) => {
+        if (error?.name === "AbortError") return;
+        setWorkHistoryError(error instanceof Error ? error.message : "Could not load work history.");
+      })
+      .finally(() => {
+        if (append) setWorkHistoryLoadingMore(false);
+        else setWorkHistoryLoading(false);
+      });
+  }, [sharedVaultPath, workHistoryProject, workHistoryQuery]);
+
+  useEffect(() => {
+    if (activeView !== "history") return;
+    if (workHistorySkipInitialFetchRef.current && !workHistoryProject && !workHistoryQuery.trim()) {
+      workHistorySkipInitialFetchRef.current = false;
+      return;
+    }
+    const controller = new AbortController();
+    const timeout = window.setTimeout(() => {
+      void loadWorkHistory({ signal: controller.signal });
+    }, workHistoryQuery.trim() ? 220 : 0);
+    return () => {
+      window.clearTimeout(timeout);
+      controller.abort();
+    };
+  }, [activeView, loadWorkHistory, workHistoryProject, workHistoryQuery]);
   return (<>
       {isWorkView(activeView) ? (
         <div className={`${walletClass("walletSegmented")} mb-4`} role="tablist" aria-label="Work view mode">
@@ -13,6 +84,7 @@ export function KanbanPanel(props: any) {
             ["kanban", "Workboard"],
             ["scheduler", "Automations"],
             ["swarm", "Simulation"],
+            ["history", "History"],
           ].map(([mode, label]) => (
             <button
               key={mode}
@@ -21,7 +93,7 @@ export function KanbanPanel(props: any) {
               aria-selected={activeView === mode}
               className={walletClass("walletSegment", activeView === mode && "walletSegmentActive")}
               onClick={() => {
-                if (mode === "kanban" && !kanbanBoard) setKanbanLoading(true);
+                if ((mode === "kanban" || mode === "history") && !kanbanBoard) setKanbanLoading(true);
                 setActiveView(mode as WorkView);
               }}
             >
@@ -629,6 +701,114 @@ export function KanbanPanel(props: any) {
       </section>
       ) : null}
 
+      {activeView === "history" ? (
+      <section className={kanbanClass("workBoardPanel", "tabPanel", "workHistoryPanel")}>
+        <div className={kanbanClass("workBoardShell", "workHistoryShell")}>
+          <section className={kanbanClass("workBoardHero")} aria-label="Recently completed work summary">
+            <div className={kanbanClass("workBoardHeroCopy")}>
+              <strong>History</strong>
+              <span>dynamic changelog</span>
+            </div>
+            <div className={kanbanClass("workBoardStats")}>
+              <span className={kanbanClass("done")}><strong>{workHistory.entries.length}</strong>shown</span>
+              <span className={kanbanClass("working")}><strong>{workHistory.projects.length}</strong>projects</span>
+              <span className={kanbanClass("needs-human")}><strong>{workHistoryOpenCount}</strong>open</span>
+              <span className={kanbanClass("total")}><strong>{workHistory.totalEntries ?? workHistory.entries.length}</strong>total</span>
+            </div>
+          </section>
+
+          <section className={kanbanClass("workBoardControls", "workHistoryControls")} aria-label="History filters">
+            <label>
+              <span>project</span>
+              <select value={workHistoryProject} onChange={(event) => setWorkHistoryProject(event.target.value)}>
+                <option value="">all projects</option>
+                {workHistory.projects.map((project) => (
+                  <option value={project.id} key={project.id}>{project.name}</option>
+                ))}
+              </select>
+            </label>
+            <label className={kanbanClass("workBoardSearch")}>
+              <span>search</span>
+              <div>
+                <Search aria-hidden="true" />
+                <input value={workHistoryQuery} onChange={(event) => setWorkHistoryQuery(event.target.value)} placeholder="title, summary, status..." />
+              </div>
+            </label>
+            <span
+              className={kanbanClass("kanbanSyncPill", workHistoryShowingLoading ? "loading" : "synced")}
+              title={workHistory.generatedAt ? `Refreshed ${new Date(workHistory.generatedAt).toLocaleString()}` : undefined}
+            >
+              <span className={kanbanClass("liveDot")} aria-hidden="true" />
+              {workHistoryShowingLoading ? "scanning" : "changelog feed"}
+            </span>
+          </section>
+
+          {workHistoryError ? <p className={kanbanClass("kanbanError")}>{workHistoryError}</p> : null}
+
+          <section className={kanbanClass("workHistoryList")} aria-label="Project changelog history">
+            {workHistoryShowingLoading && !workHistory.entries.length ? (
+              <>
+                <article className={kanbanClass("workHistoryLoadingNotice")} aria-live="polite">
+                  <strong>Scanning project changelogs</strong>
+                  <p>Looking across local projects and the shared brain vault.</p>
+                </article>
+                {Array.from({ length: 3 }).map((_, index) => (
+                  <article className={kanbanClass("workHistoryItem", "loading")} key={`history-loading-${index}`} aria-hidden="true">
+                    <span />
+                    <strong />
+                    <p />
+                  </article>
+                ))}
+              </>
+            ) : workHistory.entries.length ? (
+              <>
+              {workHistory.entries.map((entry) => (
+                <article className={kanbanClass("workHistoryItem")} key={entry.id}>
+                  <div>
+                    <span className={kanbanClass("workHistoryMeta")}>
+                      {entry.timestamp ? <time dateTime={new Date(entry.sortTime).toISOString()}>{entry.timestamp}</time> : null}
+                      <span>{entry.projectName}</span>
+                      {entry.status ? <span>{entry.status}</span> : null}
+                      <span>{entry.source}</span>
+                    </span>
+                    <strong>{entry.title}</strong>
+                    {entry.areas ? <small className={kanbanClass("workHistoryAreas")}>{entry.areas}</small> : null}
+                    {entry.summary ? (
+                      <ChatMarkdown
+                        text={entry.summary}
+                        className={kanbanClass("workHistoryMarkdown")}
+                        headingClassName={kanbanClass("kanbanCardMarkdownHeading")}
+                      />
+                    ) : null}
+                  </div>
+                  <div className={kanbanClass("workHistoryActions")}>
+                    {entry.commitSummary ? <span className={kanbanClass("kanbanReviewBadge", "reviewed")}>{entry.commitSummary}</span> : null}
+                    {entry.verification ? <span className={kanbanClass("kanbanReviewBadge")}>verified</span> : null}
+                  </div>
+                </article>
+              ))}
+              {workHistory.hasMore ? (
+                <button
+                  type="button"
+                  className={kanbanClass("workHistoryLoadMore")}
+                  disabled={workHistoryLoadingMore}
+                  onClick={() => void loadWorkHistory({ append: true })}
+                >
+                  {workHistoryLoadingMore ? "Loading more..." : `Load 10 more (${workHistory.entries.length}/${workHistory.totalEntries ?? workHistory.entries.length})`}
+                </button>
+              ) : null}
+              </>
+            ) : (
+              <div className={kanbanClass("workHistoryEmpty")}>
+                <strong>No changelog entries found</strong>
+                <p>No matching project updates are available yet.</p>
+              </div>
+            )}
+          </section>
+        </div>
+      </section>
+      ) : null}
+
       {selectedKanbanTask && kanbanTaskModal ? (
         <div
           className={kanbanClass("kanbanModalBackdrop")}
@@ -772,6 +952,7 @@ export function KanbanPanel(props: any) {
                     voiceTranscript={voiceTranscript}
                     onToggleRecording={recording ? stopAudioRecording : () => void startAudioRecording("kanban-steer")}
                     canSend={Boolean(kanbanSteerDraft.trim() || kanbanSteerAttachments.length || kanbanSteerDirectories.length)}
+                    submitOnEnter
                   />
                 </form>
                 <div className={kanbanClass("kanbanAgentMessages", "modalMessages")}>

@@ -239,6 +239,12 @@ function sanitizeSlug(value: string) {
     .slice(0, 80) || "skill";
 }
 
+function namespacedSharedSlug(basePath: string, skillPath: string) {
+  const relativeDir = relative(basePath, dirname(skillPath)).split(/[\\/]+/).filter(Boolean);
+  if (relativeDir.length <= 1) return sanitizeSlug(basename(dirname(skillPath)));
+  return relativeDir.map((part) => sanitizeSlug(part)).join("/");
+}
+
 async function findSkillFiles(root: string, maxDepth: number) {
   const resolvedRoot = resolve(expandHome(root));
   if (!(await canRead(resolvedRoot))) return [];
@@ -277,7 +283,9 @@ async function skillSummary(input: {
 }): Promise<BrainSkillSummary> {
   const markdown = await readText(input.skillPath);
   const frontmatter = parseFrontmatter(markdown);
-  const slug = sanitizeSlug(basename(dirname(input.skillPath)));
+  const slug = input.provider === "shared"
+    ? namespacedSharedSlug(input.basePath, input.skillPath)
+    : sanitizeSlug(basename(dirname(input.skillPath)));
   const sourceMetadata = input.provider === "shared" ? await readSourceMetadata(dirname(input.skillPath)) : null;
   const existing = input.sharedByChecksum.get(checksum(markdown)) ?? input.sharedBySlug.get(slug);
   const updatedAt = (await stat(input.skillPath).catch(() => null))?.mtimeMs ?? 0;
@@ -499,7 +507,7 @@ async function readSharedSkills(vaultPath: string) {
     || a.slug.length - b.slug.length
     || a.relativePath.localeCompare(b.relativePath)
   ))) {
-    const key = sanitizeSlug(skill.name || skill.slug);
+    const key = skill.slug.includes("/") ? skill.slug : sanitizeSlug(skill.name || skill.slug);
     if (!unique.has(key)) unique.set(key, skill);
   }
   return [...unique.values()].sort((a, b) => a.name.localeCompare(b.name));
@@ -1127,7 +1135,8 @@ async function writeSkillsReadme(inventory: BrainSkillInventory) {
   for (const [label, skills] of [...grouped.entries()].sort(([a], [b]) => a.localeCompare(b))) {
     lines.push(`### ${label}`, "");
     for (const skill of skills.sort((a, b) => a.name.localeCompare(b.name))) {
-      lines.push(`- [[${skill.importedAs ?? skill.slug}/SKILL]] - ${skill.description || skill.name}`);
+      const linkPath = skill.relativePath.replace(/\.md$/i, "");
+      lines.push(`- [[${linkPath}]] - ${skill.description || skill.name}`);
     }
     lines.push("");
   }

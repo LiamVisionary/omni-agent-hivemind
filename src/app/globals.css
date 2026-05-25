@@ -205,9 +205,13 @@ a {
 .topbarMasthead {
   display: grid;
   height: 92px;
-  grid-template-columns: minmax(390px, 1fr) auto minmax(390px, 1fr);
-  gap: 28px;
+  grid-template-columns: minmax(260px, 0.85fr) auto minmax(0, 1.15fr);
+  gap: clamp(14px, 2vw, 28px);
   align-items: center;
+}
+
+.topbarMasthead > * {
+  min-width: 0;
 }
 
 .brandIntro {
@@ -323,15 +327,19 @@ h1 {
   justify-self: end;
   justify-content: end;
   gap: 22px;
+  width: 100%;
+  max-width: 100%;
   margin: 0;
-  overflow: visible;
-  padding: 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding: 0 0 8px;
   scrollbar-width: thin;
 }
 
 .viewTab {
   position: relative;
   display: grid;
+  flex: 0 0 auto;
   grid-template-columns: minmax(0, auto);
   align-items: center;
   justify-content: stretch;
@@ -594,7 +602,13 @@ h1 {
   white-space: nowrap;
 }
 
-@media (max-width: 880px) {
+@media (max-width: 1120px) {
+  .viewTabs {
+    justify-content: start;
+  }
+}
+
+@media (max-width: 1040px) {
   .commandShell {
     grid-template-columns: none;
   }
@@ -612,10 +626,6 @@ h1 {
 
   .topbarSignal {
     text-align: left;
-  }
-
-  .viewTabs {
-    overflow-x: auto;
   }
 
   .viewTab {

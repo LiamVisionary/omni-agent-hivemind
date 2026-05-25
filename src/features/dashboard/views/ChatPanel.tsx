@@ -10,8 +10,15 @@ import { useState } from "react";
 /* eslint-disable react-hooks/immutability, react-hooks/purity */
 
 export function ChatPanel(props: any) {
-  const { Activity, Button, ChatMarkdown, ComposerField, Folder, FolderPlus, KanbanSquare, LoaderCircle, MessageAttachments, MessageSquare, Monitor, RUNTIME_LABELS, Sparkles, Tooltip, TooltipContent, TooltipProvider, TooltipTrigger, Upload, activeView, aeonEnvKeys, aeonEnvSyncStatus, aeonEnvSyncing, attachChatDirectory, attachChatRecentDirectory, attachmentError, attachmentMenuOpen, attachmentMenuRef, busy, chatAttachments, chatClass, chatContextMenu, chatContextMenuRef, chatDirectories, chatDisplayContent, chatFileInputRef, chatImageInputRef, chatKanbanGeneration, chatSidebarTree, checkStatus, displayAgents, expandedChatFolders, fleetClass, formatAgentEnvText, formatRelativeTime, generateKanbanTaskFromChat, handleChatFileChange, handleChatImageChange, hasStreamingChunk, lastAssistant, machineGroups, messagesEndRef, messagesScrollRef, parseAgentEnvText, recentDirectories, recentDirectoriesExpanded, recording, removeChatAttachment, removeChatDirectory, selectedAgent, selectedChatDirectory, selectedChatMachine, sendMessage, sessionNotice, setAeonEnvKeys, setAttachmentMenuOpen, setChatContextMenu, setExpandedChatFolders, setRecentDirectoriesExpanded, setText, startAgentChat, startAudioRecording, status, statusAgentId, stopAudioRecording, switchRuntime, syncAeonEnvToGitHub, text, updateAgent, updateChatAutoScroll, vaultClass, visibleMessages, voiceBands, voiceTarget, voiceTranscript } = props;
+  const { Activity, AgentResponseLoader, Button, ChatMarkdown, Check, ComposerField, Copy, Folder, KanbanSquare, LoaderCircle, MessageAttachments, MessageSquare, Monitor, RUNTIME_LABELS, Sparkles, Tooltip, TooltipContent, TooltipProvider, TooltipTrigger, Upload, activeView, aeonEnvKeys, aeonEnvSyncStatus, aeonEnvSyncing, attachChatDirectory, attachChatRecentDirectory, attachmentError, attachmentMenuOpen, attachmentMenuRef, busy, chatAttachments, chatClass, chatContextMenu, chatContextMenuRef, chatDirectories, chatDisplayContent, chatFileInputRef, chatImageInputRef, chatKanbanGeneration, chatSidebarTree, checkStatus, displayAgents, expandedChatFolders, fleetClass, formatAgentEnvText, formatRelativeTime, generateKanbanTaskFromChat, handleChatFileChange, handleChatImageChange, hasStreamingChunk, lastAssistant, machineGroups, messagesEndRef, messagesScrollRef, parseAgentEnvText, recentDirectories, recentDirectoriesExpanded, recording, removeChatAttachment, removeChatDirectory, selectedAgent, selectedChatDirectory, selectedChatMachine, sendMessage, sessionNotice, setAeonEnvKeys, setAttachmentMenuOpen, setChatContextMenu, setExpandedChatFolders, setRecentDirectoriesExpanded, setText, startAgentChat, startAudioRecording, status, statusAgentId, stopAudioRecording, switchRuntime, syncAeonEnvToGitHub, text, updateAgent, updateChatAutoScroll, vaultClass, visibleMessages, voiceBands, voiceTarget, voiceTranscript } = props;
   const [openKanbanTaskMenuKey, setOpenKanbanTaskMenuKey] = useState("");
+  const [copiedMessageKey, setCopiedMessageKey] = useState("");
+  function copyAssistantResponse(messageKey: string, content: string) {
+    void navigator.clipboard?.writeText(content).then(() => {
+      setCopiedMessageKey(messageKey);
+      window.setTimeout(() => setCopiedMessageKey((current) => current === messageKey ? "" : current), 1400);
+    });
+  }
   return (<>
       {activeView === "chat" ? (
         <section className={chatClass("workspace", "tabPanel")}>
@@ -38,17 +45,17 @@ export function ChatPanel(props: any) {
                             <button
                               type="button"
                               className={chatClass("treeChatButton")}
-                              aria-label={`Create folder on ${machine.name}`}
+                              aria-label={`Choose directory on ${machine.name}`}
                               onClick={(event) => {
                                 event.preventDefault();
                                 event.stopPropagation();
                                 machine.onCreateFolder?.();
                               }}
                             >
-                              <FolderPlus aria-hidden="true" />
+                              <Folder aria-hidden="true" />
                             </button>
                           </TooltipTrigger>
-                          <TooltipContent side="top">{`New folder in ${machine.name}`}</TooltipContent>
+                          <TooltipContent side="top">{`Choose directory on ${machine.name}`}</TooltipContent>
                         </Tooltip>
                       ) : null}
                       {machine.onStartChat ? (
@@ -398,64 +405,119 @@ export function ChatPanel(props: any) {
                 const displayContent = chatDisplayContent(message);
                 const generationForMessage = chatKanbanGeneration?.key === messageKey ? chatKanbanGeneration : null;
                 const generating = generationForMessage && ["generating", "creating"].includes(generationForMessage.phase);
-                const canGenerateKanbanTask = message.role === "assistant" && displayContent?.trim() && generateKanbanTaskFromChat;
+                const isStreamingAssistant = message.role === "assistant" && busy && index === visibleMessages.length - 1;
+                const canGenerateKanbanTask = message.role === "assistant" && !isStreamingAssistant && displayContent?.trim() && generateKanbanTaskFromChat;
+                const copied = copiedMessageKey === messageKey;
+                const agentPrompt = message.agentPrompt;
                 return (
-                  <div className={chatClass("message", message.role)} key={messageKey}>
+                  <div className={chatClass("message", message.role, isStreamingAssistant && "streaming")} key={messageKey}>
                     {message.role === "user" ? <span className={chatClass("messageRole")}>You</span> : null}
-                    {canGenerateKanbanTask ? (
-                      <div className={chatClass("messageActions")}>
-                        <button
-                          type="button"
-                          className={chatClass("generateKanbanButton", openKanbanTaskMenuKey === messageKey && "active")}
-                          aria-label="Generate Kanban task from this response"
-                          onClick={() => setOpenKanbanTaskMenuKey((current) => current === messageKey ? "" : messageKey)}
-                          disabled={Boolean(generating)}
-                        >
-                          {generating ? <LoaderCircle aria-hidden="true" /> : <KanbanSquare aria-hidden="true" />}
-                        </button>
-                        {openKanbanTaskMenuKey === messageKey || generationForMessage ? (
-                          <div className={chatClass("generateKanbanPopover", generationForMessage && `phase-${generationForMessage.phase}`)}>
-                            <div className={chatClass("generateKanbanHeader")}>
-                              <Sparkles aria-hidden="true" />
-                              <span>{generationForMessage ? generationForMessage.message : "Generate and send to:"}</span>
-                            </div>
-                            {generationForMessage ? (
-                              <div className={chatClass("generateKanbanProgress")}>
-                                <span aria-hidden="true" />
-                                <small>{generationForMessage.taskTitle || (generationForMessage.status === "ready" ? "Ready lane" : "Ideas lane")}</small>
-                              </div>
-                            ) : (
-                              <div className={chatClass("generateKanbanActions")}>
-                                <button
-                                  type="button"
-                                  onClick={() => {
-                                    setOpenKanbanTaskMenuKey(messageKey);
-                                    void generateKanbanTaskFromChat("ideas", { key: messageKey, content: displayContent });
-                                  }}
-                                >
-                                  Ideas
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={() => {
-                                    setOpenKanbanTaskMenuKey(messageKey);
-                                    void generateKanbanTaskFromChat("ready", { key: messageKey, content: displayContent });
-                                  }}
-                                >
-                                  Ready
-                                </button>
-                              </div>
-                            )}
+                    <MessageAttachments attachments={message.attachments} />
+                    {agentPrompt ? (
+                      <div className={chatClass("agentPromptCard")}>
+                        <div className={chatClass("agentPromptHeader")}>
+                          <Sparkles aria-hidden="true" />
+                          <span>{agentPrompt.type === "approval" ? "Approval needed" : agentPrompt.type === "secret" ? "Secret needed" : agentPrompt.type === "sudo" ? "Local prompt" : "Agent question"}</span>
+                        </div>
+                        <p>{agentPrompt.question}</p>
+                        {agentPrompt.choices?.length ? (
+                          <div className={chatClass("agentPromptChoices")}>
+                            {agentPrompt.choices.map((choice) => (
+                              <button
+                                type="button"
+                                key={choice}
+                                onClick={() => setText(choice)}
+                              >
+                                {choice}
+                              </button>
+                            ))}
                           </div>
                         ) : null}
+                        {agentPrompt.allowFreeText ? <small>Choose a reply or type your answer below.</small> : null}
                       </div>
-                    ) : null}
-                    <MessageAttachments attachments={message.attachments} />
-                    {displayContent ? (
+                    ) : displayContent ? (
                       <ChatMarkdown text={displayContent} />
                     ) : (
-                      <p>{message.role === "assistant" && busy ? "Waiting for response..." : ""}</p>
+                      message.role === "assistant" && busy ? <AgentResponseLoader /> : <p />
                     )}
+                    {isStreamingAssistant && displayContent?.trim() ? (
+                      <div className={chatClass("streamingStatus")} aria-live="polite">
+                        <span aria-hidden="true" />
+                        <small>Still writing</small>
+                      </div>
+                    ) : null}
+                    {message.role === "assistant" && !isStreamingAssistant && displayContent?.trim() ? (
+                      <TooltipProvider>
+                        <div className={chatClass("messageActions")}>
+                          <Tooltip open={copied ? true : undefined}>
+                            <TooltipTrigger asChild>
+                              <button
+                                type="button"
+                                className={chatClass("messageActionButton", copied && "active", copied && "copied")}
+                                aria-label={copied ? "Copied response" : "Copy response"}
+                                onClick={() => copyAssistantResponse(messageKey, displayContent)}
+                              >
+                                {copied ? <Check aria-hidden="true" /> : <Copy aria-hidden="true" />}
+                              </button>
+                            </TooltipTrigger>
+                            <TooltipContent side="bottom">{copied ? "Copied!" : "Copy response"}</TooltipContent>
+                          </Tooltip>
+                          {canGenerateKanbanTask ? (
+                            <>
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <button
+                                    type="button"
+                                    className={chatClass("messageActionButton", openKanbanTaskMenuKey === messageKey && "active")}
+                                    aria-label="Generate Kanban task from this response"
+                                    onClick={() => setOpenKanbanTaskMenuKey((current) => current === messageKey ? "" : messageKey)}
+                                    disabled={Boolean(generating)}
+                                  >
+                                    {generating ? <LoaderCircle aria-hidden="true" /> : <KanbanSquare aria-hidden="true" />}
+                                  </button>
+                                </TooltipTrigger>
+                                <TooltipContent side="bottom">Send to Kanban</TooltipContent>
+                              </Tooltip>
+                              {openKanbanTaskMenuKey === messageKey || generationForMessage ? (
+                                <div className={chatClass("generateKanbanPopover", generationForMessage && `phase-${generationForMessage.phase}`)}>
+                                  <div className={chatClass("generateKanbanHeader")}>
+                                    <Sparkles aria-hidden="true" />
+                                    <span>{generationForMessage ? generationForMessage.message : "Generate and send to:"}</span>
+                                  </div>
+                                  {generationForMessage ? (
+                                    <div className={chatClass("generateKanbanProgress")}>
+                                      <span aria-hidden="true" />
+                                      <small>{generationForMessage.taskTitle || (generationForMessage.status === "ready" ? "Ready lane" : "Ideas lane")}</small>
+                                    </div>
+                                  ) : (
+                                    <div className={chatClass("generateKanbanActions")}>
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          setOpenKanbanTaskMenuKey(messageKey);
+                                          void generateKanbanTaskFromChat("ideas", { key: messageKey, content: displayContent });
+                                        }}
+                                      >
+                                        Ideas
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          setOpenKanbanTaskMenuKey(messageKey);
+                                          void generateKanbanTaskFromChat("ready", { key: messageKey, content: displayContent });
+                                        }}
+                                      >
+                                        Ready
+                                      </button>
+                                    </div>
+                                  )}
+                                </div>
+                              ) : null}
+                            </>
+                          ) : null}
+                        </div>
+                      </TooltipProvider>
+                    ) : null}
                   </div>
                 );
               })}
@@ -503,6 +565,8 @@ export function ChatPanel(props: any) {
                 voiceTranscript={voiceTranscript}
                 onToggleRecording={recording ? stopAudioRecording : () => void startAudioRecording("chat")}
                 canSend={Boolean(text.trim() || chatAttachments.length || chatDirectories.length)}
+                submitOnEnter
+                hermesSlashCommands={selectedAgent.runtime === "hermes"}
               />
             </form>
             <p className="hint">

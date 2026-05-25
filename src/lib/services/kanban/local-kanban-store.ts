@@ -1,4 +1,4 @@
-import { mkdir, readFile, rename, writeFile } from "fs/promises";
+import { mkdir, open, readFile, rename, writeFile } from "fs/promises";
 import { existsSync, statSync } from "fs";
 import { homedir } from "os";
 import { isAbsolute, join, sep } from "path";
@@ -123,19 +123,26 @@ export function resolveKanbanStorage(slugInput?: string | null, options: KanbanS
 export async function listBoards(options: KanbanStorageOptions = {}) {
   const storage = resolveKanbanStorage(DEFAULT_BOARD, options);
   await mkdir(storage.boardsRoot, { recursive: true, mode: 0o700 });
-  const defaultBoard = await readBoard(DEFAULT_BOARD, options);
-  const boards = [defaultBoard.meta];
+  const defaultMeta = await readBoardMeta(DEFAULT_BOARD, options);
+  const boards = [defaultMeta];
   try {
     const { readdir } = await import("fs/promises");
     const entries = await readdir(storage.boardsRoot, { withFileTypes: true });
     for (const entry of entries) {
       if (!entry.isDirectory() || entry.name === DEFAULT_BOARD || entry.name === "_archived") continue;
-      boards.push((await readBoard(entry.name, options)).meta);
+      boards.push(await readBoardMeta(entry.name, options));
     }
   } catch {
     return boards;
   }
   return boards.sort((a, b) => a.name.localeCompare(b.name));
+}
+
+async function readBoardMeta(slugInput?: string | null, options: KanbanStorageOptions = {}) {
+  const slug = normalizeBoardSlug(slugInput);
+  const storage = resolveKanbanStorage(slug, options);
+  if (!existsSync(storage.file)) return emptyBoard(slug).meta;
+  return readBoardMetaFile(storage.file, slug);
 }
 
 export async function readBoard(slugInput?: string | null, options: KanbanStorageOptions = {}): Promise<KanbanBoard> {
@@ -166,6 +173,22 @@ export async function readBoard(slugInput?: string | null, options: KanbanStorag
 async function readBoardFile(path: string) {
   const raw = await readFile(path, "utf-8");
   return JSON.parse(raw) as KanbanBoard;
+}
+
+async function readBoardMetaFile(path: string, slug: string) {
+  const handle = await open(path, "r");
+  try {
+    const buffer = new Uint8Array(16 * 1024);
+    const { bytesRead } = await handle.read(buffer, 0, buffer.length, 0);
+    const head = new TextDecoder().decode(buffer.subarray(0, bytesRead));
+    const match = head.match(/"meta"\s*:\s*(\{[\s\S]*?\})\s*,\s*"tasks"/);
+    if (match) {
+      return { ...emptyBoard(slug).meta, ...JSON.parse(match[1]), slug } as KanbanBoardMeta;
+    }
+  } finally {
+    await handle.close();
+  }
+  return normalizeBoard(await readBoardFile(path), slug).meta;
 }
 
 async function readDefaultVaultBoardIfPopulated(slug: string, options: KanbanStorageOptions, currentStorage: KanbanStorageInfo) {

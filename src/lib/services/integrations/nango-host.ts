@@ -1,9 +1,10 @@
+import { spawn } from "child_process";
 import { constants, existsSync, statSync } from "fs";
 import { access, mkdir, readFile, rename, writeFile } from "fs/promises";
 import { dirname, join, relative, sep } from "path";
 import { checkNangoHealth, listNangoConnections, normalizeNangoHost } from "@/lib/services/integrations/nango-client";
 import { resolveObsidianVaultPath } from "@/lib/services/obsidian/vault-path";
-import type { NangoHostConfig, NangoIntegrationPayload, NangoProviderKey } from "@/lib/types/integrations";
+import type { NangoHostConfig, NangoHostSetupResult, NangoIntegrationPayload, NangoProviderKey } from "@/lib/types/integrations";
 
 const CONFIG_PATH = "HivemindOS/Integrations/nango-host.json";
 const DEFAULT_ALLOWED_PROVIDERS: NangoProviderKey[] = ["github", "linear", "slack", "notion", "google"];
@@ -20,6 +21,11 @@ type UpdateNangoHostInput = {
   baseUrl?: string;
   mode?: NangoHostConfig["mode"];
   allowedProviders?: NangoProviderKey[];
+};
+
+type SetupNangoHostInput = UpdateNangoHostInput & {
+  collectorUrl?: string;
+  target?: string;
 };
 
 export function defaultNangoHostConfig(): NangoHostConfig {
@@ -85,6 +91,55 @@ export async function updateNangoHostConfig(input: UpdateNangoHostInput): Promis
   return readNangoIntegrationPayload();
 }
 
+export async function setupNangoHost(input: SetupNangoHostInput = {}): Promise<NangoHostSetupResult> {
+  const storage = await resolveStorage();
+  const config = normalizeConfig({ ...(await readNangoHostConfig(storage)), ...input });
+  await writeConfig(storage.file, config);
+  if (input.collectorUrl?.trim() && config.mode !== "local") {
+    return setupNangoHostViaCollector(input.collectorUrl, config);
+  }
+  const target = setupTarget(config, input.target);
+  const script = nangoSetupScript(config);
+  const result = await runSetupTarget(target, script, config.mode === "local");
+  const health = await waitForNangoHealth(config.baseUrl);
+  return {
+    ok: health.ok,
+    method: result.method,
+    target: result.target,
+    baseUrl: config.baseUrl,
+    stdout: sanitizeSetupOutput(result.stdout),
+    stderr: sanitizeSetupOutput(result.stderr),
+    health,
+    command: script,
+  };
+}
+
+async function setupNangoHostViaCollector(collectorUrl: string, config: NangoHostConfig): Promise<NangoHostSetupResult> {
+  const base = collectorUrl.replace(/\/+$/, "");
+  const response = await fetch(`${base}/integrations/nango/setup`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ baseUrl: config.baseUrl }),
+    signal: AbortSignal.timeout(360_000),
+    cache: "no-store",
+  }).catch((error) => {
+    throw new Error(`Remote collector is not reachable: ${error instanceof Error ? error.message : String(error)}`);
+  });
+  const payload = await response.json().catch(() => null) as (NangoHostSetupResult & { error?: string }) | null;
+  if (response.status === 404) {
+    throw new Error("That machine is reachable through the HivemindOS collector, but the collector does not have the Nango setup endpoint yet. Run the machine update once from Fleet, then try setup again.");
+  }
+  if (!response.ok || payload?.ok === false) {
+    throw new Error(payload?.error ?? `Remote collector returned HTTP ${response.status}.`);
+  }
+  if (!payload) throw new Error("Remote collector returned an empty setup response.");
+  return {
+    ...payload,
+    method: "collector-api",
+    target: payload.target || new URL(base).hostname,
+  };
+}
+
 async function resolveStorage(): Promise<Storage> {
   const vaultRoot = resolveObsidianVaultPath(undefined, { requireWritable: true });
   if (!statSync(vaultRoot).isDirectory()) throw new Error("Vault path is not a directory.");
@@ -143,4 +198,174 @@ function setupCommands(config: NangoHostConfig) {
     `printf 'NANGO_SERVER_URL=${config.baseUrl}\\nSERVER_PORT=3003\\n' >> .env`,
     "docker compose up -d",
   ];
+}
+
+function setupTarget(config: NangoHostConfig, explicitTarget?: string) {
+  const explicit = explicitTarget?.trim();
+  if (explicit) return explicit;
+  if (config.mode === "local") return "local";
+  try {
+    return new URL(config.baseUrl).hostname.replace(/^\[|\]$/g, "");
+  } catch {
+    return config.hostMachineName || config.hostMachineId;
+  }
+}
+
+function shellSingleQuote(value: string) {
+  return `'${value.replaceAll("'", "'\\''")}'`;
+}
+
+function nangoSetupScript(config: NangoHostConfig) {
+  const baseUrl = normalizeNangoHost(config.baseUrl);
+  return [
+    "set -euo pipefail",
+    "log() { printf '\\n[%s] %s\\n' \"$(date -u +%H:%M:%S)\" \"$*\"; }",
+    "run_as_root() { if [ \"$(id -u)\" = \"0\" ]; then \"$@\"; elif command -v sudo >/dev/null 2>&1; then sudo \"$@\"; else echo 'This setup needs root or passwordless sudo to install packages.' >&2; exit 10; fi; }",
+    "log 'Checking system packages'",
+    "if ! command -v git >/dev/null 2>&1; then",
+    "  command -v apt-get >/dev/null 2>&1 || { echo 'git is missing and apt-get is unavailable.' >&2; exit 11; }",
+    "  run_as_root apt-get update",
+    "  run_as_root apt-get install -y git",
+    "fi",
+    "if ! command -v docker >/dev/null 2>&1; then",
+    "  command -v apt-get >/dev/null 2>&1 || { echo 'docker is missing and apt-get is unavailable.' >&2; exit 12; }",
+    "  run_as_root apt-get update",
+    "  run_as_root apt-get install -y docker.io docker-compose-plugin",
+    "  run_as_root systemctl enable --now docker >/dev/null 2>&1 || true",
+    "fi",
+    "DOCKER='docker'",
+    "if ! docker ps >/dev/null 2>&1; then",
+    "  if command -v sudo >/dev/null 2>&1 && sudo docker ps >/dev/null 2>&1; then DOCKER='sudo docker'; else echo 'Docker is installed, but this SSH user cannot run docker.' >&2; exit 13; fi",
+    "fi",
+    "NANGO_DIR=\"${NANGO_DIR:-$HOME/nango}\"",
+    "log \"Preparing Nango checkout at $NANGO_DIR\"",
+    "if [ ! -d \"$NANGO_DIR/.git\" ]; then",
+    "  rm -rf \"$NANGO_DIR\"",
+    "  git clone https://github.com/NangoHQ/nango.git \"$NANGO_DIR\"",
+    "else",
+    "  git -C \"$NANGO_DIR\" pull --ff-only",
+    "fi",
+    "cd \"$NANGO_DIR\"",
+    "if [ ! -f .env ]; then cp .env.example .env; fi",
+    "set_env() {",
+    "  key=\"$1\"",
+    "  value=\"$2\"",
+    "  if grep -q \"^${key}=\" .env; then",
+    "    tmp=\"$(mktemp)\"",
+    "    awk -v key=\"$key\" -v value=\"$value\" 'BEGIN{line=key \"=\" value} $0 ~ \"^\" key \"=\" {print line; next} {print}' .env > \"$tmp\"",
+    "    cat \"$tmp\" > .env",
+    "    rm -f \"$tmp\"",
+    "  else",
+    "    printf '%s=%s\\n' \"$key\" \"$value\" >> .env",
+    "  fi",
+    "}",
+    `set_env NANGO_SERVER_URL ${shellSingleQuote(baseUrl)}`,
+    `set_env SERVER_PORT ${shellSingleQuote(new URL(baseUrl).port || "3003")}`,
+    "log 'Starting Nango containers'",
+    "$DOCKER compose up -d",
+    "log 'Nango setup command finished'",
+  ].join("\n");
+}
+
+function runProcess(command: string, args: string[], stdin: string | null, timeoutMs: number) {
+  return new Promise<{ stdout: string; stderr: string }>((resolve, reject) => {
+    const child = spawn(command, args, { stdio: ["pipe", "pipe", "pipe"] });
+    let stdout = "";
+    let stderr = "";
+    let settled = false;
+    const timeout = setTimeout(() => {
+      settled = true;
+      child.kill("SIGTERM");
+      reject(new Error(`${command} timed out`));
+    }, timeoutMs);
+    child.stdout.on("data", (chunk) => {
+      stdout += chunk.toString();
+    });
+    child.stderr.on("data", (chunk) => {
+      stderr += chunk.toString();
+    });
+    child.on("error", (error) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timeout);
+      reject(error);
+    });
+    child.on("close", (code) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timeout);
+      if (code === 0) {
+        resolve({ stdout, stderr });
+        return;
+      }
+      const detail = [stderr.trim(), stdout.trim()].filter(Boolean).join("\n\n");
+      reject(new Error(`${command} exited with code ${code}${detail ? `:\n${detail}` : ""}`));
+    });
+    child.stdin.end(stdin ?? "");
+  });
+}
+
+function plainSshTargets(target: string) {
+  if (target.includes("@")) return [target];
+  return [target, `ubuntu@${target}`, `root@${target}`];
+}
+
+async function runSetupTarget(target: string, script: string, local: boolean) {
+  if (local || target === "local") {
+    const result = await runProcess("bash", ["-s"], script, 360_000);
+    return { ...result, method: "local-shell" as const, target: "this machine" };
+  }
+
+  try {
+    const result = await runProcess("tailscale", ["ssh", target, "bash", "-s"], script, 360_000);
+    return { ...result, method: "tailscale-ssh" as const, target };
+  } catch (tailscaleError) {
+    const tailscaleMessage = tailscaleError instanceof Error ? tailscaleError.message : String(tailscaleError);
+    const errors: string[] = [];
+    for (const sshTarget of plainSshTargets(target)) {
+      try {
+        const result = await runProcess("ssh", [
+          "-o",
+          "BatchMode=yes",
+          "-o",
+          "ConnectTimeout=10",
+          "-o",
+          "StrictHostKeyChecking=accept-new",
+          sshTarget,
+          "bash",
+          "-s",
+        ], script, 360_000);
+        return {
+          ...result,
+          method: "plain-ssh" as const,
+          target: sshTarget,
+          stderr: [`Tailscale SSH failed, plain SSH succeeded. Tailscale error:\n${tailscaleMessage}`, result.stderr.trim()].filter(Boolean).join("\n\n"),
+        };
+      } catch (error) {
+        errors.push(`${sshTarget}: ${error instanceof Error ? error.message : String(error)}`);
+      }
+    }
+    throw new Error([
+      `Tailscale SSH failed:\n${tailscaleMessage}`,
+      `Plain SSH failed:\n${errors.join("\n\n")}`,
+    ].join("\n\n"));
+  }
+}
+
+async function waitForNangoHealth(baseUrl: string) {
+  let health = await checkNangoHealth(baseUrl);
+  if (health.ok) return health;
+  for (const delay of [2_000, 4_000, 8_000, 12_000, 20_000, 30_000]) {
+    await new Promise((resolve) => setTimeout(resolve, delay));
+    health = await checkNangoHealth(baseUrl);
+    if (health.ok) return health;
+  }
+  return health;
+}
+
+function sanitizeSetupOutput(output: string) {
+  return output
+    .replace(/(NANGO_SECRET_KEY=)[^\s]+/g, "$1<redacted>")
+    .replace(/(NANGO_ENCRYPTION_KEY=)[^\s]+/g, "$1<redacted>")
+    .slice(-20_000);
 }

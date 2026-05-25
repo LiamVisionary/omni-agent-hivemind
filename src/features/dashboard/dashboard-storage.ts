@@ -29,6 +29,10 @@ const STORAGE_SUFFIXES = {
 const runtimeCapabilitiesByRuntime = RUNTIME_CAPABILITIES as Record<string, RuntimeCapabilities>;
 const runtimeKindsByRuntime = RUNTIME_KINDS as Record<string, AgentRuntimeKind | undefined>;
 
+function normalizeVaultRelativePath(path?: string) {
+  return path?.trim().replace(/[\\/]+$/g, "");
+}
+
 export function workerCapabilityBadges(summary: string) {
   return summary
     .replace(/\.$/, "")
@@ -232,10 +236,33 @@ export function parseStoredVault(): SharedVaultConfig {
       && !storedVaultPath.endsWith("/hivemindos-vault")
       ? DEFAULT_SHARED_VAULT.vaultPath
       : storedVaultPath;
-    const storedKanbanFolder = storedVault.kanbanFolder?.trim();
+    const storedKanbanFolder = normalizeVaultRelativePath(storedVault.kanbanFolder);
     const migratedKanbanFolder = storedKanbanFolder && /^kanban$/i.test(storedKanbanFolder)
       ? DEFAULT_SHARED_VAULT.kanbanFolder
+      : storedKanbanFolder === "Projects/HivemindOS/Kanban"
+        ? DEFAULT_SHARED_VAULT.kanbanFolder
       : storedKanbanFolder;
+    const storedNotificationsFolder = normalizeVaultRelativePath(storedVault.notificationsFolder);
+    const migratedNotificationsFolder = storedNotificationsFolder === "agent-notifications"
+      ? DEFAULT_SHARED_VAULT.notificationsFolder
+      : storedNotificationsFolder;
+    const storedScheduledFolder = normalizeVaultRelativePath(storedVault.scheduledFolder);
+    const migratedScheduledFolder = storedScheduledFolder === "Scheduled"
+      ? DEFAULT_SHARED_VAULT.scheduledFolder
+      : storedScheduledFolder;
+    const storedSharedNotePath = storedVault.sharedNotePath?.trim();
+    const migratedSharedNotePath = storedSharedNotePath === "Team/Shared Context.md" || storedSharedNotePath === "HivemindOS/Shared Context.md"
+      ? DEFAULT_SHARED_VAULT.sharedNotePath
+      : storedSharedNotePath;
+    const storedInboxFolder = normalizeVaultRelativePath(storedVault.inboxFolder);
+    const migratedInboxFolder = storedInboxFolder === "Agent Inbox" || storedInboxFolder === "Inbox"
+      ? DEFAULT_SHARED_VAULT.inboxFolder
+      : storedInboxFolder;
+    const storedSynthesisFolder = normalizeVaultRelativePath(storedVault.synthesisFolder);
+    const storedBrainServicesFolder = normalizeVaultRelativePath(storedVault.brainServicesFolder);
+    const migratedBrainServicesFolder = storedBrainServicesFolder === "Projects/HivemindOS/Brain Access"
+      ? DEFAULT_SHARED_VAULT.brainServicesFolder
+      : storedBrainServicesFolder;
     const syncProvider = storedVault.syncProvider === "syncthing" || storedVault.syncProvider === "manual" || storedVault.syncProvider === "external"
       ? storedVault.syncProvider
       : legacyTailnetSyncEnabled === true
@@ -247,8 +274,14 @@ export function parseStoredVault(): SharedVaultConfig {
       syncProvider,
       syncthingAutoPairEnabled: storedVault.syncthingAutoPairEnabled ?? legacyTailnetSyncEnabled ?? DEFAULT_SHARED_VAULT.syncthingAutoPairEnabled,
       vaultPath: migratedVaultPath || DEFAULT_SHARED_VAULT.vaultPath,
+      inboxFolder: migratedInboxFolder || DEFAULT_SHARED_VAULT.inboxFolder,
+      sharedNotePath: migratedSharedNotePath || DEFAULT_SHARED_VAULT.sharedNotePath,
       kanbanFolder: migratedKanbanFolder || DEFAULT_SHARED_VAULT.kanbanFolder,
-      scheduledFolder: storedVault.scheduledFolder?.trim() || DEFAULT_SHARED_VAULT.scheduledFolder,
+      notificationsFolder: migratedNotificationsFolder || DEFAULT_SHARED_VAULT.notificationsFolder,
+      scheduledFolder: migratedScheduledFolder || DEFAULT_SHARED_VAULT.scheduledFolder,
+      synthesisFolder: storedSynthesisFolder || DEFAULT_SHARED_VAULT.synthesisFolder,
+      brainServicesFolder: migratedBrainServicesFolder || DEFAULT_SHARED_VAULT.brainServicesFolder,
+      gbrain: { ...DEFAULT_SHARED_VAULT.gbrain, ...(storedVault.gbrain ?? {}) },
     };
   } catch {
     return DEFAULT_SHARED_VAULT;
@@ -343,6 +376,15 @@ export function parseStoredChatMessages(): Record<string, ChatMessage[]> {
           sourceSessionId: typeof message.sourceSessionId === "string" ? message.sourceSessionId : undefined,
           sourceIndex: typeof message.sourceIndex === "number" ? message.sourceIndex : undefined,
           attachments: Array.isArray(message.attachments) ? message.attachments : undefined,
+          agentPrompt: message.agentPrompt && typeof message.agentPrompt === "object" && typeof message.agentPrompt.question === "string"
+            ? {
+              id: typeof message.agentPrompt.id === "string" ? message.agentPrompt.id : `${agentId}-${message.createdAt ?? Date.now()}`,
+              type: ["clarify", "approval", "sudo", "secret", "prompt"].includes(message.agentPrompt.type) ? message.agentPrompt.type : "prompt",
+              question: message.agentPrompt.question,
+              choices: Array.isArray(message.agentPrompt.choices) ? message.agentPrompt.choices.filter((choice) => typeof choice === "string") : undefined,
+              allowFreeText: message.agentPrompt.allowFreeText === true,
+            }
+            : undefined,
         })).slice(-120),
       ]));
   } catch {

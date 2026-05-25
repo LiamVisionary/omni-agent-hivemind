@@ -13,10 +13,11 @@ import {
   MessageSquare,
   RefreshCw,
   Server,
+  TerminalSquare,
   Workflow,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import type { NangoHostConfig, NangoIntegrationPayload, NangoProviderKey } from "@/lib/types/integrations";
+import type { NangoHostConfig, NangoHostSetupResult, NangoIntegrationPayload, NangoProviderKey } from "@/lib/types/integrations";
 import styles from "@/app/integrations/integrations.module.css";
 
 type FleetMachine = {
@@ -42,6 +43,7 @@ type MachineChoice = {
   envReady: boolean;
   self: boolean;
   baseUrl: string;
+  collectorUrl: string;
   rank: number;
   note: string;
 };
@@ -69,6 +71,10 @@ export default function NangoIntegrationsView({ embedded = false }: NangoIntegra
   const [selectedId, setSelectedId] = React.useState("");
   const [saving, setSaving] = React.useState(false);
   const [envSaving, setEnvSaving] = React.useState(false);
+  const [setupSaving, setSetupSaving] = React.useState(false);
+  const [setupResult, setSetupResult] = React.useState<NangoHostSetupResult | null>(null);
+  const [setupMode, setSetupMode] = React.useState<"automatic" | "manual">("automatic");
+  const [setupMessage, setSetupMessage] = React.useState("");
   const [message, setMessage] = React.useState("");
 
   const refresh = React.useCallback(async () => {
@@ -80,7 +86,7 @@ export default function NangoIntegrationsView({ embedded = false }: NangoIntegra
     setMachines(fallbackChoices);
     setSelectedId(nextPayload.config.hostMachineId || fallbackChoices[0]?.id || "self");
 
-    const fleetResponse = await fetch("/api/fleet/discover", { cache: "no-store" }).catch(() => null);
+    const fleetResponse = await fetch("/api/fleet/discover?includeSnapshots=0", { cache: "no-store" }).catch(() => null);
     const fleet = fleetResponse?.ok ? await fleetResponse.json() as { machines?: FleetMachine[] } : { machines: [] };
     const choices = machineChoices(fleet.machines ?? [], nextPayload.config);
     setMachines(choices);
@@ -152,6 +158,42 @@ export default function NangoIntegrationsView({ embedded = false }: NangoIntegra
       setMessage(error instanceof Error ? error.message : "Could not sync shared env.");
     } finally {
       setEnvSaving(false);
+    }
+  }
+
+  async function setupHost() {
+    if (!payload || !selected) return;
+    setSetupSaving(true);
+    setSetupResult(null);
+    setSetupMessage("");
+    setMessage("");
+    try {
+      const response = await fetch("/api/integrations/nango/setup", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          enabled: true,
+          hostMachineId: selected.id,
+          hostMachineName: selected.name,
+          baseUrl: selected.baseUrl,
+          mode: selected.self ? "local" : "tailnet",
+          allowedProviders: payload.config.allowedProviders,
+          collectorUrl: selected.collectorUrl,
+          target: selected.self ? "local" : setupTargetFromBaseUrl(selected.baseUrl),
+        }),
+      });
+      const result = await response.json() as NangoHostSetupResult & { error?: string };
+      if (!response.ok || result.ok === false) {
+        setSetupResult(result.health ? result : null);
+        throw new Error(result.error ?? result.health?.error ?? "Nango setup did not finish cleanly.");
+      }
+      setSetupResult(result);
+      setPayload(await (await fetch("/api/integrations/nango", { cache: "no-store" })).json() as NangoIntegrationPayload);
+      setSetupMessage(`Nango setup finished on ${result.target}.`);
+    } catch (error) {
+      setSetupMessage(error instanceof Error ? error.message : "Could not set up Nango on the selected host.");
+    } finally {
+      setSetupSaving(false);
     }
   }
 
@@ -257,6 +299,61 @@ export default function NangoIntegrationsView({ embedded = false }: NangoIntegra
               ) : null}
             </div>
             {message ? <p className={styles.muted}>{message}</p> : null}
+
+            <h2 className={styles.sectionTitle} style={{ marginTop: 20 }}>Host Setup</h2>
+            <div className={styles.setupBox}>
+              <div className={styles.segmented} role="tablist" aria-label="Host setup mode">
+                <button
+                  type="button"
+                  role="tab"
+                  aria-selected={setupMode === "automatic"}
+                  className={setupMode === "automatic" ? styles.segmentActive : ""}
+                  onClick={() => setSetupMode("automatic")}
+                >
+                  Automatic Setup
+                </button>
+                <button
+                  type="button"
+                  role="tab"
+                  aria-selected={setupMode === "manual"}
+                  className={setupMode === "manual" ? styles.segmentActive : ""}
+                  onClick={() => setSetupMode("manual")}
+                >
+                  Manual Setup
+                </button>
+              </div>
+
+              {setupMode === "automatic" ? (
+                <div className={styles.setupPane} role="tabpanel">
+                  <div className={styles.row}>
+                    <div>
+                      <strong>Automatic setup</strong>
+                      <p className={`${styles.muted} ${styles.small}`}>Runs through the collector API when available, falls back to SSH, starts Nango, then checks health.</p>
+                    </div>
+                    <Button variant="secondary" onClick={() => void setupHost()} isLoading={setupSaving} disabled={!selected || !selected.online}>
+                      <TerminalSquare /> Run setup
+                    </Button>
+                  </div>
+                  {setupResult ? (
+                    <div className={styles.setupResult}>
+                      <StatusBadge good={setupResult.health.ok} warn={!setupResult.health.ok} label={setupResult.health.ok ? "Nango healthy" : "Needs attention"} />
+                      <span className={`${styles.muted} ${styles.small}`}>{setupResult.method} · {setupResult.target}</span>
+                    </div>
+                  ) : null}
+                  {setupMessage ? (
+                    <p className={`${styles.setupMessage} ${setupResult?.ok ? styles.setupMessageGood : styles.setupMessageWarn}`}>{setupMessage}</p>
+                  ) : null}
+                  {setupResult?.stdout || setupResult?.stderr ? (
+                    <pre className={styles.codeBlock}>{[setupResult.stdout, setupResult.stderr].filter(Boolean).join("\n\n")}</pre>
+                  ) : null}
+                </div>
+              ) : (
+                <div className={styles.setupPane} role="tabpanel">
+                  <p className={`${styles.muted} ${styles.small}`}>Use these commands only if the collector API and SSH automation are unavailable.</p>
+                  <pre className={styles.codeBlock}>{(payload?.setupCommands ?? []).join("\n")}</pre>
+                </div>
+              )}
+            </div>
           </section>
 
           <section className={styles.panel}>
@@ -316,9 +413,6 @@ export default function NangoIntegrationsView({ embedded = false }: NangoIntegra
                 </div>
               ) : null}
             </div>
-
-            <h2 className={styles.sectionTitle} style={{ marginTop: 20 }}>Host Setup Commands</h2>
-            <pre className={styles.codeBlock}>{(payload?.setupCommands ?? []).join("\n")}</pre>
           </section>
         </div>
       </div>
@@ -368,6 +462,7 @@ function machineChoices(machines: FleetMachine[], config: NangoHostConfig): Mach
       envReady,
       self: device.self === true,
       baseUrl: `http://${baseHost}:3003`,
+      collectorUrl: device.collectorUrl || "",
       rank,
       note: device.self ? "current machine, may sleep" : serverLike ? "always-on candidate" : "tailnet machine",
     };
@@ -383,6 +478,7 @@ function machineChoices(machines: FleetMachine[], config: NangoHostConfig): Mach
       envReady: false,
       self: true,
       baseUrl: "http://127.0.0.1:3003",
+      collectorUrl: "http://127.0.0.1:8787",
       rank: 18,
       note: "current machine, may sleep",
     });
@@ -398,6 +494,7 @@ function machineChoices(machines: FleetMachine[], config: NangoHostConfig): Mach
       envReady: false,
       self: false,
       baseUrl: config.baseUrl,
+      collectorUrl: "",
       rank: 10,
       note: "saved host, not in current fleet snapshot",
     });
@@ -412,4 +509,12 @@ function dnsLabel(value?: string) {
 
 function normalizeId(value: string) {
   return value.toLowerCase().replace(/[^a-z0-9._-]+/g, "-").replace(/^-|-$/g, "") || "machine";
+}
+
+function setupTargetFromBaseUrl(baseUrl: string) {
+  try {
+    return new URL(baseUrl).hostname.replace(/^\[|\]$/g, "");
+  } catch {
+    return baseUrl.replace(/^https?:\/\//, "").split(":")[0] || "integration-host";
+  }
 }

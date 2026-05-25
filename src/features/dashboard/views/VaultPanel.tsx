@@ -5,7 +5,26 @@
 /* eslint-disable react-hooks/immutability, react-hooks/purity */
 
 export function VaultPanel(props: any) {
-  const { BRAIN_SKILL_PROVIDER_FALLBACK, Bot, BrainCircuit, BrainGraphLoader, Button, Cell, Check, Clock3, DEFAULT_SHARED_VAULT, Download, Eye, FileText, FolderOpen, GitBranch, Hexagon, Image, LoaderCircle, MemoryCell, RefreshCcw, Repeat2, activeView, brainGraph, brainGraphEdgePath, brainGraphLoading, brainGraphStats, brainGraphStatus, brainLayout, brainNodePoints, brainPan, brainSkillAeonSyncing, brainSkillImportAllDescription, brainSkillImportAllLabel, brainSkillImportProvider, brainSkillImportSuccess, brainSkillImportableCount, brainSkills, brainSkillsLoading, brainSkillsStatus, checkControlRoomStatus, checkVaultStatus, controlRoomStatus, displayAgents, endBrainPan, formatBrainDate, hermesUpdateRequired, hermesUpdateRequiredDetail, importBrainSkills, inspectBrainNode, moveBrainPan, openSkillBrowser, pairSyncthingVaultSync, refreshBrainGraph, refreshBrainSkills, refreshRuntimeFileRoots, runVaultTailnetSync, selectedAgent, selectedBrainNode, selectedBrainTargetIds, setActiveView, setVaultPanelMode, sharedVault, skillRequiresHermesUpdate, splitBrainLabel, startBrainPan, syncBrainSkillsToAeon, updateAllSkillAutoSync, updateSharedVault, updateSkillAutoSync, vaultClass, vaultPanelMode, vaultStatus, vaultSyncPending, vaultSyncStatus, visibleBrainNodes, walletClass } = props;
+  const { Activity, BRAIN_SKILL_PROVIDER_FALLBACK, Bot, BrainCircuit, BrainGraphLoader, Button, Cell, Check, CircleAlert, Clock3, DEFAULT_SHARED_VAULT, Download, Eye, FileText, FolderOpen, GitBranch, Hexagon, Image, KeyRound, LoaderCircle, MemoryCell, Network, PlugZap, RefreshCcw, Repeat2, Sparkles, activeView, brainGraph, brainGraphEdgePath, brainGraphLoading, brainGraphStats, brainGraphStatus, brainLayout, brainNodePoints, brainPan, brainSkillAeonSyncing, brainSkillImportAllDescription, brainSkillImportAllLabel, brainSkillImportProvider, brainSkillImportSuccess, brainSkillImportableCount, brainSkills, brainSkillsLoading, brainSkillsStatus, checkControlRoomStatus, checkVaultStatus, controlRoomStatus, displayAgents, endBrainPan, formatBrainDate, gbrainActionStatus, gbrainBusy, gbrainQuery, gbrainQueryResult, gbrainStatus, hermesUpdateRequired, hermesUpdateRequiredDetail, importBrainSkills, inspectBrainNode, moveBrainPan, openSkillBrowser, pairSyncthingVaultSync, queryGbrainFromDashboard, refreshBrainGraph, refreshBrainSkills, refreshGbrainStatus, refreshRuntimeFileRoots, runGbrainAction, runVaultTailnetSync, selectedAgent, selectedBrainNode, selectedBrainTargetIds, setActiveView, setGbrainQuery, setVaultPanelMode, sharedVault, skillRequiresHermesUpdate, splitBrainLabel, startBrainPan, syncBrainSkillsToAeon, updateAllSkillAutoSync, updateSharedVault, updateSkillAutoSync, vaultClass, vaultPanelMode, vaultStatus, vaultSyncPending, vaultSyncStatus, visibleBrainNodes, walletClass } = props;
+  const gbrainMetric = (keys: string[]) => {
+    const stats = gbrainStatus?.stats ?? {};
+    for (const key of keys) {
+      const value = stats[key] ?? stats[key.toLowerCase()] ?? stats[key.replace(/([A-Z])/g, "_$1").toLowerCase()];
+      if (typeof value === "number" || typeof value === "string") return value;
+    }
+    return "—";
+  };
+  const gbrainKeys = gbrainStatus?.keyStatus ?? {};
+  const gbrainRecommendations = gbrainStatus?.features?.recommendations ?? [];
+  const vaultPanelHref = (mode: string) => `/?view=vault&vaultPanel=${mode}`;
+  const selectVaultPanel = (mode: string) => {
+    setVaultPanelMode(mode);
+    if (typeof window === "undefined") return;
+    const url = new URL(window.location.href);
+    url.searchParams.set("view", "vault");
+    url.searchParams.set("vaultPanel", mode);
+    window.history.replaceState(null, "", `${url.pathname}${url.search}${url.hash}`);
+  };
   return (<>
       {activeView === "vault" ? (
       <section className={vaultClass("vaultPanel", "tabPanel")}>
@@ -19,18 +38,25 @@ export function VaultPanel(props: any) {
                 {[
                   ["hive-vault", "Hive Vault"],
                   ["shared-skills", "Shared Skills"],
+                  ["brain-services", "Brain Services"],
                   ["config", "Config"],
                 ].map(([mode, label]) => (
-                  <button
+                  <a
                     key={mode}
-                    type="button"
+                    href={vaultPanelHref(mode)}
                     role="tab"
                     aria-selected={vaultPanelMode === mode}
                     className={walletClass("walletSegment", "vaultSegment", vaultPanelMode === mode && "walletSegmentActive")}
-                    onClick={() => setVaultPanelMode(mode)}
+                    onPointerDown={(event) => {
+                      if (event.button === 0) selectVaultPanel(mode);
+                    }}
+                    onClick={(event) => {
+                      event.preventDefault();
+                      selectVaultPanel(mode);
+                    }}
                   >
                     {label}
-                  </button>
+                  </a>
                 ))}
               </div>
             </div>
@@ -227,7 +253,36 @@ export function VaultPanel(props: any) {
         </div>
         ) : null}
 
-        {vaultPanelMode === "shared-skills" ? (
+        {vaultPanelMode === "shared-skills" && brainSkillsLoading ? (
+        <section className={vaultClass("brainSkillsLoadingPanel")} aria-label="Loading shared brain skills" aria-busy="true">
+          <div className={vaultClass("skillLoadingBeacon")}>
+            <div className={vaultClass("skillLoadingComb")}>
+              {Array.from({ length: 19 }).map((_, index) => <span key={index} style={{ "--cell-index": index }} />)}
+            </div>
+          </div>
+          <div className={vaultClass("skillLoadingCopy")}>
+            <p className="eyebrow">Shared skills</p>
+            <h3>Scanning the fleet skill shelf</h3>
+            <p>{brainSkillsStatus || "Reading shared brain skills and provider installs across reachable machines."}</p>
+          </div>
+          <div className={vaultClass("skillLoadingCards")} aria-hidden="true">
+            {Array.from({ length: 8 }).map((_, index) => (
+              <div key={index} className={vaultClass("skillLoadingCard")} style={{ "--card-index": index }}>
+                <span />
+                <strong />
+                <i />
+                <i />
+                <small />
+              </div>
+            ))}
+          </div>
+          <div className={vaultClass("skillLoadingRail")} aria-hidden="true">
+            {BRAIN_SKILL_PROVIDER_FALLBACK.map((provider, index) => (
+              <span key={provider.id} style={{ "--provider-index": index }}>{provider.label}</span>
+            ))}
+          </div>
+        </section>
+        ) : vaultPanelMode === "shared-skills" ? (
         <section className={vaultClass("brainSkillsPanel")} aria-label="Shared brain skills">
           <div className={vaultClass("brainSkillsHeader")}>
             <div>
@@ -408,6 +463,129 @@ export function VaultPanel(props: any) {
         </section>
         ) : null}
 
+        {vaultPanelMode === "brain-services" ? (
+        <section className={vaultClass("brainServicesPanel")} aria-label="Brain services">
+          <div className={vaultClass("brainSkillsHeader")}>
+            <div>
+              <p className="eyebrow">Brain services</p>
+              <h3>Retrieval, synthesis, and reviewed memory</h3>
+              <p>GBrain stays optional but first-class: it can index the vault, expose MCP, scaffold its namespaced skills, and run retrieval or dream cycles without taking over the Synthesis layer.</p>
+            </div>
+            <div className={vaultClass("brainSkillsActions")}>
+              <Button type="button" size="sm" variant="secondary" onClick={refreshGbrainStatus} disabled={Boolean(gbrainBusy)}>
+                {gbrainBusy === "status" ? <LoaderCircle aria-hidden="true" className={vaultClass("spinIcon")} /> : <RefreshCcw aria-hidden="true" />}
+                {gbrainBusy === "status" ? "Checking" : "Refresh"}
+              </Button>
+            </div>
+          </div>
+
+          <div className={vaultClass("brainServiceGrid")}>
+            <article className={vaultClass("brainServiceCard", gbrainStatus?.installed && "active")}>
+              <div className={vaultClass("brainServiceTopline")}>
+                <span><BrainCircuit aria-hidden="true" /> GBrain</span>
+                <small className={vaultClass(gbrainStatus?.installed ? "serviceBadgeLive" : "serviceBadgeIdle")}>
+                  {gbrainStatus?.installed ? "Installed" : "Optional"}
+                </small>
+              </div>
+              <h4>Retrieval, graph, MCP, and dream cycle</h4>
+              <p>{gbrainStatus?.error || "Install or connect GBrain when you want semantic retrieval and synthesized answers over the shared vault."}</p>
+
+              <div className={vaultClass("brainServiceStats")}>
+                <span><FileText aria-hidden="true" /><strong>{gbrainMetric(["page_count", "pages", "pageCount"])}</strong>Pages</span>
+                <span><GitBranch aria-hidden="true" /><strong>{gbrainMetric(["link_count", "links", "linkCount"])}</strong>Links</span>
+                <span><Activity aria-hidden="true" /><strong>{gbrainStatus?.features?.brainScore ?? "—"}</strong>Score</span>
+                <span><PlugZap aria-hidden="true" /><strong>{gbrainStatus?.mcp?.mode ?? sharedVault.gbrain.mcpMode}</strong>MCP</span>
+              </div>
+
+              <div className={vaultClass("brainServiceBadges")}>
+                <span><KeyRound aria-hidden="true" />ZE {gbrainKeys.ZEROENTROPY_API_KEY ? "ready" : "missing"}</span>
+                <span>OpenAI {gbrainKeys.OPENAI_API_KEY ? "ready" : "missing"}</span>
+                <span>Anthropic {gbrainKeys.ANTHROPIC_API_KEY ? "ready" : "optional"}</span>
+                <span>{sharedVault.gbrain.searchMode}</span>
+              </div>
+
+              <div className={vaultClass("brainServiceActions")}>
+                {!gbrainStatus?.installed ? (
+                  <>
+                    <Button type="button" size="sm" variant="secondary" disabled={Boolean(gbrainBusy)} onClick={() => void runGbrainAction("install")}>
+                      {gbrainBusy === "install" ? <LoaderCircle aria-hidden="true" className={vaultClass("spinIcon")} /> : <Download aria-hidden="true" />}
+                      Install GBrain
+                    </Button>
+                    <Button type="button" size="sm" variant="secondary" disabled={Boolean(gbrainBusy)} onClick={() => void runGbrainAction("connect")}>
+                      {gbrainBusy === "connect" ? <LoaderCircle aria-hidden="true" className={vaultClass("spinIcon")} /> : <PlugZap aria-hidden="true" />}
+                      Connect existing
+                    </Button>
+                  </>
+                ) : (
+                  <>
+                    <Button type="button" size="sm" variant="secondary" disabled={Boolean(gbrainBusy)} onClick={() => void runGbrainAction("import")}>
+                      {gbrainBusy === "import" ? <LoaderCircle aria-hidden="true" className={vaultClass("spinIcon")} /> : <Download aria-hidden="true" />}
+                      Import vault
+                    </Button>
+                    <Button type="button" size="sm" variant="secondary" disabled={Boolean(gbrainBusy)} onClick={() => void runGbrainAction("embed")}>
+                      {gbrainBusy === "embed" ? <LoaderCircle aria-hidden="true" className={vaultClass("spinIcon")} /> : <Network aria-hidden="true" />}
+                      Embed stale
+                    </Button>
+                    <Button type="button" size="sm" variant="secondary" disabled={Boolean(gbrainBusy)} onClick={() => void runGbrainAction("dream")}>
+                      {gbrainBusy === "dream" ? <LoaderCircle aria-hidden="true" className={vaultClass("spinIcon")} /> : <Sparkles aria-hidden="true" />}
+                      Dream
+                    </Button>
+                  </>
+                )}
+              </div>
+
+              <div className={vaultClass("gbrainQueryBox")}>
+                <label>
+                  <span>Ask GBrain</span>
+                  <textarea
+                    value={gbrainQuery}
+                    onChange={(event) => setGbrainQuery(event.target.value)}
+                    rows={3}
+                    placeholder="What changed across active projects this week?"
+                  />
+                </label>
+                <Button type="button" size="sm" variant="secondary" disabled={Boolean(gbrainBusy) || !gbrainStatus?.installed} onClick={() => void queryGbrainFromDashboard()}>
+                  {gbrainBusy === "query" ? <LoaderCircle aria-hidden="true" className={vaultClass("spinIcon")} /> : <BrainCircuit aria-hidden="true" />}
+                  Think
+                </Button>
+                {gbrainQueryResult ? <pre>{gbrainQueryResult}</pre> : null}
+              </div>
+            </article>
+
+            <article className={vaultClass("brainServiceCard", "synthesis")}>
+              <div className={vaultClass("brainServiceTopline")}>
+                <span><Sparkles aria-hidden="true" /> Synthesis</span>
+                <small className={vaultClass("serviceBadgeLive")}>Foundation</small>
+              </div>
+              <h4>Reviewed Synto layer</h4>
+              <p>Synthesis is the curated layer for drafts, reviewed wiki articles, source trails, and agent packs. It can read from the same vault surface GBrain indexes.</p>
+              <div className={vaultClass("brainServiceStats")}>
+                <span><FolderOpen aria-hidden="true" /><strong>{sharedVault.synthesisFolder || DEFAULT_SHARED_VAULT.synthesisFolder}</strong>Root</span>
+                <span><FileText aria-hidden="true" /><strong>raw</strong>Queue</span>
+                <span><Check aria-hidden="true" /><strong>wiki</strong>Reviewed</span>
+                <span><Download aria-hidden="true" /><strong>pack</strong>Agents</span>
+              </div>
+              <div className={vaultClass("brainServiceBadges")}>
+                <span>Manual review default</span>
+                <span>Local Ollama preferred</span>
+                <span>No vector DB conflict</span>
+              </div>
+            </article>
+          </div>
+
+          {gbrainRecommendations.length ? (
+            <div className={vaultClass("brainServiceRecommendations")}>
+              <strong><CircleAlert aria-hidden="true" /> GBrain recommendations</strong>
+              {gbrainRecommendations.slice(0, 4).map((recommendation) => (
+                <span key={recommendation.id}>{recommendation.title} · <code>{recommendation.command}</code></span>
+              ))}
+            </div>
+          ) : null}
+
+          <p className={vaultClass("brainStatus")}>{gbrainActionStatus || "GBrain is optional until you install or connect it. Provider key readiness is shown without revealing secrets."}</p>
+        </section>
+        ) : null}
+
         {vaultPanelMode === "config" ? (
         <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
           <MemoryCell
@@ -572,6 +750,78 @@ export function VaultPanel(props: any) {
                   />
                   <small>Agents write markdown notifications here. The dashboard keeps read receipts and settings beside them.</small>
                 </label>
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <label className="flex flex-col gap-1 text-xs text-[var(--muted)]">
+                    Synthesis folder
+                    <input
+                      value={sharedVault.synthesisFolder ?? DEFAULT_SHARED_VAULT.synthesisFolder}
+                      onChange={(event) => updateSharedVault({ synthesisFolder: event.target.value })}
+                      className="rounded-md border border-[rgba(148,163,184,0.18)] bg-[rgba(10,14,21,0.7)] px-2 py-1 text-[var(--foreground)]"
+                    />
+                  </label>
+                  <label className="flex flex-col gap-1 text-xs text-[var(--muted)]">
+                    Brain services folder
+                    <input
+                      value={sharedVault.brainServicesFolder ?? DEFAULT_SHARED_VAULT.brainServicesFolder}
+                      onChange={(event) => updateSharedVault({ brainServicesFolder: event.target.value })}
+                      className="rounded-md border border-[rgba(148,163,184,0.18)] bg-[rgba(10,14,21,0.7)] px-2 py-1 text-[var(--foreground)]"
+                    />
+                  </label>
+                </div>
+                <div className="rounded-lg border border-[rgba(148,163,184,0.14)] bg-[rgba(10,14,21,0.45)] p-3">
+                  <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+                    <div>
+                      <strong className="block text-xs text-[var(--foreground)]">GBrain integration</strong>
+                      <small className="text-[var(--muted)]">Optional retrieval, graph, and MCP layer. Secrets stay in env, never in the vault.</small>
+                    </div>
+                    <label className="flex items-center gap-2 text-xs font-semibold text-[var(--foreground)]">
+                      <input
+                        type="checkbox"
+                        checked={sharedVault.gbrain.enabled}
+                        onChange={(event) => updateSharedVault({ gbrain: { ...sharedVault.gbrain, enabled: event.target.checked } })}
+                      />
+                      {sharedVault.gbrain.enabled ? "Enabled" : "Disabled"}
+                    </label>
+                  </div>
+                  <div className="grid gap-3 sm:grid-cols-3">
+                    <label className="flex flex-col gap-1 text-xs text-[var(--muted)]">
+                      Search mode
+                      <select
+                        value={sharedVault.gbrain.searchMode}
+                        onChange={(event) => updateSharedVault({ gbrain: { ...sharedVault.gbrain, searchMode: event.target.value } })}
+                        className="rounded-md border border-[rgba(148,163,184,0.18)] bg-[rgba(10,14,21,0.7)] px-2 py-1 text-[var(--foreground)]"
+                      >
+                        <option value="conservative">Conservative</option>
+                        <option value="balanced">Balanced</option>
+                        <option value="tokenmax">Tokenmax</option>
+                      </select>
+                    </label>
+                    <label className="flex flex-col gap-1 text-xs text-[var(--muted)]">
+                      Provider policy
+                      <select
+                        value={sharedVault.gbrain.providerPolicy}
+                        onChange={(event) => updateSharedVault({ gbrain: { ...sharedVault.gbrain, providerPolicy: event.target.value } })}
+                        className="rounded-md border border-[rgba(148,163,184,0.18)] bg-[rgba(10,14,21,0.7)] px-2 py-1 text-[var(--foreground)]"
+                      >
+                        <option value="balanced-cloud">Balanced cloud</option>
+                        <option value="local-first">Local first</option>
+                        <option value="max-quality">Max quality</option>
+                      </select>
+                    </label>
+                    <label className="flex flex-col gap-1 text-xs text-[var(--muted)]">
+                      MCP mode
+                      <select
+                        value={sharedVault.gbrain.mcpMode}
+                        onChange={(event) => updateSharedVault({ gbrain: { ...sharedVault.gbrain, mcpMode: event.target.value } })}
+                        className="rounded-md border border-[rgba(148,163,184,0.18)] bg-[rgba(10,14,21,0.7)] px-2 py-1 text-[var(--foreground)]"
+                      >
+                        <option value="stdio">stdio</option>
+                        <option value="http">HTTP</option>
+                        <option value="disabled">Disabled</option>
+                      </select>
+                    </label>
+                  </div>
+                </div>
                 <label className="flex items-center gap-2 text-xs text-[var(--muted)]">
                   <input
                     type="checkbox"

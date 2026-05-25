@@ -1,6 +1,6 @@
 import { access, mkdir, readFile, readdir, stat, writeFile } from "fs/promises";
 import { constants } from "fs";
-import { basename, dirname, join, relative } from "path";
+import { basename, dirname, isAbsolute, join, relative, sep } from "path";
 import { DEFAULT_SHARED_VAULT } from "@/lib/types/agent-runtime";
 import { resolveObsidianVaultPath } from "@/lib/services/obsidian/vault-path";
 
@@ -51,7 +51,7 @@ export type PastScheduledRun = {
 };
 
 function scheduledFolderName(value?: string) {
-  return sanitizeSegment(value || DEFAULT_SHARED_VAULT.scheduledFolder || "Scheduled", "Scheduled");
+  return safeVaultFolder(value || DEFAULT_SHARED_VAULT.scheduledFolder || "Operations/Automations", "Operations/Automations");
 }
 
 function sanitizeSegment(value: string | undefined, fallback: string) {
@@ -62,6 +62,15 @@ function sanitizeSegment(value: string | undefined, fallback: string) {
     .replace(/^-+|-+$/g, "")
     .slice(0, 96);
   return slug || fallback;
+}
+
+function safeVaultFolder(value: string | undefined, fallback: string) {
+  const folder = (value || fallback).trim();
+  if (!folder) return fallback;
+  if (isAbsolute(folder) || folder.split(/[\\/]+/).includes("..")) {
+    throw new Error("Scheduled folder must be a relative path inside the shared vault.");
+  }
+  return folder.split(/[\\/]+/).filter(Boolean).join(sep);
 }
 
 function frontmatterValue(value: unknown): string {
@@ -207,7 +216,7 @@ async function ensureScheduledIndex(root: string) {
     "",
     "Shared schedule definitions and run history for HivemindOS agents.",
     "",
-    "- `Scheduled/<device>/<schedule>/schedule.md` stores the schedule snapshot.",
+    "- `<device>/<schedule>/schedule.md` stores the schedule snapshot.",
     "- `run0001-<agent>-<timestamp>.md` files store execution history.",
     "- Use `usePastRuns` on a schedule to inject recent run notes back into future runs.",
     "",

@@ -301,7 +301,67 @@ Set-EnvLocal "HONEY_LEDGER_ISSUER_ID" $(if ($env:HONEY_LEDGER_ISSUER_ID) { $env:
 Set-EnvLocal "HONEY_COMPUTE_GATEWAY_URL" $(if ($env:HONEY_COMPUTE_GATEWAY_URL) { $env:HONEY_COMPUTE_GATEWAY_URL } else { "https://hivemindos-compute-gateway.hivemindos.workers.dev" })
 Set-EnvLocal "HIVE_TOKEN_ADDRESS" $(if ($env:HIVE_TOKEN_ADDRESS) { $env:HIVE_TOKEN_ADDRESS } else { "" })
 Set-EnvLocal "BANKR_LLM_KEY" $(if ($env:BANKR_LLM_KEY) { $env:BANKR_LLM_KEY } else { "" })
-Set-EnvLocal "NEXT_PUBLIC_OBSIDIAN_SCHEDULED_FOLDER" $(if ($env:NEXT_PUBLIC_OBSIDIAN_SCHEDULED_FOLDER) { $env:NEXT_PUBLIC_OBSIDIAN_SCHEDULED_FOLDER } else { "Scheduled" })
+Set-EnvLocal "NEXT_PUBLIC_OBSIDIAN_KANBAN_FOLDER" $(if ($env:NEXT_PUBLIC_OBSIDIAN_KANBAN_FOLDER) { $env:NEXT_PUBLIC_OBSIDIAN_KANBAN_FOLDER } else { "Operations/Work Board" })
+Set-EnvLocal "NEXT_PUBLIC_OBSIDIAN_NOTIFICATIONS_FOLDER" $(if ($env:NEXT_PUBLIC_OBSIDIAN_NOTIFICATIONS_FOLDER) { $env:NEXT_PUBLIC_OBSIDIAN_NOTIFICATIONS_FOLDER } else { "Operations/Agent Notifications" })
+Set-EnvLocal "NEXT_PUBLIC_OBSIDIAN_SCHEDULED_FOLDER" $(if ($env:NEXT_PUBLIC_OBSIDIAN_SCHEDULED_FOLDER) { $env:NEXT_PUBLIC_OBSIDIAN_SCHEDULED_FOLDER } else { "Operations/Automations" })
+Set-EnvLocal "NEXT_PUBLIC_OBSIDIAN_SYNTHESIS_FOLDER" $(if ($env:NEXT_PUBLIC_OBSIDIAN_SYNTHESIS_FOLDER) { $env:NEXT_PUBLIC_OBSIDIAN_SYNTHESIS_FOLDER } else { "Synthesis" })
+Set-EnvLocal "NEXT_PUBLIC_OBSIDIAN_BRAIN_SERVICES_FOLDER" $(if ($env:NEXT_PUBLIC_OBSIDIAN_BRAIN_SERVICES_FOLDER) { $env:NEXT_PUBLIC_OBSIDIAN_BRAIN_SERVICES_FOLDER } else { "Operations/Brain Services" })
+Set-EnvLocal "NEXT_PUBLIC_GBRAIN_CLI_PATH" $(if ($env:NEXT_PUBLIC_GBRAIN_CLI_PATH) { $env:NEXT_PUBLIC_GBRAIN_CLI_PATH } else { "gbrain" })
+Set-EnvLocal "NEXT_PUBLIC_GBRAIN_SKILLPACK_LOCATION" $(if ($env:NEXT_PUBLIC_GBRAIN_SKILLPACK_LOCATION) { $env:NEXT_PUBLIC_GBRAIN_SKILLPACK_LOCATION } else { "Skills/GBrain" })
+
+$vaultPath = if ($env:NEXT_PUBLIC_OBSIDIAN_VAULT_PATH) { $env:NEXT_PUBLIC_OBSIDIAN_VAULT_PATH } else { Join-Path ([Environment]::GetFolderPath("UserProfile")) "Documents\Obsidian\hivemindos-vault" }
+if ($vaultPath.StartsWith('~\') -or $vaultPath.StartsWith('~/')) {
+  $vaultPath = Join-Path ([Environment]::GetFolderPath("UserProfile")) $vaultPath.Substring(2)
+}
+$kanbanFolder = if ($env:NEXT_PUBLIC_OBSIDIAN_KANBAN_FOLDER) { $env:NEXT_PUBLIC_OBSIDIAN_KANBAN_FOLDER } else { "Operations/Work Board" }
+$notificationsFolder = if ($env:NEXT_PUBLIC_OBSIDIAN_NOTIFICATIONS_FOLDER) { $env:NEXT_PUBLIC_OBSIDIAN_NOTIFICATIONS_FOLDER } else { "Operations/Agent Notifications" }
+$scheduledFolder = if ($env:NEXT_PUBLIC_OBSIDIAN_SCHEDULED_FOLDER) { $env:NEXT_PUBLIC_OBSIDIAN_SCHEDULED_FOLDER } else { "Operations/Automations" }
+$synthesisFolder = if ($env:NEXT_PUBLIC_OBSIDIAN_SYNTHESIS_FOLDER) { $env:NEXT_PUBLIC_OBSIDIAN_SYNTHESIS_FOLDER } else { "Synthesis" }
+$brainServicesFolder = if ($env:NEXT_PUBLIC_OBSIDIAN_BRAIN_SERVICES_FOLDER) { $env:NEXT_PUBLIC_OBSIDIAN_BRAIN_SERVICES_FOLDER } else { "Operations/Brain Services" }
+foreach ($folder in @(
+  "Intake",
+  "Memory",
+  "Projects",
+  "Operations",
+  "Skills",
+  "Archive",
+  "$synthesisFolder/raw",
+  "$synthesisFolder/wiki/.drafts",
+  "$synthesisFolder/wiki/sources",
+  "$synthesisFolder/wiki/queries",
+  "$synthesisFolder/wiki/synthesis",
+  "$synthesisFolder/pack",
+  $scheduledFolder,
+  $kanbanFolder,
+  $notificationsFolder,
+  $brainServicesFolder
+)) {
+  New-Item -ItemType Directory -Force -Path (Join-Path $vaultPath $folder) | Out-Null
+}
+if (-not (Test-Path (Join-Path $vaultPath "Shared Context.md"))) {
+  Set-Content -Path (Join-Path $vaultPath "Shared Context.md") -Value "# Shared Context`n`nCurrent cross-agent context for the HivemindOS vault."
+}
+if (-not (Test-Path (Join-Path $vaultPath "$scheduledFolder/README.md"))) {
+  Set-Content -Path (Join-Path $vaultPath "$scheduledFolder/README.md") -Value "# Automations`n`nShared schedule definitions and run history for HivemindOS agents.`n`n- ``<device>/<schedule>/schedule.md`` stores each schedule snapshot.`n- ``run0001-<agent>-<timestamp>.md`` files store execution history."
+}
+if (-not (Test-Path (Join-Path $vaultPath "$synthesisFolder/README.md"))) {
+  Set-Content -Path (Join-Path $vaultPath "$synthesisFolder/README.md") -Value "# Synthesis`n`nSynto-powered reviewed knowledge layer for raw inputs, drafts, wiki articles, source trails, queries, synthesis notes, and agent packs."
+}
+if (-not (Test-Path (Join-Path $vaultPath "$brainServicesFolder/README.md"))) {
+  Set-Content -Path (Join-Path $vaultPath "$brainServicesFolder/README.md") -Value "# Brain Services`n`nStatus notes for optional HivemindOS brain services. GBrain can be connected from the dashboard without storing provider secrets in the vault."
+}
+Set-EnvLocal "NEXT_PUBLIC_HIVE_GBRAIN_SURFACE_ENABLED" "true"
+if (-not (Test-Path (Join-Path $vaultPath "$brainServicesFolder/GBrain.md"))) {
+  Set-Content -Path (Join-Path $vaultPath "$brainServicesFolder/GBrain.md") -Value "---`ntype: brain-service`nservice: gbrain`nenabled: false`ninstallMode: optional`nsearchMode: balanced`nproviderPolicy: balanced-cloud`nmcpMode: stdio`n---`n`n# GBrain`n`nOptional HivemindOS retrieval, graph, MCP, and dream-cycle service. Install or connect it from the dashboard when ready.`n`nNo provider secrets are stored in this note."
+}
+
+& node (Join-Path $Root "scripts\seed-vault-foundation.mjs") `
+  --vault $vaultPath `
+  --scheduled-folder $scheduledFolder `
+  --synthesis-folder $synthesisFolder `
+  --brain-services-folder $brainServicesFolder `
+  --kanban-folder $kanbanFolder `
+  --notifications-folder $notificationsFolder | Out-Null
 
 $setupCache = Join-Path $Root ".setup-cache"
 New-Item -ItemType Directory -Force -Path $setupCache | Out-Null

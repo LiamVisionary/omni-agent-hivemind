@@ -187,6 +187,7 @@ export function useDashboardDerivedState(props: any) {
           ? selectedLeafMessages.slice(-chatMessageWindow.limit)
           : selectedLeafMessages;
       }
+      if (selectedStorageKey !== selectedAgent.id) return [];
       const relatedIds = [selectedAgent.id, ...[...agentAliases.entries()]
         .filter(([, canonicalId]) => canonicalId === selectedAgent.id)
         .map(([aliasId]) => aliasId)];
@@ -212,7 +213,7 @@ export function useDashboardDerivedState(props: any) {
   const visibleMessages = useMemo(
     () => messages.filter((message) => (
       message.role !== "system"
-      && (message.role !== "assistant" || busy || chatDisplayContent(message).trim())
+      && (message.role !== "assistant" || busy || chatDisplayContent(message).trim() || message.agentPrompt)
     )),
     [messages],
   );
@@ -865,6 +866,7 @@ export function useDashboardDerivedState(props: any) {
       kanban: { label: "Work", title: "What the hive is up to" },
       scheduler: { label: "Work", title: "What the hive will do next" },
       swarm: { label: "Work", title: "What the hive is simulating" },
+      history: { label: "Work", title: "What the hive finished recently" },
       wallet: { label: "Wallets", title: "What agents spend and consume" },
       vault: { label: "Brain Graph", title: "What the hive remembers" },
       integrations: { label: "Integrations", title: "Where external API access lives" },

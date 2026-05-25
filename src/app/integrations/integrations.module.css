@@ -254,6 +254,75 @@
   padding: 12px;
 }
 
+.setupBox {
+  border-radius: 8px;
+  border: 1px solid rgba(45, 212, 191, 0.18);
+  background: rgba(13, 24, 31, 0.72);
+  padding: 12px;
+  display: grid;
+  gap: 12px;
+}
+
+.segmented {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 4px;
+  border-radius: 8px;
+  border: 1px solid rgba(148, 163, 184, 0.2);
+  background: rgba(5, 10, 18, 0.62);
+  padding: 4px;
+}
+
+.segmented button {
+  min-height: 38px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: #9fb1b8;
+  font-size: 13px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.segmented button:hover,
+.segmented .segmentActive {
+  background: rgba(45, 212, 191, 0.14);
+  color: #eef6f6;
+}
+
+.setupPane {
+  display: grid;
+  gap: 12px;
+}
+
+.setupResult {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+  border-top: 1px solid rgba(148, 163, 184, 0.12);
+  padding-top: 12px;
+}
+
+.setupMessage {
+  margin: 0;
+  border-radius: 8px;
+  border: 1px solid rgba(148, 163, 184, 0.18);
+  padding: 10px 12px;
+  color: #dce8eb;
+  line-height: 1.5;
+}
+
+.setupMessageGood {
+  border-color: rgba(74, 222, 128, 0.24);
+  background: rgba(22, 163, 74, 0.1);
+}
+
+.setupMessageWarn {
+  border-color: rgba(250, 204, 21, 0.24);
+  background: rgba(202, 138, 4, 0.1);
+}
+
 .codeBlock {
   margin: 12px 0 0;
   border-radius: 8px;

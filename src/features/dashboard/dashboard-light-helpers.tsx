@@ -316,6 +316,7 @@ export function viewIcon(view: DashboardView) {
   if (view === "kanban") return <KanbanSquare aria-hidden="true" />;
   if (view === "scheduler") return <Repeat2 aria-hidden="true" />;
   if (view === "swarm") return <Activity aria-hidden="true" />;
+  if (view === "history") return <KanbanSquare aria-hidden="true" />;
   if (view === "wallet") return <WalletCards aria-hidden="true" />;
   if (view === "vault") return <BrainCircuit aria-hidden="true" />;
   if (view === "integrations") return <PlugZap aria-hidden="true" />;

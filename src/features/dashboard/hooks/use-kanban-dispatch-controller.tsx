@@ -393,35 +393,38 @@ export function useKanbanDispatchController(props: any) {
 
   useEffect(() => {
     if (!hydrated || !kanbanBoard) return;
-    const readyTasks = kanbanBoard.tasks.filter((task) => task.status === "ready");
-    for (const task of readyTasks) {
-      if (kanbanReadyPickupInFlightRef.current.has(task.id)) continue;
-      const signature = kanbanReadyPickupSignature(task, displayAgents);
-      if (kanbanReadyPickupAttemptRef.current.get(task.id) === signature) continue;
-      kanbanReadyPickupAttemptRef.current.set(task.id, signature);
-      kanbanReadyPickupInFlightRef.current.add(task.id);
-      void orchestrateReadyKanbanTask(task).finally(() => {
-        kanbanReadyPickupInFlightRef.current.delete(task.id);
-      });
-    }
+    const timer = window.setTimeout(() => {
+      const readyTasks = kanbanBoard.tasks.filter((task) => task.status === "ready");
+      for (const task of readyTasks) {
+        if (kanbanReadyPickupInFlightRef.current.has(task.id)) continue;
+        const signature = kanbanReadyPickupSignature(task, displayAgents);
+        if (kanbanReadyPickupAttemptRef.current.get(task.id) === signature) continue;
+        kanbanReadyPickupAttemptRef.current.set(task.id, signature);
+        kanbanReadyPickupInFlightRef.current.add(task.id);
+        void orchestrateReadyKanbanTask(task).finally(() => {
+          kanbanReadyPickupInFlightRef.current.delete(task.id);
+        });
+      }
 
-    const retryableWorkingTasks = kanbanBoard.tasks.filter((task) => (
-      task.status === "working"
-      && task.assignee?.trim()
-      && !isKanbanAwaitingAgentUpdate(task)
-    ));
-    for (const task of retryableWorkingTasks) {
-      if (kanbanReadyPickupInFlightRef.current.has(task.id)) continue;
-      const assignee = kanbanTaskAssigneeAgent(task, displayAgents);
-      if (!assignee) continue;
-      const signature = `working:${kanbanReadyPickupSignature(task, displayAgents)}`;
-      if (kanbanReadyPickupAttemptRef.current.get(task.id) === signature) continue;
-      kanbanReadyPickupAttemptRef.current.set(task.id, signature);
-      kanbanReadyPickupInFlightRef.current.add(task.id);
-      void dispatchKanbanTaskToAgent(task, assignee, kanbanTaskAssignmentForAgent(task, assignee)).finally(() => {
-        kanbanReadyPickupInFlightRef.current.delete(task.id);
-      });
-    }
+      const retryableWorkingTasks = kanbanBoard.tasks.filter((task) => (
+        task.status === "working"
+        && task.assignee?.trim()
+        && !isKanbanAwaitingAgentUpdate(task)
+      ));
+      for (const task of retryableWorkingTasks) {
+        if (kanbanReadyPickupInFlightRef.current.has(task.id)) continue;
+        const assignee = kanbanTaskAssigneeAgent(task, displayAgents);
+        if (!assignee) continue;
+        const signature = `working:${kanbanReadyPickupSignature(task, displayAgents)}`;
+        if (kanbanReadyPickupAttemptRef.current.get(task.id) === signature) continue;
+        kanbanReadyPickupAttemptRef.current.set(task.id, signature);
+        kanbanReadyPickupInFlightRef.current.add(task.id);
+        void dispatchKanbanTaskToAgent(task, assignee, kanbanTaskAssignmentForAgent(task, assignee)).finally(() => {
+          kanbanReadyPickupInFlightRef.current.delete(task.id);
+        });
+      }
+    }, 250);
+    return () => window.clearTimeout(timer);
     // `orchestrateReadyKanbanTask` intentionally stays out of this dependency list:
     // the pickup signature gates retries, while the function itself changes each render.
     // eslint-disable-next-line react-hooks/exhaustive-deps

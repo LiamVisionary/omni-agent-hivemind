@@ -108,7 +108,7 @@ export function ListView({
               const v = versionPill(m.versionState);
               const tailnet = tailnetPill(m);
               return (
-                <tbody key={m.id} className="contents">
+                <React.Fragment key={m.id}>
                   <tr
                     onClick={() => onSelectMachine(m.id)}
                     className="cursor-pointer"
@@ -402,7 +402,7 @@ export function ListView({
                       </Tooltip>
                     </td>
                   </tr>
-                </tbody>
+                </React.Fragment>
               );
             })}
           </tbody>

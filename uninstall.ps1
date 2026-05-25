@@ -87,6 +87,35 @@ function Uninstall-WingetPackage($Name, $Id) {
   winget uninstall --id $Id --exact --accept-source-agreements
 }
 
+$UserHome = [Environment]::GetFolderPath("UserProfile")
+$vaultPath = if ($env:NEXT_PUBLIC_OBSIDIAN_VAULT_PATH) { $env:NEXT_PUBLIC_OBSIDIAN_VAULT_PATH } else { Join-Path $UserHome "Documents\Obsidian\hivemindos-vault" }
+if ($vaultPath.StartsWith('~\') -or $vaultPath.StartsWith('~/')) {
+  $vaultPath = Join-Path $UserHome $vaultPath.Substring(2)
+}
+$brainServicesFolder = if ($env:NEXT_PUBLIC_OBSIDIAN_BRAIN_SERVICES_FOLDER) { $env:NEXT_PUBLIC_OBSIDIAN_BRAIN_SERVICES_FOLDER } else { "Operations/Brain Services" }
+$synthesisFolder = if ($env:NEXT_PUBLIC_OBSIDIAN_SYNTHESIS_FOLDER) { $env:NEXT_PUBLIC_OBSIDIAN_SYNTHESIS_FOLDER } else { "Synthesis" }
+$scheduledFolder = if ($env:NEXT_PUBLIC_OBSIDIAN_SCHEDULED_FOLDER) { $env:NEXT_PUBLIC_OBSIDIAN_SCHEDULED_FOLDER } else { "Operations/Automations" }
+$kanbanFolder = if ($env:NEXT_PUBLIC_OBSIDIAN_KANBAN_FOLDER) { $env:NEXT_PUBLIC_OBSIDIAN_KANBAN_FOLDER } else { "Operations/Work Board" }
+$notificationsFolder = if ($env:NEXT_PUBLIC_OBSIDIAN_NOTIFICATIONS_FOLDER) { $env:NEXT_PUBLIC_OBSIDIAN_NOTIFICATIONS_FOLDER } else { "Operations/Agent Notifications" }
+$gbrainInstallPath = if ($env:NEXT_PUBLIC_GBRAIN_INSTALL_PATH) { $env:NEXT_PUBLIC_GBRAIN_INSTALL_PATH } else { Join-Path $UserHome "gbrain" }
+if ($gbrainInstallPath.StartsWith('~\') -or $gbrainInstallPath.StartsWith('~/')) {
+  $gbrainInstallPath = Join-Path $UserHome $gbrainInstallPath.Substring(2)
+}
+$gbrainDataDir = if ($env:NEXT_PUBLIC_GBRAIN_DATA_DIR) { $env:NEXT_PUBLIC_GBRAIN_DATA_DIR } else { Join-Path $UserHome ".gbrain" }
+if ($gbrainDataDir.StartsWith('~\') -or $gbrainDataDir.StartsWith('~/')) {
+  $gbrainDataDir = Join-Path $UserHome $gbrainDataDir.Substring(2)
+}
+
+function Remove-EmptyVaultFolder($RelativePath) {
+  $path = Join-Path $vaultPath $RelativePath
+  if ((Test-Path $path) -and -not (Get-ChildItem $path -Force -ErrorAction SilentlyContinue)) {
+    Remove-Item $path -Force
+    Ok "Removed empty folder $path"
+  } else {
+    Warn "Skipped non-empty or missing folder: $path"
+  }
+}
+
 Info "HivemindOS Windows uninstall"
 Warn "This removes only the pieces you approve. Personal vault notes and third-party apps are left alone unless you say yes."
 
@@ -115,7 +144,6 @@ if (Ask-YesNo "Remove HivemindOS collector environment file ~/.hivemindos/collec
 }
 
 if (Ask-YesNo "Remove HivemindOS shared-skill instructions from agent files?" $true) {
-  $vaultPath = if ($env:NEXT_PUBLIC_OBSIDIAN_VAULT_PATH) { $env:NEXT_PUBLIC_OBSIDIAN_VAULT_PATH } else { "$([Environment]::GetFolderPath("UserProfile"))\Documents\Obsidian\hivemindos-vault" }
   Remove-ManagedBlock (Join-Path $vaultPath "AGENTS.md")
   AgentInstructionFiles | ForEach-Object { Remove-ManagedBlock $_ }
 }
@@ -132,6 +160,52 @@ if (Ask-YesNo "Remove copied karpathy-guidelines skill from local agent skill fo
   }
 }
 
+if (Ask-YesNo "Remove optional GBrain config keys from .env.local?" $false) {
+  $envLocal = Join-Path $Root ".env.local"
+  if (Test-Path $envLocal) {
+    $next = Get-Content $envLocal | Where-Object { $_ -notmatch '^(NEXT_PUBLIC_GBRAIN_|NEXT_PUBLIC_HIVE_GBRAIN_SURFACE_ENABLED=)' }
+    Set-Content -Path $envLocal -Value $next
+    Ok "Removed optional GBrain config keys from .env.local"
+  }
+}
+
+if (Ask-YesNo "Remove optional GBrain service note from the Obsidian vault?" $false) {
+  $gbrainServiceNote = Join-Path $vaultPath (Join-Path $brainServicesFolder "GBrain.md")
+  Remove-Item $gbrainServiceNote -Force -ErrorAction SilentlyContinue
+  Ok "Removed $gbrainServiceNote"
+}
+
+if (Ask-YesNo "Remove namespaced GBrain skillpack from the shared Skills shelf?" $false) {
+  $gbrainSkillpack = Join-Path $vaultPath "Skills\GBrain"
+  Remove-Item $gbrainSkillpack -Recurse -Force -ErrorAction SilentlyContinue
+  Ok "Removed $gbrainSkillpack"
+}
+
+if (Ask-YesNo "Uninstall global GBrain CLI installed by Bun?" $false) {
+  if (Test-Command bun) {
+    & bun remove -g gbrain | Out-Null
+    Ok "Requested Bun global removal for gbrain"
+  } else {
+    Warn "Bun is unavailable; skipped global GBrain CLI removal"
+  }
+}
+
+if (Ask-YesNo "Remove local GBrain checkout at $gbrainInstallPath?" $false) {
+  Remove-Item $gbrainInstallPath -Recurse -Force -ErrorAction SilentlyContinue
+  Ok "Removed $gbrainInstallPath"
+}
+
+if (Ask-YesNo "Remove local GBrain data directory at $gbrainDataDir?" $false) {
+  Remove-Item $gbrainDataDir -Recurse -Force -ErrorAction SilentlyContinue
+  Ok "Removed $gbrainDataDir"
+}
+
+if (Ask-YesNo "Remove seeded self-writing vault workflow templates from Operations/Automations?" $false) {
+  $foundationWorkflows = Join-Path $vaultPath (Join-Path $scheduledFolder "Foundation Workflows")
+  Remove-Item $foundationWorkflows -Recurse -Force -ErrorAction SilentlyContinue
+  Ok "Removed $foundationWorkflows"
+}
+
 if (Ask-YesNo "Remove HivemindOS app cache/build/dependencies from this checkout?" $true) {
   foreach ($path in @(".next", ".setup-cache", "node_modules")) {
     if (Test-Path $path) { Remove-Item $path -Recurse -Force }
@@ -144,6 +218,35 @@ if (Ask-YesNo "Remove the built hivemind-linkd binary from this checkout?" $true
     if (Test-Path $path) { Remove-Item $path -Force }
   }
   Ok "Removed built hivemind-linkd binaries"
+}
+
+if (Ask-YesNo "Remove empty canonical HivemindOS vault folders created by setup?" $false) {
+  @(
+    $notificationsFolder,
+    $kanbanFolder,
+    "$scheduledFolder/Foundation Workflows",
+    $scheduledFolder,
+    $brainServicesFolder,
+    "$synthesisFolder/pack",
+    "$synthesisFolder/wiki/synthesis",
+    "$synthesisFolder/wiki/queries",
+    "$synthesisFolder/wiki/sources",
+    "$synthesisFolder/wiki/.drafts",
+    "$synthesisFolder/wiki",
+    "$synthesisFolder/raw",
+    $synthesisFolder,
+    "Operations",
+    "Archive/Processed Requests",
+    "Archive",
+    "Projects",
+    "Memory/Distillations",
+    "Memory/Imported Sources",
+    "Memory/Weekly Reviews",
+    "Memory/Daily Briefings",
+    "Memory",
+    "Intake/Requests",
+    "Intake"
+  ) | ForEach-Object { Remove-EmptyVaultFolder $_ }
 }
 
 if (Ask-YesNo "Remove local Hivemind Link Tailscale state from ~/.hivemindos/link?" $false) {

@@ -1392,25 +1392,102 @@ set_env_local "HONEY_LEDGER_ISSUER_ID" "${HONEY_LEDGER_ISSUER_ID:-hivemindos}"
 set_env_local "HONEY_COMPUTE_GATEWAY_URL" "${HONEY_COMPUTE_GATEWAY_URL:-https://hivemindos-compute-gateway.hivemindos.workers.dev}"
 set_env_local "HIVE_TOKEN_ADDRESS" "${HIVE_TOKEN_ADDRESS:-}"
 set_env_local "BANKR_LLM_KEY" "${BANKR_LLM_KEY:-}"
-set_env_local "NEXT_PUBLIC_OBSIDIAN_SCHEDULED_FOLDER" "${NEXT_PUBLIC_OBSIDIAN_SCHEDULED_FOLDER:-Scheduled}"
+set_env_local "NEXT_PUBLIC_OBSIDIAN_KANBAN_FOLDER" "${NEXT_PUBLIC_OBSIDIAN_KANBAN_FOLDER:-Operations/Work Board}"
+set_env_local "NEXT_PUBLIC_OBSIDIAN_NOTIFICATIONS_FOLDER" "${NEXT_PUBLIC_OBSIDIAN_NOTIFICATIONS_FOLDER:-Operations/Agent Notifications}"
+set_env_local "NEXT_PUBLIC_OBSIDIAN_SCHEDULED_FOLDER" "${NEXT_PUBLIC_OBSIDIAN_SCHEDULED_FOLDER:-Operations/Automations}"
+set_env_local "NEXT_PUBLIC_OBSIDIAN_SYNTHESIS_FOLDER" "${NEXT_PUBLIC_OBSIDIAN_SYNTHESIS_FOLDER:-Synthesis}"
+set_env_local "NEXT_PUBLIC_OBSIDIAN_BRAIN_SERVICES_FOLDER" "${NEXT_PUBLIC_OBSIDIAN_BRAIN_SERVICES_FOLDER:-Operations/Brain Services}"
+set_env_local "NEXT_PUBLIC_GBRAIN_CLI_PATH" "${NEXT_PUBLIC_GBRAIN_CLI_PATH:-gbrain}"
+set_env_local "NEXT_PUBLIC_GBRAIN_SKILLPACK_LOCATION" "${NEXT_PUBLIC_GBRAIN_SKILLPACK_LOCATION:-Skills/GBrain}"
 
 shared_vault_path="${NEXT_PUBLIC_OBSIDIAN_VAULT_PATH:-$HOME/Documents/Obsidian/hivemindos-vault}"
 if [[ "$shared_vault_path" == "~/"* ]]; then
   shared_vault_path="$HOME/${shared_vault_path#~/}"
 fi
-scheduled_folder="${NEXT_PUBLIC_OBSIDIAN_SCHEDULED_FOLDER:-Scheduled}"
-mkdir -p "$shared_vault_path/$scheduled_folder"
+scheduled_folder="${NEXT_PUBLIC_OBSIDIAN_SCHEDULED_FOLDER:-Operations/Automations}"
+kanban_folder="${NEXT_PUBLIC_OBSIDIAN_KANBAN_FOLDER:-Operations/Work Board}"
+notifications_folder="${NEXT_PUBLIC_OBSIDIAN_NOTIFICATIONS_FOLDER:-Operations/Agent Notifications}"
+synthesis_folder="${NEXT_PUBLIC_OBSIDIAN_SYNTHESIS_FOLDER:-Synthesis}"
+brain_services_folder="${NEXT_PUBLIC_OBSIDIAN_BRAIN_SERVICES_FOLDER:-Operations/Brain Services}"
+
+mkdir -p \
+  "$shared_vault_path/Intake" \
+  "$shared_vault_path/Memory" \
+  "$shared_vault_path/Projects" \
+  "$shared_vault_path/Operations" \
+  "$shared_vault_path/Skills" \
+  "$shared_vault_path/$synthesis_folder/raw" \
+  "$shared_vault_path/$synthesis_folder/wiki/.drafts" \
+  "$shared_vault_path/$synthesis_folder/wiki/sources" \
+  "$shared_vault_path/$synthesis_folder/wiki/queries" \
+  "$shared_vault_path/$synthesis_folder/wiki/synthesis" \
+  "$shared_vault_path/$synthesis_folder/pack" \
+  "$shared_vault_path/Archive" \
+  "$shared_vault_path/$scheduled_folder" \
+  "$shared_vault_path/$kanban_folder" \
+  "$shared_vault_path/$notifications_folder" \
+  "$shared_vault_path/$brain_services_folder"
+
+if [[ ! -f "$shared_vault_path/Shared Context.md" ]]; then
+  printf "# Shared Context\n\nCurrent cross-agent context for the HivemindOS vault.\n" > "$shared_vault_path/Shared Context.md"
+fi
+
 if [[ ! -f "$shared_vault_path/$scheduled_folder/README.md" ]]; then
-  cat > "$shared_vault_path/$scheduled_folder/README.md" <<'EOF'
-# Scheduled
+  cat > "$shared_vault_path/$scheduled_folder/README.md" <<EOF
+# Automations
 
 Shared schedule definitions and run history for HivemindOS agents.
 
-- `Scheduled/<device>/<schedule>/schedule.md` stores each schedule snapshot.
-- `run0001-<agent>-<timestamp>.md` files store execution history.
+- \`<device>/<schedule>/schedule.md\` stores each schedule snapshot.
+- \`run0001-<agent>-<timestamp>.md\` files store execution history.
 - Schedules can opt into injecting past run notes for continuity, anti-repetition, and comparisons.
 EOF
 fi
+
+if [[ ! -f "$shared_vault_path/$synthesis_folder/README.md" ]]; then
+  cat > "$shared_vault_path/$synthesis_folder/README.md" <<'EOF'
+# Synthesis
+
+Synto-powered reviewed knowledge layer for raw inputs, drafts, wiki articles, source trails, queries, synthesis notes, and agent packs.
+EOF
+fi
+
+if [[ ! -f "$shared_vault_path/$brain_services_folder/README.md" ]]; then
+  cat > "$shared_vault_path/$brain_services_folder/README.md" <<'EOF'
+# Brain Services
+
+Status notes for optional HivemindOS brain services. GBrain can be connected from the dashboard without storing provider secrets in the vault.
+EOF
+fi
+
+set_env_local "NEXT_PUBLIC_HIVE_GBRAIN_SURFACE_ENABLED" "true"
+if [[ ! -f "$shared_vault_path/$brain_services_folder/GBrain.md" ]]; then
+  cat > "$shared_vault_path/$brain_services_folder/GBrain.md" <<'EOF'
+---
+type: brain-service
+service: gbrain
+enabled: false
+installMode: optional
+searchMode: balanced
+providerPolicy: balanced-cloud
+mcpMode: stdio
+---
+
+# GBrain
+
+Optional HivemindOS retrieval, graph, MCP, and dream-cycle service. Install or connect it from the dashboard when ready.
+
+No provider secrets are stored in this note.
+EOF
+fi
+
+node "$ROOT/scripts/seed-vault-foundation.mjs" \
+  --vault "$shared_vault_path" \
+  --scheduled-folder "$scheduled_folder" \
+  --synthesis-folder "$synthesis_folder" \
+  --brain-services-folder "$brain_services_folder" \
+  --kanban-folder "$kanban_folder" \
+  --notifications-folder "$notifications_folder" >/dev/null
 
 install_hive_env_add
 

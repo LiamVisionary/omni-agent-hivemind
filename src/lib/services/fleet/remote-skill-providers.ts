@@ -6,6 +6,7 @@ export async function remoteSkillProviders(
   options: { includeSourceFiles?: boolean } = {},
 ): Promise<RemoteBrainSkillProviderInventory[]> {
   const fleetUrl = new URL("/api/fleet/discover", request.url);
+  fleetUrl.searchParams.set("includeSnapshots", "0");
   const fleetResponse = await fetch(fleetUrl, { cache: "no-store", signal: AbortSignal.timeout(12_000) }).catch(() => null);
   if (!fleetResponse?.ok) return [];
   const fleet = await fleetResponse.json().catch(() => null) as {
@@ -42,6 +43,7 @@ export async function remoteSkillProviders(
 
 export async function fleetSkillCollectors(request: NextRequest) {
   const fleetUrl = new URL("/api/fleet/discover", request.url);
+  fleetUrl.searchParams.set("includeSnapshots", "0");
   const fleetResponse = await fetch(fleetUrl, { cache: "no-store", signal: AbortSignal.timeout(12_000) }).catch(() => null);
   if (!fleetResponse?.ok) return [];
   const fleet = await fleetResponse.json().catch(() => null) as {

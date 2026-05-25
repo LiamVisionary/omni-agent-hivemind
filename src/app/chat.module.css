@@ -851,59 +851,200 @@ details[open] > summary .treeDisclosure::before {
 }
 
 .messageActions {
-  position: sticky;
-  top: 0;
-  z-index: 6;
-  display: flex;
-  justify-content: flex-end;
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 7px;
   min-height: 0;
-  pointer-events: none;
+  color: rgba(203, 213, 225, 0.82);
 }
 
-.generateKanbanButton {
-  position: absolute;
-  top: 0;
-  right: 0;
-  display: inline-grid;
-  width: 30px;
-  height: 30px;
-  place-items: center;
-  border: 1px solid rgba(148, 163, 184, 0.18);
+.message.streaming {
+  position: relative;
+}
+
+.message.streaming .messageMarkdown::after {
+  content: "";
+  display: inline-block;
+  width: 7px;
+  height: 1.05em;
+  margin-left: 4px;
+  border-radius: 999px;
+  background: #7dd3fc;
+  vertical-align: -0.16em;
+  animation: chatCaretBlink 0.9s steps(2, start) infinite;
+}
+
+.streamingStatus {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  margin-top: 8px;
+  color: rgba(186, 230, 253, 0.86);
+}
+
+.streamingStatus span {
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  background: #67e8f9;
+  box-shadow: 0 0 0 0 rgba(103, 232, 249, 0.36);
+  animation: chatLivePulse 1.15s ease-out infinite;
+}
+
+.streamingStatus small {
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.agentPromptCard {
+  display: grid;
+  gap: 10px;
+  width: min(560px, 100%);
+  border: 1px solid rgba(251, 191, 36, 0.26);
   border-radius: 8px;
-  background: rgba(11, 16, 24, 0.82);
-  color: #a9b8cc;
-  opacity: 0;
-  pointer-events: auto;
-  transform: translateY(-2px);
-  transition: opacity 160ms ease, transform 160ms ease, border-color 160ms ease, color 160ms ease;
+  background: rgba(31, 24, 10, 0.72);
+  padding: 14px;
+  color: #f8fafc;
 }
 
-.message:hover .generateKanbanButton,
-.generateKanbanButton:focus-visible,
-.generateKanbanButton.active {
-  opacity: 1;
-  transform: translateY(0);
+.agentPromptHeader {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: #fde68a;
+  font-size: 0.75rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
 }
 
-.generateKanbanButton:hover,
-.generateKanbanButton.active {
-  border-color: rgba(45, 212, 191, 0.44);
-  color: #c8fff8;
-}
-
-.generateKanbanButton svg {
+.agentPromptHeader svg {
   width: 15px;
   height: 15px;
 }
 
-.generateKanbanButton:disabled svg {
+.agentPromptCard p {
+  margin: 0;
+  color: #e5edf7;
+  line-height: 1.5;
+}
+
+.agentPromptCard small {
+  color: rgba(226, 232, 240, 0.72);
+}
+
+.agentPromptChoices {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.agentPromptChoices button,
+.chat .agentPromptChoices button {
+  border: 1px solid rgba(251, 191, 36, 0.34);
+  border-radius: 999px;
+  background: rgba(251, 191, 36, 0.12);
+  color: #fef3c7;
+  padding: 7px 11px;
+  font-size: 0.84rem;
+  font-weight: 750;
+}
+
+.agentPromptChoices button:hover {
+  border-color: rgba(251, 191, 36, 0.62);
+  background: rgba(251, 191, 36, 0.2);
+  color: #fff7d6;
+}
+
+@keyframes chatCaretBlink {
+  0%,
+  45% {
+    opacity: 1;
+  }
+  46%,
+  100% {
+    opacity: 0.16;
+  }
+}
+
+@keyframes chatLivePulse {
+  0% {
+    transform: scale(0.9);
+    box-shadow: 0 0 0 0 rgba(103, 232, 249, 0.36);
+  }
+  70% {
+    transform: scale(1);
+    box-shadow: 0 0 0 8px rgba(103, 232, 249, 0);
+  }
+  100% {
+    transform: scale(0.9);
+    box-shadow: 0 0 0 0 rgba(103, 232, 249, 0);
+  }
+}
+
+.messageActionButton,
+.chat button.messageActionButton {
+  display: inline-grid;
+  width: 22px;
+  height: 22px;
+  place-items: center;
+  border: 0 !important;
+  border-radius: 999px;
+  background: transparent !important;
+  color: currentColor;
+  padding: 0 !important;
+  opacity: 0.78;
+  font-size: 0;
+  font-weight: 400;
+  box-shadow: none;
+  transition: opacity 140ms ease, color 140ms ease, transform 140ms ease;
+}
+
+.message:hover .messageActionButton,
+.messageActionButton:focus-visible,
+.messageActionButton.active {
+  opacity: 1;
+}
+
+.messageActionButton:hover,
+.messageActionButton.active {
+  background: transparent !important;
+  color: #f1f5f9;
+  transform: translateY(-1px);
+}
+
+.messageActionButton.copied {
+  color: #bbf7d0;
+  opacity: 1;
+}
+
+.messageActionButton svg {
+  width: 15px;
+  height: 15px;
+  stroke-width: 1.6;
+}
+
+.messageActionButton.copied svg {
+  animation: copyCheckPop 420ms cubic-bezier(0.2, 0.9, 0.3, 1.35) both;
+}
+
+.messageActionButton:disabled {
+  cursor: default;
+  opacity: 0.7;
+}
+
+.messageActionButton:disabled svg {
   animation: chatKanbanSpin 900ms linear infinite;
 }
 
 .generateKanbanPopover {
   position: absolute;
-  top: 36px;
-  right: 0;
+  top: 30px;
+  left: 28px;
   z-index: 8;
   display: grid;
   width: min(260px, calc(100vw - 48px));
@@ -921,7 +1062,7 @@ details[open] > summary .treeDisclosure::before {
   content: "";
   position: absolute;
   top: -5px;
-  right: 10px;
+  left: 14px;
   width: 9px;
   height: 9px;
   border-top: 1px solid rgba(148, 163, 184, 0.2);
@@ -1124,6 +1265,21 @@ details[open] > summary .treeDisclosure::before {
   }
 }
 
+@keyframes copyCheckPop {
+  0% {
+    opacity: 0;
+    transform: scale(0.72) rotate(-10deg);
+  }
+  62% {
+    opacity: 1;
+    transform: scale(1.12) rotate(2deg);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1) rotate(0deg);
+  }
+}
+
 @keyframes chatKanbanSweep {
   0% {
     transform: translateX(-110%);
@@ -1219,6 +1375,171 @@ details[open] > summary .treeDisclosure::before {
 
 .compactComposer .voiceRecorder {
   margin: -34px 88px 10px 42px;
+}
+
+.responseLoader {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 34px;
+  color: rgba(203, 213, 225, 0.76);
+}
+
+.responseLoaderText {
+  display: inline-flex;
+  align-items: flex-end;
+  min-width: min(240px, 70vw);
+  color: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.1;
+}
+
+.responseLoaderLetter {
+  display: inline-block;
+  animation: responseLetterBounce 2.1s ease-in-out infinite;
+}
+
+.responseLoaderDots {
+  display: inline-flex;
+  align-items: flex-end;
+  gap: 1px;
+  padding-left: 1px;
+}
+
+.responseLoaderDots span {
+  display: inline-block;
+  width: 3px;
+  height: 3px;
+  border-radius: 999px;
+  background: currentColor;
+  opacity: 0.28;
+  animation: responseDotPulse 960ms ease-in-out infinite;
+}
+
+.responseLoaderDots span:nth-child(2) {
+  animation-delay: 213ms;
+}
+
+.responseLoaderDots span:nth-child(3) {
+  animation-delay: 426ms;
+}
+
+.slashCommandTooltip {
+  width: min(720px, calc(100vw - 40px));
+  max-width: min(720px, calc(100vw - 40px));
+  border-color: rgba(94, 234, 212, 0.22);
+  background: rgba(8, 13, 21, 0.98);
+  padding: 0;
+  overflow: hidden;
+}
+
+.slashCommandHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.16);
+  padding: 10px 12px;
+}
+
+.slashCommandHeader strong {
+  color: #e5eaf2;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.slashCommandHeader span {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.slashCommandList {
+  display: grid;
+  max-height: min(440px, 52vh);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+  padding: 6px;
+}
+
+.slashCommandList button {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 14px;
+  align-items: center;
+  width: 100%;
+  min-height: 0;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--foreground);
+  padding: 9px 10px;
+  text-align: left;
+}
+
+.slashCommandList button:hover,
+.slashCommandList button.active,
+.slashCommandList button[aria-selected="true"] {
+  border-color: rgba(94, 234, 212, 0.2);
+  background: rgba(94, 234, 212, 0.09);
+}
+
+.slashCommandList button span {
+  display: grid;
+  min-width: 0;
+  gap: 3px;
+}
+
+.slashCommandList button strong {
+  color: #f8fafc;
+  font-family: var(--f-mono);
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.25;
+  overflow-wrap: anywhere;
+}
+
+.slashCommandList button small {
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+.slashCommandList button em {
+  align-self: start;
+  border: 1px solid rgba(148, 163, 184, 0.16);
+  border-radius: 999px;
+  color: rgba(203, 213, 225, 0.84);
+  font-size: 10px;
+  font-style: normal;
+  line-height: 1;
+  padding: 5px 7px;
+  white-space: nowrap;
+}
+
+@keyframes responseLetterBounce {
+  0%,
+  26%,
+  100% {
+    transform: translateY(0);
+  }
+  11% {
+    transform: translateY(-3px);
+  }
+}
+
+@keyframes responseDotPulse {
+  0%,
+  100% {
+    opacity: 0.22;
+    transform: translateY(0);
+  }
+  50% {
+    opacity: 0.98;
+    transform: translateY(-1px);
+  }
 }
 
 .chatFileInput {
@@ -1718,16 +2039,31 @@ details[open] > summary .treeDisclosure::before {
 }
 
 :global(:root[data-theme="hive-light"]) .attachmentPill,
-:global(:root[data-theme="hive-light"]) .attachmentMenu {
+:global(:root[data-theme="hive-light"]) .attachmentMenu,
+:global(:root[data-theme="hive-light"]) .slashCommandTooltip {
   border-color: var(--comb-line);
   background: var(--surface-soft);
   color: var(--muted);
 }
 
 :global(:root[data-theme="hive-light"]) .attachmentPill strong,
+:global(:root[data-theme="hive-light"]) .slashCommandHeader strong,
+:global(:root[data-theme="hive-light"]) .slashCommandList button strong,
+:global(:root[data-theme="hive-light"]) .responseLoader,
 :global(:root[data-theme="hive-light"]) .composerIconButton:hover,
 :global(:root[data-theme="hive-light"]) .attachmentMenu button:hover {
   color: var(--foreground);
+}
+
+:global(:root[data-theme="hive-light"]) .slashCommandHeader {
+  border-bottom-color: var(--comb-line);
+}
+
+:global(:root[data-theme="hive-light"]) .slashCommandList button:hover,
+:global(:root[data-theme="hive-light"]) .slashCommandList button.active,
+:global(:root[data-theme="hive-light"]) .slashCommandList button[aria-selected="true"] {
+  border-color: rgba(185, 139, 47, 0.28);
+  background: rgba(212, 180, 111, 0.16);
 }
 
 :global(:root[data-theme="hive-light"]) .composerIconButton.sendButton {

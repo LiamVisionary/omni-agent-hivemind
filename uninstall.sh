@@ -129,6 +129,19 @@ vault_path="${NEXT_PUBLIC_OBSIDIAN_VAULT_PATH:-$HOME/Documents/Obsidian/hivemind
 if [[ "$vault_path" == "~/"* ]]; then
   vault_path="$HOME/${vault_path#~/}"
 fi
+brain_services_folder="${NEXT_PUBLIC_OBSIDIAN_BRAIN_SERVICES_FOLDER:-Operations/Brain Services}"
+synthesis_folder="${NEXT_PUBLIC_OBSIDIAN_SYNTHESIS_FOLDER:-Synthesis}"
+scheduled_folder="${NEXT_PUBLIC_OBSIDIAN_SCHEDULED_FOLDER:-Operations/Automations}"
+kanban_folder="${NEXT_PUBLIC_OBSIDIAN_KANBAN_FOLDER:-Operations/Work Board}"
+notifications_folder="${NEXT_PUBLIC_OBSIDIAN_NOTIFICATIONS_FOLDER:-Operations/Agent Notifications}"
+gbrain_install_path="${NEXT_PUBLIC_GBRAIN_INSTALL_PATH:-$HOME/gbrain}"
+gbrain_data_dir="${NEXT_PUBLIC_GBRAIN_DATA_DIR:-$HOME/.gbrain}"
+if [[ "$gbrain_install_path" == "~/"* ]]; then
+  gbrain_install_path="$HOME/${gbrain_install_path#~/}"
+fi
+if [[ "$gbrain_data_dir" == "~/"* ]]; then
+  gbrain_data_dir="$HOME/${gbrain_data_dir#~/}"
+fi
 
 info "HivemindOS uninstall"
 warn "This removes only the pieces you approve. Personal vault notes and third-party apps are left alone unless you say yes."
@@ -264,9 +277,87 @@ if ask "Remove Aeon skill folders mirrored from the shared Skills shelf by Hivem
   fi
 fi
 
+if ask "Remove optional GBrain config keys from .env.local?" "no"; then
+  env_file="$ROOT/.env.local"
+  if [[ -f "$env_file" ]]; then
+    tmp_file="$(mktemp)"
+    grep -Ev '^(NEXT_PUBLIC_GBRAIN_|NEXT_PUBLIC_HIVE_GBRAIN_SURFACE_ENABLED=)' "$env_file" > "$tmp_file" || true
+    mv "$tmp_file" "$env_file"
+    ok "Removed optional GBrain config keys from .env.local"
+  fi
+fi
+
+if ask "Remove optional GBrain service note from the Obsidian vault?" "no"; then
+  rm -f "$vault_path/$brain_services_folder/GBrain.md"
+  ok "Removed $vault_path/$brain_services_folder/GBrain.md"
+fi
+
+if ask "Remove namespaced GBrain skillpack from the shared Skills shelf?" "no"; then
+  rm -rf "$vault_path/Skills/GBrain"
+  ok "Removed $vault_path/Skills/GBrain"
+fi
+
+if ask "Uninstall global GBrain CLI installed by Bun?" "no"; then
+  if run_if_exists bun; then
+    bun remove -g gbrain >/dev/null 2>&1 || true
+    ok "Requested Bun global removal for gbrain"
+  else
+    warn "Bun is unavailable; skipped global GBrain CLI removal"
+  fi
+fi
+
+if ask "Remove local GBrain checkout at $gbrain_install_path?" "no"; then
+  rm -rf "$gbrain_install_path"
+  ok "Removed $gbrain_install_path"
+fi
+
+if ask "Remove local GBrain data directory at $gbrain_data_dir?" "no"; then
+  rm -rf "$gbrain_data_dir"
+  ok "Removed $gbrain_data_dir"
+fi
+
+if ask "Remove seeded self-writing vault workflow templates from Operations/Automations?" "no"; then
+  rm -rf "$vault_path/$scheduled_folder/Foundation Workflows"
+  ok "Removed $vault_path/$scheduled_folder/Foundation Workflows"
+fi
+
 if ask "Remove the shared Skills shelf created in the Obsidian vault?" "no"; then
   rm -rf "$vault_path/Skills"
   ok "Removed $vault_path/Skills"
+fi
+
+if ask "Remove empty canonical HivemindOS vault folders created by setup?" "no"; then
+  for dir in \
+    "$vault_path/$notifications_folder" \
+    "$vault_path/$kanban_folder" \
+    "$vault_path/$scheduled_folder/Foundation Workflows" \
+    "$vault_path/$scheduled_folder" \
+    "$vault_path/$brain_services_folder" \
+    "$vault_path/$synthesis_folder/pack" \
+    "$vault_path/$synthesis_folder/wiki/synthesis" \
+    "$vault_path/$synthesis_folder/wiki/queries" \
+    "$vault_path/$synthesis_folder/wiki/sources" \
+    "$vault_path/$synthesis_folder/wiki/.drafts" \
+    "$vault_path/$synthesis_folder/wiki" \
+    "$vault_path/$synthesis_folder/raw" \
+    "$vault_path/$synthesis_folder" \
+    "$vault_path/Operations" \
+    "$vault_path/Archive/Processed Requests" \
+    "$vault_path/Archive" \
+    "$vault_path/Projects" \
+    "$vault_path/Memory/Distillations" \
+    "$vault_path/Memory/Imported Sources" \
+    "$vault_path/Memory/Weekly Reviews" \
+    "$vault_path/Memory/Daily Briefings" \
+    "$vault_path/Memory" \
+    "$vault_path/Intake/Requests" \
+    "$vault_path/Intake"; do
+    if rmdir "$dir" 2>/dev/null; then
+      ok "Removed empty folder $dir"
+    else
+      warn "Skipped non-empty or missing folder: $dir"
+    fi
+  done
 fi
 
 if ask "Remove HivemindOS app cache/build/dependencies from this checkout?" "yes"; then

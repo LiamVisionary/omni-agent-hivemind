@@ -48,3 +48,14 @@ export type NangoIntegrationPayload = {
   connectionError?: string;
   setupCommands: string[];
 };
+
+export type NangoHostSetupResult = {
+  ok: boolean;
+  method: "collector-api" | "local-shell" | "tailscale-ssh" | "plain-ssh";
+  target: string;
+  baseUrl: string;
+  stdout: string;
+  stderr: string;
+  health: NangoHostHealth;
+  command: string;
+};

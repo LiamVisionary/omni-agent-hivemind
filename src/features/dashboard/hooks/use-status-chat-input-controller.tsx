@@ -4,11 +4,40 @@
 
 /* eslint-disable react-hooks/immutability, react-hooks/purity */
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 
 export function useStatusChatInputController(props: any) {
   const { AbortController, CHAT_RESPONSE_STALL_TIMEOUT_MS, Uint8Array, appendMessage, attachmentSummary, brainDragMovedRef, brainDragRef, brainGraph, brainPan, busy, chatAttachments, chatAutoScrollRef, chatDirectories, chatMessageStorageKey, chatSetupIssue, chooseDirectoryForMachine, collectorKey, createDefaultAgentWallet, discoveredMachines, honeyLedgerEnabled, hydrated, isManualAgentChatMessage, kanbanBoardSlug, kanbanReadyPickupInFlightRef, kanbanStorageBody, linkedDirectoryLabel, localKanbanMachineTarget, machineGroups, messageContentParts, messages, orchestrateReadyKanbanTask, quickAddMachineTarget, quickAddMachineTargets, readComposerFiles, recordRecentDirectory, recording, refreshHoneyLedger, refreshKanbanOnce, selectedAgent, selectedBrainNodeId, selectedChatDirectoryPath, selectedChatLeafKey, selectedChatRuntimeSessionId, selectedKanbanAgent, selectedKanbanTask, setAttachmentError, setAttachmentMenuOpen, setBrainGraph, setBrainGraphStatus, setBrainPan, setBusy, setBusyAgentId, setChatAttachments, setChatDirectories, setControlRoomStatus, setHasStreamingChunk, setKanbanBoard, setKanbanError, setKanbanSteerAttachmentError, setKanbanSteerAttachmentMenuOpen, setKanbanSteerAttachments, setKanbanSteerDirectories, setKanbanSteerDraft, setKanbanStorage, setMessagesByAgent, setQuickAddAttachmentError, setQuickAddAttachmentMenuOpen, setQuickAddAttachments, setQuickAddDirectories, setQuickAddDrafts, setRecentDirectoriesExpanded, setRecording, setSelectedBrainNodeId, setSelectedChatPreview, setSelectedChatRuntimeSessionId, setStatus, setStatusAgentId, setText, setVaultStatus, setVaultSyncPending, setVaultSyncStatus, setVoiceBands, setVoiceTarget, setVoiceTranscript, sharedVault, speechRecognitionConstructor, syncthingAutoPairRef, tailscaleDevices, text, updateSharedVault, updateTask, upsertTask, voiceAnimationRef, voiceAudioContextRef, voiceRecognitionRef, voiceStreamRef, voiceTarget, voiceTranscriptRef, walletsByAgent } = props;
   const [chatKanbanGeneration, setChatKanbanGeneration] = useState(null);
+
+  function runtimePromptFromPayload(parsed: any) {
+    const event = parsed?.event && typeof parsed.event === "object" ? parsed.event : null;
+    const source = parsed?.clarify ?? parsed?.prompt ?? event ?? parsed;
+    const type = String(event?.type ?? parsed?.type ?? source?.type ?? "");
+    if (!/clarify|approval|sudo|secret|prompt/i.test(type)) return null;
+    const question = String(source?.question ?? source?.message ?? source?.content ?? source?.text ?? "").trim();
+    if (!question) return null;
+    const rawChoices = source?.choices ?? source?.options;
+    const choices = Array.isArray(rawChoices)
+      ? rawChoices.map((choice) => typeof choice === "string" ? choice : String(choice?.label ?? choice?.value ?? "")).filter(Boolean)
+      : [];
+    const promptType = /approval/i.test(type)
+      ? "approval"
+      : /sudo/i.test(type)
+        ? "sudo"
+        : /secret/i.test(type)
+          ? "secret"
+          : /clarify/i.test(type)
+            ? "clarify"
+            : "prompt";
+    return {
+      id: String(source?.id ?? event?.id ?? `prompt-${Date.now()}`),
+      type: promptType,
+      question,
+      choices,
+      allowFreeText: source?.allowFreeText !== false,
+    };
+  }
 
   function extractGeneratedKanbanTask(rawText: string, fallbackTitle: string) {
     const fenced = rawText.match(/```(?:json)?\s*([\s\S]*?)```/i)?.[1];
@@ -726,8 +755,13 @@ export function useStatusChatInputController(props: any) {
       });
     };
     const abortController = new AbortController();
-    const stallTimer = window.setTimeout(() => abortController.abort("chat-response-stall"), CHAT_RESPONSE_STALL_TIMEOUT_MS);
+    let stallTimer = window.setTimeout(() => abortController.abort("chat-response-stall"), CHAT_RESPONSE_STALL_TIMEOUT_MS);
+    const refreshStallTimer = () => {
+      window.clearTimeout(stallTimer);
+      stallTimer = window.setTimeout(() => abortController.abort("chat-response-stall"), CHAT_RESPONSE_STALL_TIMEOUT_MS);
+    };
     let sawAssistantContent = false;
+    let sawAgentPrompt = false;
     let sawDone = false;
 
     try {
@@ -761,10 +795,12 @@ export function useStatusChatInputController(props: any) {
       const reader = response.body.getReader();
       const decoder = new TextDecoder();
       let buffer = "";
+      refreshStallTimer();
 
       while (true) {
         const { value, done } = await reader.read();
         if (done) break;
+        refreshStallTimer();
         buffer += decoder.decode(value, { stream: true });
         const events = buffer.split("\n\n");
         buffer = events.pop() ?? "";
@@ -782,6 +818,10 @@ export function useStatusChatInputController(props: any) {
             error?: string;
             honey?: unknown;
             session?: { id?: string; startedAt?: number; updatedAt?: number; messageCount?: number };
+            clarify?: unknown;
+            prompt?: unknown;
+            event?: { type?: string };
+            type?: string;
           };
           if (parsed.error) throw new Error(parsed.error);
           if (parsed.honey) {
@@ -790,6 +830,20 @@ export function useStatusChatInputController(props: any) {
           }
           if (parsed.session?.id) {
             setSelectedChatRuntimeSessionId(parsed.session.id);
+            continue;
+          }
+          const agentPrompt = runtimePromptFromPayload(parsed);
+          if (agentPrompt) {
+            sawAgentPrompt = true;
+            sawAssistantContent = true;
+            replacePendingAssistant({
+              role: "assistant",
+              content: agentPrompt.question,
+              surface: "chat",
+              agentPrompt,
+            });
+            updateTask(taskId, { status: "active", lastMessage: `Waiting for reply: ${agentPrompt.question}` });
+            sawDone = true;
             continue;
           }
           const chunk = parsed.choices?.[0]?.delta?.content;
@@ -831,7 +885,7 @@ export function useStatusChatInputController(props: any) {
         updateTask(taskId, { status: "failed", lastMessage: "Hermes finished without returning any text.", completedAt: Date.now() });
         return;
       }
-      updateTask(taskId, { status: "completed", completedAt: Date.now() });
+      updateTask(taskId, sawAgentPrompt ? { status: "active", completedAt: undefined } : { status: "completed", completedAt: Date.now() });
     } catch (error) {
       const aborted = abortController.signal.aborted;
       const message = aborted
@@ -883,7 +937,11 @@ export function useStatusChatInputController(props: any) {
       source.content.trim(),
     ].join("\n");
     const abortController = new AbortController();
-    const stallTimer = window.setTimeout(() => abortController.abort("chat-kanban-generation-stall"), CHAT_RESPONSE_STALL_TIMEOUT_MS);
+    let stallTimer = window.setTimeout(() => abortController.abort("chat-kanban-generation-stall"), CHAT_RESPONSE_STALL_TIMEOUT_MS);
+    const refreshStallTimer = () => {
+      window.clearTimeout(stallTimer);
+      stallTimer = window.setTimeout(() => abortController.abort("chat-kanban-generation-stall"), CHAT_RESPONSE_STALL_TIMEOUT_MS);
+    };
     let generatedText = "";
     setChatKanbanGeneration({ key: source.key, status: targetStatus, phase: "generating", message: "Asking agent to shape the task..." });
     try {
@@ -910,9 +968,11 @@ export function useStatusChatInputController(props: any) {
       const decoder = new TextDecoder();
       let buffer = "";
       let sawDone = false;
+      refreshStallTimer();
       while (true) {
         const { value, done } = await reader.read();
         if (done) break;
+        refreshStallTimer();
         buffer += decoder.decode(value, { stream: true });
         const events = buffer.split("\n\n");
         buffer = events.pop() ?? "";

@@ -1,6 +1,7 @@
 import type { AgentProfile, AgentRuntime, RuntimeCapabilities, SharedVaultConfig } from "@/lib/types/agent-runtime";
 import type { AgentNotification, AgentNotificationSummary } from "@/lib/types/agent-notifications";
 import type { KanbanBoard, KanbanLinkedDirectory, KanbanMachineTarget, KanbanTask, KanbanTaskAttachment } from "@/lib/types/kanban";
+import type { GBrainStatus } from "@/lib/services/brain/gbrain";
 
 export type GatewayStatus = {
   ok?: boolean;
@@ -191,6 +192,8 @@ export type StoredSharedVaultConfig = Partial<SharedVaultConfig> & {
   tailnetSyncEnabled?: boolean;
 };
 
+export type DashboardGBrainStatus = GBrainStatus;
+
 export type ChatMessage = {
   role: "user" | "assistant" | "system";
   content: string;
@@ -200,6 +203,13 @@ export type ChatMessage = {
   sourceSessionId?: string;
   sourceIndex?: number;
   attachments?: ChatAttachment[];
+  agentPrompt?: {
+    id: string;
+    type: "clarify" | "approval" | "sudo" | "secret" | "prompt";
+    question: string;
+    choices?: string[];
+    allowFreeText?: boolean;
+  };
 };
 
 export type KanbanPickupPreview = {
@@ -851,8 +861,8 @@ export type MiroSharkSurfaceView = "x" | "reddit" | "polymarket" | "timeline";
 
 export type MiroSharkWorkspaceMode = "new" | "run";
 
-export type DashboardView = "agents" | "kanban" | "scheduler" | "swarm" | "wallet" | "vault" | "integrations" | "maintenance" | "files" | "notifications" | "chat" | "more" | "env";
+export type DashboardView = "agents" | "kanban" | "scheduler" | "swarm" | "history" | "wallet" | "vault" | "integrations" | "maintenance" | "files" | "notifications" | "chat" | "more" | "env";
 
-export type WorkView = Extract<DashboardView, "kanban" | "scheduler" | "swarm">;
+export type WorkView = Extract<DashboardView, "kanban" | "scheduler" | "swarm" | "history">;
 
 export type DashboardTheme = "dark" | "hive-light";

@@ -22,19 +22,20 @@ function displayPath(path: string) {
 }
 
 export async function POST(request: Request) {
-  let body: { currentPath?: string };
+  let body: { currentPath?: string; prompt?: string };
   try {
-    body = await request.json() as { currentPath?: string };
+    body = await request.json() as { currentPath?: string; prompt?: string };
   } catch {
     body = {};
   }
 
   const currentPath = expandHomePath(body.currentPath ?? "");
   const defaultPath = currentPath && existsSync(currentPath) ? currentPath : homedir();
+  const prompt = (body.prompt?.trim() || "Choose this agent's runtime folder:").replace(/"/g, '\\"');
   const script = [
     `set defaultPath to POSIX file "${defaultPath.replace(/"/g, '\\"')}"`,
     "try",
-    "  set chosen to choose folder with prompt \"Choose this agent's runtime folder:\" default location defaultPath",
+    `  set chosen to choose folder with prompt "${prompt}" default location defaultPath`,
     "  POSIX path of chosen",
     "on error",
     "  \"\"",

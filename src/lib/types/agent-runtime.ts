@@ -93,6 +93,8 @@ export interface SharedVaultConfig {
   kanbanFolder: string;
   notificationsFolder: string;
   scheduledFolder: string;
+  synthesisFolder: string;
+  brainServicesFolder: string;
   noteTaskImportFolders: string;
   noteTaskImportEnabled: boolean;
   skillAutoSyncAll: boolean;
@@ -102,8 +104,28 @@ export interface SharedVaultConfig {
     trackRemovals: boolean;
     allowDelete: boolean;
   }>;
+  gbrain: GBrainConfig;
   controlRoomPath: string;
   instructions: string;
+}
+
+export type GBrainInstallMode = "optional" | "local" | "remote";
+export type GBrainMcpMode = "stdio" | "http" | "disabled";
+export type GBrainProviderPolicy = "balanced-cloud" | "local-first" | "max-quality";
+export type GBrainSearchMode = "conservative" | "balanced" | "tokenmax";
+
+export interface GBrainConfig {
+  enabled: boolean;
+  installMode: GBrainInstallMode;
+  cliPath: string;
+  installPath: string;
+  brainPath: string;
+  dataDir: string;
+  mcpMode: GBrainMcpMode;
+  httpUrl: string;
+  searchMode: GBrainSearchMode;
+  providerPolicy: GBrainProviderPolicy;
+  skillpackLocation: string;
 }
 
 const DEFAULT_SYNCTHING_AUTO_PAIR_ENABLED = process.env.NEXT_PUBLIC_TAILNET_SYNC_ENABLED === "true";
@@ -117,17 +139,32 @@ export const DEFAULT_SHARED_VAULT: SharedVaultConfig = {
   tailnetSyncDirection: "bidirectional",
   syncthingAutoPairEnabled: DEFAULT_SYNCTHING_AUTO_PAIR_ENABLED,
   tailnetSyncIntervalSeconds: 20,
-  inboxFolder: "Agent Inbox",
-  sharedNotePath: "HivemindOS/Shared Context.md",
-  kanbanFolder: process.env.NEXT_PUBLIC_OBSIDIAN_KANBAN_FOLDER ?? "Projects/HivemindOS/Kanban",
-  notificationsFolder: process.env.NEXT_PUBLIC_OBSIDIAN_NOTIFICATIONS_FOLDER ?? "agent-notifications",
-  scheduledFolder: process.env.NEXT_PUBLIC_OBSIDIAN_SCHEDULED_FOLDER ?? "Scheduled",
-  noteTaskImportFolders: "Projects\nInbox",
+  inboxFolder: process.env.NEXT_PUBLIC_OBSIDIAN_INBOX_FOLDER ?? "Intake",
+  sharedNotePath: process.env.NEXT_PUBLIC_OBSIDIAN_SHARED_NOTE_PATH ?? "Shared Context.md",
+  kanbanFolder: process.env.NEXT_PUBLIC_OBSIDIAN_KANBAN_FOLDER ?? "Operations/Work Board",
+  notificationsFolder: process.env.NEXT_PUBLIC_OBSIDIAN_NOTIFICATIONS_FOLDER ?? "Operations/Agent Notifications",
+  scheduledFolder: process.env.NEXT_PUBLIC_OBSIDIAN_SCHEDULED_FOLDER ?? "Operations/Automations",
+  synthesisFolder: process.env.NEXT_PUBLIC_OBSIDIAN_SYNTHESIS_FOLDER ?? "Synthesis",
+  brainServicesFolder: process.env.NEXT_PUBLIC_OBSIDIAN_BRAIN_SERVICES_FOLDER ?? "Operations/Brain Services",
+  noteTaskImportFolders: "Projects\nIntake\nMemory",
   noteTaskImportEnabled: false,
   skillAutoSyncAll: false,
   skillAutoSync: {},
+  gbrain: {
+    enabled: false,
+    installMode: "optional",
+    cliPath: process.env.NEXT_PUBLIC_GBRAIN_CLI_PATH ?? "gbrain",
+    installPath: process.env.NEXT_PUBLIC_GBRAIN_INSTALL_PATH ?? "~/gbrain",
+    brainPath: process.env.NEXT_PUBLIC_GBRAIN_BRAIN_PATH ?? "",
+    dataDir: process.env.NEXT_PUBLIC_GBRAIN_DATA_DIR ?? "~/.gbrain",
+    mcpMode: "stdio",
+    httpUrl: process.env.NEXT_PUBLIC_GBRAIN_HTTP_URL ?? "http://127.0.0.1:3131",
+    searchMode: "balanced",
+    providerPolicy: "balanced-cloud",
+    skillpackLocation: process.env.NEXT_PUBLIC_GBRAIN_SKILLPACK_LOCATION ?? "Skills/GBrain",
+  },
   controlRoomPath: process.env.NEXT_PUBLIC_HERMES_CONTROL_ROOM_PATH ?? "~/agent-control-room",
-  instructions: "Use this vault as the shared memory and handoff space for all local agents. Read AGENTS.md before durable edits. Use HivemindOS as the operating manual, registry, runbook library, and task-bus template.",
+  instructions: "Use this vault as the shared memory and handoff space for all local agents. Read AGENTS.md before durable edits. Treat GBrain as the optional retrieval/graph brain service, Synthesis as the reviewed synthesis layer, and Operations as machine-readable HivemindOS state.",
 };
 
 export const KNOWN_AGENT_RUNTIMES: KnownAgentRuntime[] = ["openclaw", "hermes", "aeon", "openai-compatible"];

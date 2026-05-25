@@ -14,6 +14,7 @@ export const runtime = "nodejs";
 const execFileAsync = promisify(execFile);
 const MAX_FILES_PER_DIR = 20;
 const MAX_FILE_CHARS = 4_000;
+const SNAPSHOT_CACHE_MS = 2_000;
 
 type FleetTaskStatus = "active" | "completed" | "failed" | "unknown";
 const HERMES_EMPTY_TRANSCRIPT_MESSAGE = "Hermes session found. Send a message to resume it.";
@@ -49,6 +50,21 @@ type AgentSnapshot = {
   checkedAt: number;
   error?: string;
 };
+
+type SnapshotPayload = {
+  ok: true;
+  checkedAt: number;
+  snapshots: AgentSnapshot[];
+};
+
+const snapshotCache = new Map<string, { checkedAt: number; payload: SnapshotPayload }>();
+const snapshotInFlight = new Map<string, Promise<SnapshotPayload>>();
+
+function pruneSnapshotCache(now = Date.now()) {
+  for (const [key, entry] of snapshotCache) {
+    if (now - entry.checkedAt >= SNAPSHOT_CACHE_MS) snapshotCache.delete(key);
+  }
+}
 
 async function pathReadable(path?: string) {
   if (!path) return false;
@@ -470,17 +486,23 @@ async function processMatches(agent: AgentProfile, includeGenericHermes = false)
     .slice(0, 5);
 }
 
-export async function POST(request: NextRequest) {
-  let agents: AgentWithLocal[] = [];
-  let sharedVault: SharedVaultConfig | undefined;
-  try {
-    const body = (await request.json()) as { agents?: AgentProfile[]; sharedVault?: SharedVaultConfig };
-    agents = Array.isArray(body.agents) ? body.agents as AgentWithLocal[] : [];
-    sharedVault = body.sharedVault;
-  } catch {
-    return Response.json({ ok: false, error: "Invalid JSON body" }, { status: 400 });
-  }
+function snapshotCacheKey(agents: AgentWithLocal[], sharedVault?: SharedVaultConfig) {
+  return JSON.stringify({
+    controlRoomPath: sharedVault?.controlRoomPath ?? "",
+    agents: agents.map((agent) => ({
+      id: agent.id,
+      runtime: agent.runtime,
+      gatewayUrl: agent.gatewayUrl,
+      statusPath: agent.statusPath,
+      localDataDir: agent.localDataDir,
+      telemetryUrl: agent.telemetryUrl,
+      agentId: agent.agentId,
+      name: agent.name,
+    })),
+  });
+}
 
+async function readSnapshots(agents: AgentWithLocal[], sharedVault?: SharedVaultConfig): Promise<SnapshotPayload> {
   const controlRoomPath = resolve(expandHome(sharedVault?.controlRoomPath || ""));
   const dataDirs: Record<string, string> = controlRoomPath
     ? await parseControlRoomDataDirs(controlRoomPath).catch(() => ({} as Record<string, string>))
@@ -547,5 +569,40 @@ export async function POST(request: NextRequest) {
     };
   }));
 
-  return Response.json({ ok: true, checkedAt: Date.now(), snapshots });
+  return { ok: true, checkedAt: Date.now(), snapshots };
+}
+
+export async function POST(request: NextRequest) {
+  let agents: AgentWithLocal[] = [];
+  let sharedVault: SharedVaultConfig | undefined;
+  try {
+    const body = (await request.json()) as { agents?: AgentProfile[]; sharedVault?: SharedVaultConfig };
+    agents = Array.isArray(body.agents) ? body.agents as AgentWithLocal[] : [];
+    sharedVault = body.sharedVault;
+  } catch {
+    return Response.json({ ok: false, error: "Invalid JSON body" }, { status: 400 });
+  }
+
+  const cacheKey = snapshotCacheKey(agents, sharedVault);
+  const now = Date.now();
+  pruneSnapshotCache(now);
+  const cached = snapshotCache.get(cacheKey);
+  if (cached && now - cached.checkedAt < SNAPSHOT_CACHE_MS) {
+    return Response.json(cached.payload);
+  }
+
+  let inFlight = snapshotInFlight.get(cacheKey);
+  if (!inFlight) {
+    inFlight = readSnapshots(agents, sharedVault)
+      .then((payload) => {
+        snapshotCache.set(cacheKey, { checkedAt: Date.now(), payload });
+        return payload;
+      })
+      .finally(() => {
+        snapshotInFlight.delete(cacheKey);
+      });
+    snapshotInFlight.set(cacheKey, inFlight);
+  }
+
+  return Response.json(await inFlight);
 }

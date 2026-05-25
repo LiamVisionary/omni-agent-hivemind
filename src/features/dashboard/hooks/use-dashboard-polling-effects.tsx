@@ -312,11 +312,24 @@ export function useDashboardPollingEffects(props: UseDashboardPollingEffectsProp
   useEffect(() => {
     if (!hydrated || activeView !== "kanban") return;
     let cancelled = false;
+    async function refreshKanbanBoards() {
+      const params = new URLSearchParams({ board: kanbanBoardSlug, boards_only: "true" });
+      if (sharedVault.enabled) {
+        if (sharedVault.vaultPath.trim()) params.set("vaultPath", sharedVault.vaultPath.trim());
+        if (sharedVault.kanbanFolder?.trim()) params.set("kanbanFolder", sharedVault.kanbanFolder.trim());
+      }
+      const response = await fetch(`/api/kanban?${params.toString()}`, { cache: "no-store" }).catch(() => null);
+      const data = await response?.json().catch(() => null) as KanbanResponse | null;
+      if (cancelled || !data?.ok) return;
+      setKanbanBoards(data.boards ?? []);
+      setKanbanStorage(data.storage ?? null);
+    }
     async function refreshKanban() {
       setKanbanLoading(true);
       const params = new URLSearchParams({
         board: kanbanBoardSlug,
         include_archived: String(kanbanIncludeArchived),
+        include_boards: "false",
       });
       if (sharedVault.enabled) {
         if (sharedVault.vaultPath.trim()) params.set("vaultPath", sharedVault.vaultPath.trim());
@@ -335,7 +348,7 @@ export function useDashboardPollingEffects(props: UseDashboardPollingEffectsProp
       }
       setKanbanError("");
       setKanbanBoard(data.board);
-      setKanbanBoards(data.boards ?? []);
+      if (data.boards) setKanbanBoards(data.boards);
       setKanbanTenants(data.tenants ?? []);
       setKanbanAssignees(data.assignees ?? []);
       setKanbanStorage(data.storage ?? null);
@@ -345,10 +358,13 @@ export function useDashboardPollingEffects(props: UseDashboardPollingEffectsProp
       setKanbanLoading(false);
     }
     refreshKanban();
+    refreshKanbanBoards();
     const timer = window.setInterval(refreshKanban, 12_000);
+    const boardsTimer = window.setInterval(refreshKanbanBoards, 60_000);
     return () => {
       cancelled = true;
       window.clearInterval(timer);
+      window.clearInterval(boardsTimer);
     };
   }, [
     kanbanBoardSlug,

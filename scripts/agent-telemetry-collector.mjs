@@ -5,7 +5,7 @@ import { createHash, randomBytes } from "node:crypto";
 import { access, mkdir, readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { constants, watch } from "node:fs";
 import { homedir, hostname, userInfo } from "node:os";
-import { basename, dirname, join, relative, resolve, sep } from "node:path";
+import { basename, delimiter, dirname, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 
@@ -66,6 +66,35 @@ function safeAgentEnv(value) {
   if (!value || typeof value !== "object" || Array.isArray(value)) return {};
   return Object.fromEntries(Object.entries(value)
     .filter(([key, entry]) => /^[A-Za-z_][A-Za-z0-9_]*$/.test(key) && typeof entry === "string"));
+}
+
+function runtimeProcessEnv(extra = {}) {
+  const pathParts = [dirname(process.execPath), process.env.PATH].filter(Boolean);
+  return {
+    ...process.env,
+    PATH: pathParts.join(delimiter),
+    ...extra,
+  };
+}
+
+function hermesContextEnv(agentEnv, context) {
+  const dashboardContext = typeof context === "string" ? context.trim() : "";
+  if (!dashboardContext) return agentEnv;
+  const existingPrompt = typeof agentEnv.HERMES_EPHEMERAL_SYSTEM_PROMPT === "string"
+    ? agentEnv.HERMES_EPHEMERAL_SYSTEM_PROMPT.trim()
+    : "";
+  return {
+    ...agentEnv,
+    HERMES_EPHEMERAL_SYSTEM_PROMPT: [existingPrompt, dashboardContext].filter(Boolean).join("\n\n"),
+  };
+}
+
+function stripHermesCliMetadata(value) {
+  return String(value || "")
+    .split(/\r?\n/)
+    .filter((line) => !/^\s*session_id:\s*\S+\s*$/.test(line))
+    .join("\n")
+    .trim();
 }
 
 function slugify(value) {
@@ -1052,7 +1081,7 @@ async function runHermesIntegrationAction(action, input = {}) {
     const child = spawn(await resolveHermesBin(), ["login", "--provider", "xai-oauth"], {
       detached: true,
       stdio: "ignore",
-      env: { ...process.env },
+      env: runtimeProcessEnv(),
     });
     child.unref();
     return { ok: true, message: "Started Hermes xAI OAuth login on this machine." };
@@ -1070,7 +1099,7 @@ async function runHermesIntegrationAction(action, input = {}) {
     const child = spawn(await resolveHermesBin(), ["-z", prompt], {
       detached: true,
       stdio: ["ignore", "pipe", "pipe"],
-      env: { ...process.env },
+      env: runtimeProcessEnv(),
     });
     const write = (chunk) => void writeFile(logPath, chunk.toString(), { flag: "a" }).catch(() => undefined);
     child.stdout.on("data", write);
@@ -1087,6 +1116,159 @@ async function runHermesIntegrationAction(action, input = {}) {
     return { ok: true, output };
   }
   return { ok: false, error: `Unsupported Hermes action: ${action}` };
+}
+
+function normalizeNangoBaseUrl(input) {
+  const value = String(input || "http://localhost:3003").trim() || "http://localhost:3003";
+  const parsed = new URL(value);
+  parsed.pathname = "";
+  parsed.search = "";
+  parsed.hash = "";
+  return parsed.toString().replace(/\/+$/, "");
+}
+
+function collectorRunProcess(command, args, stdin, timeoutMs) {
+  return new Promise((resolveRun, rejectRun) => {
+    const child = spawn(command, args, { stdio: ["pipe", "pipe", "pipe"] });
+    let stdout = "";
+    let stderr = "";
+    let settled = false;
+    const timeout = setTimeout(() => {
+      settled = true;
+      child.kill("SIGTERM");
+      rejectRun(new Error(`${command} timed out`));
+    }, timeoutMs);
+    child.stdout.on("data", (chunk) => {
+      stdout += chunk.toString();
+    });
+    child.stderr.on("data", (chunk) => {
+      stderr += chunk.toString();
+    });
+    child.on("error", (error) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timeout);
+      rejectRun(error);
+    });
+    child.on("close", (code) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timeout);
+      if (code === 0) {
+        resolveRun({ stdout, stderr });
+        return;
+      }
+      const detail = [stderr.trim(), stdout.trim()].filter(Boolean).join("\n\n");
+      rejectRun(new Error(`${command} exited with code ${code}${detail ? `:\n${detail}` : ""}`));
+    });
+    child.stdin.end(stdin || "");
+  });
+}
+
+function nangoSetupScript(baseUrl) {
+  const normalized = normalizeNangoBaseUrl(baseUrl);
+  const portValue = new URL(normalized).port || "3003";
+  return [
+    "set -euo pipefail",
+    "log() { printf '\\n[%s] %s\\n' \"$(date -u +%H:%M:%S)\" \"$*\"; }",
+    "run_as_root() { if [ \"$(id -u)\" = \"0\" ]; then \"$@\"; elif command -v sudo >/dev/null 2>&1; then sudo \"$@\"; else echo 'This setup needs root or passwordless sudo to install packages.' >&2; exit 10; fi; }",
+    "log 'Checking system packages'",
+    "if ! command -v git >/dev/null 2>&1; then",
+    "  command -v apt-get >/dev/null 2>&1 || { echo 'git is missing and apt-get is unavailable.' >&2; exit 11; }",
+    "  run_as_root apt-get update",
+    "  run_as_root apt-get install -y git",
+    "fi",
+    "if ! command -v docker >/dev/null 2>&1; then",
+    "  command -v apt-get >/dev/null 2>&1 || { echo 'docker is missing and apt-get is unavailable.' >&2; exit 12; }",
+    "  run_as_root apt-get update",
+    "  run_as_root apt-get install -y docker.io docker-compose-plugin",
+    "  run_as_root systemctl enable --now docker >/dev/null 2>&1 || true",
+    "fi",
+    "DOCKER='docker'",
+    "if ! docker ps >/dev/null 2>&1; then",
+    "  if command -v sudo >/dev/null 2>&1 && sudo docker ps >/dev/null 2>&1; then DOCKER='sudo docker'; else echo 'Docker is installed, but this user cannot run docker.' >&2; exit 13; fi",
+    "fi",
+    "NANGO_DIR=\"${NANGO_DIR:-$HOME/nango}\"",
+    "log \"Preparing Nango checkout at $NANGO_DIR\"",
+    "if [ ! -d \"$NANGO_DIR/.git\" ]; then",
+    "  rm -rf \"$NANGO_DIR\"",
+    "  git clone https://github.com/NangoHQ/nango.git \"$NANGO_DIR\"",
+    "else",
+    "  git -C \"$NANGO_DIR\" pull --ff-only",
+    "fi",
+    "cd \"$NANGO_DIR\"",
+    "if [ ! -f .env ]; then cp .env.example .env; fi",
+    "set_env() {",
+    "  key=\"$1\"",
+    "  value=\"$2\"",
+    "  if grep -q \"^${key}=\" .env; then",
+    "    tmp=\"$(mktemp)\"",
+    "    awk -v key=\"$key\" -v value=\"$value\" 'BEGIN{line=key \"=\" value} $0 ~ \"^\" key \"=\" {print line; next} {print}' .env > \"$tmp\"",
+    "    cat \"$tmp\" > .env",
+    "    rm -f \"$tmp\"",
+    "  else",
+    "    printf '%s=%s\\n' \"$key\" \"$value\" >> .env",
+    "  fi",
+    "}",
+    `set_env NANGO_SERVER_URL ${shellQuote(normalized)}`,
+    `set_env SERVER_PORT ${shellQuote(portValue)}`,
+    "log 'Starting Nango containers'",
+    "$DOCKER compose up -d",
+    "log 'Nango setup command finished'",
+  ].join("\n");
+}
+
+async function checkNangoHealthFromCollector(baseUrl) {
+  const url = `${normalizeNangoBaseUrl(baseUrl)}/health`;
+  const started = Date.now();
+  try {
+    const response = await fetch(url, { signal: AbortSignal.timeout(3500) });
+    const text = await response.text().catch(() => "");
+    return {
+      ok: response.ok,
+      checkedAt: new Date().toISOString(),
+      url,
+      latencyMs: Date.now() - started,
+      status: response.status,
+      result: text.slice(0, 120),
+    };
+  } catch (error) {
+    return {
+      ok: false,
+      checkedAt: new Date().toISOString(),
+      url,
+      latencyMs: Date.now() - started,
+      error: error instanceof Error ? error.message : "Nango health check failed.",
+    };
+  }
+}
+
+async function waitForNangoHealthFromCollector(baseUrl) {
+  let health = await checkNangoHealthFromCollector(baseUrl);
+  if (health.ok) return health;
+  for (const delay of [2000, 4000, 8000, 12000, 20000, 30000]) {
+    await sleep(delay);
+    health = await checkNangoHealthFromCollector(baseUrl);
+    if (health.ok) return health;
+  }
+  return health;
+}
+
+async function setupNangoIntegrationHost(baseUrl) {
+  const normalized = normalizeNangoBaseUrl(baseUrl);
+  const script = nangoSetupScript(normalized);
+  const result = await collectorRunProcess("bash", ["-s"], script, 360_000);
+  const health = await waitForNangoHealthFromCollector(normalized);
+  return {
+    ok: health.ok,
+    method: "collector-api",
+    target: hostname(),
+    baseUrl: normalized,
+    stdout: result.stdout.slice(-20_000),
+    stderr: result.stderr.slice(-20_000),
+    health,
+    command: script,
+  };
 }
 
 function startUpdate() {
@@ -1669,17 +1851,16 @@ async function sendHermesChat(body) {
 
   const agent = body.agent && typeof body.agent === "object" ? body.agent : {};
   const hermesHome = expandHome(agent.localDataDir || body.localDataDir || defaultHermesDir);
-  const agentEnv = safeAgentEnv(body.agentEnv);
+  const agentEnv = hermesContextEnv(safeAgentEnv(body.agentEnv), body.context);
   const args = hermesCliArgs(agent, ["-z", text]);
   const { stdout, stderr } = await execFileAsync(await resolveHermesBin(), args, {
     timeout: chatTimeoutMs,
     maxBuffer: 3_000_000,
-    env: {
-      ...process.env,
+    env: runtimeProcessEnv({
       ...agentEnv,
       HERMES_HOME: hermesHome,
       PAGER: "cat",
-    },
+    }),
   });
   const content = stdout.trim() || stderr.trim();
   return {
@@ -1714,15 +1895,14 @@ async function ensureHermesApiServer(hermesHome) {
   hermesApiStartPromise = (async () => {
     const bin = await resolveHermesBin();
     hermesApiProcess = spawn(bin, ["gateway", "run", "--accept-hooks"], {
-      env: {
-        ...process.env,
+      env: runtimeProcessEnv({
         HERMES_HOME: hermesHome,
         API_SERVER_ENABLED: "true",
         API_SERVER_HOST: hermesApiHost,
         API_SERVER_PORT: String(hermesApiPort),
         ...(hermesApiKey ? { API_SERVER_KEY: hermesApiKey } : {}),
         PAGER: "cat",
-      },
+      }),
       stdio: ["ignore", "inherit", "inherit"],
     });
     hermesApiProcess.on("exit", () => {
@@ -2068,13 +2248,14 @@ async function streamHermesChat(body, response) {
     return;
   }
 
-  const rawMessage = typeof body.rawUserMessage === "string" ? body.rawUserMessage : "";
-  const message = rawMessage || (typeof body.message === "string"
+  const rawMessage = typeof body.rawUserMessage === "string" ? body.rawUserMessage.trim() : "";
+  const message = typeof body.message === "string"
     ? body.message
     : Array.isArray(body.messages)
       ? extractUserTextFromMessages(body.messages)
-      : "");
+      : rawMessage;
   const text = (typeof message === "string" ? message.trim() : "") || (Array.isArray(body.messages) ? attachmentPromptFromMessages(body.messages) : "");
+  const sessionMatchText = rawMessage || text;
   if (!text) {
     response.writeHead(400, { "content-type": "text/event-stream", "cache-control": "no-cache", connection: "keep-alive" });
     response.end(ssePayload({ error: "Message is required." }) + "data: [DONE]\n\n");
@@ -2088,24 +2269,23 @@ async function streamHermesChat(body, response) {
 
   const agent = body.agent && typeof body.agent === "object" ? body.agent : {};
   const hermesHome = expandHome(agent.localDataDir || body.localDataDir || defaultHermesDir);
-  const agentEnv = safeAgentEnv(body.agentEnv);
+  const agentEnv = hermesContextEnv(safeAgentEnv(body.agentEnv), body.context);
   if (hermesChatMode === "api" && await proxyHermesApiChat(body, response, text, hermesHome)) return;
 
   const runtimeSessionId = normalizeHermesSessionId(body.runtimeSessionId || body.hermesSessionId || "");
-  const args = hermesCliArgs(agent, ["chat", "-q", text, "--accept-hooks", "--source", "hivemindos"]);
+  const args = hermesCliArgs(agent, ["chat", "-Q", "-q", text, "--accept-hooks", "--source", "hivemindos"]);
   if (runtimeSessionId) args.push("--resume", runtimeSessionId);
   const cwd = await resolveChatWorkingDirectory(body.workingDirectory);
   const requestStartedAt = Date.now();
 
   const child = spawn(await resolveHermesBin(), args, {
     cwd,
-    env: {
-      ...process.env,
+    env: runtimeProcessEnv({
       ...agentEnv,
       HERMES_HOME: hermesHome,
       HERMES_ACCEPT_HOOKS: "1",
       PAGER: "cat",
-    },
+    }),
     stdio: ["ignore", "pipe", "pipe"],
   });
 
@@ -2134,7 +2314,7 @@ async function streamHermesChat(body, response) {
 
   async function emitSession() {
     if (emittedSession || settled || response.writableEnded || response.destroyed) return;
-    const session = await waitForHermesCliSession(hermesHome, requestStartedAt - 2_000, text);
+    const session = await waitForHermesCliSession(hermesHome, requestStartedAt - 2_000, sessionMatchText);
     if (!session) return;
     emittedSession = true;
     response.write(ssePayload({
@@ -2175,19 +2355,11 @@ async function streamHermesChat(body, response) {
   });
 
   child.stdout.on("data", (chunk) => {
-    const textChunk = chunk.toString("utf8");
-    stdout += textChunk;
-    if (!settled && !response.writableEnded && !response.destroyed) {
-      response.write(ssePayload({ choices: [{ delta: { content: textChunk } }] }));
-    }
+    stdout += chunk.toString("utf8");
   });
 
   child.stderr.on("data", (chunk) => {
-    const textChunk = chunk.toString("utf8");
-    stderr += textChunk;
-    if (!settled && !response.writableEnded && !response.destroyed) {
-      response.write(ssePayload({ choices: [{ delta: { content: textChunk } }] }));
-    }
+    stderr += chunk.toString("utf8");
   });
 
   child.on("error", (error) => {
@@ -2196,10 +2368,12 @@ async function streamHermesChat(body, response) {
 
   child.on("close", (code) => {
     if (settled) return;
-    const content = stdout.trim();
-    const errorText = stderr.trim();
+    const content = stripHermesCliMetadata(stdout);
+    const errorText = stripHermesCliMetadata(stderr);
     if (code === 0) {
-      if (!content && errorText) {
+      if (content) {
+        response.write(ssePayload({ choices: [{ delta: { content } }] }));
+      } else if (errorText) {
         response.write(ssePayload({ choices: [{ delta: { content: errorText } }] }));
       }
       finish();
@@ -2276,6 +2450,7 @@ createServer(async (request, response) => {
         chat: runtimes.includes("hermes"),
         directoryBrowsing: true,
         envHttpSync: true,
+        nangoSetup: true,
         runtimes,
         runtimeIntegrations: true,
         runtimeAgentCreation: true,
@@ -2323,7 +2498,21 @@ createServer(async (request, response) => {
 	    }
 	    return;
 	  }
-	  if (pathname === "/env" && request.method === "GET") {
+  if (pathname === "/integrations/nango/setup" && request.method === "POST") {
+    try {
+      const rawBody = await readBody(request);
+      const body = rawBody ? JSON.parse(rawBody) : {};
+      const result = await setupNangoIntegrationHost(String(body.baseUrl || "http://localhost:3003"));
+      jsonResponse(response, result.ok ? 200 : 502, result);
+    } catch (error) {
+      jsonResponse(response, 500, {
+        ok: false,
+        error: error instanceof Error ? error.message : "Could not set up Nango on this collector.",
+      });
+    }
+    return;
+  }
+  if (pathname === "/env" && request.method === "GET") {
 	    try {
 	      const envSync = await resolveHiveEnvAdd();
 	      if (!envSync.ready) {

@@ -30,22 +30,31 @@ export const dynamic = "force-dynamic";
 export async function GET(request: NextRequest) {
   try {
     const boardSlug = request.nextUrl.searchParams.get("board");
+    const includeBoards = request.nextUrl.searchParams.get("include_boards") !== "false";
+    const boardsOnly = request.nextUrl.searchParams.get("boards_only") === "true";
     const includeArchived = request.nextUrl.searchParams.get("include_archived") === "true";
     const tenant = request.nextUrl.searchParams.get("tenant") || undefined;
     const assignee = request.nextUrl.searchParams.get("assignee") || undefined;
     const query = request.nextUrl.searchParams.get("q") || undefined;
     const storageOptions = storageOptionsFromRequest(request);
-    const boards = await listBoards(storageOptions);
+    if (boardsOnly) {
+      const boards = await listBoards(storageOptions);
+      const storage = resolveKanbanStorage(boardSlug, storageOptions);
+      return NextResponse.json({ ok: true, boards, storage });
+    }
+
     const board = await readBoard(boardSlug, storageOptions);
     const tasks = filterKanbanTasks(board, { tenant, assignee, query, includeArchived });
     const tenants = [...new Set(board.tasks.map((task) => task.tenant).filter(Boolean))].sort();
     const assignees = [...new Set(board.tasks.map((task) => task.assignee).filter(Boolean))].sort();
     const storage = resolveKanbanStorage(board.meta.slug, storageOptions);
+    const boards = includeBoards ? await listBoards(storageOptions) : undefined;
+    const responseBoard = trimKanbanBoardForResponse({ ...board, tasks });
 
     return NextResponse.json({
       ok: true,
-      boards,
-      board: { ...board, tasks },
+      ...(boards ? { boards } : {}),
+      board: responseBoard,
       columns: groupKanbanTasks(tasks, includeArchived),
       tenants,
       assignees,
@@ -154,4 +163,23 @@ function storageOptionsFromRequest(request: NextRequest, body?: { vaultPath?: st
 function errorResponse(error: unknown) {
   const message = error instanceof Error ? error.message : "Kanban request failed.";
   return NextResponse.json({ ok: false, error: message }, { status: 400 });
+}
+
+function trimKanbanBoardForResponse(board: Awaited<ReturnType<typeof readBoard>>) {
+  const taskIds = new Set(board.tasks.map((task) => task.id));
+  return {
+    ...board,
+    comments: board.comments
+      .filter((comment) => taskIds.has(comment.taskId))
+      .sort((a, b) => b.createdAt - a.createdAt)
+      .slice(0, 120),
+    events: board.events
+      .filter((event) => !event.taskId || taskIds.has(event.taskId))
+      .sort((a, b) => b.createdAt - a.createdAt)
+      .slice(0, 160),
+    runs: board.runs
+      .filter((run) => taskIds.has(run.taskId))
+      .sort((a, b) => (b.endedAt ?? b.lastHeartbeatAt ?? b.startedAt) - (a.endedAt ?? a.lastHeartbeatAt ?? a.startedAt))
+      .slice(0, 80),
+  };
 }

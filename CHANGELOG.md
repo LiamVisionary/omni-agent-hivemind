@@ -3,6 +3,238 @@
 This file records user-visible changes before they are committed. New work should
 be added here first, then marked `Committed` or `Pushed` after the git action.
 
+## 2026-05-26 02:10:41 WITA - Hide Dashboard Context From Hermes Chat
+
+- Status: Pushed
+- Areas changed: Chat runtime API, Agent telemetry collector, changelog
+- Summary: Stop sending the full dashboard context wrapper as the visible Hermes chat prompt; send the user's text as the CLI query, inject dashboard/vault/agent context through `HERMES_EPHEMERAL_SYSTEM_PROMPT`, run Hermes chat in quiet mode, buffer final CLI output, strip `session_id:` metadata, and translate abrupt stream disconnects into a clear collector-interrupted message.
+- Verification: `node --check scripts/agent-telemetry-collector.mjs`; `pnpm exec eslint scripts/agent-telemetry-collector.mjs src/app/api/chat/agent-runtime/route.ts --max-warnings=999`; `pnpm exec tsc --noEmit --pretty false --skipLibCheck`; `git diff --check -- scripts/agent-telemetry-collector.mjs src/app/api/chat/agent-runtime/route.ts CHANGELOG.md`; restarted `com.agent-control-room.telemetry` and confirmed `http://127.0.0.1:8787/health` returns `ok: true`.
+- Intended commit message: `Hide dashboard context from Hermes chat`
+
+## 2026-05-26 02:03:18 WITA - Fix Hermes Browser Tool Environment
+
+- Status: Pushed
+- Areas changed: Agent telemetry collector, chat runtime streaming, chat stream controller, changelog
+- Summary: Fix Hermes child-process PATH inheritance so browser tooling can find the active Node runtime, make browser chat stall detection activity-based on stream chunks, and remove the route-level 120-second assistant-text guard that could cut off still-running Hermes sessions.
+- Verification: `node --check scripts/agent-telemetry-collector.mjs`; `pnpm exec eslint scripts/agent-telemetry-collector.mjs src/app/api/chat/agent-runtime/route.ts src/features/dashboard/hooks/use-status-chat-input-controller.tsx --max-warnings=999` passed with existing hook warnings and no errors; `pnpm exec tsc --noEmit --pretty false --skipLibCheck`; `git diff --check -- scripts/agent-telemetry-collector.mjs src/app/api/chat/agent-runtime/route.ts src/features/dashboard/hooks/use-status-chat-input-controller.tsx CHANGELOG.md`; restarted `com.agent-control-room.telemetry` and confirmed `http://127.0.0.1:8787/health` returns `ok: true`.
+- Intended commit message: `Fix Hermes browser tool environment`
+
+## 2026-05-26 01:50:42 WITA - Show Live Chat Streaming State
+
+- Status: Pushed
+- Areas changed: Chat message rendering, chat streaming styling, changelog
+- Summary: Hide completed-message actions while the latest assistant response is still streaming, add a blinking inline caret and live “Still writing” pulse, and only reveal copy/Kanban actions after the stream finishes.
+- Verification: `pnpm exec eslint src/features/dashboard/views/ChatPanel.tsx --max-warnings=999` passed with the existing unused eslint-disable warning; `pnpm exec tsc --noEmit --pretty false --skipLibCheck`; `git diff --check -- src/features/dashboard/views/ChatPanel.tsx src/app/chat.module.css CHANGELOG.md`.
+- Intended commit message: `Show live chat streaming state`
+
+## 2026-05-26 01:42:28 WITA - Add Agent Prompt Cards To Chat
+
+- Status: Pushed
+- Areas changed: Chat runtime API, telemetry collector Hermes bridge, chat stream controller, chat message types/storage, chat panel UI, chat styling, changelog
+- Summary: Add generic runtime prompt cards for clarify/approval-style stream events, preserve prompt metadata in chat history, let prompt choices fill the composer, pass prompt events through the runtime SSE normalizer, and fix the Hermes collector bridge so raw user text is used for session matching instead of replacing the dashboard context sent to Hermes.
+- Verification: `node --check scripts/agent-telemetry-collector.mjs`; `pnpm exec eslint src/app/api/chat/agent-runtime/route.ts src/features/dashboard/hooks/use-status-chat-input-controller.tsx src/features/dashboard/views/ChatPanel.tsx --max-warnings=999` passed with existing split-dashboard warnings and no errors; `pnpm exec tsc --noEmit --pretty false --skipLibCheck`; `git diff --check -- scripts/agent-telemetry-collector.mjs src/app/api/chat/agent-runtime/route.ts src/features/dashboard/hooks/use-status-chat-input-controller.tsx src/features/dashboard/views/ChatPanel.tsx src/features/dashboard/dashboard-types.ts src/features/dashboard/dashboard-storage.ts src/features/dashboard/hooks/use-dashboard-derived-state.tsx src/app/chat.module.css CHANGELOG.md`.
+- Intended commit message: `Add agent prompt cards to chat`
+
+## 2026-05-26 01:34:34 WITA - Fix Narrow Dashboard Nav Overflow
+
+- Status: Pushed
+- Areas changed: Dashboard shell header styling, dashboard nav test, changelog
+- Summary: Make the dashboard topbar grid more elastic and constrain the primary nav to a scrollable lane so the Wallets and More links stay reachable on narrower viewports.
+- Verification: `pnpm test:dashboard-nav`; `node --check scripts/test-dashboard-nav.mjs`; `git diff --check -- src/app/globals.css scripts/test-dashboard-nav.mjs CHANGELOG.md`; Playwright probe against the existing managed `http://127.0.0.1:5020/?view=chat` confirmed Fleet, Work, Brain, Chat, Wallets, and More stay inside the header/nav lane at 1536, 1280, 1100, 1024, 920, and 820px with no page errors.
+- Intended commit message: `Fix narrow dashboard nav overflow`
+
+## 2026-05-26 01:34:36 WITA - Bound Hermes Chat Stream Stalls
+
+- Status: Pushed
+- Areas changed: Chat runtime API, changelog
+- Summary: Add server-side first-text and inactivity timeouts for Hermes/runtime SSE streams so a stream that only emits session/status frames fails with a diagnostic event instead of leaving the browser to hit its 130-second stall timer.
+- Verification: `pnpm exec eslint src/app/api/chat/agent-runtime/route.ts --max-warnings=999`; `pnpm exec tsc --noEmit --pretty false --skipLibCheck`; `git diff --check -- src/app/api/chat/agent-runtime/route.ts CHANGELOG.md`.
+- Intended commit message: `Bound Hermes chat stream stalls`
+
+## 2026-05-26 01:26:08 WITA - Add Simple Website Starter
+
+- Status: Pushed
+- Areas changed: Simple static website starter, changelog
+- Summary: Add a standalone responsive one-page website under `sites/simple-website` with a hero, service cards, proof section, contact call-to-action, and a small preview-toast interaction.
+- Verification: Static HTML parser checks passed for doctype, title, viewport, responsive media query, required section IDs, anchor targets, and click-toast script; `git diff --check -- sites/simple-website/index.html sites/simple-website/README.md CHANGELOG.md`; attempted browser visual verification but the browser tool failed with `env: node: No such file or directory`.
+- Intended commit message: `Add simple website starter`
+
+## 2026-05-26 01:22:22 WITA - Animate Copied Chat Action
+
+- Status: Pushed
+- Areas changed: Chat assistant copy action, chat styling, changelog
+- Summary: Swap the copy icon to a lightly animated checkmark after a successful copy and force the shared tooltip open with `Copied!` during the success state.
+- Verification: `pnpm exec eslint src/features/dashboard/views/ChatPanel.tsx --max-warnings=999` passed with the existing unused eslint-disable warning; `pnpm exec tsc --noEmit --pretty false --skipLibCheck`; `git diff --check -- src/features/dashboard/views/ChatPanel.tsx src/app/chat.module.css CHANGELOG.md`; Playwright smoke against `http://127.0.0.1:5020/?view=chat` loaded with no page errors or runtime error and confirmed the transparent override plus check animation CSS are present.
+- Intended commit message: `Animate copied chat action`
+
+## 2026-05-26 01:19:07 WITA - Add Chat Action Tooltips
+
+- Status: Pushed
+- Areas changed: Chat assistant message actions, chat styling, changelog
+- Summary: Increase resting contrast for assistant copy/Kanban ghost icons and wrap both controls in the shared Tooltip component with concise hover labels.
+- Verification: `pnpm exec eslint src/features/dashboard/views/ChatPanel.tsx --max-warnings=999` passed with the existing unused eslint-disable warning; `pnpm exec tsc --noEmit --pretty false --skipLibCheck`; `git diff --check -- src/features/dashboard/views/ChatPanel.tsx src/app/chat.module.css CHANGELOG.md`; Playwright smoke against `http://127.0.0.1:5020/?view=chat` loaded with no page errors or runtime error and confirmed the transparent action override, higher contrast color, and thin icon stroke are present.
+- Intended commit message: `Add chat action tooltips`
+
+## 2026-05-26 01:17:11 WITA - Refine Chat Action Icons
+
+- Status: Pushed
+- Areas changed: Chat assistant message action styling, changelog
+- Summary: Override the global chat button treatment for assistant message actions so copy and Kanban controls render as small transparent ghost icons with lighter strokes instead of teal filled buttons.
+- Verification: `pnpm exec tsc --noEmit --pretty false --skipLibCheck`; `pnpm test:gbrain-foundation`; `pnpm test:dashboard-nav`; `node --check scripts/agent-telemetry-collector.mjs && node --check scripts/seed-vault-foundation.mjs && node --check scripts/test-gbrain-foundation.mjs && node --check scripts/test-dashboard-nav.mjs`; `git diff --check`.
+- Intended commit message: `Refine chat action icons`
+
+## 2026-05-26 01:14:52 WITA - Move Chat Message Actions Inline
+
+- Status: Pushed
+- Areas changed: Chat assistant message actions, chat styling, changelog
+- Summary: Move assistant response actions below the message content, replace the floating boxed Kanban control with subtle inline icon buttons, and add a matching copy-response button.
+- Verification: `pnpm exec eslint src/features/dashboard/views/ChatPanel.tsx --max-warnings=999` passed with the existing unused eslint-disable warning; `pnpm exec tsc --noEmit --pretty false --skipLibCheck`; `git diff --check -- src/features/dashboard/views/ChatPanel.tsx src/app/chat.module.css CHANGELOG.md`; static CSS/code check confirmed `.messageActions` is no longer sticky, the old absolute `.generateKanbanButton` was replaced by `.messageActionButton`, and assistant responses now render copy plus Kanban actions below content; Playwright smoke against `http://127.0.0.1:5020/?view=chat` loaded with no page errors or runtime error, with only the existing HMR websocket warning.
+- Intended commit message: `Move chat message actions inline`
+
+## 2026-05-26 01:06:41 WITA - Animate Chat Response Loading
+
+- Status: Pushed
+- Areas changed: Chat response loading UI, chat composer utilities, dashboard chat wiring, chat styling, assimilation manifest, changelog
+- Summary: Replace the static `Waiting for response...` assistant placeholder with a Honey bee Lottie loader and cycling animated status text adapted from the Claw Code mobile thinking indicator.
+- Verification: `pnpm exec eslint src/features/chat/chat-composer.tsx src/features/dashboard/DashboardApp.tsx src/features/dashboard/views/ChatPanel.tsx --max-warnings=999` passed with existing DashboardApp/ChatPanel warnings; `pnpm exec tsc --noEmit --pretty false --skipLibCheck`; `python3 -m json.tool ASSIMILATION.json >/dev/null && python3 /Users/liam/.codex/skills/github-assimilator/scripts/verify_assimilation_manifest.py`; `git diff --check -- src/features/chat/chat-composer.tsx src/features/dashboard/DashboardApp.tsx src/features/dashboard/views/ChatPanel.tsx src/app/chat.module.css CHANGELOG.md ASSIMILATION.json`; Playwright smoke against `http://127.0.0.1:5020/?view=chat` loaded title `HivemindOS` with no page errors or Next runtime error, with only the existing HMR websocket warning.
+- Intended commit message: `Animate chat response loading`
+
+## 2026-05-26 00:58:37 WITA - Fix Hermes Picker Tooltip Provider
+
+- Status: Pushed
+- Areas changed: Chat composer, changelog
+- Summary: Wrap the Hermes slash-command picker tooltip in the shared TooltipProvider so the composer can render safely anywhere it is used.
+- Verification: `pnpm exec eslint src/features/chat/chat-composer.tsx --max-warnings=0`; `pnpm exec tsc --noEmit --pretty false --skipLibCheck`; `git diff --check -- src/features/chat/chat-composer.tsx CHANGELOG.md`; Playwright smoke against `http://127.0.0.1:5020/?view=chat` loaded title `HivemindOS` with no page errors and no TooltipProvider runtime error, with only the existing HMR websocket warning.
+- Intended commit message: `Fix Hermes picker tooltip provider`
+
+## 2026-05-26 00:48:02 WITA - Add Hermes Slash Command Picker
+
+- Status: Pushed
+- Areas changed: Chat composer, Hermes chat input runtime behavior, chat runtime API, chat styling, assimilation manifest, changelog
+- Summary: Show a large scrollable Hermes slash-command tooltip over the chat composer when the selected chat agent uses the Hermes runtime and the message starts with `/`; filter commands as the user types, support mouse and keyboard selection, insert the selected command back into the composer, and pass Hermes slash commands through to the runtime without dashboard context wrapping.
+- Verification: `pnpm exec eslint src/features/chat/chat-composer.tsx src/features/dashboard/views/ChatPanel.tsx src/app/api/chat/agent-runtime/route.ts --max-warnings=999` passed with the existing unused eslint-disable warning in `ChatPanel.tsx`; `pnpm exec tsc --noEmit --pretty false --skipLibCheck`; `git diff --check -- src/features/chat/chat-composer.tsx src/features/dashboard/views/ChatPanel.tsx src/app/chat.module.css src/app/api/chat/agent-runtime/route.ts CHANGELOG.md ASSIMILATION.json`; `python3 -m json.tool ASSIMILATION.json >/dev/null && python3 /Users/liam/.codex/skills/github-assimilator/scripts/verify_assimilation_manifest.py`; Playwright smoke against `http://127.0.0.1:5020/?view=chat` loaded title `HivemindOS` with only the existing HMR websocket warning, though the current live state did not render a chat textarea to exercise the picker visually.
+- Intended commit message: `Add Hermes slash command picker`
+
+## 2026-05-26 00:44:20 WITA - Use Directory Picker For Chat Folders
+
+- Status: Pushed
+- Areas changed: Chat sidebar machine directory action, local folder picker API, machine directory chooser, chat tree controller, changelog
+- Summary: Change the machine-level chat folder action from a manual create-folder form to the existing machine directory picker, using the native macOS folder picker for this Mac and the custom directory browser for remote machines; selecting a directory adds it to chat history and opens a fresh chat there. Guard against pathless picker results so chat creation does not crash before loading the selected directory.
+- Verification: `pnpm exec eslint src/features/dashboard/hooks/use-chat-tree-controller.tsx src/features/dashboard/views/ChatPanel.tsx src/features/dashboard/DashboardApp.tsx --max-warnings=999` passed with existing warnings and no errors; `pnpm exec eslint src/features/dashboard/hooks/use-chat-tree-controller.tsx src/features/dashboard/hooks/use-miroshark-brain-controller.tsx src/app/api/agents/browse-folder/route.ts --max-warnings=999` passed with existing warnings and no errors; `pnpm exec tsc --noEmit --pretty false --skipLibCheck`; `git diff --check -- src/features/dashboard/hooks/use-chat-tree-controller.tsx src/features/dashboard/hooks/use-miroshark-brain-controller.tsx src/app/api/agents/browse-folder/route.ts CHANGELOG.md`.
+- Intended commit message: `Use directory picker for chat folders`
+
+## 2026-05-26 00:44 WITA - Segment Nango Host Setup
+
+- Status: Pushed
+- Areas changed: Integrations dashboard setup UI, changelog
+- Summary: Replace the stacked Automatic Setup and Manual Fallback blocks with a segmented Automatic Setup / Manual Setup control, and keep setup success or error messages inside the automatic setup panel below the Run setup action.
+- Verification: `pnpm exec eslint src/features/integrations/NangoIntegrationsView.tsx --max-warnings=0`; `pnpm exec tsc --noEmit --pretty false --skipLibCheck`; `git diff --check -- src/features/integrations/NangoIntegrationsView.tsx src/app/integrations/integrations.module.css CHANGELOG.md`; Playwright smoke against `http://localhost:5020/?view=integrations` confirmed the segmented Manual Setup tab switches on, manual commands render only there, and no relevant console errors were reported.
+- Intended commit message: `Segment Nango host setup`
+
+## 2026-05-26 00:23:01 WITA - Show Fresh Chat In History
+
+- Status: Pushed
+- Areas changed: Dashboard chat sidebar history, changelog
+- Summary: Add the currently selected empty fresh chat leaf to the chat history as an active `New Chat` row, sort active chats above older history, and omit stale relative timestamps from the draft row.
+- Verification: `pnpm exec eslint src/features/dashboard/hooks/use-chat-tree-controller.tsx --max-warnings=999` passed with existing hook warnings and no errors; `pnpm exec tsc --noEmit --pretty false --skipLibCheck`; `git diff --check -- src/features/dashboard/hooks/use-chat-tree-controller.tsx CHANGELOG.md`.
+- Intended commit message: `Show fresh chat in history`
+
+## 2026-05-26 00:15:43 WITA - Keep Honey Rewards Off Bankr LLM
+
+- Status: Pushed
+- Areas changed: Chat runtime API, Honey ledger recording, changelog
+- Summary: Stop the global Honey rewards toggle from routing chat through the Bankr-backed compute gateway. Hermes/OpenAI-Codex and other configured runtimes now stay on their selected runtime; Honey usage is recorded after direct runtime responses through the observed-usage reward path instead of replacing the model provider with Bankr LLM.
+- Verification: `pnpm exec eslint src/app/api/chat/agent-runtime/route.ts src/lib/services/wallet/honey-ledger.ts --max-warnings=0`; `pnpm exec tsc --noEmit --pretty false --skipLibCheck`; `git diff --check -- src/app/api/chat/agent-runtime/route.ts src/lib/services/wallet/honey-ledger.ts CHANGELOG.md`; route smoke with `honeyLedgerEnabled: true` and a Hermes/OpenAI-Codex profile no longer returned 402 from the Bankr gateway, instead following the normal Hermes runtime path and returning the expected dead-runtime 502 for an intentionally unreachable local URL.
+- Intended commit message: `Keep Honey rewards off Bankr LLM`
+
+## 2026-05-26 00:12:45 WITA - Submit Chat With Enter On Desktop
+
+- Status: Pushed
+- Areas changed: Chat composer keyboard handling, dashboard chat surfaces, changelog
+- Summary: Let desktop users press Enter to submit the main chat and task-agent chat composers while preserving Shift+Enter for newlines and leaving coarse-pointer mobile devices on newline-by-default behavior.
+- Verification: `pnpm exec eslint src/features/chat/chat-composer.tsx src/features/dashboard/views/ChatPanel.tsx src/features/dashboard/views/KanbanPanel.tsx --max-warnings=999` passed with one existing unused eslint-disable warning in `ChatPanel.tsx` and no errors; `pnpm exec tsc --noEmit --pretty false --skipLibCheck`; `git diff --check -- src/features/chat/chat-composer.tsx src/features/dashboard/views/ChatPanel.tsx src/features/dashboard/views/KanbanPanel.tsx CHANGELOG.md`; Playwright loaded `http://127.0.0.1:5020/?view=chat` with title `HivemindOS` and only the existing dev HMR websocket warning, though the live state did not render a chat textarea for end-to-end keypress exercise.
+- Intended commit message: `Submit chat with Enter on desktop`
+
+## 2026-05-26 00:09 WITA - Deduplicate Fleet Polling Memory Work
+
+- Status: Pushed
+- Areas changed: Fleet discovery API, fleet snapshot API, dashboard polling, app version API, MiroShark status API, remote skill/Nango fleet consumers, changelog
+- Summary: Make fleet discovery lightweight by default instead of embedding collector snapshots, keep full discovery snapshots available behind `includeSnapshots=1`, add short in-flight/cache deduplication for discovery/snapshot/version/MiroShark status calls, abort overlapping dashboard polls, and send only snapshot-relevant agent/vault fields in periodic snapshot requests.
+- Verification: `pnpm exec eslint src/app/api/fleet/discover/route.ts src/app/api/fleet/snapshot/route.ts src/app/api/app/version/route.ts src/app/api/miroshark/status/route.ts src/lib/services/miroshark/companion-client.ts src/lib/services/fleet/remote-skill-providers.ts src/features/integrations/NangoIntegrationsView.tsx src/features/dashboard/hooks/use-fleet-notifications-controller.tsx src/features/dashboard/DashboardApp.tsx --max-warnings=999`; `pnpm exec tsc --noEmit --pretty false --skipLibCheck`; `git diff --check -- src/app/api/fleet/discover/route.ts src/app/api/fleet/snapshot/route.ts src/app/api/app/version/route.ts src/app/api/miroshark/status/route.ts src/lib/services/miroshark/companion-client.ts src/lib/services/fleet/remote-skill-providers.ts src/features/integrations/NangoIntegrationsView.tsx src/features/dashboard/hooks/use-fleet-notifications-controller.tsx src/features/dashboard/DashboardApp.tsx`; live endpoint smoke confirmed default discovery returns 0 snapshots and 13.6KB, `includeSnapshots=1` still returns snapshots, repeat discovery/snapshot/version/MiroShark calls use cached paths in single-digit milliseconds, 24 concurrent mixed endpoint requests all returned 200, and Playwright dashboard smoke returned 200/title `HivemindOS` with only the existing dev HMR websocket warning.
+- Intended commit message: `Deduplicate fleet polling memory work`
+
+## 2026-05-26 00:07 WITA - Move Nango Setup Into Host Panel
+
+- Status: Pushed
+- Areas changed: Integrations dashboard UI, changelog
+- Summary: Move the Nango automatic setup and manual fallback section from Provider Access into the bottom of the Host panel, and keep setup controls in that single host-focused location.
+- Verification: `pnpm exec eslint src/features/integrations/NangoIntegrationsView.tsx --max-warnings=0`; `pnpm exec tsc --noEmit --pretty false --skipLibCheck`; `git diff --check -- src/features/integrations/NangoIntegrationsView.tsx CHANGELOG.md`; Playwright smoke against `http://127.0.0.1:5020/?view=integrations` confirmed Host Setup Commands renders after Host and before Provider Access, the Run setup action remains visible, and no relevant console errors were reported.
+- Intended commit message: `Move Nango setup into host panel`
+
+## 2026-05-26 00:01:59 WITA - Fix Fresh Chat Leaf Display
+
+- Status: Pushed
+- Areas changed: Dashboard chat derived state, changelog
+- Summary: Keep explicitly selected fresh chat leaves empty when they have no messages yet instead of falling back to the agent's default transcript, so New chat buttons visibly open a new conversation immediately.
+- Verification: `pnpm exec eslint src/features/dashboard/hooks/use-dashboard-derived-state.tsx --max-warnings=999` passed with existing hook dependency warnings and no errors; `pnpm exec tsc --noEmit --pretty false --skipLibCheck`; `git diff --check -- src/features/dashboard/hooks/use-dashboard-derived-state.tsx CHANGELOG.md`; static guard check confirmed the fresh-leaf empty return is present.
+- Intended commit message: `Fix fresh chat leaf display`
+
+## 2026-05-25 23:48 WITA - Auto-Sync Vault Automations On Open
+
+- Status: Pushed
+- Areas changed: Automations dashboard, shared schedule vault sync, changelog
+- Summary: Automatically sync shared vault schedule templates when the Automations view opens, so seeded Foundation workflows appear without manually clicking Sync vault.
+- Verification: `pnpm test:gbrain-foundation`; `pnpm exec eslint src/features/dashboard/DashboardApp.tsx --max-warnings=999` passed with existing dashboard warnings and no errors; `pnpm exec tsc --noEmit --pretty false --skipLibCheck`; `git diff --check -- src/features/dashboard/DashboardApp.tsx scripts/test-gbrain-foundation.mjs CHANGELOG.md`.
+- Intended commit message: `Auto-sync vault automations on open`
+
+## 2026-05-25 23:44 WITA - Speed Up Kanban Board Loading
+
+- Status: Pushed
+- Areas changed: Kanban API response shaping, Kanban file-backed board metadata loading, dashboard Kanban polling, ready-task orchestration timing, changelog
+- Summary: Make ordinary Kanban refreshes read the selected board without listing every board, add a lightweight boards-only refresh path, read board dropdown metadata from the beginning of board files instead of normalizing full task payloads, cap comments/events/runs returned by board reads, and defer automatic ready-task pickup until after the board has painted.
+- Verification: `pnpm exec eslint src/app/api/kanban/route.ts src/lib/services/kanban/local-kanban-store.ts src/features/dashboard/hooks/use-dashboard-polling-effects.tsx src/features/dashboard/hooks/use-fleet-notifications-controller.tsx src/features/dashboard/hooks/use-kanban-dispatch-controller.tsx --max-warnings=999` passed with existing dashboard warnings and no errors; `pnpm exec tsc --noEmit --pretty false --skipLibCheck`; Kanban API smoke confirmed `include_boards=false` omits board summaries and caps events while `boards_only=true` returns 14 board summaries for the HivemindOS project board folder; Browser smoke against `http://127.0.0.1:5020/?view=kanban` rendered Workboard/storage status with no Kanban error; `git diff --check -- src/app/api/kanban/route.ts src/lib/services/kanban/local-kanban-store.ts src/features/dashboard/hooks/use-dashboard-polling-effects.tsx src/features/dashboard/hooks/use-fleet-notifications-controller.tsx src/features/dashboard/hooks/use-kanban-dispatch-controller.tsx CHANGELOG.md`; `pnpm test:kanban` remains blocked by an existing stale split-era regression guard that still scans `src/app/page.tsx` for Kanban helpers.
+- Intended commit message: `Speed up Kanban board loading`
+
+## 2026-05-25 23:42 WITA - Add One-Click Nango Host Setup
+
+- Status: Pushed
+- Areas changed: Nango integration setup API, telemetry collector Nango setup endpoint, shared Nango host service, integrations dashboard UI, integration styles, integration types, changelog
+- Summary: Replace the manual-only Nango host setup instructions with an automatic setup action that saves the selected host, prefers the existing HivemindOS collector API over SSH, runs an idempotent Nango install/start script, installs git/Docker through apt on Ubuntu when needed, writes Nango host env values, starts Docker Compose, checks Nango health, and keeps SSH plus manual commands as fallbacks.
+- Verification: `node --check scripts/agent-telemetry-collector.mjs`; `pnpm exec eslint src/app/api/integrations/nango/route.ts src/app/api/integrations/nango/setup/route.ts src/lib/services/integrations/nango-client.ts src/lib/services/integrations/nango-host.ts src/lib/types/integrations.ts src/features/integrations/NangoIntegrationsView.tsx --max-warnings=0`; `pnpm exec tsc --noEmit --pretty false --skipLibCheck`; `curl --max-time 10 -sS http://127.0.0.1:5020/api/integrations/nango` returned the saved Ubuntu Nango base URL and setup commands; Playwright smoke against `http://127.0.0.1:5020/?view=integrations` confirmed the setup button and manual fallback render, Integrations is not in the primary nav, and there are no relevant console errors; `python3 -m json.tool ASSIMILATION.json >/dev/null && python3 /Users/liam/.codex/skills/github-assimilator/scripts/verify_assimilation_manifest.py`; `git diff --check -- ASSIMILATION.json scripts/agent-telemetry-collector.mjs src/app/api/integrations/nango/setup/route.ts src/lib/services/integrations/nango-host.ts src/lib/types/integrations.ts src/features/integrations/NangoIntegrationsView.tsx src/app/integrations/integrations.module.css CHANGELOG.md`
+- Intended commit message: `Add one-click Nango host setup`
+
+## 2026-05-25 23:37 WITA - Seed Self-Writing Vault Workflows
+
+- Status: Pushed
+- Areas changed: Foundation vault seeder, setup/uninstall mirrors, self-writing workflow templates, assimilation manifest, static foundation test, shared Obsidian vault
+- Summary: Adapt the self-writing vault architecture into HivemindOS Foundation without adding numbered folder schemes, seeding six disabled automation templates under `Operations/Automations/Foundation Workflows`, routing generated context into `Memory/` and `Synthesis/`, routing requests through `Intake/Requests` and `Operations/Work Board`, and keeping every workflow auditable and opt-in.
+- Verification: `pnpm test:gbrain-foundation`; `bash -n setup.sh && bash -n uninstall.sh`; `python3 -m json.tool ASSIMILATION.json >/dev/null && python3 /Users/liam/.codex/skills/github-assimilator/scripts/verify_assimilation_manifest.py`; `node scripts/seed-vault-foundation.mjs --vault /Users/liam/Documents/Obsidian/hivemindos-vault` created six disabled live vault workflow templates; temp-vault seeding was idempotent and honored a custom scheduled-folder path; `node --check scripts/seed-vault-foundation.mjs`; `git diff --check -- scripts/seed-vault-foundation.mjs scripts/test-gbrain-foundation.mjs setup.sh setup.ps1 uninstall.sh uninstall.ps1 ASSIMILATION.json CHANGELOG.md`; `pnpm exec tsc --noEmit --pretty false --skipLibCheck`; PowerShell parse skipped because `pwsh` is unavailable.
+- Intended commit message: `Seed self-writing vault workflows`
+
+## 2026-05-25 23:02 WITA - Add Work History Segment
+
+- Status: Pushed
+- Areas changed: Work view routing, dynamic work-history API, project changelog parser, History UI filters, pagination/loading, dashboard styling, changelog
+- Summary: Add a fourth Work view segmented tab named History as a dynamic cross-project changelog feed, scanning known local project roots plus the shared brain vault Projects folder for `CHANGELOG.md`, parsing entries, caching the scan briefly, and serving a 10-record paginated feed with project/search filters instead of relying on Kanban completion state.
+- Verification: `curl --max-time 20 'http://127.0.0.1:5020/api/work-history?limit=10'` returned 10 entries with `totalEntries`, `offset`, `limit`, and `hasMore`; `curl --max-time 20 'http://127.0.0.1:5020/api/work-history?limit=10&offset=10'` returned the second page; `curl --max-time 20 'http://127.0.0.1:5020/api/work-history?limit=10&q=GBrain'` returned a filtered result set; compact commit-message badges strip surrounding backticks; `pnpm exec eslint src/features/dashboard/views/KanbanPanel.tsx src/app/api/work-history/route.ts src/lib/services/work-history/dynamic-changelog.ts src/lib/types/work-history.ts src/app/page.tsx --max-warnings=999`; `git diff --check -- CHANGELOG.md src/app/page.tsx src/app/api/work-history/route.ts src/lib/services/work-history/dynamic-changelog.ts src/lib/types/work-history.ts src/features/dashboard/DashboardApp.tsx src/features/dashboard/views/KanbanPanel.tsx src/features/dashboard/hooks/use-dashboard-derived-state.tsx src/features/dashboard/dashboard-types.ts src/features/dashboard/dashboard-light-helpers.tsx src/app/kanban-board.module.css`; Browser/Playwright smoke against `http://127.0.0.1:5020/?view=history` confirmed 10 rendered rows, a `Load 10 more` control, and no literal backticked badge text, though the managed 5020 server did not dispatch client button clicks during automation and reported only the existing dev HMR websocket warning; `pnpm exec tsc --noEmit --pretty false --skipLibCheck` is blocked by an existing `src/lib/services/kanban/local-kanban-store.ts` Buffer type error outside this History change.
+- Intended commit message: `Add work history segment`
+
+## 2026-05-25 22:59 WITA - Add Default GBrain Vault Foundation
+
+- Status: Pushed
+- Areas changed: Shared vault architecture defaults, GBrain brain-service API, Vault dashboard Brain Services surface, shared skill discovery, scheduled/brain service vault paths, setup/uninstall mirror prompts, assimilation manifest, static foundation test
+- Summary: Move HivemindOS-managed vault state into canonical Foundation folders, keep Synto under `Synthesis/`, always seed a disabled GBrain service note/config surface by default, add first-class GBrain status/install/connect/import/embed/dream/query flows, namespace GBrain skillpack imports under `Skills/GBrain`, and preserve legacy paths through non-destructive migration/read fallbacks.
+- Verification: `pnpm test:gbrain-foundation`; `node scripts/test-gbrain-foundation.mjs`; `bash -n setup.sh && bash -n uninstall.sh`; `rg -n "Enable optional GBrain integration surface|gbrain_surface|gbrainSurface" setup.sh setup.ps1 scripts/test-gbrain-foundation.mjs CHANGELOG.md` confirmed only the static no-prompt assertion remains; `python3 -m json.tool ASSIMILATION.json >/dev/null && python3 /Users/liam/.codex/skills/github-assimilator/scripts/verify_assimilation_manifest.py`; `pnpm exec eslint src/app/page.tsx src/lib/types/agent-runtime.ts src/features/dashboard/dashboard-storage.ts src/lib/services/obsidian/brain-skills.ts src/lib/services/obsidian/scheduled-runs.ts src/lib/services/obsidian/brain-graph.ts src/lib/services/brain/gbrain.ts src/app/api/brain/gbrain/status/route.ts src/app/api/brain/gbrain/install/route.ts src/app/api/brain/gbrain/connect/route.ts src/app/api/brain/gbrain/import/route.ts src/app/api/brain/gbrain/embed/route.ts src/app/api/brain/gbrain/dream/route.ts src/app/api/brain/gbrain/query/route.ts src/features/dashboard/DashboardApp.tsx src/features/dashboard/views/VaultPanel.tsx --max-warnings=999` passed with existing dashboard warnings; `pnpm exec tsc --noEmit --pretty false --skipLibCheck`; Browser smoke on `http://127.0.0.1:5020/?view=vault&vaultPanel=brain-services` rendered the Brain Services tab, GBrain/Synthesis cards, Install/Connect actions, and no console errors; `git diff --check`; PowerShell parse skipped because `pwsh` is unavailable in this environment.
+- Intended commit message: `Add default GBrain vault foundation`
+
+## 2026-05-25 22:46 WITA - Fix Fleet List Table Hydration
+
+- Status: Pushed
+- Areas changed: Fleet list table rendering, changelog
+- Summary: Replace nested machine-group `<tbody>` elements with keyed React fragments so the fleet list table renders valid direct row children and avoids the Next.js hydration warning.
+- Verification: `pnpm exec eslint src/components/fleet/list-view.tsx --max-warnings=0`; `git diff --check -- src/components/fleet/list-view.tsx CHANGELOG.md`; `rg -n "<tbody|</tbody|React\\.Fragment" src/components/fleet/list-view.tsx`; Browser smoke against `http://127.0.0.1:5020/?view=fleet` loaded without hydration/tbody console errors, though the live fleet table had no rows on that server.
+- Intended commit message: `Fix fleet list table hydration`
+
 ## 2026-05-25 21:43 WITA - Keep Remote Skill Inventory Lightweight
 
 - Status: Pushed
@@ -18,6 +250,14 @@ be added here first, then marked `Committed` or `Pushed` after the git action.
 - Summary: Fix the `/skills` endpoint to read `includeSourceFiles` from the live request URL object instead of an undefined parser variable so updated remote collectors can return lightweight inventories.
 - Verification: `node --check scripts/agent-telemetry-collector.mjs`; `pnpm exec eslint scripts/agent-telemetry-collector.mjs --max-warnings=0`; `git diff --check -- scripts/agent-telemetry-collector.mjs CHANGELOG.md`
 - Intended commit message: `Fix collector skill query parsing`
+
+## 2026-05-25 21:41 WITA - Constrain Shared Skills Shelf Height
+
+- Status: Pushed
+- Areas changed: Shared skills vault styling, shared skills loading state, changelog
+- Summary: Turn the shared brain skills grid into its own scrollview, cap desktop height to two card rows, let mobile use a viewport-based scroll height with a single-column layout, and replace the whole Shared Skills view below the segmented tabs with an animated scanning state while provider skills are loading.
+- Verification: `git diff --check -- src/app/vault.module.css CHANGELOG.md`; Browser smoke against `http://127.0.0.1:5020/?view=vault` confirmed the compiled `.sharedSkillGrid` CSS includes vertical scrolling, stable scrollbar gutter, the mobile single-column rule, and the desktop two-row `600px` max-height rule.
+- Intended commit message: `Constrain shared skills shelf height`
 
 ## 2026-05-25 21:08 WITA - Repair Collector Update Verification
 

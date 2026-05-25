@@ -88,7 +88,7 @@ export function useFleetNotificationsController(props: any) {
   }
 
   async function refreshDiscoveryNow() {
-    const response = await fetch("/api/fleet/discover", { cache: "no-store" }).catch(() => null);
+    const response = await fetch("/api/fleet/discover?includeSnapshots=0", { cache: "no-store" }).catch(() => null);
     const data = await response?.json().catch(() => null) as {
       machines?: DiscoveredMachine[];
     } | null;
@@ -184,7 +184,7 @@ export function useFleetNotificationsController(props: any) {
   }
 
   async function refreshKanbanOnce() {
-    const params = new URLSearchParams({ board: kanbanBoardSlug, include_archived: String(kanbanIncludeArchived) });
+    const params = new URLSearchParams({ board: kanbanBoardSlug, include_archived: String(kanbanIncludeArchived), include_boards: "false" });
     addKanbanStorageParams(params);
     if (kanbanTenantFilter) params.set("tenant", kanbanTenantFilter);
     if (kanbanAssigneeFilter) params.set("assignee", kanbanAssigneeFilter);
@@ -194,7 +194,7 @@ export function useFleetNotificationsController(props: any) {
     if (!response.ok || !data?.ok || !data.board) throw new Error(data?.error ?? "Kanban refresh failed.");
     setKanbanError("");
     setKanbanBoard(data.board);
-    setKanbanBoards(data.boards ?? []);
+    if (data.boards) setKanbanBoards(data.boards);
     setKanbanTenants(data.tenants ?? []);
     setKanbanAssignees(data.assignees ?? []);
     setKanbanStorage(data.storage ?? null);

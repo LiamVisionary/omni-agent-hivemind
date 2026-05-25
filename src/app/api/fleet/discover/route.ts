@@ -92,6 +92,32 @@ type CollectorEnvSync = {
 
 const QUEEN_RUNTIME_PRIORITY: AgentRuntime[] = ["hermes", "openclaw", "openai-compatible", "aeon"];
 const COLLECTOR_FETCH_TIMEOUT_MS = 2_500;
+const DISCOVERY_CACHE_MS = 5_000;
+
+type DiscoveredMachine = {
+  device: Device;
+  collector: string;
+  version?: CollectorVersion;
+  capabilities?: CollectorCapabilities;
+  envSync?: CollectorEnvSync;
+  agents: AgentProfile[];
+  snapshots: unknown[];
+};
+
+type FleetDiscoverPayload = {
+  ok: true;
+  source: string;
+  hivemindLink?: {
+    ok: boolean;
+    backendState?: string;
+    authUrl?: string;
+    magicDnsSuffix?: string;
+  };
+  machines: DiscoveredMachine[];
+};
+
+const discoveryCache = new Map<string, { checkedAt: number; payload: FleetDiscoverPayload }>();
+const discoveryInFlight = new Map<string, Promise<FleetDiscoverPayload>>();
 
 function localDevice(): Device {
   return {
@@ -344,10 +370,15 @@ function defaultQueenAgent(device: Device, agents: AgentProfile[], capabilities?
   };
 }
 
-export async function GET() {
+function shouldIncludeSnapshots(request: Request) {
+  const value = new URL(request.url).searchParams.get("includeSnapshots")?.toLowerCase();
+  return value === "1" || value === "true" || value === "yes";
+}
+
+async function readDiscovery(includeSnapshots: boolean): Promise<FleetDiscoverPayload> {
   const fleetStatus = await tailscaleDevices().catch((): FleetDeviceStatus => ({ devices: [localDevice()], source: "local" }));
   const devices = fleetStatus.devices;
-  const discovered = await Promise.all(devices.map(async (device) => {
+  const discovered = await Promise.all(devices.map(async (device): Promise<DiscoveredMachine> => {
     if (!device.collectorUrl) {
       return { device, collector: "missing", agents: [], snapshots: [] };
     }
@@ -381,16 +412,28 @@ export async function GET() {
       };
     }
 
+    const visibleAgents = [
+      ...agents,
+      ...[defaultQueenAgent(device, agents, capabilities)].filter((agent): agent is AgentProfile => Boolean(agent)),
+    ];
+    if (!includeSnapshots) {
+      return {
+        device,
+        collector: "ready",
+        version,
+        capabilities,
+        envSync,
+        agents: visibleAgents,
+        snapshots: [],
+      };
+    }
+
     try {
       const snapshotData = await fetchJson(`${device.collectorUrl}/snapshot`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ agents }),
       }) as { snapshots?: unknown[] };
-      const visibleAgents = [
-        ...agents,
-        ...[defaultQueenAgent(device, agents, capabilities)].filter((agent): agent is AgentProfile => Boolean(agent)),
-      ];
       return {
         device,
         collector: "ready",
@@ -401,10 +444,6 @@ export async function GET() {
         snapshots: snapshotData.snapshots ?? [],
       };
     } catch {
-      const visibleAgents = [
-        ...agents,
-        ...[defaultQueenAgent(device, agents, capabilities)].filter((agent): agent is AgentProfile => Boolean(agent)),
-      ];
       return {
         device,
         collector: "ready",
@@ -418,7 +457,7 @@ export async function GET() {
   }));
   const machines = dedupeMachines(discovered);
 
-  return Response.json({
+  return {
     ok: true,
     source: fleetStatus.source,
     hivemindLink: fleetStatus.link ? {
@@ -428,7 +467,32 @@ export async function GET() {
       magicDnsSuffix: fleetStatus.link.magicDnsSuffix,
     } : undefined,
     machines,
-  });
+  };
+}
+
+export async function GET(request: Request) {
+  const includeSnapshots = shouldIncludeSnapshots(request);
+  const cacheKey = includeSnapshots ? "with-snapshots" : "light";
+  const cached = discoveryCache.get(cacheKey);
+  const now = Date.now();
+  if (cached && now - cached.checkedAt < DISCOVERY_CACHE_MS) {
+    return Response.json(cached.payload);
+  }
+
+  let inFlight = discoveryInFlight.get(cacheKey);
+  if (!inFlight) {
+    inFlight = readDiscovery(includeSnapshots)
+      .then((payload) => {
+        discoveryCache.set(cacheKey, { checkedAt: Date.now(), payload });
+        return payload;
+      })
+      .finally(() => {
+        discoveryInFlight.delete(cacheKey);
+      });
+    discoveryInFlight.set(cacheKey, inFlight);
+  }
+
+  return Response.json(await inFlight);
 }
 
 function machineScore(machine: {

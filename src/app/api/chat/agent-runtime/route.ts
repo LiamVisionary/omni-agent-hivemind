@@ -11,7 +11,7 @@ import { proxyInput, proxyOutput } from "@/lib/services/agent-security-proxy";
 import type { AgentWalletConfig } from "@/lib/types/agent-wallet";
 import { summarizeX402Policy } from "@/lib/services/wallet/x402-agent-fetch";
 import { getRuntimeAdapter } from "@/lib/services/runtime-adapters/registry";
-import { getHoneyWorkspaceId, recordHoneyUsage } from "@/lib/services/wallet/honey-ledger";
+import { recordHoneyUsage } from "@/lib/services/wallet/honey-ledger";
 import { recordTelemetryBatch } from "@/lib/services/telemetry/local-telemetry";
 import { normalizeRuntimeStreamEvent, RUNTIME_STREAM_EVENT_TYPES } from "@/lib/services/runtime-stream-events";
 
@@ -192,6 +192,7 @@ function buildAgentProfileContext(profile: AgentProfile): string {
     profile.provider || profile.model ? `- Preferred model: ${[profile.provider, profile.model].filter(Boolean).join("/")}` : "",
     profile.skillProfilePrompt?.trim() ? `- Role instructions: ${profile.skillProfilePrompt.trim()}` : "",
     profile.preferredSkillSlugs?.length ? `- Preferred skills: ${profile.preferredSkillSlugs.join(", ")}` : "",
+    "- HivemindOS chat bridge: do not use terminal-only interactive clarification prompts. If a question is unavoidable, emit or return a concise question with explicit choices so the dashboard can render it, otherwise make a reasonable assumption and continue.",
   ].filter(Boolean);
   return lines.length > 2 ? lines.join("\n") : "";
 }
@@ -255,6 +256,12 @@ function streamEventForPayload(payload: unknown) {
   }
   if (record.status && typeof record.status === "object") {
     return normalizeRuntimeStreamEvent({ type: "chat.status", ...(record.status as Record<string, unknown>) });
+  }
+  if (record.clarify && typeof record.clarify === "object") {
+    return normalizeRuntimeStreamEvent({ type: RUNTIME_STREAM_EVENT_TYPES.CLARIFY, ...(record.clarify as Record<string, unknown>) });
+  }
+  if (record.prompt && typeof record.prompt === "object") {
+    return normalizeRuntimeStreamEvent({ type: RUNTIME_STREAM_EVENT_TYPES.CLARIFY, ...(record.prompt as Record<string, unknown>) });
   }
   if (record.session && typeof record.session === "object") {
     return normalizeRuntimeStreamEvent({ type: RUNTIME_STREAM_EVENT_TYPES.SESSION, ...(record.session as Record<string, unknown>) });
@@ -350,6 +357,15 @@ function runtimeFetchError(profile: AgentProfile, url: string, error: unknown) {
   return `${profile.name || profile.runtime} is not reachable at ${url}. Check that the ${profile.runtime} runtime is running and that the chat URL is correct. (${reason})`;
 }
 
+function runtimeStreamErrorMessage(profile: AgentProfile, error: unknown) {
+  const reason = error instanceof Error ? error.message : "";
+  const aborted = error instanceof Error && error.name === "AbortError";
+  if (aborted || /^(terminated|aborted)$/i.test(reason)) {
+    return `Connection to ${profile.name || profile.runtime} closed before a final response arrived. The collector may have restarted or the stream was interrupted; retry the message.`;
+  }
+  return reason || "Runtime stream failed";
+}
+
 function collectorChatProfile(profile: AgentProfile): AgentProfile | null {
   if (profile.runtime !== "hermes") return null;
   if (!profile.telemetryUrl?.trim()) return null;
@@ -358,53 +374,6 @@ function collectorChatProfile(profile: AgentProfile): AgentProfile | null {
     gatewayUrl: profile.telemetryUrl,
     chatPath: "/chat",
   };
-}
-
-async function streamTrustedComputeGateway(
-  profile: AgentProfile,
-  modelMessages: IncomingMessage[],
-) {
-  const gatewayUrl = process.env.HONEY_COMPUTE_GATEWAY_URL?.trim().replace(/\/+$/, "");
-  if (!gatewayUrl) {
-    return Response.json({
-      error: "Honey rewards need the official HivemindOS compute gateway before this call can earn official Honey.",
-    }, { status: 503 });
-  }
-
-  let upstream: Response;
-  try {
-    upstream = await fetch(`${gatewayUrl}/chat`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        workspaceId: await getHoneyWorkspaceId(),
-        agentId: profile.id,
-        agentName: profile.name,
-        runtime: profile.runtime,
-        bankrLlmKey: process.env.BANKR_LLM_KEY?.trim() || process.env.BANKR_API_KEY?.trim() || "",
-        messages: modelMessages,
-      }),
-      signal: AbortSignal.timeout(RUNTIME_FETCH_TIMEOUT_MS),
-    });
-  } catch (error) {
-    return Response.json({
-      error: runtimeFetchError(profile, gatewayUrl, error),
-    }, { status: 502 });
-  }
-
-  if (!upstream.body) {
-    const data = await upstream.json().catch(() => null) as { error?: string } | null;
-    return Response.json({ error: data?.error ?? "Trusted compute gateway returned an empty response." }, { status: upstream.status || 502 });
-  }
-
-  return new Response(upstream.body, {
-    status: upstream.status,
-    headers: {
-      "Content-Type": upstream.headers.get("content-type") ?? "text/event-stream",
-      "Cache-Control": "no-cache",
-      Connection: "keep-alive",
-    },
-  });
 }
 
 async function streamHttpRuntime(
@@ -438,12 +407,11 @@ async function streamHttpRuntime(
   const vaultContext = buildVaultContext(sharedVault);
   const walletContext = buildWalletToolContext(wallet);
   const context = [buildAgentProfileContext(profile), buildWorkingDirectoryContext(workingDirectory), vaultContext, walletContext].filter(Boolean).join("\n\n");
-  const runtimeMessages = context
+  const hermesSlashCommand = profile.runtime === "hermes" && /^\/[^\s/]*(?:\s|$)/.test(inputCheck.text.trim());
+  const runtimeMessages = context && !hermesSlashCommand
     ? [{ role: "system", content: context }, ...messages]
     : messages;
-  const runtimeMessage = context
-    ? `${context}\n\nUser message:\n${inputCheck.text}`
-    : inputCheck.text;
+  const runtimeMessage = inputCheck.text;
   const workspaceBefore = await readWorkspaceSnapshot(workingDirectory);
   let upstream: Response;
   const fetchStartedAt = Date.now();
@@ -662,7 +630,7 @@ async function streamHttpRuntime(
         });
         controller.enqueue(encoder.encode("data: [DONE]\n\n"));
       } catch (error) {
-        const message = error instanceof Error ? error.message : "Runtime stream failed";
+        const message = runtimeStreamErrorMessage(profile, error);
         recordRuntimeTelemetry(telemetry, "agent_runtime.http.stream.failed", {
           ...telemetryPayloadForProfile(profile),
           url,
@@ -910,20 +878,6 @@ export async function POST(request: NextRequest) {
   const textWithVaultContext = runtimeContexts
     ? `${runtimeContexts}\n\nUser message:\n${userPrompt}`
     : promptCheck.text;
-  const rewardGatewayMessages = runtimeContexts
-    ? [{ role: "system", content: runtimeContexts }, ...messages]
-    : messages;
-
-  if (honeyLedgerEnabled) {
-    await recordRouteTelemetry(request, "agent_runtime.dispatch.trusted_compute", {
-      ...telemetryPayloadForProfile(profile),
-      promptLength: userPrompt.length,
-      contextLength: runtimeContexts.length,
-      elapsedMs: Date.now() - routeStartedAt,
-    });
-    return streamTrustedComputeGateway(profile, rewardGatewayMessages);
-  }
-
   if (profile.runtime !== "openclaw") {
     const adapter = getRuntimeAdapter(profile.runtime);
     if (adapter && !adapter.capabilities.chat) {
