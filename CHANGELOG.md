@@ -3,6 +3,30 @@
 This file records user-visible changes before they are committed. New work should
 be added here first, then marked `Committed` or `Pushed` after the git action.
 
+## 2026-05-25 16:15 WITA - Add Runtime-Agnostic Kanban Runs
+
+- Status: Pushed
+- Areas changed: Kanban task model, local Kanban store, Kanban API, Work board bulk controls, Kanban workflow smoke test, assimilation manifest
+- Summary: Add Hermes-inspired but runtime-agnostic task runs, claim/heartbeat/complete/block/unblock/promote/reclaim verbs, dependency auto-promotion, per-task run history, bulk task updates, and dashboard multi-select actions while preserving HivemindOS Obsidian/local JSON storage and Hermes/OpenClaw-neutral dispatch semantics.
+- Verification: `node --check scripts/test-kanban-workflow.mjs`; `pnpm exec tsc --noEmit --pretty false`; `KANBAN_TEST_BASE_URL=http://127.0.0.1:5020 node scripts/test-kanban-workflow.mjs`; `pnpm exec eslint src/app/page.tsx src/app/api/kanban/route.ts src/lib/services/kanban/local-kanban-store.ts src/lib/types/kanban.ts --max-warnings=999` passed with 30 pre-existing warnings in `src/app/page.tsx`.
+- Intended commit message: `Add runtime-agnostic Kanban runs`
+
+## 2026-05-25 16:55 WITA - Create Runtime-Backed Agents
+
+- Status: Pushed
+- Areas changed: Agent creation modal, agent runtime creation API, telemetry collector agent registry/profile creation, agent runtime chat context, fleet discovery capabilities, agent history aliasing
+- Summary: Route dashboard "Add agent" through the machine collector instead of only saving a browser-local profile, create durable Hermes profile homes with provider/model/personality metadata, advertise runtime agent creation support, include agent role/model instructions in runtime chat context, and stop named agents from inheriting generic collector history unless their exact runtime profile/home matches.
+- Verification: `node --check scripts/agent-telemetry-collector.mjs`; `git diff --check -- scripts/agent-telemetry-collector.mjs src/app/api/agents/runtime/route.ts src/app/api/chat/agent-runtime/route.ts src/app/api/fleet/discover/route.ts src/app/page.tsx src/lib/types/agent-runtime.ts CHANGELOG.md`; `pnpm exec eslint src/app/page.tsx src/app/api/agents/runtime/route.ts src/app/api/chat/agent-runtime/route.ts src/app/api/fleet/discover/route.ts src/lib/types/agent-runtime.ts --max-warnings=999` passed with 30 pre-existing warnings in `src/app/page.tsx`; temporary collector on port 8799 created and listed Hermes profile `Henry Matisse` with provider `openai-codex`, model `gpt-5.5`, and `~/.hermes/profiles/henry-matisse`. `pnpm exec tsc --noEmit --pretty false` is currently blocked by stale generated `.next/dev/types/app/fleet-graph-shot/page.ts` references to a missing generated route file outside this change set.
+- Intended commit message: `Create runtime-backed agents`
+
+## 2026-05-25 16:24 WITA - Collapse Local Link Mac Duplicates
+
+- Status: Pushed
+- Areas changed: Tailscale fleet device convergence, fleet discovery, roster cache merge, changelog
+- Summary: Treat app-managed `hivemindos-<this-mac>-local*` Link nodes as duplicates of the physical `This Mac` device while still showing real macOS Tailscale peers as offline setup targets in the roster.
+- Verification: `curl -sS --max-time 8 http://127.0.0.1:5020/api/tailscale/devices | jq '{source, devices: [.devices[] | {name,dnsName,os,online,self,relay}]}'`; `curl -sS --max-time 10 http://127.0.0.1:5020/api/fleet/discover | jq '{source, machines: [.machines[] | {name: .device.name, dnsName: .device.dnsName, os: .device.os, self: .device.self, online: .device.online, collector: .collector, agents: (.agents|length), relay: .device.relay}]}'`; `pnpm typecheck`.
+- Intended commit message: `Collapse local Link Mac duplicates`
+
 ## 2026-05-25 15:10 WITA - Link README Bankr Badge To Token
 
 - Status: Pushed

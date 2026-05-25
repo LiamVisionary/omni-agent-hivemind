@@ -75,6 +75,7 @@ type CollectorVersion = {
 type CollectorCapabilities = {
   chat?: boolean;
   envHttpSync?: boolean;
+  runtimeAgentCreation?: boolean;
   runtimes?: string[];
   syncthing?: boolean;
   defaultSyncPath?: string;
@@ -154,6 +155,10 @@ function isMobileDevice(device: Device) {
   return /^(ios|android)$/i.test(device.os);
 }
 
+function isMacDevice(device: Device) {
+  return /^macos$/i.test(device.os);
+}
+
 function hivemindMachineBase(device: Device) {
   const normalizedName = normalizeName(device.name);
   const normalizedDnsName = normalizeName(dnsLabel(device.dnsName));
@@ -162,11 +167,21 @@ function hivemindMachineBase(device: Device) {
   return value.replace(/^hivemindos/, "").replace(/local\d*$/, "");
 }
 
+function physicalMachineBase(device: Device) {
+  const normalizedDnsName = normalizeName(dnsLabel(device.dnsName));
+  const normalizedName = normalizeName(device.name);
+  const value = normalizedDnsName || normalizedName;
+  return value.replace(/^hivemindos/, "").replace(/local\d*$/, "").replace(/\d+$/, "");
+}
+
 function isStaleSelfDuplicate(self: Device | undefined, device: Device) {
-  if (!self || device.self || device.online) return false;
+  if (!self || device.self) return false;
   const selfBase = hivemindMachineBase(self);
   const deviceBase = hivemindMachineBase(device);
   if (selfBase && deviceBase && selfBase === deviceBase) return true;
+  const physicalSelfBase = physicalMachineBase(self);
+  if (physicalSelfBase && deviceBase && physicalSelfBase === deviceBase) return true;
+  if (device.online) return false;
   return normalizeName(self.name) !== "" && normalizeName(self.name) === normalizeName(device.name);
 }
 
@@ -187,7 +202,7 @@ function dedupeDevices(devices: Device[]) {
       byIdentity.set(key, device);
     }
   }
-  return [...byIdentity.values()].filter((device) => isHivemindLinkDevice(device) || isMobileDevice(device));
+  return [...byIdentity.values()].filter((device) => isHivemindLinkDevice(device) || isMobileDevice(device) || isMacDevice(device));
 }
 
 function linkCollectorUrl(ip: string) {

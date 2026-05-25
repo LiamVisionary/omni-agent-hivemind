@@ -181,6 +181,21 @@ function buildWalletToolContext(wallet?: AgentWalletConfig): string {
   return lines.join("\n");
 }
 
+function buildAgentProfileContext(profile: AgentProfile): string {
+  const lines = [
+    "Agent profile context:",
+    `- Name: ${profile.name || profile.id}`,
+    `- Runtime: ${profile.runtime}`,
+    profile.machineName ? `- Machine: ${profile.machineName}` : "",
+    profile.beeRole ? `- Bee role: ${profile.beeRole}` : "",
+    profile.workerClass ? `- Worker class: ${profile.workerClass}` : "",
+    profile.provider || profile.model ? `- Preferred model: ${[profile.provider, profile.model].filter(Boolean).join("/")}` : "",
+    profile.skillProfilePrompt?.trim() ? `- Role instructions: ${profile.skillProfilePrompt.trim()}` : "",
+    profile.preferredSkillSlugs?.length ? `- Preferred skills: ${profile.preferredSkillSlugs.join(", ")}` : "",
+  ].filter(Boolean);
+  return lines.length > 2 ? lines.join("\n") : "";
+}
+
 function safeAgentEnv(value: unknown): Record<string, string> | undefined {
   if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
   const env: Record<string, string> = {};
@@ -405,7 +420,7 @@ async function streamHttpRuntime(
   }
   const vaultContext = buildVaultContext(sharedVault);
   const walletContext = buildWalletToolContext(wallet);
-  const context = [buildWorkingDirectoryContext(workingDirectory), vaultContext, walletContext].filter(Boolean).join("\n\n");
+  const context = [buildAgentProfileContext(profile), buildWorkingDirectoryContext(workingDirectory), vaultContext, walletContext].filter(Boolean).join("\n\n");
   const runtimeMessages = context
     ? [{ role: "system", content: context }, ...messages]
     : messages;
@@ -440,6 +455,7 @@ async function streamHttpRuntime(
         ...(profile.token ? { Authorization: `Bearer ${profile.token}` } : {}),
       },
       body: JSON.stringify({
+        agent: profile,
         agentId: profile.agentId || profile.id,
         sessionKey: profile.sessionKey,
         provider: profile.provider || undefined,
@@ -721,7 +737,7 @@ export async function POST(request: NextRequest) {
     return Response.json({ error: promptCheck.reason ?? "Message blocked by security policy" }, { status: 400 });
   }
   const vault = activeSharedVault(profile, sharedVault);
-  const runtimeContexts = [buildWorkingDirectoryContext(workingDirectory), buildVaultContext(vault), buildWalletToolContext(wallet)].filter(Boolean).join("\n\n");
+  const runtimeContexts = [buildAgentProfileContext(profile), buildWorkingDirectoryContext(workingDirectory), buildVaultContext(vault), buildWalletToolContext(wallet)].filter(Boolean).join("\n\n");
   const textWithVaultContext = runtimeContexts
     ? `${runtimeContexts}\n\nUser message:\n${userPrompt}`
     : promptCheck.text;

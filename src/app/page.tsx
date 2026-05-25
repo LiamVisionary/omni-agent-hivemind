@@ -2395,8 +2395,37 @@ function isMobileMachineOs(os?: string) {
   return /^(ios|android)$/i.test(os ?? "");
 }
 
+function isMacMachineOs(os?: string) {
+  return /^macos$/i.test(os ?? "");
+}
+
 function isVisibleFleetMachine(machine: Pick<MachineGroup, "name" | "dnsName" | "os">) {
-  return isHivemindMachineName(machine.name, machine.dnsName) || isMobileMachineOs(machine.os);
+  return isHivemindMachineName(machine.name, machine.dnsName) || isMobileMachineOs(machine.os) || isMacMachineOs(machine.os);
+}
+
+function machineHivemindBase(name?: string, dnsName?: string) {
+  const dnsLabel = dnsName?.replace(/\.$/, "").split(".")[0] ?? "";
+  const normalizedName = normalizeMachineName(name);
+  const normalizedDnsName = normalizeMachineName(dnsLabel);
+  const value = normalizedName.startsWith("hivemindos") ? normalizedName : normalizedDnsName;
+  if (!value.startsWith("hivemindos")) return "";
+  return value.replace(/^hivemindos/, "").replace(/local\d*$/, "");
+}
+
+function machinePhysicalBase(name?: string, dnsName?: string) {
+  const dnsLabel = dnsName?.replace(/\.$/, "").split(".")[0] ?? "";
+  const value = normalizeMachineName(dnsLabel) || normalizeMachineName(name);
+  return value.replace(/^hivemindos/, "").replace(/local\d*$/, "").replace(/\d+$/, "");
+}
+
+function isLocalLinkDuplicateOfSelf(self: TailscaleDevice | undefined, device: TailscaleDevice) {
+  if (!self || device.self) return false;
+  const deviceBase = machineHivemindBase(device.name, device.dnsName);
+  if (!deviceBase) return false;
+  const selfBase = machineHivemindBase(self.name, self.dnsName);
+  if (selfBase && selfBase === deviceBase) return true;
+  const physicalSelfBase = machinePhysicalBase(self.name, self.dnsName);
+  return Boolean(physicalSelfBase && physicalSelfBase === deviceBase);
 }
 
 function displayMachineName(name: string, self?: boolean) {
@@ -2479,14 +2508,7 @@ function agentAliasTarget(agent: AgentProfile, autoDiscoveredAgents: AgentProfil
   const exactKey = agentWorkspaceKey(agent);
   const exact = autoDiscoveredAgents.find((candidate) => candidate.id !== agent.id && agentWorkspaceKey(candidate) === exactKey);
   if (exact) return exact;
-
-  const collectorRuntime = collectorRuntimeKey(agent);
-  if (!collectorRuntime || normalizeAgentPath(agent.localDataDir)) return undefined;
-  const matches = autoDiscoveredAgents.filter((candidate) => (
-    candidate.id !== agent.id
-    && collectorRuntimeKey(candidate) === collectorRuntime
-  ));
-  return matches.length === 1 ? matches[0] : undefined;
+  return undefined;
 }
 
 function agentAliasMap(configuredAgents: AgentProfile[], autoDiscoveredAgents: AgentProfile[]) {
@@ -4096,6 +4118,7 @@ function mergeDiscoveredMachines(current: DiscoveredMachine[], incoming: Discove
   const currentByKey = new Map(current.map((machine) => [discoveredMachineIdentity(machine), machine]));
   const incomingKeys = new Set(incoming.map((machine) => discoveredMachineIdentity(machine)));
   const incomingHasTailnetSelf = incoming.some((machine) => machine.device.self && !isLoopbackCollector(machine.device.collectorUrl));
+  const incomingSelf = incoming.find((machine) => machine.device.self)?.device;
   const now = Date.now();
 
   const merged = incoming.map((machine) => {
@@ -4130,6 +4153,7 @@ function mergeDiscoveredMachines(current: DiscoveredMachine[], incoming: Discove
     .filter((machine) => !incomingKeys.has(discoveredMachineIdentity(machine)))
     .filter(shouldPreserveMissingDiscoveredMachine)
     .filter((machine) => !(incomingHasTailnetSelf && machine.device.self && isLoopbackCollector(machine.device.collectorUrl)))
+    .filter((machine) => !isLocalLinkDuplicateOfSelf(incomingSelf, machine.device))
     .map((machine) => ({
       ...machine,
       device: machine.device.self ? machine.device : { ...machine.device, online: false },
@@ -4743,6 +4767,9 @@ export default function Home() {
   const [quickAddAttachmentError, setQuickAddAttachmentError] = useState("");
   const [quickAddAttachmentMenuOpen, setQuickAddAttachmentMenuOpen] = useState(false);
   const [kanbanCardRecentsExpanded, setKanbanCardRecentsExpanded] = useState<Record<string, boolean>>({});
+  const [selectedKanbanTaskIds, setSelectedKanbanTaskIds] = useState<Record<string, boolean>>({});
+  const [kanbanBulkAssignee, setKanbanBulkAssignee] = useState("");
+  const [kanbanBulkPending, setKanbanBulkPending] = useState(false);
   const [machineDirectoryBrowser, setMachineDirectoryBrowser] = useState<MachineDirectoryBrowser | null>(null);
   const [kanbanBoardScrollState, setKanbanBoardScrollState] = useState({ canScrollLeft: false, canScrollRight: false });
   const [newBoardDraft, setNewBoardDraft] = useState({ slug: "", name: "" });
@@ -7495,6 +7522,11 @@ export default function Home() {
     [kanbanBoard, selectedKanbanTaskId],
   );
 
+  const selectedKanbanBulkIds = useMemo(
+    () => Object.entries(selectedKanbanTaskIds).filter(([, selected]) => selected).map(([taskId]) => taskId),
+    [selectedKanbanTaskIds],
+  );
+
   const selectedWallet = useMemo(() => {
     if (!selectedAgent) return null;
     return walletsByAgent[selectedAgent.id] ?? createDefaultAgentWallet(selectedAgent.id);
@@ -7940,18 +7972,18 @@ export default function Home() {
     setRuntimeSessionResults(data.sessions ?? []);
   }
 
-  function createAgentFromModal() {
+  async function createAgentFromModal() {
     if (!agentCreateMachine?.collectorUrl) return;
     const runtime = agentCreateDraft.runtime;
-    const next: AgentProfile = {
+    const draft: AgentProfile = {
       ...createAgentProfile(runtime, runtimeCount(agents, runtime) + 1),
       name: agentCreateDraft.name.trim() || `${RUNTIME_LABELS[runtime]} on ${agentCreateMachine.name}`,
       telemetryUrl: agentCreateMachine.collectorUrl,
       machineName: agentCreateMachine.name,
-      agentId: runtime === "hermes" ? "local-hermes" : runtime === "openclaw" ? "main" : "",
+      agentId: runtime === "openclaw" ? "main" : "",
       provider: agentCreateDraft.provider,
       model: agentCreateDraft.model,
-      localDataDir: runtime === "hermes" ? "~/.hermes" : "",
+      localDataDir: "",
       beeRole: "worker",
       workerClass: agentCreateDraft.workerClass,
       customWorkerClass: agentCreateDraft.customWorkerClass,
@@ -7961,7 +7993,39 @@ export default function Home() {
       preferredSkillSlugs: agentCreateDraft.preferredSkillSlugs,
       useSharedVault: agentCreateDraft.useSharedVault,
     };
-    setAgents((current) => [...current, next]);
+    setRuntimeIntegrationBusy("create-agent");
+    setRuntimeIntegrationMessage("");
+    const response = await fetch("/api/agents/runtime", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        collectorUrl: agentCreateMachine.collectorUrl,
+        agent: draft,
+      }),
+    }).catch(() => null);
+    const data = await response?.json().catch(() => null) as { ok?: boolean; agent?: AgentProfile; error?: string } | null;
+    setRuntimeIntegrationBusy("");
+    if (!response?.ok || !data?.ok || !data.agent) {
+      setRuntimeIntegrationMessage(data?.error ?? "Could not create the runtime-backed agent on that machine.");
+      return;
+    }
+    const next = normalizeAgentProfile({
+      ...draft,
+      ...data.agent,
+      telemetryUrl: data.agent.telemetryUrl || agentCreateMachine.collectorUrl,
+      machineName: data.agent.machineName || agentCreateMachine.name,
+      collectorCapabilities: data.agent.collectorCapabilities ?? agentCreateMachine.capabilities,
+    });
+    setAgents((current) => [...current.filter((agent) => agent.id !== next.id), next]);
+    setDiscoveredMachines((current) => current.map((machine) => (
+      collectorKey(machine.device.collectorUrl) === collectorKey(agentCreateMachine.collectorUrl)
+        ? {
+          ...machine,
+          agents: [...machine.agents.filter((agent) => agent.id !== next.id), next],
+          lastSeenAt: Date.now(),
+        }
+        : machine
+    )));
     setSelectedAgentId(next.id);
     closeAgentSettingsModal();
   }
@@ -10774,6 +10838,65 @@ export default function Home() {
     await refreshKanbanOnce().catch((error) => setKanbanError(error instanceof Error ? error.message : "Kanban refresh failed."));
   }
 
+  async function bulkPatchKanbanTasks(patch: KanbanTaskPatch) {
+    if (!selectedKanbanBulkIds.length) return;
+    setKanbanBulkPending(true);
+    const response = await fetch(`/api/kanban?board=${encodeURIComponent(kanbanBoardSlug)}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        ...kanbanStorageBody(),
+        action: "bulk",
+        ids: selectedKanbanBulkIds,
+        patch,
+      }),
+    }).catch(() => null);
+    const data = await response?.json().catch(() => null) as KanbanResponse & { results?: Array<{ ok: boolean; error?: string }> } | null;
+    setKanbanBulkPending(false);
+    if (!response?.ok || !data?.ok) {
+      setKanbanError(data?.error ?? "Could not update selected tasks.");
+      return;
+    }
+    const failures = data.results?.filter((result) => !result.ok) ?? [];
+    if (data.board) {
+      setKanbanBoard(data.board);
+      setKanbanStorage(data.storage ?? null);
+    }
+    setSelectedKanbanTaskIds({});
+    if (failures.length) setKanbanError(`${failures.length} selected task${failures.length === 1 ? "" : "s"} could not be updated.`);
+    else setKanbanError("");
+    await refreshKanbanOnce().catch((error) => setKanbanError(error instanceof Error ? error.message : "Kanban refresh failed."));
+  }
+
+  async function promoteKanbanIdea(task: KanbanTask, mode: "specify" | "decompose") {
+    const response = await fetch(`/api/kanban?board=${encodeURIComponent(kanbanBoardSlug)}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        ...kanbanStorageBody(),
+        action: "promote",
+        taskId: task.id,
+        reason: mode === "decompose" ? "Ready for planner decomposition." : "Ready for specification pass.",
+      }),
+    }).catch(() => null);
+    const data = await response?.json().catch(() => null) as KanbanResponse | null;
+    if (!response?.ok || !data?.ok) {
+      setKanbanError(data?.error ?? "Could not promote task.");
+      return;
+    }
+    if (data.board) {
+      setKanbanBoard(data.board);
+      setKanbanStorage(data.storage ?? null);
+    }
+    await addKanbanSystemComment(
+      task.id,
+      mode === "decompose"
+        ? "Marked for decomposition; the Queen Bee or planner can fan this into child tasks."
+        : "Marked for specification; the next worker should sharpen scope, acceptance criteria, and handoff evidence.",
+    );
+    await refreshKanbanOnce().catch((error) => setKanbanError(error instanceof Error ? error.message : "Kanban refresh failed."));
+  }
+
   async function updateKanbanTaskMachine(task: KanbanTask, targetMachine: KanbanMachineTarget | null) {
     await patchKanbanTask(task.id, {
       targetMachine,
@@ -11207,6 +11330,20 @@ export default function Home() {
         icon: <RotateCcw aria-hidden="true" />,
         onClick: () => void requestKanbanTaskUndo(task),
       } satisfies CellMenuItem] : []),
+      ...(task.status === "ideas" ? [
+        {
+          key: "specify",
+          label: "Specify",
+          icon: <Pencil aria-hidden="true" />,
+          onClick: () => void promoteKanbanIdea(task, "specify"),
+        } satisfies CellMenuItem,
+        {
+          key: "decompose",
+          label: "Decompose",
+          icon: <GitBranch aria-hidden="true" />,
+          onClick: () => void promoteKanbanIdea(task, "decompose"),
+        } satisfies CellMenuItem,
+      ] : []),
       {
         key: "assign",
         label: "Assign",
@@ -13836,6 +13973,29 @@ export default function Home() {
 
           {kanbanError ? <p className={kanbanClass("kanbanError")}>{kanbanError}</p> : null}
 
+          {selectedKanbanBulkIds.length > 0 ? (
+            <section className={kanbanClass("kanbanBulkBar")} aria-label="Selected task actions">
+              <strong>{selectedKanbanBulkIds.length} selected</strong>
+              <button type="button" disabled={kanbanBulkPending} onClick={() => void bulkPatchKanbanTasks({ status: "ready" })}>Ready</button>
+              <button type="button" disabled={kanbanBulkPending} onClick={() => void bulkPatchKanbanTasks({ status: "needs-human" })}>Needs You</button>
+              <button type="button" disabled={kanbanBulkPending} onClick={() => void bulkPatchKanbanTasks({ status: "done" })}>Done</button>
+              <button type="button" disabled={kanbanBulkPending} onClick={() => void bulkPatchKanbanTasks({ status: "archived" })}>Archive</button>
+              <select value={kanbanBulkAssignee} onChange={(event) => setKanbanBulkAssignee(event.target.value)} aria-label="Bulk assignee">
+                <option value="">Reassign...</option>
+                <option value="__unassigned__">Unassigned</option>
+                {kanbanAssigneeOptions.map((assignee) => <option value={assignee} key={assignee}>{assignee}</option>)}
+              </select>
+              <button
+                type="button"
+                disabled={kanbanBulkPending || !kanbanBulkAssignee}
+                onClick={() => void bulkPatchKanbanTasks({ assignee: kanbanBulkAssignee === "__unassigned__" ? "" : kanbanBulkAssignee })}
+              >
+                Apply
+              </button>
+              <button type="button" disabled={kanbanBulkPending} onClick={() => setSelectedKanbanTaskIds({})}>Clear</button>
+            </section>
+          ) : null}
+
             <div className={kanbanClass("kanbanWorkspace", "noDrawer")}>
               <div className={kanbanClass("kanbanBoardStage")}>
               {kanbanBoardScrollState.canScrollLeft ? (
@@ -14002,6 +14162,20 @@ export default function Home() {
                             onDragStart={(event) => event.dataTransfer.setData("text/plain", task.id)}
                           >
                             <div className={kanbanClass("kanbanCardHeader")}>
+                              <input
+                                type="checkbox"
+                                checked={Boolean(selectedKanbanTaskIds[task.id])}
+                                onClick={(event) => event.stopPropagation()}
+                                onChange={(event) => {
+                                  setSelectedKanbanTaskIds((current) => {
+                                    const next = { ...current };
+                                    if (event.target.checked) next[task.id] = true;
+                                    else delete next[task.id];
+                                    return next;
+                                  });
+                                }}
+                                aria-label={`Select ${task.title}`}
+                              />
                               <span className={kanbanClass("priorityPill", task.priority)}>{task.priority}</span>
                               {undoInProgress ? (
                                 <span className={kanbanClass("kanbanUndoBadge")} title="Undo is underway">
@@ -18026,10 +18200,11 @@ export default function Home() {
             ) : null}
 
             <div className={fleetClass("setupModalActions")}>
-              <Button type="button" onClick={agentCreateMachine ? createAgentFromModal : closeAgentSettingsModal}>
+              <Button type="button" disabled={runtimeIntegrationBusy === "create-agent"} onClick={agentCreateMachine ? () => void createAgentFromModal() : closeAgentSettingsModal}>
                 <Check aria-hidden="true" />
-                {agentCreateMachine ? "Add agent" : "Done"}
+                {agentCreateMachine ? runtimeIntegrationBusy === "create-agent" ? "Creating..." : "Add agent" : "Done"}
               </Button>
+              {agentCreateMachine && runtimeIntegrationMessage ? <p className={fleetClass("agentRuntimeToolStatus")}>{runtimeIntegrationMessage}</p> : null}
             </div>
           </section>
         </div>

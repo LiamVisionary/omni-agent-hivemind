@@ -1,5 +1,5 @@
 {
-  "created_at": "2026-05-23T07:26:09.641977+00:00",
+  "created_at": "2026-05-25T08:16:05.792417+00:00",
   "custom_code_assessment": "balanced",
   "entries": [
     {
@@ -631,6 +631,48 @@
       "target_path": "cmd/hivemind-linkd/main.go",
       "reuse_type": "adapted_code",
       "note": "embedded tsnet Start/LocalClient lifecycle, auth URL status handling, and peer status shape adapted for the Link sidecar control API"
+    },
+    {
+      "source_repo": "nousresearch/hermes-agent",
+      "source_path": "hermes_cli/kanban_db.py",
+      "target_path": "src/lib/types/kanban.ts",
+      "reuse_type": "translated_code",
+      "note": "task_runs schema concepts translated into KanbanTaskRun, claim fields, heartbeat fields, and event payload/run references"
+    },
+    {
+      "source_repo": "nousresearch/hermes-agent",
+      "source_path": "hermes_cli/kanban_db.py",
+      "target_path": "src/lib/services/kanban/local-kanban-store.ts",
+      "reuse_type": "translated_code",
+      "note": "task run lifecycle, claim, heartbeat, complete/block, reclaim, and dependency promotion mechanics translated from SQLite/Python into HivemindOS JSON/TypeScript storage"
+    },
+    {
+      "source_repo": "nousresearch/hermes-agent",
+      "source_path": "tools/kanban_tools.py",
+      "target_path": "src/app/api/kanban/route.ts",
+      "reuse_type": "translated_code",
+      "note": "structured kanban worker verbs exposed as runtime-agnostic dashboard API actions"
+    },
+    {
+      "source_repo": "nousresearch/hermes-agent",
+      "source_path": "website/docs/user-guide/features/kanban.md",
+      "target_path": "src/app/page.tsx",
+      "reuse_type": "translated_code",
+      "note": "dashboard multi-select bulk actions and triage specify/decompose actions translated into the existing Work board controls"
+    },
+    {
+      "source_repo": "nousresearch/hermes-agent",
+      "source_path": "tests/hermes_cli/test_kanban_promote.py",
+      "target_path": "scripts/test-kanban-workflow.mjs",
+      "reuse_type": "test_adapted",
+      "note": "dependency promotion and bulk partial workflow coverage adapted into the existing API smoke test"
+    },
+    {
+      "source_repo": "nousresearch/hermes-agent",
+      "source_path": "tests/plugins/test_kanban_worker_runs.py",
+      "target_path": "scripts/test-kanban-workflow.mjs",
+      "reuse_type": "test_adapted",
+      "note": "task run claim/heartbeat/complete smoke coverage adapted for HivemindOS"
     }
   ]
 }

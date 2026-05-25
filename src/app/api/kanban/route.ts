@@ -4,14 +4,22 @@ import {
   addComment,
   addLink,
   archiveBoard,
+  blockTask,
+  bulkPatchTasks,
+  claimTask,
+  completeTask,
   createBoard,
   createTask,
   deleteTask,
+  heartbeatTask,
   listBoards,
   moveTask,
   patchTask,
+  promoteTask,
   readBoard,
+  reclaimStaleTasks,
   resolveKanbanStorage,
+  unblockTask,
   type KanbanStorageOptions,
 } from "@/lib/services/kanban/local-kanban-store";
 import { filterKanbanTasks, groupKanbanTasks } from "@/lib/utils/kanban-board";
@@ -67,6 +75,38 @@ export async function POST(request: NextRequest) {
     }
     if (body.action === "link") {
       const result = await addLink(boardSlug, body.parentId, body.childId, storageOptions);
+      return NextResponse.json({ ok: true, ...result, storage: resolveKanbanStorage(result.board.meta.slug, storageOptions) });
+    }
+    if (body.action === "bulk") {
+      const result = await bulkPatchTasks(boardSlug, Array.isArray(body.ids) ? body.ids : [], body.patch ?? {}, storageOptions);
+      return NextResponse.json({ ok: true, ...result, storage: resolveKanbanStorage(result.board.meta.slug, storageOptions) });
+    }
+    if (body.action === "claim") {
+      const result = await claimTask(boardSlug, body.taskId, body, storageOptions);
+      return NextResponse.json({ ok: true, ...result, storage: resolveKanbanStorage(result.board.meta.slug, storageOptions) });
+    }
+    if (body.action === "heartbeat") {
+      const result = await heartbeatTask(boardSlug, body.taskId, body.note, body.claimLock, storageOptions);
+      return NextResponse.json({ ok: true, ...result, storage: resolveKanbanStorage(result.board.meta.slug, storageOptions) });
+    }
+    if (body.action === "complete") {
+      const result = await completeTask(boardSlug, body.taskId, body, storageOptions);
+      return NextResponse.json({ ok: true, ...result, storage: resolveKanbanStorage(result.board.meta.slug, storageOptions) });
+    }
+    if (body.action === "block") {
+      const result = await blockTask(boardSlug, body.taskId, body.reason ?? body.summary ?? "Blocked.", storageOptions);
+      return NextResponse.json({ ok: true, ...result, storage: resolveKanbanStorage(result.board.meta.slug, storageOptions) });
+    }
+    if (body.action === "unblock") {
+      const result = await unblockTask(boardSlug, body.taskId, storageOptions);
+      return NextResponse.json({ ok: true, ...result, storage: resolveKanbanStorage(result.board.meta.slug, storageOptions) });
+    }
+    if (body.action === "promote") {
+      const result = await promoteTask(boardSlug, body.taskId, body, storageOptions);
+      return NextResponse.json({ ok: true, ...result, storage: resolveKanbanStorage(result.board.meta.slug, storageOptions) });
+    }
+    if (body.action === "reclaim-stale") {
+      const result = await reclaimStaleTasks(boardSlug, body, storageOptions);
       return NextResponse.json({ ok: true, ...result, storage: resolveKanbanStorage(result.board.meta.slug, storageOptions) });
     }
     const result = await createTask(boardSlug, body, storageOptions);

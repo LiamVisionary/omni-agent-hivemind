@@ -19,8 +19,10 @@ export type KanbanComment = {
 export type KanbanEvent = {
   id: string;
   taskId?: string;
+  runId?: string;
   kind: string;
   message: string;
+  payload?: Record<string, unknown>;
   createdAt: number;
 };
 
@@ -79,6 +81,11 @@ export type KanbanTask = {
   linkedDirectories?: KanbanLinkedDirectory[];
   targetMachine?: KanbanMachineTarget | null;
   agentSession?: KanbanAgentSession | null;
+  claimLock?: string;
+  claimExpiresAt?: number;
+  lastHeartbeatAt?: number;
+  currentRunId?: string;
+  maxRuntimeMs?: number;
   idempotencyKey?: string;
   reviewedAt?: number;
   reviewedBy?: string;
@@ -87,6 +94,25 @@ export type KanbanTask = {
   createdAt: number;
   updatedAt: number;
   completedAt?: number;
+};
+
+export type KanbanRunStatus = "running" | "completed" | "blocked" | "reclaimed" | "failed";
+
+export type KanbanTaskRun = {
+  id: string;
+  taskId: string;
+  status: KanbanRunStatus;
+  assignee?: string;
+  runtime?: string;
+  claimLock?: string;
+  claimExpiresAt?: number;
+  startedAt: number;
+  endedAt?: number;
+  lastHeartbeatAt?: number;
+  outcome?: KanbanRunStatus;
+  summary?: string;
+  metadata?: Record<string, unknown>;
+  error?: string;
 };
 
 export type KanbanBoardMeta = {
@@ -104,6 +130,7 @@ export type KanbanBoard = {
   comments: KanbanComment[];
   links: KanbanLink[];
   events: KanbanEvent[];
+  runs: KanbanTaskRun[];
 };
 
 export type KanbanColumnGroup = KanbanColumn & {

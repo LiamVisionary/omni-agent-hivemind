@@ -33,6 +33,8 @@ const defaultSyncPath = expandHome(
     || "~/Documents/Obsidian/hivemindos-vault",
 );
 const runLogRoot = join(homedir(), ".hivemindos", "runtime-runs");
+const runtimeAgentRegistryPath = join(homedir(), ".hivemindos", "runtime-agents.json");
+const hermesProfilesDir = join(defaultHermesDir, "profiles");
 let hermesApiProcess = null;
 let hermesApiStartPromise = null;
 
@@ -44,6 +46,175 @@ function safeAgentEnv(value) {
   if (!value || typeof value !== "object" || Array.isArray(value)) return {};
   return Object.fromEntries(Object.entries(value)
     .filter(([key, entry]) => /^[A-Za-z_][A-Za-z0-9_]*$/.test(key) && typeof entry === "string"));
+}
+
+function slugify(value) {
+  return String(value || "agent").trim().toLowerCase().replace(/[^a-z0-9_-]+/g, "-").replace(/^-|-$/g, "").slice(0, 48) || "agent";
+}
+
+function yamlScalar(value) {
+  return JSON.stringify(String(value || ""));
+}
+
+function uniqueAgentId(runtime, name) {
+  return `${runtime}-${slugify(name)}-${randomBytes(3).toString("hex")}`;
+}
+
+async function readRuntimeAgentRegistry() {
+  const raw = await readFile(runtimeAgentRegistryPath, "utf8").catch(() => "");
+  if (!raw.trim()) return [];
+  try {
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed.agents) ? parsed.agents : [];
+  } catch {
+    return [];
+  }
+}
+
+async function writeRuntimeAgentRegistry(agents) {
+  await mkdir(join(homedir(), ".hivemindos"), { recursive: true, mode: 0o700 });
+  await writeFile(runtimeAgentRegistryPath, `${JSON.stringify({ agents }, null, 2)}\n`, { mode: 0o600 });
+}
+
+function runtimeCapabilitiesFor(runtime) {
+  if (runtime === "hermes") {
+    return {
+      status: true,
+      chat: true,
+      runs: true,
+      memory: true,
+      sessionSearch: true,
+      backgroundTasks: true,
+      xSearch: true,
+      videoGeneration: true,
+      codexRuntime: true,
+      kanbanDecompose: true,
+      setup: true,
+      walletTools: true,
+      modelSelection: true,
+    };
+  }
+  if (runtime === "openclaw") {
+    return {
+      status: true,
+      chat: true,
+      skills: true,
+      schedules: true,
+      memory: true,
+      sessionSearch: true,
+      socialPosting: true,
+      videoGeneration: true,
+      notifications: true,
+      setup: true,
+      walletTools: true,
+    };
+  }
+  if (runtime === "aeon") {
+    return {
+      status: true,
+      skills: true,
+      schedules: true,
+      runs: true,
+      outputs: true,
+      memory: true,
+      backgroundTasks: true,
+      notifications: true,
+      setup: true,
+    };
+  }
+  return {};
+}
+
+function normalizeRuntimeAgent(entry) {
+  const runtime = ["hermes", "openclaw", "aeon"].includes(entry?.runtime) ? entry.runtime : "hermes";
+  return {
+    ...entry,
+    id: String(entry?.id || uniqueAgentId(runtime, entry?.name)),
+    name: String(entry?.name || "Agent"),
+    runtime,
+    gatewayUrl: String(entry?.gatewayUrl || ""),
+    agentId: String(entry?.agentId || entry?.profile || entry?.id || ""),
+    localDataDir: typeof entry?.localDataDir === "string" ? entry.localDataDir : "",
+    machineName: hostname(),
+    runtimeKind: runtime === "hermes" ? "interactive" : runtime === "openclaw" ? "gateway" : "background",
+    runtimeCapabilities: runtimeCapabilitiesFor(runtime),
+    beeRole: ["queen", "worker", "observer", "human"].includes(entry?.beeRole) ? entry.beeRole : "worker",
+    workerClass: ["general", "planner", "code", "vision", "writer", "research", "artist", "ops", "qa"].includes(entry?.workerClass) ? entry.workerClass : "general",
+    useSharedVault: entry?.useSharedVault !== false,
+  };
+}
+
+async function configuredRuntimeAgents() {
+  const agents = await readRuntimeAgentRegistry();
+  return agents.map(normalizeRuntimeAgent);
+}
+
+async function createHermesProfileAgent(input) {
+  const profile = slugify(input.profile || input.name);
+  if (profile === "default" || profile === "hermes") throw new Error("Choose a non-reserved Hermes profile name.");
+  const profileDir = join(hermesProfilesDir, profile);
+  const dirs = ["memories", "sessions", "skills", "skins", "logs", "plans", "workspace", "cron", "home"];
+  await Promise.all(dirs.map((dir) => mkdir(join(profileDir, dir), { recursive: true, mode: 0o700 })));
+  const provider = String(input.provider || "openai-codex").trim();
+  const model = String(input.model || "gpt-5.5").trim();
+  const profilePrompt = String(input.skillProfilePrompt || "").trim();
+  await writeFile(join(profileDir, "config.yaml"), [
+    "model:",
+    `  default: ${yamlScalar(model)}`,
+    `  provider: ${yamlScalar(provider)}`,
+    provider === "openai-codex" ? "  base_url: https://chatgpt.com/backend-api/codex" : "",
+    "agent:",
+    "  auto_approve: true",
+    "",
+  ].filter(Boolean).join("\n"), { mode: 0o600 });
+  await writeFile(join(profileDir, "SOUL.md"), [
+    `# ${input.name}`,
+    "",
+    profilePrompt || `You are ${input.name}, a ${input.workerClass || "general"} worker in HivemindOS.`,
+    "",
+  ].join("\n"), { mode: 0o600 });
+  await writeFile(join(profileDir, "profile.json"), `${JSON.stringify({
+    name: profile,
+    display_name: input.name,
+    description: profilePrompt,
+    description_auto: false,
+  }, null, 2)}\n`, { mode: 0o600 });
+  return { profile, profileDir, provider, model };
+}
+
+async function createRuntimeAgent(input) {
+  const runtime = ["hermes", "openclaw", "aeon"].includes(input.runtime) ? input.runtime : "hermes";
+  const name = String(input.name || "").trim();
+  if (!name) throw new Error("Agent name is required.");
+  const id = uniqueAgentId(runtime, name);
+  let runtimeResult = {};
+  if (runtime === "hermes") {
+    runtimeResult = await createHermesProfileAgent(input);
+  }
+  const profile = runtimeResult.profile || slugify(name);
+  const agent = normalizeRuntimeAgent({
+    id,
+    name,
+    runtime,
+    gatewayUrl: runtime === "openclaw" ? String(input.gatewayUrl || "ws://127.0.0.1:18789") : "",
+    agentId: profile,
+    chatPath: runtime === "hermes" ? "/chat" : "",
+    statusPath: runtime === "hermes" ? "/health" : "",
+    provider: input.provider,
+    model: input.model,
+    localDataDir: runtimeResult.profileDir || (runtime === "hermes" ? join(hermesProfilesDir, profile) : ""),
+    beeRole: input.beeRole,
+    workerClass: input.workerClass,
+    customWorkerClass: input.customWorkerClass,
+    customWorkerClasses: input.customWorkerClasses,
+    selectedCustomWorkerClassId: input.selectedCustomWorkerClassId,
+    skillProfilePrompt: input.skillProfilePrompt,
+    preferredSkillSlugs: input.preferredSkillSlugs,
+    useSharedVault: input.useSharedVault,
+  });
+  const agents = await readRuntimeAgentRegistry();
+  await writeRuntimeAgentRegistry([...agents.filter((item) => item.id !== agent.id), agent]);
+  return agent;
 }
 
 function jsonResponse(response, status, payload) {
@@ -959,6 +1130,7 @@ async function localAgents() {
       machineName: hostname(),
     });
   }
+  agents.push(...await configuredRuntimeAgents());
   const aeonConfig = join(defaultAeonDir, "aeon.yml");
   const aeonAvailable = await access(aeonConfig, constants.R_OK).then(() => true).catch(() => false);
   if (aeonAvailable) {
@@ -1008,7 +1180,8 @@ async function sendHermesChat(body) {
   const agent = body.agent && typeof body.agent === "object" ? body.agent : {};
   const hermesHome = expandHome(agent.localDataDir || body.localDataDir || defaultHermesDir);
   const agentEnv = safeAgentEnv(body.agentEnv);
-  const { stdout, stderr } = await execFileAsync(await resolveHermesBin(), ["-z", text], {
+  const args = hermesCliArgs(agent, ["-z", text]);
+  const { stdout, stderr } = await execFileAsync(await resolveHermesBin(), args, {
     timeout: chatTimeoutMs,
     maxBuffer: 3_000_000,
     env: {
@@ -1102,6 +1275,15 @@ function apiServerMessages(body, text, requestMarker = "") {
     ];
   }
   return [...markerMessage, { role: "user", content: text }];
+}
+
+function hermesCliArgs(agent, tailArgs) {
+  const args = [];
+  const model = typeof agent.model === "string" ? agent.model.trim() : "";
+  const provider = typeof agent.provider === "string" ? agent.provider.trim() : "";
+  if (model) args.push("-m", model);
+  if (provider) args.push("--provider", provider);
+  return [...args, ...tailArgs];
 }
 
 function normalizeHermesSessionId(input) {
@@ -1276,7 +1458,7 @@ async function proxyHermesApiChat(body, response, text, hermesHome) {
       method: "POST",
       headers: hermesApiHeaders({ "Content-Type": "application/json" }),
       body: JSON.stringify({
-        model: "hermes-agent",
+        model: body.agent?.model || "hermes-agent",
         stream: true,
         messages: apiServerMessages(body, text, requestMarker),
       }),
@@ -1384,7 +1566,7 @@ async function streamHermesChat(body, response) {
   if (hermesChatMode === "api" && await proxyHermesApiChat(body, response, text, hermesHome)) return;
 
   const runtimeSessionId = normalizeHermesSessionId(body.runtimeSessionId || body.hermesSessionId || "");
-  const args = ["chat", "-q", text, "--accept-hooks", "--source", "hivemindos"];
+  const args = hermesCliArgs(agent, ["chat", "-q", text, "--accept-hooks", "--source", "hivemindos"]);
   if (runtimeSessionId) args.push("--resume", runtimeSessionId);
   const cwd = await resolveChatWorkingDirectory(body.workingDirectory);
 
@@ -1527,6 +1709,7 @@ createServer(async (request, response) => {
         envHttpSync: true,
         runtimes,
         runtimeIntegrations: true,
+        runtimeAgentCreation: true,
         syncthing: syncthing.installed,
         defaultSyncPath,
       },
@@ -1596,9 +1779,23 @@ createServer(async (request, response) => {
 	    }
 	    return;
 	  }
-  if (pathname === "/agents") {
+  if (pathname === "/agents" && request.method === "GET") {
     const agents = await localAgents();
     jsonResponse(response, 200, { ok: true, host: hostname(), agents });
+    return;
+  }
+  if (pathname === "/agents" && request.method === "POST") {
+    try {
+      const rawBody = await readBody(request);
+      const body = rawBody ? JSON.parse(rawBody) : {};
+      const agent = await createRuntimeAgent(body);
+      jsonResponse(response, 200, { ok: true, host: hostname(), agent });
+    } catch (error) {
+      jsonResponse(response, 400, {
+        ok: false,
+        error: error instanceof Error ? error.message : "Could not create runtime agent.",
+      });
+    }
     return;
   }
   if (pathname === "/directories" && request.method === "GET") {

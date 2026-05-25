@@ -53,6 +53,7 @@ export interface AgentProfile {
     chat?: boolean;
     directoryBrowsing?: boolean;
     envHttpSync?: boolean;
+    runtimeAgentCreation?: boolean;
     runtimes?: string[];
     syncthing?: boolean;
     defaultSyncPath?: string;

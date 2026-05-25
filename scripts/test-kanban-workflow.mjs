@@ -96,6 +96,46 @@ async function main() {
     needsHumanUnassigned = await moveTask(needsHumanUnassigned, "ready");
     assert(!needsHumanUnassigned.assignee, "Unassigned Needs Human task should go back to Ready for assignment.");
 
+    const parent = await createTask("dependency parent", "ready");
+    let child = await createTask("dependency child", "ready", { parents: [parent.id] });
+    assert(child.status === "ideas", "Child with unfinished parents should wait inertly even if created as Ready.");
+    child = await request("POST", { action: "promote", taskId: child.id }).then((data) => data.task).catch((error) => {
+      assert(/unfinished parent/i.test(String(error?.message ?? error)), "Promote should report unfinished parent dependencies.");
+      return child;
+    });
+    assert(child.status === "ideas", "Child with unfinished parents should not promote.");
+    await request("POST", { action: "complete", taskId: parent.id, summary: "parent done", metadata: { verification: ["api workflow"] } });
+    const afterParentDone = await request("GET", {}, { vaultPath, kanbanFolder, include_archived: "true" });
+    child = afterParentDone.board.tasks.find((task) => task.id === child.id);
+    assert(child?.status === "ready", "Completing a parent should promote ready children.");
+
+    let claimable = await createTask("structured worker verbs", "ready");
+    const claimed = await request("POST", {
+      action: "claim",
+      taskId: claimable.id,
+      assignee: "OpenClaw on Test Machine",
+      runtime: "openclaw",
+      ttlMs: 60_000,
+    });
+    claimable = claimed.task;
+    assert(claimable.status === "working" && claimable.currentRunId && claimed.run?.status === "running", "Claim should create a running task run.");
+    const heartbeat = await request("POST", { action: "heartbeat", taskId: claimable.id, note: "still working" });
+    assert(heartbeat.task?.lastHeartbeatAt, "Heartbeat should touch task liveness.");
+    const completed = await request("POST", {
+      action: "complete",
+      taskId: claimable.id,
+      summary: "finished via structured verb",
+      metadata: { changed_files: [], verification: ["api workflow"] },
+    });
+    assert(completed.task?.status === "done", "Complete should finish claimed work.");
+    assert(completed.board.runs.some((run) => run.id === claimable.currentRunId && run.status === "completed"), "Complete should close the active run.");
+
+    const bulkA = await createTask("bulk a", "ideas");
+    const bulkB = await createTask("bulk b", "ideas");
+    const bulk = await request("POST", { action: "bulk", ids: [bulkA.id, bulkB.id], patch: { status: "archived" } });
+    assert(bulk.results?.every((result) => result.ok), "Bulk action should report per-task success.");
+    assert(bulk.board.tasks.filter((task) => [bulkA.id, bulkB.id].includes(task.id)).every((task) => task.status === "archived"), "Bulk action should update every selected task.");
+
     let needsHumanReadyRetry = await createTask("needs human assigned ready retry", "needs-human");
     needsHumanReadyRetry = await patchTask(needsHumanReadyRetry, {
       assignee: "Hermes on Test Machine",
