@@ -43,6 +43,13 @@ const versionPill = (v: FleetMachine["versionState"]) => {
   return                          { label: "current", color: "var(--accent-strong)", bg: "rgba(45,212,191,0.10)", border: "rgba(94,234,212,0.32)" };
 };
 
+const tailnetPill = (machine: FleetMachine) => {
+  const connected = machine.uptime.toLowerCase() === "online" && machine.tailnet.toLowerCase() !== "not connected";
+  return connected
+    ? { label: "Connected", color: "var(--accent-strong)", bg: "rgba(45,212,191,0.10)", border: "rgba(94,234,212,0.32)" }
+    : { label: "Off", color: "var(--muted)", bg: "rgba(148,163,184,0.08)", border: "rgba(148,163,184,0.22)" };
+};
+
 export function ListView({
   machines,
   selected, selectedAgentId,
@@ -74,7 +81,15 @@ export function ListView({
     <div className="w-full h-full overflow-auto px-5 py-3">
       <div className="rounded-xl overflow-hidden bg-[rgba(16,20,29,0.78)]"
         style={{ border: "1px solid rgba(148,163,184,0.16)" }}>
-        <table className="w-full border-collapse text-xs">
+        <table className="w-full border-collapse text-xs table-fixed">
+          <colgroup>
+            <col style={{ width: "24%" }} />
+            <col style={{ width: "14%" }} />
+            <col style={{ width: "10%" }} />
+            <col style={{ width: "13%" }} />
+            <col style={{ width: "11%" }} />
+            <col style={{ width: "18%" }} />
+          </colgroup>
           <thead>
             <tr style={{ background: "rgba(15,23,42,0.6)", borderBottom: "1px solid rgba(148,163,184,0.16)" }}>
               {["Machine", "Kind · Location", "Agents", "Tailnet", "Uptime", "Build"].map((h) => (
@@ -91,6 +106,7 @@ export function ListView({
             {machines.map((m) => {
               const isMSel = selected === m.id && !selectedAgentId;
               const v = versionPill(m.versionState);
+              const tailnet = tailnetPill(m);
               return (
                 <tbody key={m.id} className="contents">
                   <tr
@@ -139,9 +155,19 @@ export function ListView({
                         {m.agents.filter((a) => a.state === "working").length} active
                       </span>
                     </td>
-                    <td className="px-4 py-2.5" style={{ fontFamily: "var(--f-mono)", fontSize: 11, color: "var(--muted)" }}>
-                      {m.tailnet}
-                      <div style={{ fontSize: 10 }}>{m.ip} · {m.ping}ms</div>
+                    <td className="px-4 py-2.5">
+                      <span
+                        className="inline-flex items-center gap-1.5 uppercase"
+                        title={`${tailnet.label}: ${m.tailnet}${m.ip !== "—" ? ` · ${m.ip}` : ""}${m.ping ? ` · ${m.ping}ms` : ""}`}
+                        style={{
+                          padding: "3px 8px", borderRadius: 4,
+                          background: tailnet.bg, border: `1px solid ${tailnet.border}`, color: tailnet.color,
+                          fontFamily: "var(--f-mono)", fontSize: 10, fontWeight: 700, letterSpacing: 0.08,
+                        }}
+                      >
+                        <span className={styles.dot} style={{ color: tailnet.color, width: 5, height: 5 }} />
+                        {tailnet.label}
+                      </span>
                     </td>
                     <td className="px-4 py-2.5" style={{ fontFamily: "var(--f-mono)", fontSize: 11, color: "var(--foreground)" }}>
                       {m.uptime}
@@ -330,7 +356,7 @@ export function ListView({
                             )}
                           </div>
                         </td>
-                        <td className="px-4 py-1.5" style={{ fontFamily: "var(--f-mono)", fontSize: 10, color: "var(--muted)" }}>{a.wallet}</td>
+                        <td className="px-4 py-1.5" aria-hidden="true" />
                         <td className="px-4 py-1.5" style={{ fontFamily: "var(--f-mono)", fontSize: 10, color: "var(--muted)" }}>{a.since}</td>
                         <td className="px-4 py-1.5">
                           <span

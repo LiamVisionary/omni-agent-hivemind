@@ -13367,21 +13367,6 @@ export default function Home() {
             </Button>
           </div>
         ) : null}
-        <div className="mb-3 flex flex-wrap items-center justify-end gap-2">
-          <Button
-            type="button"
-		                  size="sm"
-		                  variant="secondary"
-		                  className={sharedEnvCount === 0 ? "opacity-35" : ""}
-		                  onClick={() => {
-              setActiveView("maintenance");
-              void refreshMaintenanceReport();
-            }}
-          >
-            <ShieldCheck aria-hidden="true" />
-            Diagnostics
-          </Button>
-        </div>
         <FleetView
           machines={fleetViewData.machines}
           tasks={fleetViewData.tasks}

@@ -18,6 +18,16 @@ Clone it, run one setup command, and get a local-first dashboard for the agents 
 
 ![HivemindOS cyber-bee agent network hero](public/readme/hivemindos-hero.png)
 
+## Screenshots
+
+| Fleet | Work Automations |
+|---|---|
+| ![Fleet dashboard showing the live agent constellation and machine roster](public/readme/screenshots/fleet-dashboard.png) | ![Work automations scheduler showing the next 24 hours and task detail panel](public/readme/screenshots/work-automations.png) |
+
+| Brain Graph | Simulation |
+|---|---|
+| ![Shared brain graph showing Obsidian notes and access history](public/readme/screenshots/brain-graph.png) | ![MiroShark simulation view showing an X thread simulation draft](public/readme/screenshots/work-simulation.png) |
+
 ## What It Does
 
 - **See every agent from one dashboard** across this machine and trusted Tailscale-connected machines.

@@ -3,9 +3,33 @@
 This file records user-visible changes before they are committed. New work should
 be added here first, then marked `Committed` or `Pushed` after the git action.
 
+## 2026-05-25 12:55 WITA - Add README Screenshots
+
+- Status: Pushed
+- Areas changed: README screenshots, README documentation, changelog
+- Summary: Add four optimized product screenshots covering Fleet, Work automations, Brain graph, and Work simulation to a new README screenshots section.
+- Verification: `oxipng -o 4 --strip safe public/readme/screenshots/*.png`; `du -h public/readme/screenshots/*.png`; `git diff --check README.md CHANGELOG.md`.
+- Intended commit message: `Add README screenshots`
+
+## 2026-05-25 03:27 WITA - Remove Fleet Diagnostics Button
+
+- Status: Pushed
+- Areas changed: Fleet view actions, changelog
+- Summary: Remove the Diagnostics button from the Fleet view header area while keeping diagnostics available through the existing More/Diagnostics surfaces.
+- Verification: `pnpm exec tsc --noEmit --pretty false`; `git diff --check -- src/app/page.tsx CHANGELOG.md`; `rg -n "Diagnostics|diagnostics" src/app/page.tsx` confirmed the removed Fleet action is gone while the existing More and Diagnostics screens remain; `pnpm exec eslint src/app/page.tsx --max-warnings=0` reported 0 errors but failed on 30 pre-existing warnings in the large page file.
+- Intended commit message: `Remove fleet diagnostics button`
+
+## 2026-05-25 03:21 WITA - Simplify Fleet List Tailnet Column
+
+- Status: Pushed
+- Areas changed: fleet list view tailnet display, changelog
+- Summary: Replace verbose Tailnet host/IP/latency text in machine rows with a compact Connected/Off pill, stop rendering agent wallet state in the Tailnet column, and set stable list table column widths so status/build content stays aligned.
+- Verification: `pnpm exec tsc --noEmit --pretty false`; `pnpm exec eslint src/components/fleet/list-view.tsx --max-warnings=0`; `git diff --check -- src/components/fleet/list-view.tsx CHANGELOG.md`; attempted Browser smoke on the managed dev server, but the live fleet state reported 0 machines and the temporary 5021 server was blocked by the existing Next dev lock.
+- Intended commit message: `Simplify fleet list tailnet column`
+
 ## 2026-05-25 03:04 WITA - Keep Env Sync Update Visible
 
-- Status: Uncommitted
+- Status: Pushed
 - Areas changed: fleet roster update visibility, env sync repair detection, changelog
 - Summary: Treat any ready collector that does not advertise `envHttpSync` as updateable and keep the roster Update button visible for stale/update-needed machines even when cached `canUpdate` data is incomplete.
 - Verification: `pnpm exec tsc --noEmit --pretty false`; `git diff --check -- src/app/page.tsx src/components/fleet/roster.tsx CHANGELOG.md`; local fleet discovery shows Ubuntu ready at `f1c753b` with latest `3270a34` and no `capabilities.envHttpSync`.
