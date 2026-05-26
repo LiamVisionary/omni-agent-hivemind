@@ -135,7 +135,10 @@ function isStaleSelfDuplicate(
   const deviceBase = hivemindMachineBase(device);
   if (selfBase && deviceBase && selfBase === deviceBase) return true;
   const physicalSelfBase = physicalMachineBase(self);
+  const physicalDeviceBase = physicalMachineBase(device);
+  if (physicalSelfBase && physicalDeviceBase && physicalSelfBase === physicalDeviceBase) return true;
   if (physicalSelfBase && deviceBase && physicalSelfBase === deviceBase) return true;
+  if (selfBase && physicalDeviceBase && selfBase === physicalDeviceBase) return true;
   if (device.online) return false;
   return normalizeName(self.name) !== "" && normalizeName(self.name) === normalizeName(device.name);
 }
@@ -157,7 +160,7 @@ function dedupeDevices(devices: ReturnType<typeof simplifyDevice>[]) {
       byIdentity.set(key, device);
     }
   }
-  return [...byIdentity.values()].filter((device) => isHivemindLinkDevice(device) || isMobileDevice(device) || isMacDevice(device));
+  return [...byIdentity.values()].filter((device) => isHivemindLinkDevice(device) || isMacDevice(device));
 }
 
 function linkCollectorUrl(ip: string) {

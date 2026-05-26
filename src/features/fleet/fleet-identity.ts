@@ -55,7 +55,7 @@ export function isMacMachineOs(os?: string) {
 }
 
 export function isVisibleFleetMachine(machine: Pick<FleetMachineIdentity, "name" | "dnsName" | "os">) {
-  return isHivemindMachineName(machine.name, machine.dnsName) || isMobileMachineOs(machine.os) || isMacMachineOs(machine.os);
+  return isHivemindMachineName(machine.name, machine.dnsName) || isMacMachineOs(machine.os);
 }
 
 export function machineHivemindBase(name?: string, dnsName?: string) {
@@ -76,11 +76,13 @@ export function machinePhysicalBase(name?: string, dnsName?: string) {
 export function isLocalLinkDuplicateOfSelf(self: FleetMachineIdentity | undefined, device: FleetMachineIdentity) {
   if (!self || device.self) return false;
   const deviceBase = machineHivemindBase(device.name, device.dnsName);
-  if (!deviceBase) return false;
   const selfBase = machineHivemindBase(self.name, self.dnsName);
-  if (selfBase && selfBase === deviceBase) return true;
+  if (selfBase && deviceBase && selfBase === deviceBase) return true;
   const physicalSelfBase = machinePhysicalBase(self.name, self.dnsName);
-  return Boolean(physicalSelfBase && physicalSelfBase === deviceBase);
+  const physicalDeviceBase = machinePhysicalBase(device.name, device.dnsName);
+  if (physicalSelfBase && physicalDeviceBase && physicalSelfBase === physicalDeviceBase) return true;
+  if (physicalSelfBase && deviceBase && physicalSelfBase === deviceBase) return true;
+  return Boolean(selfBase && physicalDeviceBase && selfBase === physicalDeviceBase);
 }
 
 export function displayMachineName(
