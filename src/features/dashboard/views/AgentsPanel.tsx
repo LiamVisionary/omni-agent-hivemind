@@ -4,6 +4,7 @@
 
 import type { ComponentType, Dispatch, ElementType, MutableRefObject, SetStateAction } from "react";
 import type { FleetViewProps } from "@/components/fleet/FleetView";
+import { CloseIconButton } from "@/components/ui/close-icon-button";
 import type { DashboardView, HivemindLinkClientStatus, MachineGroup } from "@/features/dashboard/dashboard-types";
 
 type ClassNameBuilder = (...names: Array<string | false | null | undefined>) => string;
@@ -25,7 +26,6 @@ type AgentsPanelProps = {
   Check: IconComponent;
   ExternalLink: IconComponent;
   FleetView: ComponentType<FleetViewProps>;
-  X: IconComponent;
   activeView: DashboardView;
   addAgentToMachine: (machine: MachineGroup) => void;
   deleteAgent: (agentId: string) => void;
@@ -64,7 +64,7 @@ type AgentsPanelProps = {
 };
 
 export function AgentsPanel(props: AgentsPanelProps) {
-  const { Button, Check, ExternalLink, FleetView, X, activeView, addAgentToMachine, deleteAgent, fleetCheckedAt, fleetClass, fleetUpdateDetailByMachine, fleetUpdateStatusByMachine, fleetViewData, formatRelativeTime, hivemindLinkSignInPolling, hivemindLinkSignInPollingRef, hivemindLinkStatus, machineGroups, markNotificationRead, openMachineInitModal, renameMachine, requestDuplicateAgent, runMachineUpdate, setActiveView, setAgentRenameDraft, setAgentRenameEditing, setAgentRoleModalId, setAgentRuntimeAdvancedOpen, setAgentRuntimeFolderEditing, setAgentRuntimeFolderStatus, setAgentSettingsPanel, setHivemindLinkBannerDismissed, setHivemindLinkConnectedUntil, setHivemindLinkSignInPolling, setSelectedAgentId, showHivemindLinkConnectedBanner, showHivemindLinkSignInBanner, startAgentChat, startAgentWorkChat, tailscaleStatus } = props;
+  const { Button, Check, ExternalLink, FleetView, activeView, addAgentToMachine, deleteAgent, fleetCheckedAt, fleetClass, fleetUpdateDetailByMachine, fleetUpdateStatusByMachine, fleetViewData, formatRelativeTime, hivemindLinkSignInPolling, hivemindLinkSignInPollingRef, hivemindLinkStatus, machineGroups, markNotificationRead, openMachineInitModal, renameMachine, requestDuplicateAgent, runMachineUpdate, setActiveView, setAgentRenameDraft, setAgentRenameEditing, setAgentRoleModalId, setAgentRuntimeAdvancedOpen, setAgentRuntimeFolderEditing, setAgentRuntimeFolderStatus, setAgentSettingsPanel, setHivemindLinkBannerDismissed, setHivemindLinkConnectedUntil, setHivemindLinkSignInPolling, setSelectedAgentId, showHivemindLinkConnectedBanner, showHivemindLinkSignInBanner, startAgentChat, startAgentWorkChat, tailscaleStatus } = props;
   return (<>
       {activeView === "agents" ? (
       <section className={fleetClass("fleetConstellationPanel", "tabPanel")}>
@@ -75,19 +75,14 @@ export function AgentsPanel(props: AgentsPanelProps) {
               <p className="mt-1 text-[var(--muted)]">This app-managed node is authorized. Fleet will refresh Link peers automatically.</p>
             </div>
             <Check aria-hidden="true" className="h-5 w-5 text-[rgb(45,212,191)]" />
-            <Button
-              type="button"
-              size="icon"
-              variant="ghost"
-              className="absolute right-2 top-2 h-7 w-7"
+            <CloseIconButton
+              className="absolute right-2 top-2"
               aria-label="Dismiss Hivemind Link connection message"
               onClick={() => {
                 setHivemindLinkBannerDismissed(true);
                 setHivemindLinkConnectedUntil(0);
               }}
-            >
-              <X aria-hidden="true" />
-            </Button>
+            />
           </div>
         ) : showHivemindLinkSignInBanner ? (
           <div className="relative mb-3 flex flex-wrap items-center justify-between gap-3 rounded-md border border-[rgba(245,158,11,0.35)] bg-[rgba(245,158,11,0.10)] px-4 py-3 pr-12 text-sm text-[var(--foreground)]">
@@ -108,20 +103,15 @@ export function AgentsPanel(props: AgentsPanelProps) {
               <ExternalLink aria-hidden="true" />
               {hivemindLinkSignInPolling ? "Waiting..." : "Sign in"}
             </Button>
-            <Button
-              type="button"
-              size="icon"
-              variant="ghost"
-              className="absolute right-2 top-2 h-7 w-7"
+            <CloseIconButton
+              className="absolute right-2 top-2"
               aria-label="Dismiss Hivemind Link sign-in message"
               onClick={() => {
                 setHivemindLinkBannerDismissed(true);
                 hivemindLinkSignInPollingRef.current = false;
                 setHivemindLinkSignInPolling(false);
               }}
-            >
-              <X aria-hidden="true" />
-            </Button>
+            />
           </div>
         ) : null}
         <FleetView

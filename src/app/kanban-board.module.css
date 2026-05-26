@@ -1754,7 +1754,7 @@
   overflow-wrap: anywhere;
 }
 
-.directoryBrowserHeader button {
+.directoryBrowserHeader button:not([data-slot="close-icon-button"]) {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -2874,7 +2874,7 @@
   letter-spacing: 0;
 }
 
-.kanbanModalHeader button {
+.kanbanModalHeader button:not([data-slot="close-icon-button"]) {
   display: inline-grid;
   width: 32px;
   height: 32px;
@@ -2886,8 +2886,8 @@
   cursor: pointer;
 }
 
-.kanbanModalHeader button:hover,
-.kanbanModalHeader button:focus-visible {
+.kanbanModalHeader button:not([data-slot="close-icon-button"]):hover,
+.kanbanModalHeader button:not([data-slot="close-icon-button"]):focus-visible {
   border-color: rgba(94, 234, 212, 0.38);
   color: var(--accent-strong);
   outline: none;

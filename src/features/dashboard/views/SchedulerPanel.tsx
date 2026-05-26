@@ -4,8 +4,10 @@
 
 /* eslint-disable react-hooks/immutability, react-hooks/purity */
 
+import { CloseIconButton } from "@/components/ui/close-icon-button";
+
 export function SchedulerPanel(props: any) {
-  const { AlignLeft, Button, Check, ChevronDown, Clock3, Cpu, FileText, FileUp, FolderOpen, Link, List, LoaderCircle, Paperclip, Pencil, Plus, Puzzle, RUNTIME_LABELS, Repeat2, SCHEDULER_MODEL_OPTIONS, SCHEDULE_PRESETS, SchedulerView, Search, Send, Sparkles, TaskModal, Trash2, X, activeView, addSchedulePath, addSchedulerStep, addSchedulerStepPath, browseSchedulerFolder, createSchedule, displayAgents, editSchedule, editingScheduleId, filteredSchedulerSkills, findScheduleForJob, fleetClass, importExistingSchedules, isSchedulerFilePath, machineGroups, openSkillBrowser, pickSchedulerFiles, pickSchedulerFolder, refreshSharedSchedulesFromVault, removeSchedule, removeSchedulePath, removeScheduleSkill, removeSchedulerStep, removeSchedulerStepPath, renderAgentKey, resetScheduleDraft, runScheduleNow, saveScheduleFromModal, scheduleDraft, scheduleImportStatus, scheduleImporting, schedulerAttachMenu, schedulerDraftOpen, schedulerJobs, schedulerModalInitial, schedulerPathDraft, schedulerPathKind, schedulerRunStates, schedulerSelectedStep, schedulerSkillSearch, schedules, selectedAgent, setScheduleDraft, setScheduleImportStatus, setSchedulerAttachMenu, setSchedulerDraftOpen, setSchedulerPathDraft, setSchedulerPathKind, setSchedulerSelectedStep, setSchedulerSkillSearch, sharedSkillOptions, toggleSchedule, toggleScheduleSkill, toggleSchedulerStepMode, toggleSchedulerStepSkill, updateSchedulerStep, updateSchedulerStepModel, vaultClass } = props;
+  const { AlignLeft, Button, Check, ChevronDown, Clock3, Cpu, FileText, FileUp, FolderOpen, Link, List, LoaderCircle, Paperclip, Pencil, Plus, Puzzle, RUNTIME_LABELS, Repeat2, SCHEDULER_MODEL_OPTIONS, SCHEDULE_PRESETS, SchedulerView, Search, Send, Sparkles, TaskModal, Trash2, activeView, addSchedulePath, addSchedulerStep, addSchedulerStepPath, browseSchedulerFolder, createSchedule, displayAgents, editSchedule, editingScheduleId, filteredSchedulerSkills, findScheduleForJob, fleetClass, importExistingSchedules, isSchedulerFilePath, machineGroups, openSkillBrowser, pickSchedulerFiles, pickSchedulerFolder, refreshSharedSchedulesFromVault, removeSchedule, removeSchedulePath, removeScheduleSkill, removeSchedulerStep, removeSchedulerStepPath, renderAgentKey, resetScheduleDraft, runScheduleNow, saveScheduleFromModal, scheduleDraft, scheduleImportStatus, scheduleImporting, schedulerAttachMenu, schedulerDraftOpen, schedulerJobs, schedulerModalInitial, schedulerPathDraft, schedulerPathKind, schedulerRunStates, schedulerSelectedStep, schedulerSkillSearch, schedules, selectedAgent, setScheduleDraft, setScheduleImportStatus, setSchedulerAttachMenu, setSchedulerDraftOpen, setSchedulerPathDraft, setSchedulerPathKind, setSchedulerSelectedStep, setSchedulerSkillSearch, sharedSkillOptions, toggleSchedule, toggleScheduleSkill, toggleSchedulerStepMode, toggleSchedulerStepSkill, updateSchedulerStep, updateSchedulerStepModel, vaultClass } = props;
   return (<>
       {activeView === "scheduler" ? (
       <section className="min-h-[760px] overflow-hidden rounded-[18px] border border-[rgba(148,163,184,0.16)] bg-[rgba(5,8,13,0.72)]">
@@ -173,9 +175,7 @@ export function SchedulerPanel(props: any) {
                           }}
                           placeholder={index === 0 ? "First step" : "Next step"}
                         />
-                        <button type="button" onClick={(event) => { event.stopPropagation(); removeSchedulerStep(index); }} aria-label={`Remove step ${index + 1}`}>
-                          <X aria-hidden="true" />
-                        </button>
+                        <CloseIconButton size="sm" onClick={(event) => { event.stopPropagation(); removeSchedulerStep(index); }} aria-label={`Remove step ${index + 1}`} />
                       </div>
                       {step.paths.length || step.skills.length ? (
                         <div className={fleetClass("schedulerStepBadges")}>
@@ -184,9 +184,7 @@ export function SchedulerPanel(props: any) {
                               {isSchedulerFilePath(path) ? <FileText aria-hidden="true" /> : <FolderOpen aria-hidden="true" />}
                               {path.split("/").filter(Boolean).pop() || path}
                               {schedulerSelectedStep === index ? (
-                                <button type="button" onClick={(event) => { event.stopPropagation(); removeSchedulerStepPath(index, path); }} aria-label={`Remove ${path}`}>
-                                  <X aria-hidden="true" />
-                                </button>
+                                <CloseIconButton size="sm" onClick={(event) => { event.stopPropagation(); removeSchedulerStepPath(index, path); }} aria-label={`Remove ${path}`} />
                               ) : null}
                             </span>
                           ))}
@@ -197,9 +195,7 @@ export function SchedulerPanel(props: any) {
                                 <Puzzle aria-hidden="true" />
                                 {skill?.name ?? slug}
                                 {schedulerSelectedStep === index ? (
-                                  <button type="button" onClick={(event) => { event.stopPropagation(); toggleSchedulerStepSkill(index, slug); }} aria-label={`Remove ${skill?.name ?? slug}`}>
-                                    <X aria-hidden="true" />
-                                  </button>
+                                  <CloseIconButton size="sm" onClick={(event) => { event.stopPropagation(); toggleSchedulerStepSkill(index, slug); }} aria-label={`Remove ${skill?.name ?? slug}`} />
                                 ) : null}
                               </span>
                             );
@@ -246,7 +242,7 @@ export function SchedulerPanel(props: any) {
                                 <div className={fleetClass("schedulerAttachSearch")}>
                                   <Search aria-hidden="true" />
                                   <input value={schedulerSkillSearch} onChange={(event) => setSchedulerSkillSearch(event.target.value)} placeholder="Search skills" autoFocus />
-                                  <button type="button" onClick={() => setSchedulerAttachMenu(null)} aria-label="Close skill picker"><X aria-hidden="true" /></button>
+                        <CloseIconButton size="sm" onClick={() => setSchedulerAttachMenu(null)} aria-label="Close skill picker" />
                                 </div>
                                 <div className={fleetClass("schedulerAttachChoices")}>
                                   {filteredSchedulerSkills.length ? filteredSchedulerSkills.map((skill) => {
@@ -293,7 +289,7 @@ export function SchedulerPanel(props: any) {
                                     placeholder={schedulerPathKind === "folder" ? "/path/to/folder" : schedulerPathKind === "file" ? "/path/to/file.md" : "/path/to/file-or-folder"}
                                     autoFocus
                                   />
-                                  <button type="button" onClick={() => setSchedulerAttachMenu(null)} aria-label="Close path linker"><X aria-hidden="true" /></button>
+                        <CloseIconButton size="sm" onClick={() => setSchedulerAttachMenu(null)} aria-label="Close path linker" />
                                 </div>
                                 <div className={fleetClass("schedulerAttachFooter")}>
                                   <span>{schedulerPathKind === "path" ? "File or folder" : schedulerPathKind}</span>
@@ -374,9 +370,7 @@ export function SchedulerPanel(props: any) {
                       <span className={fleetClass("schedulerAttachmentBadge", "skill")} key={slug}>
                         <Puzzle aria-hidden="true" />
                         {skill?.name ?? slug}
-                        <button type="button" onClick={() => removeScheduleSkill(slug)} aria-label={`Remove ${skill?.name ?? slug}`}>
-                          <X aria-hidden="true" />
-                        </button>
+                        <CloseIconButton size="sm" onClick={() => removeScheduleSkill(slug)} aria-label={`Remove ${skill?.name ?? slug}`} />
                       </span>
                     );
                   })}
@@ -384,9 +378,7 @@ export function SchedulerPanel(props: any) {
                     <span className={fleetClass("schedulerAttachmentBadge", "path")} key={path}>
                       {path.includes(".") ? <FileText aria-hidden="true" /> : <FolderOpen aria-hidden="true" />}
                       {path.split("/").filter(Boolean).pop() || path}
-                      <button type="button" onClick={() => removeSchedulePath(path)} aria-label={`Remove ${path}`}>
-                        <X aria-hidden="true" />
-                      </button>
+                      <CloseIconButton size="sm" onClick={() => removeSchedulePath(path)} aria-label={`Remove ${path}`} />
                     </span>
                   ))}
                 </div>
@@ -438,9 +430,7 @@ export function SchedulerPanel(props: any) {
                           placeholder="Search skills"
                           autoFocus
                         />
-                        <button type="button" onClick={() => setSchedulerAttachMenu(null)} aria-label="Close skill picker">
-                          <X aria-hidden="true" />
-                        </button>
+                        <CloseIconButton size="sm" onClick={() => setSchedulerAttachMenu(null)} aria-label="Close skill picker" />
                       </div>
                       <div className={fleetClass("schedulerAttachChoices")}>
                         {filteredSchedulerSkills.length ? filteredSchedulerSkills.map((skill) => {
@@ -487,9 +477,7 @@ export function SchedulerPanel(props: any) {
                           placeholder={schedulerPathKind === "folder" ? "/path/to/folder" : schedulerPathKind === "file" ? "/path/to/file.md" : "/path/to/file-or-folder"}
                           autoFocus
                         />
-                        <button type="button" onClick={() => setSchedulerAttachMenu(null)} aria-label="Close path linker">
-                          <X aria-hidden="true" />
-                        </button>
+                        <CloseIconButton size="sm" onClick={() => setSchedulerAttachMenu(null)} aria-label="Close path linker" />
                       </div>
                       <div className={fleetClass("schedulerAttachFooter")}>
                         <span>{schedulerPathKind === "path" ? "File or folder" : schedulerPathKind}</span>
@@ -545,7 +533,6 @@ export function SchedulerPanel(props: any) {
                 </Button>
                 {editingScheduleId ? (
                   <Button type="button" size="sm" variant="ghost" onClick={() => { resetScheduleDraft(selectedAgent?.id ?? displayAgents[0]?.id ?? ""); setSchedulerDraftOpen(false); }}>
-                    <X aria-hidden="true" />
                     Cancel
                   </Button>
                 ) : null}

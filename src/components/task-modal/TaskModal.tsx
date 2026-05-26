@@ -3,6 +3,7 @@
 
 import * as React from "react";
 import { createPortal } from "react-dom";
+import { CloseIconButton } from "@/components/ui/close-icon-button";
 import styles from "./task-modal.module.css";
 
 export type CadenceKind =
@@ -190,16 +191,7 @@ export function TaskModal({
               color: "var(--tm-fg)", letterSpacing: 0, lineHeight: 1.15, marginTop: 2,
             }}>Schedule a new task</div>
           </div>
-          <button onClick={onClose} aria-label="Close"
-            style={{
-              display: "grid", placeItems: "center",
-              width: 32, height: 32, padding: 0, borderRadius: 8, cursor: "pointer",
-              border: "1px solid var(--tm-line-2)", background: "var(--tm-bg-2)",
-              color: "var(--tm-fg-3)",
-            }}>
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-              strokeWidth="2.4" strokeLinecap="round"><path d="M5 5l14 14M19 5L5 19"/></svg>
-          </button>
+          <CloseIconButton onClick={onClose} aria-label="Close" />
         </header>
 
         {/* Body */}
@@ -302,8 +294,7 @@ export function TaskModal({
                         color: "var(--tm-fg)", fontFamily: "var(--tm-f-display)",
                         fontSize: 13, lineHeight: 1.5,
                       }} />
-                    <button onClick={() => removeStep(i)} aria-label={`Remove step ${i + 1}`}
-                      style={iconBtnStyle}>×</button>
+                    <CloseIconButton size="sm" onClick={() => removeStep(i)} aria-label={`Remove step ${i + 1}`} />
                   </div>
                 ))}
                 <button onClick={addStep} style={{
@@ -480,13 +471,6 @@ const fieldStyle: React.CSSProperties = {
   color: "var(--tm-fg)", fontFamily: "var(--tm-f-display)",
   fontSize: 13, lineHeight: 1.4, outline: "none",
 };
-const iconBtnStyle: React.CSSProperties = {
-  width: 22, height: 22, borderRadius: 5, padding: 0, cursor: "pointer",
-  border: "1px solid var(--tm-line-2)", background: "transparent",
-  color: "var(--tm-fg-3)", fontFamily: "var(--tm-f-mono)",
-  fontSize: 13, fontWeight: 700, lineHeight: 1,
-};
-
 function Section({ title, right, children }: {
   title: string; right?: React.ReactNode; children: React.ReactNode;
 }) {
@@ -518,10 +502,7 @@ function AttachChip({ kind, label, onRemove }: {
     }}>
       <span style={{ opacity: 0.7 }}>{kind === "skill" ? "▸ skill" : "▸ path"}</span>
       <span>{label}</span>
-      <button onClick={onRemove} aria-label="Remove" style={{
-        display: "grid", placeItems: "center", width: 14, height: 14, padding: 0, borderRadius: 4,
-        background: "transparent", border: 0, color: "currentColor", cursor: "pointer", opacity: 0.6,
-      }}>×</button>
+      <CloseIconButton size="sm" onClick={onRemove} aria-label="Remove" />
     </span>
   );
 }

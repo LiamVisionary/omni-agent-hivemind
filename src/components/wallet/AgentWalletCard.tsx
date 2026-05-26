@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { createPortal } from "react-dom";
 import {
   ArrowUpRight,
   Bot,
@@ -16,10 +17,10 @@ import {
   SlidersHorizontal,
   TrendingUp,
   WalletCards,
-  X,
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
+import { CloseIconButton } from "@/components/ui/close-icon-button";
 import type {
   AgentPaymentProvider,
   AgentSurvivalSnapshot,
@@ -155,6 +156,7 @@ export function AgentWalletCard({
   const [shareMoneyClawKey, setShareMoneyClawKey] = useState(false);
   const [moneyClawSaveState, setMoneyClawSaveState] = useState<"idle" | "checking" | "saved">("idle");
   const [moneyClawSaveError, setMoneyClawSaveError] = useState("");
+  const portalTarget = typeof document === "undefined" ? null : document.body;
 
   const tier = wallet.enabled ? survival.tier : "off";
   const safeBalance = getDisplayWalletBalanceUsd(wallet);
@@ -328,7 +330,7 @@ export function AgentWalletCard({
         <div className={styles.sheet}>
           <div className={styles.sheetTitle}>
             Send {wallet.tokenSymbol || "USDC"}
-            <button type="button" onClick={() => setSheet(null)}>Close</button>
+            <CloseIconButton size="sm" onClick={() => setSheet(null)} aria-label="Close send sheet" />
           </div>
           <p className={styles.sheetHelp}>
             Hard cap per payment: {formatMoney(wallet.maxPaymentUsd)}. Type SEND_USDC to confirm if asked.
@@ -377,7 +379,7 @@ export function AgentWalletCard({
         <div className={styles.sheet}>
           <div className={styles.sheetTitle}>
             Receive {wallet.tokenSymbol || "USDC"}
-            <button type="button" onClick={() => setSheet(null)}>Close</button>
+            <CloseIconButton size="sm" onClick={() => setSheet(null)} aria-label="Close receive sheet" />
           </div>
           {wallet.walletAddress ? (
             <>
@@ -421,7 +423,7 @@ export function AgentWalletCard({
         <div className={styles.sheet}>
           <div className={styles.sheetTitle}>
             Spending limits
-            <button type="button" onClick={() => setSheet(null)}>Close</button>
+            <CloseIconButton size="sm" onClick={() => setSheet(null)} aria-label="Close spending limits" />
           </div>
           <p className={styles.sheetHelp}>The only numbers most users need to set.</p>
           <div className={styles.sheetGrid}>
@@ -671,7 +673,7 @@ export function AgentWalletCard({
         </div>
       </details>
 
-      {moneyClawModalOpen ? (
+      {moneyClawModalOpen && portalTarget ? createPortal((
         <div className={styles.modalBackdrop} role="presentation" onMouseDown={() => setMoneyClawModalOpen(false)}>
           <section
             className={styles.moneyClawModal}
@@ -685,9 +687,7 @@ export function AgentWalletCard({
                 <p className={styles.modalEyebrow}>Cards rail</p>
                 <h3 id="moneyclaw-key-title">MoneyClaw API key</h3>
               </div>
-              <button type="button" aria-label="Close MoneyClaw setup" onClick={() => setMoneyClawModalOpen(false)}>
-                <X aria-hidden="true" />
-              </button>
+              <CloseIconButton aria-label="Close MoneyClaw setup" onClick={() => setMoneyClawModalOpen(false)} />
             </div>
 
             <label className={styles.modalField} htmlFor="moneyclaw-key">
@@ -740,7 +740,7 @@ export function AgentWalletCard({
             </div>
           </section>
         </div>
-      ) : null}
+      ), portalTarget) : null}
     </article>
   );
 }

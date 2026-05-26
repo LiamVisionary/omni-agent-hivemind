@@ -11,13 +11,45 @@ be added here first, then marked `Committed` or `Pushed` after the git action.
 - Verification: `python3 -m py_compile scripts/hive-env-add`; local `/health` reports appDir `/root/omni-agent-hivemind`, commit `4eb54f3`, `envHttpSync=true`, and listener `0.0.0.0:8787`; `hive-env-add --reconcile` updated 2 HTTP-env-sync peers without stale-peer errors; sanitized remote checks verified `PEXELS_API_KEY=present` on the two HTTP-env-sync peers.
 - Intended commit message: `Skip stale env sync collectors`
 
-## 2026-05-26 17:21:06 WITA - Center Agent Settings In Viewport
+## 2026-05-26 18:32:38 WITA - Add HivemindOS Update Command
 
-- Status: Uncommitted
-- Areas changed: Agent settings modal, changelog
-- Summary: Portal the Agent Settings modal to `document.body`, matching the Skill Browser fix, so its fixed backdrop centers against the visible viewport instead of the scrolled dashboard page flow.
-- Verification: Pending
-- Intended commit message: `Center agent settings modal in viewport`
+- Status: Pushed
+- Areas changed: Update script, package scripts, changelog
+- Summary: Add a one-command HivemindOS updater that fast-forward pulls the checkout, refreshes pnpm dependencies, builds the dashboard, restarts the telemetry collector/Link sidecar, and restarts the dashboard dev server when the port listener belongs to this checkout; expose it as `pnpm hive:update`.
+- Verification: `bash -n scripts/update-hivemindos.sh`; `./scripts/update-hivemindos.sh --help`; `pnpm run hive:update -- --help`; `pnpm hive:update -- --help`; `node -e 'JSON.parse(require("fs").readFileSync("package.json", "utf8")); console.log("package.json ok")'`; `./scripts/update-hivemindos.sh --skip-pull --skip-install --skip-build --skip-collector --skip-dashboard`; `pnpm run hive:update -- --skip-pull --skip-install --skip-build --skip-collector --skip-dashboard`
+- Intended commit message: `Add HivemindOS update command`
+
+## 2026-05-26 18:05:10 WITA - Refine Agent Settings Header
+
+- Status: Pushed
+- Areas changed: Agent settings modal header, Fleet dashboard styling, changelog
+- Summary: Remove the broad Agent Settings modal-header button container rule, move the edit pencil into a container-less inline control beside the agent name, and tune the header text spacing so the eyebrow, name/subclass pair, and description read as distinct groups.
+- Verification: `pnpm exec eslint src/features/dashboard/views/chat/AgentSettingsModal.tsx --max-warnings=999`; `pnpm exec tsc --noEmit --pretty false --skipLibCheck`; `git diff --check -- src/features/dashboard/views/chat/AgentSettingsModal.tsx src/app/fleet.module.css CHANGELOG.md`; audited remaining button-container selectors with `rg -n "button:not\\(\\[data-slot=\\\"button\\\"\\]|button \\{" src/app src/components src/features --glob '*.css' --glob '*.module.css'` and confirmed the modal-header auto-container rule is gone while scoped action/tab/menu button styling remains.
+- Intended commit message: `Refine agent settings header`
+
+## 2026-05-26 17:59:47 WITA - Standardize Close Icon Buttons
+
+- Status: Pushed
+- Areas changed: Shared close icon component, dashboard/modal close controls, attachment/remove chips, scheduler/task modal close controls, close-button CSS safeguards, changelog
+- Summary: Add a reusable subtle circular close icon button and replace app-local close/dismiss/remove X affordances so modal headers, sheets, banners, attachment chips, and picker popovers share the same close treatment.
+- Verification: `rg -n "<X|>x<|×|Close\\s*</Button>|Close\\s*</button>|import .*\\bX\\b.*from \\\"lucide-react\\\"" src/components src/features src/app --glob '*.tsx'` found only the reusable close component and unrelated X/Twitter/map text; `pnpm exec eslint src/components/ui/close-icon-button.tsx src/features/chat/chat-composer.tsx src/features/dashboard/views/AgentsPanel.tsx src/features/dashboard/views/KanbanPanel.tsx src/features/dashboard/views/SchedulerPanel.tsx src/features/dashboard/views/UtilityPanels.tsx src/features/dashboard/views/DashboardModals.tsx src/features/dashboard/views/chat/AgentSettingsModal.tsx src/features/dashboard/views/chat/ChatFolderModal.tsx src/features/dashboard/views/chat/SkillBrowserModal.tsx src/components/wallet/AgentWalletCard.tsx src/components/wallet/AgentWalletCardCompact.tsx src/components/fleet/footers.tsx src/components/fleet/FleetView.tsx src/components/fleet/roster.tsx src/components/task-modal/TaskModal.tsx src/components/swarm/template-composers.tsx --max-warnings=999` passed with existing unused eslint-disable warnings in AgentsPanel and SchedulerPanel; `pnpm exec tsc --noEmit --pretty false --skipLibCheck`; `git diff --check -- src/components/ui/close-icon-button.tsx src/features/chat/chat-composer.tsx src/features/dashboard/views/AgentsPanel.tsx src/features/dashboard/views/KanbanPanel.tsx src/features/dashboard/views/SchedulerPanel.tsx src/features/dashboard/views/UtilityPanels.tsx src/features/dashboard/views/DashboardModals.tsx src/features/dashboard/views/chat/AgentSettingsModal.tsx src/features/dashboard/views/chat/ChatFolderModal.tsx src/features/dashboard/views/chat/SkillBrowserModal.tsx src/components/agents/AgentSelectionModal.tsx src/components/wallet/AgentWalletCard.tsx src/components/wallet/AgentWalletCardCompact.tsx src/components/fleet/footers.tsx src/components/fleet/FleetView.tsx src/components/fleet/roster.tsx src/components/task-modal/TaskModal.tsx src/components/swarm/template-composers.tsx src/app/fleet.module.css src/app/kanban-board.module.css src/app/chat.module.css src/components/wallet/AgentWalletCard.module.css CHANGELOG.md`; Playwright smoke loaded `http://127.0.0.1:5020/?view=chat` without restarting the managed dev server and confirmed the page rendered body content.
+- Intended commit message: `Standardize close icon buttons`
+
+## 2026-05-26 17:25:59 WITA - Compact Agent Runtime Model Picker
+
+- Status: Pushed
+- Areas changed: Agent settings model/runtime selector styling, runtime icon assets/config, changelog
+- Summary: Remove the redundant model summary header, flatten the Hermes picker panel, make Runtime a compact icon segment, tint monochrome Hermes/OpenAI icons for dark backgrounds, use real image rendering for AEON/OpenClaw, and clean noisy non-red paths from the OpenClaw SVG.
+- Verification: `sips -Z 128 -s format png /Users/liam/Downloads/aeon.jpg --out public/icons/runtimes/aeon.png`; `oxipng -o max --strip safe public/icons/runtimes/aeon.png`; `pnpm exec eslint src/features/dashboard/views/chat/AgentSettingsModal.tsx src/features/dashboard/DashboardApp.tsx src/lib/config/runtime-icons.ts --max-warnings=999` completed with existing DashboardApp warnings and no errors; `pnpm exec tsc --noEmit --pretty false --skipLibCheck`; `git diff --check -- src/features/dashboard/views/chat/AgentSettingsModal.tsx src/features/dashboard/DashboardApp.tsx src/lib/config/runtime-icons.ts src/app/fleet.module.css public/icons/runtimes/hermes.svg public/icons/runtimes/openai.svg public/icons/runtimes/openclaw.svg public/icons/runtimes/aeon.png CHANGELOG.md`.
+- Intended commit message: `Compact agent runtime model picker`
+
+## 2026-05-26 17:24:04 WITA - Portal Dashboard Modals To Viewport
+
+- Status: Pushed
+- Areas changed: Agent settings modal, chat folder modal, Kanban task modal, shared env import modal, MoneyClaw key modal, Fleet network issue modal, changelog
+- Summary: Portal the remaining dashboard modal backdrops to `document.body`, matching the Skill Browser fix, so fixed overlays center against the visible viewport instead of the scrolled dashboard page flow.
+- Verification: `pnpm exec eslint src/features/dashboard/views/chat/AgentSettingsModal.tsx src/features/dashboard/views/chat/ChatFolderModal.tsx src/features/dashboard/views/KanbanPanel.tsx src/features/dashboard/views/UtilityPanels.tsx src/components/wallet/AgentWalletCard.tsx src/components/fleet/roster.tsx --max-warnings=999`; `pnpm exec tsc --noEmit --pretty false --skipLibCheck`; `git diff --check -- src/features/dashboard/views/chat/AgentSettingsModal.tsx src/features/dashboard/views/chat/ChatFolderModal.tsx src/features/dashboard/views/KanbanPanel.tsx src/features/dashboard/views/UtilityPanels.tsx src/components/wallet/AgentWalletCard.tsx src/components/fleet/roster.tsx CHANGELOG.md`.
+- Intended commit message: `Portal dashboard modals to viewport`
 
 ## 2026-05-26 17:18 WITA - Auto-Recover Hivemind Link Setup
 

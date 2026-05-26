@@ -1,9 +1,10 @@
-import { ArrowUp, Check, ChevronDown, Clock3, FileText, FileUp, FolderOpen, Mic, Minus, Paperclip, Plus, X } from "lucide-react";
+import { ArrowUp, Check, ChevronDown, Clock3, FileText, FileUp, FolderOpen, Mic, Minus, Paperclip, Plus } from "lucide-react";
 import { useEffect, useMemo, useRef, useState, type ChangeEvent, type KeyboardEvent, type MouseEvent as ReactMouseEvent, type RefObject } from "react";
 
 import chatStyles from "@/app/chat.module.css";
 import kanbanStyles from "@/app/kanban-board.module.css";
 import { LottiePlayer } from "@/components/ui/lottie-player";
+import { CloseIconButton } from "@/components/ui/close-icon-button";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { attachmentSizeLabel, linkedDirectoryLabel } from "@/features/chat/chat-formatters";
 import { createStyleClass } from "@/features/dashboard/style-classes";
@@ -759,9 +760,7 @@ export function ComposerField({
               <strong>{directory.name}</strong>
               <small>linked</small>
               {onRemoveDirectory ? (
-                <button type="button" aria-label={`Remove ${directory.name}`} onClick={() => onRemoveDirectory(directory.id)} disabled={disabled}>
-                  <X aria-hidden="true" />
-                </button>
+                <CloseIconButton size="sm" aria-label={`Remove ${directory.name}`} onClick={() => onRemoveDirectory(directory.id)} disabled={disabled} />
               ) : null}
             </div>
           ))}
@@ -770,9 +769,7 @@ export function ComposerField({
               <span>{attachment.kind === "image" ? "Image" : attachment.kind === "audio" ? "Audio" : "File"}</span>
               <strong>{attachment.name}</strong>
               <small>{attachmentSizeLabel(attachment.size)}</small>
-              <button type="button" aria-label={`Remove ${attachment.name}`} onClick={() => onRemoveAttachment(attachment.id)} disabled={disabled}>
-                <X aria-hidden="true" />
-              </button>
+              <CloseIconButton size="sm" aria-label={`Remove ${attachment.name}`} onClick={() => onRemoveAttachment(attachment.id)} disabled={disabled} />
             </div>
           ))}
         </div>
@@ -870,9 +867,7 @@ export function ComposerField({
         {attachmentError ? <span role="status">{attachmentError}</span> : null}
         <div className={chatClass("composerActions")}>
           {onCancel ? (
-            <button type="button" className={chatClass("composerIconButton")} onClick={onCancel} disabled={disabled} aria-label="Cancel">
-              <X aria-hidden="true" />
-            </button>
+            <CloseIconButton className={chatClass("composerIconButton")} onClick={onCancel} disabled={disabled} aria-label="Cancel" />
           ) : null}
           {canRecord ? (
             <button

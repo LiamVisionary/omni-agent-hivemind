@@ -2,6 +2,7 @@
 
 import type { Dispatch, ElementType, FormEvent, SetStateAction } from "react";
 import { createPortal } from "react-dom";
+import { CloseIconButton } from "@/components/ui/close-icon-button";
 import type { SkillBrowserSkill } from "@/features/dashboard/dashboard-types";
 
 type SkillBrowserModalProps = {
@@ -13,7 +14,6 @@ type SkillBrowserModalProps = {
   LoaderCircle: ElementType;
   RefreshCcw: ElementType;
   Sparkles: ElementType;
-  X: ElementType;
   addWrittenSkillToBrain: () => void | Promise<void>;
   filteredSkillBrowserSkills: SkillBrowserSkill[];
   fleetClass: (...names: string[]) => string;
@@ -44,7 +44,7 @@ type SkillBrowserModalProps = {
 };
 
 export function SkillBrowserModal(props: SkillBrowserModalProps) {
-  const { Button, Copy, Download, GitBranch, Image, LoaderCircle, RefreshCcw, Sparkles, X, addWrittenSkillToBrain, filteredSkillBrowserSkills, fleetClass, hermesUpdateRequired, hermesUpdateRequiredDetail, importRemoteSkillToBrain, installGithubSkillToBrain, openSkillBrowser, setSkillBrowserGithubOpen, setSkillBrowserGithubUrl, setSkillBrowserOpen, setSkillBrowserSearch, setSkillBrowserView, setSkillBrowserWrittenContent, skillBrowserGithubInstalling, skillBrowserGithubOpen, skillBrowserGithubUrl, skillBrowserImporting, skillBrowserLoading, skillBrowserOpen, skillBrowserSearch, skillBrowserStatus, skillBrowserView, skillBrowserWrittenContent, skillBrowserWriting, skillRequiresHermesUpdate, vaultClass } = props;
+  const { Button, Copy, Download, GitBranch, Image, LoaderCircle, RefreshCcw, Sparkles, addWrittenSkillToBrain, filteredSkillBrowserSkills, fleetClass, hermesUpdateRequired, hermesUpdateRequiredDetail, importRemoteSkillToBrain, installGithubSkillToBrain, openSkillBrowser, setSkillBrowserGithubOpen, setSkillBrowserGithubUrl, setSkillBrowserOpen, setSkillBrowserSearch, setSkillBrowserView, setSkillBrowserWrittenContent, skillBrowserGithubInstalling, skillBrowserGithubOpen, skillBrowserGithubUrl, skillBrowserImporting, skillBrowserLoading, skillBrowserOpen, skillBrowserSearch, skillBrowserStatus, skillBrowserView, skillBrowserWrittenContent, skillBrowserWriting, skillRequiresHermesUpdate, vaultClass } = props;
   const portalTarget = typeof document === "undefined" ? null : document.body;
 
   if (!portalTarget) return null;
@@ -68,10 +68,7 @@ export function SkillBrowserModal(props: SkillBrowserModalProps) {
                   <p>Add reusable operational skills to the shared Obsidian brain.</p>
                 </div>
               </div>
-              <Button type="button" variant="ghost" onClick={() => setSkillBrowserOpen(false)}>
-                <X aria-hidden="true" />
-                Close
-              </Button>
+              <CloseIconButton aria-label="Close skill browser" onClick={() => setSkillBrowserOpen(false)} />
             </div>
             {skillBrowserView === "browse" ? <div className={fleetClass("skillBrowserSearch")}>
               <input
@@ -160,7 +157,6 @@ export function SkillBrowserModal(props: SkillBrowserModalProps) {
                     }}
                     disabled={skillBrowserWriting}
                   >
-                    <X aria-hidden="true" />
                     Cancel
                   </Button>
                   <Button type="button" onClick={() => void addWrittenSkillToBrain()} disabled={skillBrowserWriting || !skillBrowserWrittenContent.trim()}>

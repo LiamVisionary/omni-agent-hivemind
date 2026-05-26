@@ -2,7 +2,9 @@
 "use client";
 
 import * as React from "react";
-import { AlertTriangle, ChevronDown, ChevronRight, Copy, LoaderCircle, MessageSquare, Monitor, Pencil, Plus, Settings2, Smartphone, Trash2, Wallet, X } from "lucide-react";
+import { createPortal } from "react-dom";
+import { AlertTriangle, ChevronDown, ChevronRight, Copy, LoaderCircle, MessageSquare, Monitor, Pencil, Plus, Settings2, Smartphone, Trash2, Wallet } from "lucide-react";
+import { CloseIconButton } from "@/components/ui/close-icon-button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { BeeIcon } from "./bee-icon";
 import { HexTile } from "./hex-tile";
@@ -617,6 +619,7 @@ export function Roster({
 }: RosterProps) {
   const [activeIssueMachine, setActiveIssueMachine] = React.useState<FleetMachine | null>(null);
   const activeIssue = activeIssueMachine?.networkIssue;
+  const portalTarget = typeof document === "undefined" ? null : document.body;
   return (
     <div className="grid gap-1.5">
       {machines.map((m) => (
@@ -643,7 +646,7 @@ export function Roster({
           onRemove={(a) => onRemove?.(m, a)}
         />
       ))}
-      {activeIssue ? (
+      {activeIssue && portalTarget ? createPortal((
         <div
           role="presentation"
           onClick={() => setActiveIssueMachine(null)}
@@ -682,23 +685,18 @@ export function Roster({
                   {activeIssue.title}
                 </h3>
               </div>
-              <button
+              <CloseIconButton
                 type="button"
                 aria-label="Close"
                 onClick={() => setActiveIssueMachine(null)}
                 className="grid place-items-center"
                 style={{
-                  width: 30,
-                  height: 30,
-                  borderRadius: 7,
                   border: "1px solid rgba(148,163,184,0.22)",
                   background: "rgba(15,23,42,0.78)",
                   color: "var(--muted)",
                   cursor: "pointer",
                 }}
-              >
-                <X size={15} aria-hidden="true" />
-              </button>
+              />
             </div>
             <p style={{ color: "var(--muted)", fontSize: 13, lineHeight: 1.55, margin: "12px 0 14px" }}>
               {activeIssue.detail}
@@ -719,7 +717,7 @@ export function Roster({
             >{activeIssue.commands.join("\n")}</pre>
           </div>
         </div>
-      ) : null}
+      ), portalTarget) : null}
     </div>
   );
 }

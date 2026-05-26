@@ -1,7 +1,8 @@
 "use client";
 
 import { useState } from "react";
-import { Check, ChevronRight, LoaderCircle, Power, X } from "lucide-react";
+import { Check, ChevronRight, LoaderCircle, Power } from "lucide-react";
+import { CloseIconButton } from "@/components/ui/close-icon-button";
 
 import type { AgentSurvivalSnapshot, AgentWalletConfig } from "@/lib/types/agent-wallet";
 import { getDisplayWalletBalanceUsd } from "@/lib/utils/agent-wallet";
@@ -74,9 +75,7 @@ export function AgentWalletCardCompact({ agentName, wallet, survival, onOpen, on
           <strong>Create a wallet for {agentName}?</strong>
         </div>
         <div className={styles.confirmActions}>
-          <button type="button" className={styles.confirmButton} data-tone="cancel" onClick={() => setSetupStage("idle")} aria-label="Cancel wallet creation">
-            <X aria-hidden="true" />
-          </button>
+          <CloseIconButton className={styles.confirmButton} data-tone="cancel" onClick={() => setSetupStage("idle")} aria-label="Cancel wallet creation" />
           <button type="button" className={styles.confirmButton} data-tone="confirm" onClick={() => void initialize()} aria-label={`Create wallet for ${agentName}`}>
             <Check aria-hidden="true" />
           </button>

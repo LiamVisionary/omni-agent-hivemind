@@ -1595,6 +1595,11 @@ details[open] > summary .treeDisclosure::before {
   padding: 0;
 }
 
+.attachmentPill button[data-slot="close-icon-button"] {
+  border: 1px solid rgba(148, 163, 184, 0.18);
+  background: rgba(15, 23, 42, 0.46);
+}
+
 .attachmentPill button:hover {
   background: rgba(148, 163, 184, 0.12);
   color: var(--foreground);

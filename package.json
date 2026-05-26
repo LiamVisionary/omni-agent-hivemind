@@ -6,6 +6,7 @@
   "packageManager": "pnpm@8.6.12",
   "scripts": {
     "dev": "node scripts/dev-server.mjs",
+    "hive:update": "bash scripts/update-hivemindos.sh",
     "build": "scripts/run-with-memory-limit.sh --limit-mb 5000 --timeout-seconds 300 -- next build --webpack",
     "start": "next start -p 5020",
     "lint": "eslint",

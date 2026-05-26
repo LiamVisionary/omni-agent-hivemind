@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { createPortal } from "react-dom";
+import { CloseIconButton } from "@/components/ui/close-icon-button";
 import type { ComponentType, Dispatch, ElementType, FormEvent, SetStateAction } from "react";
 import type { SetupCellProps, SetupStep } from "@/components/cells/SetupCell";
 import type { AgentProfile, AgentRuntime } from "@/lib/types/agent-runtime";
@@ -44,7 +45,6 @@ type DashboardModalsProps = {
   LoaderCircle: IconComponent;
   Plus: IconComponent;
   SetupCell: ComponentType<SetupCellProps>;
-  X: IconComponent;
   copyMachineInitCommand: (key: string, command: string) => void;
   copySetupCommand: () => void;
   displayAgents: AgentProfile[];
@@ -81,7 +81,7 @@ type DashboardModalsProps = {
 };
 
 export function DashboardModals(props: DashboardModalsProps) {
-  const { Button, Check, ChevronLeft, Copy, CopyPlus, FileText, FolderOpen, HETZNER_IMAGE_OPTIONS, HETZNER_LOCATION_OPTIONS, HETZNER_SERVER_TYPE_OPTIONS, LoaderCircle, Plus, SetupCell, X, copyMachineInitCommand, copySetupCommand, displayAgents, duplicateAgent, duplicateAgentDraft, fleetClass, initializeMachineProject, kanbanClass, loadMachineDirectories, machineDirectoryBrowser, machineInitCopiedKey, machineInitDraft, machineInitOpen, machineInitStatus, machineInitToken, machineInitTokenStatus, openHetznerEnvFile, saveHetznerToken, selectedHetznerServerType, setDuplicateAgentDraft, setMachineDirectoryBrowser, setMachineInitDraft, setMachineInitOpen, setMachineInitToken, setMachineInitTokenStatus, setSetupMachineKey, setupCollectorCommand, setupCommandCopied, setupMachine } = props;
+  const { Button, Check, ChevronLeft, Copy, CopyPlus, FileText, FolderOpen, HETZNER_IMAGE_OPTIONS, HETZNER_LOCATION_OPTIONS, HETZNER_SERVER_TYPE_OPTIONS, LoaderCircle, Plus, SetupCell, copyMachineInitCommand, copySetupCommand, displayAgents, duplicateAgent, duplicateAgentDraft, fleetClass, initializeMachineProject, kanbanClass, loadMachineDirectories, machineDirectoryBrowser, machineInitCopiedKey, machineInitDraft, machineInitOpen, machineInitStatus, machineInitToken, machineInitTokenStatus, openHetznerEnvFile, saveHetznerToken, selectedHetznerServerType, setDuplicateAgentDraft, setMachineDirectoryBrowser, setMachineInitDraft, setMachineInitOpen, setMachineInitToken, setMachineInitTokenStatus, setSetupMachineKey, setupCollectorCommand, setupCommandCopied, setupMachine } = props;
   const [machineInitView, setMachineInitView] = useState<"env" | "create">("env");
   const portalTarget = typeof document === "undefined" ? null : document.body;
 
@@ -112,10 +112,7 @@ export function DashboardModals(props: DashboardModalsProps) {
                   <h2 id="duplicate-agent-title">{source.name}</h2>
                   <p>The copy gets a new agent identity and its own wallet. Runtime sessions are never reused.</p>
                 </div>
-                <Button type="button" variant="ghost" aria-label="Close duplicate agent" onClick={() => setDuplicateAgentDraft(null)}>
-                  <X aria-hidden="true" />
-                  Close
-                </Button>
+                <CloseIconButton aria-label="Close duplicate agent" onClick={() => setDuplicateAgentDraft(null)} />
               </div>
               <div className="grid gap-3">
                 <label className={fleetClass("toggleRow")}>
@@ -133,7 +130,6 @@ export function DashboardModals(props: DashboardModalsProps) {
               </div>
               <div className={fleetClass("setupModalActions")}>
                 <Button type="button" variant="secondary" onClick={() => setDuplicateAgentDraft(null)}>
-                  <X aria-hidden="true" />
                   Cancel
                 </Button>
                 <Button type="button" onClick={duplicateAgent}>
@@ -161,10 +157,7 @@ export function DashboardModals(props: DashboardModalsProps) {
                 <h2 id="machine-init-title">New Hetzner agent box</h2>
                 <p>Initializes a Hetzner VPS with the runtime agent of your choice and HivemindOS, then prepares it to join your fleet.</p>
               </div>
-              <Button type="button" variant="ghost" aria-label="Close machine initializer" onClick={closeMachineInitModal}>
-                <X aria-hidden="true" />
-                Close
-              </Button>
+              <CloseIconButton aria-label="Close machine initializer" onClick={closeMachineInitModal} />
             </div>
 
             {!machineInitStatus.result ? (
@@ -365,10 +358,7 @@ export function DashboardModals(props: DashboardModalsProps) {
                 <h2 id="setup-modal-title">{setupMachine.self ? "This Mac" : setupMachine.name}</h2>
                 <p>Use this when you are physically on the computer you want to add.</p>
               </div>
-              <Button type="button" variant="ghost" aria-label="Close setup instructions" onClick={() => setSetupMachineKey("")}>
-                <X aria-hidden="true" />
-                Close
-              </Button>
+              <CloseIconButton aria-label="Close setup instructions" onClick={() => setSetupMachineKey("")} />
             </div>
 
             <div className={fleetClass("setupGuide")}>
@@ -459,9 +449,7 @@ export function DashboardModals(props: DashboardModalsProps) {
                 <h2 id="directory-browser-title">Choose directory</h2>
                 <span>{machineDirectoryBrowser.path}</span>
               </div>
-              <button type="button" aria-label="Close directory browser" onClick={() => setMachineDirectoryBrowser(null)}>
-                <X aria-hidden="true" />
-              </button>
+              <CloseIconButton aria-label="Close directory browser" onClick={() => setMachineDirectoryBrowser(null)} />
             </div>
             <div className={kanbanClass("directoryBrowserList")} aria-label="Directories">
               {machineDirectoryBrowser.parentPath ? (

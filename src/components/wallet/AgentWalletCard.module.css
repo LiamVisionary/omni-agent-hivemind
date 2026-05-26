@@ -666,7 +666,7 @@ button.railItem:active {
   font-weight: 700;
 }
 
-.sheetTitle button {
+.sheetTitle button:not([data-slot="close-icon-button"]) {
   border: 0;
   background: transparent;
   color: var(--muted);

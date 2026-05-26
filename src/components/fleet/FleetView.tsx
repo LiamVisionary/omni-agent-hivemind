@@ -2,7 +2,7 @@
 "use client";
 
 import * as React from "react";
-import { X } from "lucide-react";
+import { CloseIconButton } from "@/components/ui/close-icon-button";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { BeeIcon } from "./bee-icon";
 import { HexTile } from "./hex-tile";
@@ -286,7 +286,7 @@ export function FleetView({
                 }}
               >
                 {headlineAlert ? (
-                  <button
+                  <CloseIconButton
                     type="button"
                     onClick={dismissHeadlineAlert}
                     aria-label="Dismiss priority headline"
@@ -295,18 +295,11 @@ export function FleetView({
                     style={{
                       top: 10,
                       right: 10,
-                      width: 26,
-                      height: 26,
-                      display: "grid",
-                      placeItems: "center",
-                      borderRadius: 9999,
                       border: "1px solid rgba(251,113,133,0.32)",
                       background: "rgba(16,20,29,0.72)",
                       color: "var(--muted)",
                     }}
-                  >
-                    <X aria-hidden="true" size={14} />
-                  </button>
+                  />
                 ) : null}
                 <div className={styles.monoCap} style={{ color: headlineAlert ? "var(--danger)" : "var(--muted)", marginBottom: 6 }}>
                   {headlineAlert

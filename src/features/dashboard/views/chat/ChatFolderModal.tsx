@@ -1,6 +1,8 @@
 "use client";
 
 import type { Dispatch, ElementType, SetStateAction } from "react";
+import { createPortal } from "react-dom";
+import { CloseIconButton } from "@/components/ui/close-icon-button";
 import type { MachineGroup } from "@/features/dashboard/dashboard-types";
 
 type ChatFolderDraft = {
@@ -12,7 +14,6 @@ type ChatFolderDraft = {
 
 type ChatFolderModalProps = {
   Button: ElementType;
-  X: ElementType;
   chatClass: (...names: string[]) => string;
   chatFolderCreatorMachine: MachineGroup | null;
   chatFolderCreatorParentOptions: string[];
@@ -24,8 +25,12 @@ type ChatFolderModalProps = {
 };
 
 export function ChatFolderModal(props: ChatFolderModalProps) {
-  const { Button, X, chatClass, chatFolderCreatorMachine, chatFolderCreatorParentOptions, chatFolderDraft, closeChatFolderCreator, createChatFolder, fleetClass, setChatFolderDraft } = props;
-  return (<>
+  const { Button, chatClass, chatFolderCreatorMachine, chatFolderCreatorParentOptions, chatFolderDraft, closeChatFolderCreator, createChatFolder, fleetClass, setChatFolderDraft } = props;
+  const portalTarget = typeof document === "undefined" ? null : document.body;
+
+  if (!portalTarget) return null;
+
+  return createPortal((<>
       {chatFolderCreatorMachine ? (
         <div
           className={fleetClass("setupModalBackdrop")}
@@ -41,9 +46,7 @@ export function ChatFolderModal(props: ChatFolderModalProps) {
                 <h2 id="chat-folder-title">{chatFolderCreatorMachine.name}</h2>
                 <p>Create a workspace folder, select it, and start a fresh chat there.</p>
               </div>
-              <button type="button" aria-label="Close" onClick={closeChatFolderCreator}>
-                <X aria-hidden="true" />
-              </button>
+              <CloseIconButton aria-label="Close" onClick={closeChatFolderCreator} />
             </div>
             <form
               className={chatClass("folderCreatorForm")}
@@ -88,5 +91,5 @@ export function ChatFolderModal(props: ChatFolderModalProps) {
           </section>
         </div>
       ) : null}
-  </>);
+  </>), portalTarget);
 }

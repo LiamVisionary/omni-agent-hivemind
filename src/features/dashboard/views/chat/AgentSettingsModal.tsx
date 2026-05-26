@@ -2,9 +2,51 @@
 // @ts-nocheck
 "use client";
 
+import { createPortal } from "react-dom";
+import { CloseIconButton } from "@/components/ui/close-icon-button";
+
 export function AgentSettingsModal(props: any) {
-  const { BEE_WORKER_PRESET_LIST, BrainCircuit, Button, Check, ChevronRight, Copy, Cpu, Eye, FolderOpen, HERMES_UPDATE_INTEGRATION_KEYS, Image, KanbanSquare, LoaderCircle, MessageSquare, Pencil, PlugZap, Plus, RUNTIME_LABELS, RefreshCcw, Repeat2, Search, Send, Settings2, ShieldCheck, Sparkles, Upload, X, addHermesModelFromDraft, agentCreateDraft, agentCreateMachine, agentRenameDraft, agentRenameEditing, agentRuntimeAdvancedOpen, agentRuntimeFolderBrowsing, agentRuntimeFolderEditing, agentRuntimeFolderStatus, agentSettingsCustomWorker, agentSettingsCustomWorkers, agentSettingsDescription, agentSettingsIntegrationTarget, agentSettingsPanel, agentSettingsPreferredSkills, agentSettingsProvider, agentSettingsRuntime, agentSettingsSelectedCustomWorkerId, agentSettingsSkillProfile, agentSettingsTitle, agentSettingsWorkerClass, agentSettingsWorkerImage, agentSettingsWorkerLabel, agentSettingsWorkerPreset, agentWorkerClassView, applyCustomWorkerClass, beeRoleIconPath, beeRoleLabel, browseAgentRuntimeFolder, closeAgentSettingsModal, createAgentFromModal, customWorkerDraft, customWorkerImageError, customWorkerImageInputRef, customWorkerSkillSearch, filteredCustomWorkerSkills, fleetClass, hermesUpdateRequired, openCustomWorkerClassCreator, refreshRuntimeIntegrations, roleModalAgent, runRuntimeIntegrationAction, runtimeBackgroundPrompt, runtimeCapabilities, runtimeIntegrationBusy, runtimeIntegrationMessage, runtimeIntegrationStatus, runtimeModelDraft, runtimeModelProviders, runtimeModelSetupMode, runtimeSessionQuery, runtimeSessionResults, runtimeSetupDefinition, runtimeSetupKey, runtimeUpdateConfirmKey, searchRuntimeSessionsForAgent, selectAgentWorkerClass, selectCustomWorkerClass, selectedRuntimeModel, selectedRuntimeModelId, selectedRuntimeModels, selectedRuntimeProvider, setAgentCreateDraft, setAgentRenameDraft, setAgentRenameEditing, setAgentRuntimeAdvancedOpen, setAgentRuntimeFolderEditing, setAgentRuntimeFolderStatus, setAgentSettingsPanel, setAgentWorkerClassView, setCustomWorkerDraft, setCustomWorkerSkillSearch, setRuntimeBackgroundPrompt, setRuntimeModelDraft, setRuntimeModelSetupMode, setRuntimeSessionQuery, setRuntimeSetupKey, setRuntimeUpdateConfirmKey, sharedVault, startAgentChat, toggleCustomWorkerSkill, updateAgentProfile, updateAgentRuntimeModel, updateAgentSkillProfile, uploadCustomWorkerImage, workerCapabilityBadges } = props;
-  return (<>
+  const { BEE_WORKER_PRESET_LIST, BrainCircuit, Button, Check, ChevronRight, Copy, Cpu, Eye, FolderOpen, HERMES_UPDATE_INTEGRATION_KEYS, Image, KanbanSquare, LoaderCircle, MessageSquare, Pencil, PlugZap, Plus, RUNTIME_LABELS, RefreshCcw, Repeat2, Search, Send, Settings2, ShieldCheck, Sparkles, Upload, addHermesModelFromDraft, agentCreateDraft, agentCreateMachine, agentRenameDraft, agentRenameEditing, agentRuntimeAdvancedOpen, agentRuntimeFolderBrowsing, agentRuntimeFolderEditing, agentRuntimeFolderStatus, agentSettingsCustomWorker, agentSettingsCustomWorkers, agentSettingsDescription, agentSettingsIntegrationTarget, agentSettingsPanel, agentSettingsPreferredSkills, agentSettingsProvider, agentSettingsRuntime, agentSettingsSelectedCustomWorkerId, agentSettingsSkillProfile, agentSettingsTitle, agentSettingsWorkerClass, agentSettingsWorkerImage, agentSettingsWorkerLabel, agentSettingsWorkerPreset, agentWorkerClassView, applyCustomWorkerClass, beeRoleIconPath, browseAgentRuntimeFolder, closeAgentSettingsModal, createAgentFromModal, customWorkerDraft, customWorkerImageError, customWorkerImageInputRef, customWorkerSkillSearch, filteredCustomWorkerSkills, fleetClass, hermesUpdateRequired, openCustomWorkerClassCreator, providerIconPath, providerIconRenderMode, refreshRuntimeIntegrations, roleModalAgent, runRuntimeIntegrationAction, runtimeBackgroundPrompt, runtimeCapabilities, runtimeIconFallback, runtimeIconPath, runtimeIconRenderMode, runtimeIntegrationBusy, runtimeIntegrationMessage, runtimeIntegrationStatus, runtimeModelDraft, runtimeModelProviders, runtimeModelSetupMode, runtimeSessionQuery, runtimeSessionResults, runtimeSetupDefinition, runtimeSetupKey, runtimeUpdateConfirmKey, searchRuntimeSessionsForAgent, selectAgentWorkerClass, selectCustomWorkerClass, selectedRuntimeModelId, selectedRuntimeModels, selectedRuntimeProvider, setAgentCreateDraft, setAgentRenameDraft, setAgentRenameEditing, setAgentRuntimeAdvancedOpen, setAgentRuntimeFolderEditing, setAgentRuntimeFolderStatus, setAgentSettingsPanel, setAgentWorkerClassView, setCustomWorkerDraft, setCustomWorkerSkillSearch, setRuntimeBackgroundPrompt, setRuntimeModelDraft, setRuntimeModelSetupMode, setRuntimeSessionQuery, setRuntimeSetupKey, setRuntimeUpdateConfirmKey, sharedVault, startAgentChat, toggleCustomWorkerSkill, updateAgentProfile, updateAgentRuntimeModel, updateAgentSkillProfile, uploadCustomWorkerImage, workerCapabilityBadges } = props;
+  const portalTarget = typeof document === "undefined" ? null : document.body;
+
+  const updateSettingsRuntime = (runtime: AgentRuntime) => {
+    if (agentCreateMachine) {
+      setAgentCreateDraft((current) => ({
+        ...current,
+        runtime,
+        provider: runtime === "hermes" ? current.provider || "openai-codex" : "",
+        model: runtime === "hermes" ? current.model : "",
+      }));
+    } else if (roleModalAgent) {
+      updateAgentProfile(roleModalAgent.id, {
+        runtime,
+        provider: runtime === "hermes" ? roleModalAgent.provider || "openai-codex" : "",
+        model: runtime === "hermes" ? roleModalAgent.model : "",
+      });
+    }
+  };
+
+  const renderRuntimeMark = (runtime: string, label: string) => {
+    const iconPath = runtimeIconPath(runtime);
+    const iconMode = runtimeIconRenderMode(runtime);
+    return (
+      <span className={fleetClass("runtimeIconMark")} aria-hidden="true">
+        {iconPath ? (
+          <span
+            className={iconMode === "mask" ? fleetClass("runtimeIconMask") : fleetClass("runtimeIconImage")}
+            style={iconMode === "mask" ? { "--runtime-icon": `url(${iconPath})` } : { "--runtime-image": `url(${iconPath})` }}
+          />
+        ) : <b>{runtimeIconFallback(runtime, label)}</b>}
+      </span>
+    );
+  };
+  const agentSettingsWorkerSubtitle = (agentSettingsCustomWorker?.label || agentSettingsWorkerPreset?.label || agentSettingsWorkerLabel || "")
+    .replace(/\s+bee$/i, "")
+    .trim();
+
+  if (!portalTarget) return null;
+
+  return createPortal((<>
       {roleModalAgent || agentCreateMachine ? (
         <div
           className={fleetClass("setupModalBackdrop")}
@@ -15,7 +57,7 @@ export function AgentSettingsModal(props: any) {
         >
           <section className={fleetClass("setupModal", "agentSettingsModal")} role="dialog" aria-modal="true" aria-labelledby="agent-settings-title">
             <div className={fleetClass("setupModalHeader")}>
-              <div>
+              <div className={fleetClass("agentSettingsHeaderCopy")}>
                 <p className="eyebrow">{agentSettingsTitle}</p>
                 {agentCreateMachine ? (
                   <div className={fleetClass("agentNameEdit")}>
@@ -49,39 +91,39 @@ export function AgentSettingsModal(props: any) {
                     <button type="submit" aria-label="Save agent name" disabled={!agentRenameDraft.trim()}>
                       <Check aria-hidden="true" />
                     </button>
-                    <button
+                    <CloseIconButton
+                      size="sm"
                       type="button"
                       aria-label="Cancel agent name edit"
                       onClick={() => {
                         setAgentRenameDraft(roleModalAgent.name);
                         setAgentRenameEditing(false);
                       }}
-                    >
-                      <X aria-hidden="true" />
-                    </button>
+                    />
                   </form>
                 ) : roleModalAgent ? (
                   <div className={fleetClass("agentNameDisplay")}>
-                    <h2 id="agent-settings-title">{roleModalAgent.name}</h2>
-                    <span className={fleetClass("agentRoleBadge")}>{beeRoleLabel(roleModalAgent.beeRole)}</span>
-                    <button
-                      type="button"
-                      aria-label="Rename agent"
-                      onClick={() => {
-                        setAgentRenameDraft(roleModalAgent.name);
-                        setAgentRenameEditing(true);
-                      }}
-                    >
-                      <Pencil aria-hidden="true" />
-                    </button>
+                    <div className={fleetClass("agentIdentityBlock")}>
+                      <div className={fleetClass("agentNameTitleRow")}>
+                        <h2 id="agent-settings-title">{roleModalAgent.name}</h2>
+                        <button
+                          type="button"
+                          aria-label="Rename agent"
+                          onClick={() => {
+                            setAgentRenameDraft(roleModalAgent.name);
+                            setAgentRenameEditing(true);
+                          }}
+                        >
+                          <Pencil aria-hidden="true" />
+                        </button>
+                      </div>
+                      {agentSettingsWorkerSubtitle ? <span className={fleetClass("agentRoleBadge")}>{agentSettingsWorkerSubtitle}</span> : null}
+                    </div>
                   </div>
                 ) : null}
-                <p>{agentSettingsDescription}</p>
+                <p className={fleetClass("agentSettingsDescription")}>{agentSettingsDescription}</p>
               </div>
-              <Button type="button" variant="ghost" aria-label="Close agent settings" onClick={closeAgentSettingsModal}>
-                <X aria-hidden="true" />
-                Close
-              </Button>
+              <CloseIconButton aria-label="Close agent settings" onClick={closeAgentSettingsModal} />
             </div>
 
             <div className={fleetClass("agentSettingsTabs")} role="tablist" aria-label="Agent settings sections">
@@ -99,52 +141,41 @@ export function AgentSettingsModal(props: any) {
 
             {agentSettingsPanel === "role" ? (
               <div className={fleetClass("agentSettingsGrid")}>
-                <label className={fleetClass("agentSettingsField")}>
+                <div className={fleetClass("agentSettingsField", "agentRuntimeSelectField")}>
                   <span>Runtime</span>
-                  <select
-                    value={agentCreateMachine ? agentCreateDraft.runtime : roleModalAgent?.runtime ?? "hermes"}
-                    onChange={(event) => {
-                      const runtime = event.target.value as AgentRuntime;
-                      if (agentCreateMachine) {
-                        setAgentCreateDraft((current) => ({
-                          ...current,
-                          runtime,
-                          provider: runtime === "hermes" ? current.provider || "openai-codex" : "",
-                          model: runtime === "hermes" ? current.model : "",
-                        }));
-                      } else if (roleModalAgent) {
-                        updateAgentProfile(roleModalAgent.id, {
-                          runtime,
-                          provider: runtime === "hermes" ? roleModalAgent.provider || "openai-codex" : "",
-                          model: runtime === "hermes" ? roleModalAgent.model : "",
-                        });
-                      }
-                    }}
-                  >
-                    {Object.entries(RUNTIME_LABELS).map(([runtime, label]) => (
-                      <option value={runtime} key={runtime}>{label}</option>
-                    ))}
-                  </select>
-                </label>
+                  <div className={fleetClass("agentRuntimeSegments")} role="group" aria-label="Runtime">
+                    {Object.entries(RUNTIME_LABELS).map(([runtime, label]) => {
+                      const selected = runtime === (agentCreateMachine ? agentCreateDraft.runtime : roleModalAgent?.runtime ?? "hermes");
+                      return (
+                        <button
+                          type="button"
+                          key={runtime}
+                          aria-pressed={selected}
+                          className={selected ? fleetClass("selectedRuntimeSegment") : ""}
+                          onClick={() => updateSettingsRuntime(runtime as AgentRuntime)}
+                        >
+                          {renderRuntimeMark(runtime, label)}
+                          <strong>{label}</strong>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
                 {agentSettingsRuntime === "hermes" ? (
                   <div className={fleetClass("agentRuntimeModelPanel")}>
-                    <div className={fleetClass("agentRuntimeModelHeader")}>
-                      <div>
-                        <strong>Model</strong>
-                        <span>{selectedRuntimeProvider?.name ?? "Choose provider"} · {selectedRuntimeModel?.name || selectedRuntimeModelId || "Choose model"}</span>
-                      </div>
-                      <button
-                        type="button"
-                        aria-label="Refresh Hermes models"
-                        title="Refresh Hermes models"
-                        disabled={runtimeIntegrationBusy === "status"}
-                        onClick={() => void refreshRuntimeIntegrations(agentSettingsIntegrationTarget ?? undefined)}
-                      >
-                        {runtimeIntegrationBusy === "status" ? <LoaderCircle aria-hidden="true" className="animate-spin" /> : <RefreshCcw aria-hidden="true" />}
-                      </button>
-                    </div>
                     <div className={fleetClass("agentRuntimeCardGroup")}>
-                      <span>Provider</span>
+                      <div className={fleetClass("agentRuntimeGroupHeader")}>
+                        <span>Provider</span>
+                        <button
+                          type="button"
+                          aria-label="Refresh Hermes models"
+                          title="Refresh Hermes models"
+                          disabled={runtimeIntegrationBusy === "status"}
+                          onClick={() => void refreshRuntimeIntegrations(agentSettingsIntegrationTarget ?? undefined)}
+                        >
+                          {runtimeIntegrationBusy === "status" ? <LoaderCircle aria-hidden="true" className="animate-spin" /> : <RefreshCcw aria-hidden="true" />}
+                        </button>
+                      </div>
                       <div className={fleetClass("agentRuntimeProviderCards")}>
                         <button
                           type="button"
@@ -156,6 +187,8 @@ export function AgentSettingsModal(props: any) {
                         </button>
                         {runtimeModelProviders.map((provider) => {
                           const selected = provider.slug === selectedRuntimeProvider?.slug;
+                          const iconPath = providerIconPath(provider);
+                          const iconMode = providerIconRenderMode(provider);
                           return (
                             <button
                               type="button"
@@ -164,7 +197,17 @@ export function AgentSettingsModal(props: any) {
                               aria-pressed={selected}
                               onClick={() => updateAgentRuntimeModel(provider.slug, provider.models[0]?.id ?? "")}
                             >
-                              <strong>{provider.name}</strong>
+                              <span className={fleetClass("providerCardTitle")}>
+                                {iconPath ? (
+                                  <span className={fleetClass("runtimeIconMark")} aria-hidden="true">
+                                    <span
+                                      className={iconMode === "mask" ? fleetClass("runtimeIconMask") : fleetClass("runtimeIconImage")}
+                                      style={iconMode === "mask" ? { "--runtime-icon": `url(${iconPath})` } : { "--runtime-image": `url(${iconPath})` }}
+                                    />
+                                  </span>
+                                ) : null}
+                                <strong>{provider.name}</strong>
+                              </span>
                               <small>{provider.totalModels} model{provider.totalModels === 1 ? "" : "s"}</small>
                             </button>
                           );
@@ -172,7 +215,9 @@ export function AgentSettingsModal(props: any) {
                       </div>
                     </div>
                     <div className={fleetClass("agentRuntimeCardGroup")}>
-                      <span>Model</span>
+                      <div className={fleetClass("agentRuntimeGroupHeader")}>
+                        <span>Model</span>
+                      </div>
                       <div className={fleetClass("agentRuntimeModelCards")}>
                         {selectedRuntimeModels.map((model) => {
                           const selected = model.id === selectedRuntimeModelId;
@@ -569,7 +614,8 @@ export function AgentSettingsModal(props: any) {
                                     >
                                       {runtimeIntegrationBusy === "hermes-update" ? <LoaderCircle aria-hidden="true" className="animate-spin" /> : <Check aria-hidden="true" />}
                                     </button>
-                                    <button
+                                    <CloseIconButton
+                                      size="sm"
                                       type="button"
                                       aria-label="Cancel Hermes update"
                                       disabled={runtimeIntegrationBusy === "hermes-update"}
@@ -577,9 +623,7 @@ export function AgentSettingsModal(props: any) {
                                         event.stopPropagation();
                                         setRuntimeUpdateConfirmKey("");
                                       }}
-                                    >
-                                      <X aria-hidden="true" />
-                                    </button>
+                                    />
                                   </>
                                 ) : (
                                   <button
@@ -639,10 +683,7 @@ export function AgentSettingsModal(props: any) {
                           {runtimeIntegrationBusy === "status" ? <LoaderCircle aria-hidden="true" className="animate-spin" /> : <RefreshCcw aria-hidden="true" />}
                           Refresh
                         </Button>
-                        <Button type="button" variant="ghost" onClick={() => setRuntimeSetupKey("")}>
-                          <X aria-hidden="true" />
-                          Close
-                        </Button>
+                        <CloseIconButton aria-label="Close runtime setup" onClick={() => setRuntimeSetupKey("")} />
                       </div>
                     </section>
                   );
@@ -772,5 +813,5 @@ export function AgentSettingsModal(props: any) {
           </section>
         </div>
       ) : null}
-  </>);
+  </>), portalTarget);
 }
