@@ -161,10 +161,14 @@ func servePeerProxy(ts *tsnet.Server) http.HandlerFunc {
 	}
 }
 
-func serveControl(ctx context.Context, addr string, lc *local.Client, ts *tsnet.Server) *http.Server {
+func serveControl(ctx context.Context, addr string, lc *local.Client, ts *tsnet.Server) (*http.Server, error) {
+	ln, err := net.Listen("tcp", addr)
+	if err != nil {
+		return nil, err
+	}
 	mux := http.NewServeMux()
 	mux.HandleFunc("/health", func(w http.ResponseWriter, _ *http.Request) {
-		_ = json.NewEncoder(w).Encode(map[string]any{"ok": true})
+		_ = json.NewEncoder(w).Encode(map[string]any{"ok": true, "service": "hivemind-linkd"})
 	})
 	mux.HandleFunc("/status", func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("content-type", "application/json")
@@ -173,11 +177,11 @@ func serveControl(ctx context.Context, addr string, lc *local.Client, ts *tsnet.
 	mux.HandleFunc("/peer/", servePeerProxy(ts))
 	server := &http.Server{Addr: addr, Handler: mux, ReadHeaderTimeout: 5 * time.Second}
 	go func() {
-		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+		if err := server.Serve(ln); err != nil && err != http.ErrServerClosed {
 			log.Printf("control API error: %v", err)
 		}
 	}()
-	return server
+	return server, nil
 }
 
 func main() {
@@ -214,7 +218,10 @@ func main() {
 	if err != nil {
 		log.Fatalf("embedded tailscale local client: %v", err)
 	}
-	controlServer := serveControl(ctx, cfg.control, lc, ts)
+	controlServer, err := serveControl(ctx, cfg.control, lc, ts)
+	if err != nil {
+		log.Fatalf("listen on control API %s: %v", cfg.control, err)
+	}
 	defer controlServer.Shutdown(context.Background()) //nolint:errcheck
 
 	ln, err := ts.Listen("tcp", cfg.listenAddr)

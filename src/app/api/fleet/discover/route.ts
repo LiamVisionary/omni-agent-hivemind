@@ -88,6 +88,10 @@ type CollectorEnvSync = {
 const QUEEN_RUNTIME_PRIORITY: AgentRuntime[] = ["hermes", "openclaw", "aeon"];
 const COLLECTOR_FETCH_TIMEOUT_MS = 2_500;
 
+function localCollectorUrl() {
+  return `http://127.0.0.1:${process.env.AGENT_TELEMETRY_PORT || "8787"}`;
+}
+
 function localDevice(): Device {
   return {
     self: true,
@@ -96,7 +100,7 @@ function localDevice(): Device {
     os: process.platform,
     online: true,
     ip: "127.0.0.1",
-    collectorUrl: "http://127.0.0.1:8787",
+    collectorUrl: localCollectorUrl(),
     relay: "",
   };
 }
@@ -203,7 +207,7 @@ function simplifyDevice(peer: TailscalePeer, self = false, viaLink = false): Dev
     os: peer.OS ?? "unknown",
     online: Boolean(peer.Online),
     ip,
-    collectorUrl: self ? "http://127.0.0.1:8787" : ip ? (viaLink ? linkCollectorUrl(ip) : `http://${ip}:8787`) : "",
+    collectorUrl: self ? localCollectorUrl() : ip ? (viaLink ? linkCollectorUrl(ip) : `http://${ip}:8787`) : "",
     lastSeen: peer.LastSeen,
     lastHandshake: peer.LastHandshake,
     curAddr: peer.CurAddr ?? "",

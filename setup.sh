@@ -1449,6 +1449,16 @@ else
     hermes_restart_mode="ask"
   fi
   HIVE_SETUP_NETWORK_MANAGED="true" HIVE_SETUP_TAILNET_SYNC_ENABLED="$tailnet_sync_enabled" HIVE_LINK_ENABLED="$hivemind_link_enabled" AGENT_TELEMETRY_PORT="$COLLECTOR_PORT" AGENT_TELEMETRY_HERMES_RESTART="${AGENT_TELEMETRY_HERMES_RESTART:-$hermes_restart_mode}" ./scripts/install-telemetry-collector.sh
+  if [[ -f "$HOME/.hivemindos/collector.env" ]]; then
+    # shellcheck disable=SC1091
+    source "$HOME/.hivemindos/collector.env" >/dev/null 2>&1 || true
+    if [[ -n "${AGENT_TELEMETRY_PORT:-}" ]]; then
+      set_env_local "AGENT_TELEMETRY_PORT" "$AGENT_TELEMETRY_PORT"
+    fi
+    if [[ -n "${HIVE_LINK_CONTROL_URL:-}" ]]; then
+      set_env_local "HIVE_LINK_CONTROL_URL" "$HIVE_LINK_CONTROL_URL"
+    fi
+  fi
   if wait_for_local_collector; then
     ok "Collector installed and healthy locally"
     configure_env_reconciliation
@@ -1549,7 +1559,7 @@ echo "Collector:"
 if [[ -n "$collector_url" ]]; then
   echo "  $collector_url"
 elif [[ "$hivemind_link_enabled" == "true" ]]; then
-  echo "  Hivemind Link: http://127.0.0.1:8788/status"
+  echo "  Hivemind Link: ${HIVE_LINK_CONTROL_URL:-http://127.0.0.1:8788}/status"
 else
   echo "  http://localhost:$COLLECTOR_PORT"
 fi

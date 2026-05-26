@@ -3,6 +3,14 @@
 This file records user-visible changes before they are committed. New work should
 be added here first, then marked `Committed` or `Pushed` after the git action.
 
+## 2026-05-26 05:38 EDT - Avoid Link Control Port Conflicts
+
+- Status: Uncommitted
+- Areas changed: Hivemind Link setup script, Link daemon control listener, Fleet discovery APIs, setup summary, uninstall mirror, changelog
+- Summary: Detect when the default local Link control port is occupied, move the control API to the nearest available localhost port, persist the chosen URL and private collector port for dashboard discovery, use a fresh working LaunchAgent label after the legacy label became stuck in macOS background-task registration, make Fleet discovery honor fallback local collector ports, and make the Link daemon fail fast if its control listener cannot bind.
+- Verification: `bash -n scripts/install-telemetry-collector.sh setup.sh uninstall.sh`; `go test ./cmd/hivemind-linkd`; `./scripts/build-hivemind-linkd.sh`; `pnpm exec tsc --noEmit --pretty false`; `git diff --check -- scripts/install-telemetry-collector.sh setup.sh uninstall.sh cmd/hivemind-linkd/main.go src/app/api/fleet/discover/route.ts src/app/api/tailscale/devices/route.ts CHANGELOG.md`; `./setup.sh --non-interactive --skip-deps --skip-dashboard`; live checks confirmed `com.hivemindos.linkd.agent` is registered/running under launchd, nearest-available scanning chose distinct collector/control ports, Link `/health` returns the service marker, `/status` reports `Running`, `.env.local` persists the chosen `HIVE_LINK_CONTROL_URL` and `AGENT_TELEMETRY_PORT`, and `/api/fleet/discover` reports `This Mac` ready at the chosen local collector port.
+- Intended commit message: `Avoid Link control port conflicts`
+
 ## 2026-05-24 18:59 WITA - Mark Merged Changelog Entries Pushed
 
 - Status: Pushed

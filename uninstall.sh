@@ -168,12 +168,14 @@ fi
 
 if ask "Stop and remove the HivemindOS Link sidecar service?" "yes"; then
   if [[ "$(uname -s)" == "Darwin" ]]; then
-    plist="$HOME/Library/LaunchAgents/com.hivemindos.linkd.plist"
-    if [[ -f "$plist" ]]; then
-      launchctl bootout "gui/$(id -u)/com.hivemindos.linkd" >/dev/null 2>&1 || launchctl unload "$plist" >/dev/null 2>&1 || true
-      rm -f "$plist"
-      ok "Removed HivemindOS Link LaunchAgent"
-    fi
+    for label in com.hivemindos.linkd.agent com.hivemindos.linkd; do
+      plist="$HOME/Library/LaunchAgents/$label.plist"
+      launchctl bootout "gui/$(id -u)/$label" >/dev/null 2>&1 || launchctl unload "$plist" >/dev/null 2>&1 || true
+      if [[ -f "$plist" ]]; then
+        rm -f "$plist"
+        ok "Removed HivemindOS Link LaunchAgent $label"
+      fi
+    done
   elif run_if_exists systemctl; then
     systemctl --user disable --now hivemindos-linkd.service >/dev/null 2>&1 || true
     rm -f "$HOME/.config/systemd/user/hivemindos-linkd.service"

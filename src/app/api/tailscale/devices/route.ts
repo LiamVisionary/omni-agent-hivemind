@@ -38,6 +38,10 @@ type HivemindLinkStatus = {
   error?: string;
 };
 
+function localCollectorUrl() {
+  return `http://127.0.0.1:${process.env.AGENT_TELEMETRY_PORT || "8787"}`;
+}
+
 function localDevice() {
   return {
     self: true,
@@ -46,7 +50,7 @@ function localDevice() {
     os: process.platform,
     online: true,
     ip: "127.0.0.1",
-    collectorUrl: "http://127.0.0.1:8787",
+    collectorUrl: localCollectorUrl(),
     relay: "",
   };
 }
@@ -156,7 +160,7 @@ function simplifyDevice(peer: TailscalePeer, self = false, viaLink = false) {
     os: peer.OS ?? "unknown",
     online: Boolean(peer.Online),
     ip,
-    collectorUrl: self ? "http://127.0.0.1:8787" : ip ? (viaLink ? linkCollectorUrl(ip) : `http://${ip}:8787`) : "",
+    collectorUrl: self ? localCollectorUrl() : ip ? (viaLink ? linkCollectorUrl(ip) : `http://${ip}:8787`) : "",
     lastSeen: peer.LastSeen,
     lastHandshake: peer.LastHandshake,
     curAddr: peer.CurAddr ?? "",
