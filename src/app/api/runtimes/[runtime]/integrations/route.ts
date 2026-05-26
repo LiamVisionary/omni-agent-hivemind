@@ -36,7 +36,7 @@ async function proxyCollectorIntegration(runtime: AgentRuntime, collectorUrl: st
   });
   const data = await response.json().catch(() => null) as Record<string, unknown> | null;
   if (!response.ok || data?.ok === false) {
-    throw new Error(typeof data?.error === "string" ? data.error : `Remote collector returned HTTP ${response.status}.`);
+    throw new Error(typeof data?.error === "string" ? data.error : `Remote agent bridge returned HTTP ${response.status}.`);
   }
   return data;
 }

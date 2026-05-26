@@ -5,9 +5,11 @@
 import type { ComponentType, Dispatch, ElementType, SetStateAction } from "react";
 import type { AgentProfile, AgentRuntime, SharedVaultConfig } from "@/lib/types/agent-runtime";
 import type { AgentNotification, AgentNotificationSettings, AgentNotificationSummary } from "@/lib/types/agent-notifications";
+import type { MemoryTelemetryPayload } from "@/lib/types/memory-telemetry";
 import type { AgentEnvCardProps, EnvValueRowProps } from "@/features/env/env-components";
 import type { MorePanelProps } from "@/features/dashboard/MorePanel";
 import type { NotificationGroup, NotificationsPanelProps } from "@/features/notifications/NotificationsPanel";
+import { MemoryTelemetryPanel } from "@/features/dashboard/views/MemoryTelemetryPanel";
 import type {
   DashboardView,
   HiveEnvBackupStatus,
@@ -33,6 +35,7 @@ type IconComponent = ElementType<{
 
 type UtilityPanelsProps = {
   AgentEnvCard: ComponentType<AgentEnvCardProps>;
+  Activity: IconComponent;
   Button: ElementType;
   Check: IconComponent;
   ChevronDown: IconComponent;
@@ -61,6 +64,7 @@ type UtilityPanelsProps = {
   agentSpecificEnvCount: number;
   displayAgents: AgentProfile[];
   fleetClass: ClassNameBuilder;
+  formatRelativeTime: (timestamp: number) => string;
   generateSharedEnvSecret: () => void;
   hiveEnvLoading: boolean;
   hiveEnvRestoring: boolean;
@@ -74,6 +78,8 @@ type UtilityPanelsProps = {
   maintenanceReport: MaintenanceReport | null | undefined;
   markAllNotificationsRead: () => void | Promise<void>;
   markNotificationRead: (id: string) => void | Promise<void>;
+  memoryTelemetry: MemoryTelemetryPayload | null | undefined;
+  memoryTelemetryLoading: boolean;
   notificationCursor: string | number | null;
   notificationGroups: NotificationGroup[];
   notificationSummary: AgentNotificationSummary | null;
@@ -84,6 +90,7 @@ type UtilityPanelsProps = {
   promoteRuntimeEnvValue: (source: HiveEnvSource, key: string, value: string) => void | Promise<void>;
   refreshHiveEnv: () => void | Promise<void>;
   refreshMaintenanceReport: () => void | Promise<void>;
+  refreshMemoryTelemetry: () => void | Promise<void>;
   refreshNotifications: (options?: { append?: boolean }) => void | Promise<void>;
   refreshRuntimeFileRoots: () => void | Promise<void>;
   renderAgentKey: (agent: AgentProfile, index: number) => string;
@@ -138,7 +145,7 @@ type UtilityPanelsProps = {
 };
 
 export function UtilityPanels(props: UtilityPanelsProps) {
-  const { AgentEnvCard, Button, Check, ChevronDown, ChevronLeft, Download, EnvValueRow, FileText, FileUp, FolderOpen, LoaderCircle, MorePanel, NotificationsPanel, Pencil, Plus, RefreshCcw, RotateCcw, ShieldCheck, Sparkles, URL, Upload, X, activeView, addAgentEnvValue, addSharedEnvValue, agentEnvDrafts, agentSpecificEnvCount, displayAgents, fleetClass, generateSharedEnvSecret, hiveEnvLoading, hiveEnvRestoring, hiveEnvSavingKey, hiveEnvStatus, hiveEnvSyncing, importSharedEnvEntries, listRuntimeFiles, maintenanceBusy, maintenanceMessage, maintenanceReport, markAllNotificationsRead, markNotificationRead, notificationCursor, notificationGroups, notificationSummary, notifications, notificationsLoading, notificationsStatus, openRuntimeFile, promoteRuntimeEnvValue, refreshHiveEnv, refreshMaintenanceReport, refreshNotifications, refreshRuntimeFileRoots, renderAgentKey, restoreSharedEnvBackup, revealedEnvValues, runMaintenanceAction, runtimeEnvSources, runtimeFileDraft, runtimeFileOpen, runtimeFilePath, runtimeFileRootKey, runtimeFileRoots, runtimeFileStatus, runtimeFiles, runtimeModelSelectionsByRuntime, saveAgentEnvValue, saveRuntimeFile, saveSharedEnvValue, selectedRuntimeEnvSource, setActiveView, setAgentEnvDrafts, setHiveEnvRuntimeSourceId, setRuntimeFileDraft, setRuntimeFileOpen, setRuntimeFilePath, setRuntimeFileRootKey, setSharedEnvAddMenuOpen, setSharedEnvDraft, setSharedEnvEditable, setSharedEnvImportOpen, setSharedEnvImportText, sharedBackupStatus, sharedEnvAddMenuOpen, sharedEnvCount, sharedEnvDraft, sharedEnvEditable, sharedEnvImport, sharedEnvImportChangedCount, sharedEnvImportDiff, sharedEnvImportNewCount, sharedEnvImportOpen, sharedEnvImportSameCount, sharedEnvImportText, sharedEnvImporting, sharedEnvSource, sharedVault, syncSharedEnvMachines, toggleEnvValue, updateNotificationSettings, vaultClass, walletClass } = props;
+  const { AgentEnvCard, Activity, Button, Check, ChevronDown, ChevronLeft, Download, EnvValueRow, FileText, FileUp, FolderOpen, LoaderCircle, MorePanel, NotificationsPanel, Pencil, Plus, RefreshCcw, RotateCcw, ShieldCheck, Sparkles, URL, Upload, X, activeView, addAgentEnvValue, addSharedEnvValue, agentEnvDrafts, agentSpecificEnvCount, displayAgents, fleetClass, formatRelativeTime, generateSharedEnvSecret, hiveEnvLoading, hiveEnvRestoring, hiveEnvSavingKey, hiveEnvStatus, hiveEnvSyncing, importSharedEnvEntries, listRuntimeFiles, maintenanceBusy, maintenanceMessage, maintenanceReport, markAllNotificationsRead, markNotificationRead, memoryTelemetry, memoryTelemetryLoading, notificationCursor, notificationGroups, notificationSummary, notifications, notificationsLoading, notificationsStatus, openRuntimeFile, promoteRuntimeEnvValue, refreshHiveEnv, refreshMaintenanceReport, refreshMemoryTelemetry, refreshNotifications, refreshRuntimeFileRoots, renderAgentKey, restoreSharedEnvBackup, revealedEnvValues, runMaintenanceAction, runtimeEnvSources, runtimeFileDraft, runtimeFileOpen, runtimeFilePath, runtimeFileRootKey, runtimeFileRoots, runtimeFileStatus, runtimeFiles, runtimeModelSelectionsByRuntime, saveAgentEnvValue, saveRuntimeFile, saveSharedEnvValue, selectedRuntimeEnvSource, setActiveView, setAgentEnvDrafts, setHiveEnvRuntimeSourceId, setRuntimeFileDraft, setRuntimeFileOpen, setRuntimeFilePath, setRuntimeFileRootKey, setSharedEnvAddMenuOpen, setSharedEnvDraft, setSharedEnvEditable, setSharedEnvImportOpen, setSharedEnvImportText, sharedBackupStatus, sharedEnvAddMenuOpen, sharedEnvCount, sharedEnvDraft, sharedEnvEditable, sharedEnvImport, sharedEnvImportChangedCount, sharedEnvImportDiff, sharedEnvImportNewCount, sharedEnvImportOpen, sharedEnvImportSameCount, sharedEnvImportText, sharedEnvImporting, sharedEnvSource, sharedVault, syncSharedEnvMachines, toggleEnvValue, updateNotificationSettings, vaultClass, walletClass } = props;
   return (<>
       {activeView === "more" ? (
         <MorePanel
@@ -148,11 +155,14 @@ export function UtilityPanels(props: UtilityPanelsProps) {
           runtimeFileRootCount={runtimeFileRoots.length}
           notificationUnread={notificationSummary?.unread ?? 0}
           notificationTotal={notificationSummary?.total ?? 0}
+          memoryRssMb={memoryTelemetry?.summary.appRssMb}
+          memoryGrowthMb={memoryTelemetry?.summary.topGrowerGrowthMb}
           onNavigate={(target) => {
             setActiveView(target);
             if (target === "integrations") return;
             if (target === "env") void refreshHiveEnv();
             if (target === "maintenance") void refreshMaintenanceReport();
+            if (target === "memory") void refreshMemoryTelemetry();
             if (target === "files") void refreshRuntimeFileRoots();
             if (target === "notifications") void refreshNotifications();
           }}
@@ -601,6 +611,20 @@ export function UtilityPanels(props: UtilityPanelsProps) {
         </div>
       </section>
       ) : null}
+
+      <MemoryTelemetryPanel
+        Activity={Activity}
+        Button={Button}
+        LoaderCircle={LoaderCircle}
+        RefreshCcw={RefreshCcw}
+        active={activeView === "memory"}
+        fleetClass={fleetClass}
+        formatRelativeTime={formatRelativeTime}
+        memoryTelemetry={memoryTelemetry}
+        memoryTelemetryLoading={memoryTelemetryLoading}
+        refreshMemoryTelemetry={refreshMemoryTelemetry}
+        vaultClass={vaultClass}
+      />
 
       {activeView === "notifications" ? (
         <NotificationsPanel

@@ -61,6 +61,14 @@ const PROVIDERS: Array<{
   { key: "google", label: "Google", icon: <Cloud size={19} />, detail: "Drive, Gmail labels, Calendar context." },
 ];
 
+function setupMethodLabel(method?: NangoHostSetupResult["method"]) {
+  if (method === "collector-api") return "agent bridge API";
+  if (method === "local-shell") return "local shell";
+  if (method === "tailscale-ssh") return "Tailscale SSH";
+  if (method === "plain-ssh") return "SSH";
+  return method || "setup";
+}
+
 type NangoIntegrationsViewProps = {
   embedded?: boolean;
 };
@@ -328,7 +336,7 @@ export default function NangoIntegrationsView({ embedded = false }: NangoIntegra
                   <div className={styles.row}>
                     <div>
                       <strong>Automatic setup</strong>
-                      <p className={`${styles.muted} ${styles.small}`}>Runs through the collector API when available, falls back to SSH, starts Nango, then checks health.</p>
+                      <p className={`${styles.muted} ${styles.small}`}>Runs through the agent bridge API when available, falls back to SSH, starts Nango, then checks health.</p>
                     </div>
                     <Button variant="secondary" onClick={() => void setupHost()} isLoading={setupSaving} disabled={!selected || !selected.online}>
                       <TerminalSquare /> Run setup
@@ -337,7 +345,7 @@ export default function NangoIntegrationsView({ embedded = false }: NangoIntegra
                   {setupResult ? (
                     <div className={styles.setupResult}>
                       <StatusBadge good={setupResult.health.ok} warn={!setupResult.health.ok} label={setupResult.health.ok ? "Nango healthy" : "Needs attention"} />
-                      <span className={`${styles.muted} ${styles.small}`}>{setupResult.method} · {setupResult.target}</span>
+                      <span className={`${styles.muted} ${styles.small}`}>{setupMethodLabel(setupResult.method)} · {setupResult.target}</span>
                     </div>
                   ) : null}
                   {setupMessage ? (
@@ -349,7 +357,7 @@ export default function NangoIntegrationsView({ embedded = false }: NangoIntegra
                 </div>
               ) : (
                 <div className={styles.setupPane} role="tabpanel">
-                  <p className={`${styles.muted} ${styles.small}`}>Use these commands only if the collector API and SSH automation are unavailable.</p>
+                  <p className={`${styles.muted} ${styles.small}`}>Use these commands only if the agent bridge API and SSH automation are unavailable.</p>
                   <pre className={styles.codeBlock}>{(payload?.setupCommands ?? []).join("\n")}</pre>
                 </div>
               )}

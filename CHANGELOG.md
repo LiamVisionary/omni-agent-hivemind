@@ -3,6 +3,102 @@
 This file records user-visible changes before they are committed. New work should
 be added here first, then marked `Committed` or `Pushed` after the git action.
 
+## 2026-05-26 16:37:01 WITA - Add Memory Telemetry And Long-Run Leak Guards
+
+- Status: Pushed
+- Areas changed: Memory telemetry API, More/Memory dashboard panel, dashboard polling guards, Honey ledger and notification route coalescing, MiroShark status caching, hive-env-add no-op writes, setup env writes
+- Summary: Added `/api/memory-telemetry` with bounded in-memory RSS history, current Next.js heap/external metrics, per-process growth tracking, and leak suspect detection; added a Memory diagnostics panel under More; kept a 30-second background sampler running while the dashboard is open; hardened long-running pollers and frequently-hit APIs against overlapping requests; stopped same-value env writes from touching `.env.local` and triggering Next dev env reloads.
+- Verification: `bash -n setup.sh && python3 -m py_compile scripts/hive-env-add`; same-value `scripts/hive-env-add --scope app --no-backup --no-tailnet-sync NEXT_PUBLIC_OBSIDIAN_KANBAN_FOLDER='Operations/Work Board'` preserved `.env.local` mtime; `curl -fsS http://127.0.0.1:5020/api/memory-telemetry` returned `ok: true` with app RSS/process growth data; `pnpm exec tsc --noEmit --pretty false --skipLibCheck`; targeted `pnpm exec eslint ... --max-warnings=999` completed with existing warnings and no errors; `git diff --check` on changed tracked files.
+- Intended commit message: `Add memory telemetry and leak guards`
+
+## 2026-05-26 16:00 WITA - Merge Legacy HivemindOS Vault Into Canonical Vault
+
+- Status: Pushed
+- Areas changed: Local Obsidian vault contents, Obsidian vault registry, local app vault configuration, migration audit notes, legacy vault cleanup
+- Summary: Merged the legacy `/Users/liam/Documents/HivemindOS Vault` into `/Users/liam/Documents/Obsidian/hivemindos-vault`, preserved conflict variants/backups, pointed local HivemindOS and Obsidian config at the canonical vault, and removed the legacy live vault after validating the pre-merge backup archive.
+- Verification: Pre-merge backup zip validated with `unzip -t`; merge report exists at `Operations/Vault Migrations/Legacy HivemindOS Vault Merge - 20260526T075755Z.md`; post-merge source-only count was zero before deleting the legacy vault; canonical key files were present; Obsidian registry now points at `/Users/liam/Documents/Obsidian/hivemindos-vault`; `.env.local` uses the canonical vault path and managed folder names; `/Users/liam/Documents/HivemindOS Vault` no longer exists.
+- Intended commit message: `Merge legacy HivemindOS vault`
+
+## 2026-05-26 15:26:19 WITA - Show Written Skills Immediately
+
+- Status: Pushed
+- Areas changed: Skill Browser state refresh, changelog
+- Summary: After adding a written skill, merge the returned shared skills into the open Skill Browser card list and clear the search so the newly saved skill appears immediately.
+- Verification: `pnpm exec eslint src/features/dashboard/hooks/use-miroshark-brain-controller.tsx src/features/dashboard/DashboardApp.tsx --max-warnings=999` passed with existing warnings; `pnpm exec tsc --noEmit --pretty false --skipLibCheck`; `git diff --check -- src/features/dashboard/hooks/use-miroshark-brain-controller.tsx src/features/dashboard/DashboardApp.tsx CHANGELOG.md`.
+- Intended commit message: `Show written skills immediately`
+
+## 2026-05-26 15:18:01 WITA - Refine Skill Browser Toolbar
+
+- Status: Pushed
+- Areas changed: Skill Browser toolbar styling, Skill Browser modal markup, changelog
+- Summary: Clean up the Skill Browser search/action section with a compact command rail, smaller secondary actions, improved input focus treatment, and calmer stacked status notices.
+- Verification: `pnpm exec eslint src/features/dashboard/views/chat/SkillBrowserModal.tsx --max-warnings=999`; `pnpm exec tsc --noEmit --pretty false --skipLibCheck`; `git diff --check -- src/features/dashboard/views/chat/SkillBrowserModal.tsx src/app/fleet.module.css CHANGELOG.md`.
+- Intended commit message: `Refine skill browser toolbar`
+
+## 2026-05-26 15:11:15 WITA - Add Skill Browser Writer
+
+- Status: Pushed
+- Areas changed: Chat skill browser modal, Obsidian skill API, brain skill service, Skill Browser styling, dashboard wiring, changelog
+- Summary: Add a Write Skill mode to the Skill Browser with a markdown editor, Add Skill and Cancel actions, narrower search field, and server-side saving into the shared Obsidian `Skills/<slug>/SKILL.md` folder with README regeneration.
+- Verification: `pnpm exec eslint src/features/dashboard/views/chat/SkillBrowserModal.tsx src/features/dashboard/DashboardApp.tsx src/features/dashboard/hooks/use-miroshark-brain-controller.tsx src/app/api/obsidian/skills/route.ts src/lib/services/obsidian/brain-skills.ts --max-warnings=999` passed with existing warnings; `pnpm exec tsc --noEmit --pretty false --skipLibCheck`; `git diff --check -- src/features/dashboard/views/chat/SkillBrowserModal.tsx src/features/dashboard/DashboardApp.tsx src/features/dashboard/hooks/use-miroshark-brain-controller.tsx src/app/api/obsidian/skills/route.ts src/lib/services/obsidian/brain-skills.ts src/app/fleet.module.css CHANGELOG.md`; temporary-vault POST to `http://127.0.0.1:5020/api/obsidian/skills` created `Skills/writer-smoke-skill/SKILL.md` and `Skills/README.md`; `python3 -m json.tool ASSIMILATION.json`; `python3 /Users/liam/.codex/skills/github-assimilator/scripts/verify_assimilation_manifest.py`; Browser smoke opened the Shared Skills surface, but the current dashboard state did not expose the modal after clicking Browse skills.
+- Intended commit message: `Add skill browser writer`
+
+## 2026-05-26 15:03:21 WITA - Center Skill Browser In Viewport
+
+- Status: Pushed
+- Areas changed: Chat skill browser modal, changelog
+- Summary: Portal the Skill Browser modal to `document.body` so its fixed backdrop centers against the visible viewport instead of the full page scroll area.
+- Verification: `pnpm exec eslint src/features/dashboard/views/chat/SkillBrowserModal.tsx --max-warnings=999`; `pnpm exec tsc --noEmit --pretty false --skipLibCheck`; `git diff --check -- src/features/dashboard/views/chat/SkillBrowserModal.tsx CHANGELOG.md`; Browser smoke loaded `http://127.0.0.1:5020/?view=chat`, but the current browser session had no connected machine/agent state, so the Skill Browser trigger was not available to click there.
+- Intended commit message: `Center skill browser in viewport`
+
+## 2026-05-26 14:56:16 WITA - Show Brain Module Install Failures
+
+- Status: Pushed
+- Areas changed: Brain module UI class, Brain Services dashboard, Brain Services styling, changelog
+- Summary: Add a failed install state for brain module cards so failed GBrain install/connect attempts show a friendly recovery message instead of silently returning to the install state.
+- Verification: `pnpm exec tsc --noEmit --pretty false --skipLibCheck`; `pnpm exec eslint src/features/dashboard/brain-modules.tsx src/features/dashboard/views/VaultPanel.tsx src/features/dashboard/DashboardApp.tsx src/lib/services/brain/trading-brain.ts --max-warnings=999` passed with existing dashboard warnings; `git diff --check -- src/features/dashboard/brain-modules.tsx src/features/dashboard/views/VaultPanel.tsx src/features/dashboard/DashboardApp.tsx src/features/dashboard/dashboard-types.ts src/lib/services/brain/trading-brain.ts src/app/api/brain/trading-brain src/app/vault.module.css CHANGELOG.md ASSIMILATION.json`.
+- Intended commit message: `Show brain module install failures`
+
+## 2026-05-26 14:46:29 WITA - Align Brain Module Install Buttons
+
+- Status: Pushed
+- Areas changed: Brain Services styling, changelog
+- Summary: Make secondary install-row actions such as "Connect existing" share the same height, typography, icon sizing, and border language as the main install CTA.
+- Verification: `pnpm exec tsc --noEmit --pretty false --skipLibCheck`; `pnpm exec eslint src/features/dashboard/brain-modules.tsx src/features/dashboard/views/VaultPanel.tsx src/features/dashboard/DashboardApp.tsx src/lib/services/brain/trading-brain.ts --max-warnings=999` passed with existing dashboard warnings; `git diff --check -- src/features/dashboard/brain-modules.tsx src/features/dashboard/views/VaultPanel.tsx src/features/dashboard/DashboardApp.tsx src/features/dashboard/dashboard-types.ts src/lib/services/brain/trading-brain.ts src/app/api/brain/trading-brain src/app/vault.module.css CHANGELOG.md ASSIMILATION.json`; Browser DOM smoke on `http://127.0.0.1:5020/?view=vault&vaultPanel=brain-services` measured install-row buttons at matching 50px heights with 13px/900 typography and no horizontal overflow.
+- Intended commit message: `Align brain module install buttons`
+
+## 2026-05-26 14:45:07 WITA - Hide Raw GBrain CLI Error From Install Card
+
+- Status: Pushed
+- Areas changed: Brain Services dashboard, changelog
+- Summary: Keep the GBrain install card description stable and replace raw `spawn gbrain ENOENT` copy with a friendly CLI availability note when needed.
+- Verification: `pnpm exec tsc --noEmit --pretty false --skipLibCheck`; `pnpm exec eslint src/features/dashboard/brain-modules.tsx src/features/dashboard/views/VaultPanel.tsx src/features/dashboard/DashboardApp.tsx src/lib/services/brain/trading-brain.ts --max-warnings=999` passed with existing dashboard warnings; `git diff --check -- src/features/dashboard/brain-modules.tsx src/features/dashboard/views/VaultPanel.tsx src/features/dashboard/DashboardApp.tsx src/features/dashboard/dashboard-types.ts src/lib/services/brain/trading-brain.ts src/app/api/brain/trading-brain src/app/vault.module.css CHANGELOG.md ASSIMILATION.json`; Browser DOM smoke on `http://127.0.0.1:5020/?view=vault&vaultPanel=brain-services` confirmed raw `spawn gbrain ENOENT` text is absent from the page and there is no horizontal overflow.
+- Intended commit message: `Hide raw GBrain CLI error from install card`
+
+## 2026-05-26 14:41:04 WITA - Hide Redundant Brain Service Install Footer
+
+- Status: Pushed
+- Areas changed: Brain Services dashboard, changelog
+- Summary: Stop showing optional module "not installed yet" status text at the bottom of Brain Services now that install-state cards carry that context directly.
+- Verification: `pnpm exec tsc --noEmit --pretty false --skipLibCheck`; `pnpm exec eslint src/features/dashboard/brain-modules.tsx src/features/dashboard/views/VaultPanel.tsx src/features/dashboard/DashboardApp.tsx src/lib/services/brain/trading-brain.ts --max-warnings=999` passed with existing dashboard warnings; `git diff --check -- src/features/dashboard/brain-modules.tsx src/features/dashboard/views/VaultPanel.tsx src/features/dashboard/DashboardApp.tsx src/features/dashboard/dashboard-types.ts src/lib/services/brain/trading-brain.ts src/app/api/brain/trading-brain src/app/vault.module.css CHANGELOG.md ASSIMILATION.json`; Browser DOM smoke on `http://127.0.0.1:5020/?view=vault&vaultPanel=brain-services` confirmed the not-installed footer text is absent and there is no horizontal overflow.
+- Intended commit message: `Hide redundant brain service install footer`
+
+## 2026-05-26 14:33:01 WITA - Split Brain Module Install And Installed States
+
+- Status: Pushed
+- Areas changed: Brain Services dashboard, brain module UI class, Brain Services styling, changelog
+- Summary: Split BrainModule cards into install, installing, success, and installed views with feature-focused install cards, animated install progress, a timed checkmark success state, and operational controls shown only after installation.
+- Verification: `pnpm exec tsc --noEmit --pretty false --skipLibCheck`; `pnpm exec eslint src/features/dashboard/brain-modules.tsx src/features/dashboard/views/VaultPanel.tsx src/features/dashboard/DashboardApp.tsx src/lib/services/brain/trading-brain.ts --max-warnings=999` passed with existing dashboard warnings; `git diff --check -- src/features/dashboard/brain-modules.tsx src/features/dashboard/views/VaultPanel.tsx src/features/dashboard/DashboardApp.tsx src/features/dashboard/dashboard-types.ts src/lib/services/brain/trading-brain.ts src/app/api/brain/trading-brain src/app/vault.module.css CHANGELOG.md ASSIMILATION.json`; Browser DOM smoke on `http://127.0.0.1:5020/?view=vault&vaultPanel=brain-services` found three module cards, install-state cards with feature rows and install buttons for optional modules, the installed Synthesis card, and no horizontal overflow.
+- Intended commit message: `Split brain module install and installed states`
+
+## 2026-05-26 14:18:34 WITA - Abstract Brain Services Into Brain Modules
+
+- Status: Pushed
+- Areas changed: Brain Services dashboard, brain module UI class, changelog
+- Summary: Add a reusable `BrainModule` class for compact brain service cards and render GBrain, Trading Brain, and Synthesis through shared module definitions.
+- Verification: `pnpm exec tsc --noEmit --pretty false --skipLibCheck`; `pnpm exec eslint src/features/dashboard/brain-modules.tsx src/features/dashboard/views/VaultPanel.tsx src/features/dashboard/DashboardApp.tsx src/lib/services/brain/trading-brain.ts --max-warnings=999` passed with existing dashboard warnings; `git diff --check -- src/features/dashboard/brain-modules.tsx src/features/dashboard/views/VaultPanel.tsx src/features/dashboard/DashboardApp.tsx src/features/dashboard/dashboard-types.ts src/lib/services/brain/trading-brain.ts src/app/api/brain/trading-brain src/app/vault.module.css CHANGELOG.md ASSIMILATION.json`; Browser DOM smoke on `http://127.0.0.1:5020/?view=vault&vaultPanel=brain-services` found three BrainModule-rendered cards for GBrain, Trading Brain, and Synthesis, found the Trading Brain runtime control, and found no horizontal overflow.
+- Intended commit message: `Abstract brain services into modules`
+
 ## 2026-05-26 13:55:11 WITA - Remove Remotion Showcase And Simple Website
 
 - Status: Pushed
@@ -10,6 +106,38 @@ be added here first, then marked `Committed` or `Pushed` after the git action.
 - Summary: Remove the tracked Remotion showcase/capture setup and the standalone `sites/simple-website` starter, and ignore local Remotion working/output directories.
 - Verification: `pnpm install --lockfile-only`; `pnpm typecheck`; `git diff --check -- .gitignore package.json pnpm-lock.yaml remotion public/remotion scripts/capture-remotion-showcase.mjs sites/simple-website src/features/dashboard/dashboard-storage.ts ROADMAP.md ASSIMILATION.json CHANGELOG.md`; `rg -n "remotion|Remotion|@remotion|capture-remotion|__HIVEMINDOS_REMOTION" --glob '!node_modules/**' --glob '!CHANGELOG.md' --glob '!pnpm-lock.yaml'` returned no matches.
 - Intended commit message: `Remove Remotion showcase and simple website`
+
+## 2026-05-26 13:48:25 WITA - Add Trading Brain Service Module
+
+- Status: Pushed
+- Areas changed: Brain Services dashboard, Obsidian brain service APIs, trading brain vault scaffold, changelog, assimilation manifest
+- Summary: Add an optional Obsidian Trading Brain module that installs a structured trading vault, templates, strategy/rules notes, analysis prompts, pre-trade intelligence prompts, market intelligence briefs, and emotional journal tracking into the shared vault.
+- Verification: `pnpm exec tsc --noEmit --pretty false --skipLibCheck`; `pnpm exec eslint src/lib/services/brain/trading-brain.ts src/app/api/brain/trading-brain/status/route.ts src/app/api/brain/trading-brain/install/route.ts src/features/dashboard/DashboardApp.tsx src/features/dashboard/views/VaultPanel.tsx --max-warnings=999` passed with existing dashboard warnings; `git diff --check -- src/lib/services/brain/trading-brain.ts src/app/api/brain/trading-brain/status/route.ts src/app/api/brain/trading-brain/install/route.ts src/features/dashboard/DashboardApp.tsx src/features/dashboard/views/VaultPanel.tsx src/features/dashboard/dashboard-types.ts src/app/vault.module.css CHANGELOG.md ASSIMILATION.json`; `python3 -m json.tool ASSIMILATION.json >/dev/null && python3 /Users/liam/.codex/skills/github-assimilator/scripts/verify_assimilation_manifest.py`; route smoke against the existing managed dev server returned Trading Brain uninstalled status for a temporary vault, then POST install created all folders, 13 scaffold files including agent-agnostic `AGENTS.md` and `runtime-instructions.md`, and the service note in a temporary vault; Browser DOM smoke on `http://127.0.0.1:5020/?view=vault&vaultPanel=brain-services` found the Trading Brain runtime controls and no horizontal overflow at 1280px.
+- Intended commit message: `Add trading brain brain service module`
+
+## 2026-05-26 13:17 WITA - Trust Ledger Honey Balances In Wallet UI
+
+- Status: Pushed
+- Areas changed: Honey ledger balance types, dashboard reward derivation, ledger normalization
+- Summary: Make Wallets use official ledger `availableHoney` and `lifetimeHoney` balance rows when present, so pool-clipped rewards are not recomputed upward from raw token totals.
+- Verification: `pnpm test:honey-economics`; `pnpm exec eslint src/lib/types/agent-wallet.ts src/lib/utils/agent-wallet.ts src/lib/services/wallet/honey-ledger.ts`; `pnpm typecheck`.
+- Intended commit message: `Trust Honey ledger balance rows in wallet rewards`
+
+## 2026-05-26 12:24:15 WITA - Fix Honey Convert Button Formatting
+
+- Status: Pushed
+- Areas changed: Wallets panel Honey/HIVE conversion control, Hive ledger header art, generated Honey icon assets, changelog
+- Summary: Split the Honey-to-HIVE conversion label into stacked lines, let the compact button grow vertically, replace the generic conversion glyph with a generated transparent all-amber Honey/HIVE honeycomb icon, and add a generated transparent honey pot illustration beside the Hive ledger/Honey rewards header.
+- Verification: `pnpm exec eslint src/features/dashboard/views/WalletPanel.tsx --max-warnings=999` passed with the existing unused eslint-disable warning; `pnpm exec tsc --noEmit --pretty false --skipLibCheck`; `git diff --check -- src/features/dashboard/views/WalletPanel.tsx src/app/wallets.module.css CHANGELOG.md`; `curl -I --max-time 15 'http://localhost:5020/?view=wallets'` returned HTTP 200; Python/Pillow inspection of `public/icons/generated/honey-hive-icon.png` found 0 cyan/teal opaque pixels by the teal threshold; Playwright loaded the existing managed dev server, enabled the Honey ledger in localStorage for the test, opened Wallets, confirmed the convert icon loads, the honey pot image loads inside the Hive ledger rail, and the convert button had no horizontal or vertical overflow.
+- Intended commit message: `Fix Honey convert button formatting`
+
+## 2026-05-26 11:21:17 WITA - Rename Collector Copy To Agent Bridge
+
+- Status: Pushed
+- Areas changed: Chat runtime API, dashboard/fleet copy, integration setup copy, fleet/syncthing/scheduler API errors, changelog
+- Summary: Replace user-facing "collector" terminology with "local agent bridge" or "agent bridge", including the Hermes fetch-failed chat error: "Queen Bee is connected through This Mac, but the local agent bridge did not respond. Try again in a moment."
+- Verification: `pnpm exec eslint src/app/api/chat/agent-runtime/route.ts src/features/dashboard/dashboard-light-helpers.tsx src/features/dashboard/dashboard-display-helpers.tsx src/components/cells/statusCopy.ts src/components/cells/StatusPill.tsx src/components/cells/SecurityCell.tsx src/features/dashboard/hooks/use-dashboard-derived-state.tsx src/features/dashboard/hooks/use-chat-tree-controller.tsx src/features/dashboard/hooks/use-status-chat-input-controller.tsx src/features/dashboard/hooks/use-fleet-notifications-controller.tsx src/features/dashboard/DashboardApp.tsx src/features/dashboard/views/chat/AgentSettingsModal.tsx src/features/dashboard/views/DashboardModals.tsx src/features/dashboard/views/VaultPanel.tsx src/features/env/env-components.tsx src/features/integrations/NangoIntegrationsView.tsx src/app/api/fleet/update/route.ts src/app/api/fleet/snapshot/route.ts src/app/api/agents/runtime/route.ts src/app/api/scheduler/import/route.ts src/app/api/syncthing/pair/route.ts src/app/api/syncthing/status/route.ts src/app/api/machines/directories/route.ts 'src/app/api/runtimes/[runtime]/integrations/route.ts' src/app/api/obsidian/skills/auto-sync/route.ts src/app/api/chat/agent-session/route.ts src/lib/services/integrations/nango-host.ts src/lib/config/bee-worker-presets.ts src/components/fleet/fleet-data.ts --max-warnings=999` passed with existing warnings and no errors; `pnpm exec tsc --noEmit --pretty false --skipLibCheck`; `git diff --check -- src/app/api/chat/agent-runtime/route.ts src/features/dashboard/dashboard-light-helpers.tsx src/features/dashboard/dashboard-display-helpers.tsx src/components/cells/statusCopy.ts src/components/cells/StatusPill.tsx src/components/cells/SecurityCell.tsx src/features/dashboard/hooks/use-dashboard-derived-state.tsx src/features/dashboard/hooks/use-chat-tree-controller.tsx src/features/dashboard/hooks/use-status-chat-input-controller.tsx src/features/dashboard/hooks/use-fleet-notifications-controller.tsx src/features/dashboard/DashboardApp.tsx src/features/dashboard/views/chat/AgentSettingsModal.tsx src/features/dashboard/views/DashboardModals.tsx src/features/dashboard/views/VaultPanel.tsx src/features/env/env-components.tsx src/features/integrations/NangoIntegrationsView.tsx src/app/api/fleet/update/route.ts src/app/api/fleet/snapshot/route.ts src/app/api/agents/runtime/route.ts src/app/api/scheduler/import/route.ts src/app/api/syncthing/pair/route.ts src/app/api/syncthing/status/route.ts src/app/api/machines/directories/route.ts 'src/app/api/runtimes/[runtime]/integrations/route.ts' src/app/api/obsidian/skills/auto-sync/route.ts src/app/api/chat/agent-session/route.ts src/lib/services/integrations/nango-host.ts src/lib/config/bee-worker-presets.ts src/components/fleet/fleet-data.ts CHANGELOG.md`.
+- Intended commit message: `Rename collector copy to agent bridge`
 
 ## 2026-05-26 02:10:41 WITA - Hide Dashboard Context From Hermes Chat
 

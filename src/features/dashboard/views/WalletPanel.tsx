@@ -3,6 +3,7 @@
 /* eslint-disable react-hooks/immutability, react-hooks/purity */
 
 import type { ComponentType, Dispatch, ElementType, SetStateAction } from "react";
+import Image from "next/image";
 import type { AgentWalletCardProps } from "@/components/wallet/AgentWalletCard";
 import type { AgentWalletCardCompactProps } from "@/components/wallet/AgentWalletCardCompact";
 import type { AgentProfile } from "@/lib/types/agent-runtime";
@@ -274,8 +275,20 @@ export function WalletPanel(props: WalletPanelProps) {
 
           <aside className={walletClass("hiveRail", !honeyLedgerEnabled && "hiveRailDormant")} aria-label="Hive ledger">
             <header className={walletClass("hiveRailHeader")}>
-              <p className="eyebrow">Hive ledger</p>
-              <h3>{honeyLedgerEnabled ? "Honey rewards" : "Honey rewards off"}</h3>
+              <div>
+                <p className="eyebrow">Hive ledger</p>
+                <h3>{honeyLedgerEnabled ? "Honey rewards" : "Honey rewards off"}</h3>
+              </div>
+              <Image
+                className={walletClass("hiveRailPot")}
+                src="/icons/generated/honey-pot.png"
+                alt=""
+                width={96}
+                height={96}
+                aria-hidden="true"
+                priority
+                unoptimized
+              />
             </header>
 
             {honeyLedgerEnabled ? (
@@ -301,10 +314,22 @@ export function WalletPanel(props: WalletPanelProps) {
                   className={walletClass("hiveRailConvert")}
                   disabled={honeyStats.availableHoney <= 0}
                   onClick={exchangeAllHoneyForHive}
+                  aria-label={`Convert ${formatHiveAmount(honeyStats.availableHoney)} Honey to ${formatHiveAmount(honeyStats.hiveQuote)} HIVE`}
                 >
-                  <HandCoins aria-hidden="true" />
-                  Convert {formatHiveAmount(honeyStats.availableHoney)} Honey
-                  → {formatHiveAmount(honeyStats.hiveQuote)} HIVE
+                  <Image
+                    className={walletClass("hiveRailConvertIcon")}
+                    src="/icons/generated/honey-hive-icon.png"
+                    alt=""
+                    width={30}
+                    height={30}
+                    aria-hidden="true"
+                    priority
+                    unoptimized
+                  />
+                  <span>
+                    <span>Convert {formatHiveAmount(honeyStats.availableHoney)} Honey</span>
+                    <span>→ {formatHiveAmount(honeyStats.hiveQuote)} HIVE</span>
+                  </span>
                 </Button>
 
                 <details className={walletClass("hiveRailDetails")}>

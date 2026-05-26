@@ -167,7 +167,7 @@ export function useStatusChatInputController(props: any) {
     const remoteHost = sharedVault.tailnetSyncHost.trim();
     const remotePath = sharedVault.tailnetSyncPath.trim();
     if (!remoteHost) {
-      setVaultSyncStatus({ ok: false, method: "syncthing", error: "Choose a Tailnet machine first. The remote folder can be left blank for the collector default." });
+      setVaultSyncStatus({ ok: false, method: "syncthing", error: "Choose a Tailnet machine first. The remote folder can be left blank for the agent bridge default." });
       return;
     }
     setVaultSyncPending("syncthing");

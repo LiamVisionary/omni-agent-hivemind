@@ -1,6 +1,7 @@
 "use client";
 
 import type { Dispatch, ElementType, FormEvent, SetStateAction } from "react";
+import { createPortal } from "react-dom";
 import type { SkillBrowserSkill } from "@/features/dashboard/dashboard-types";
 
 type SkillBrowserModalProps = {
@@ -13,6 +14,7 @@ type SkillBrowserModalProps = {
   RefreshCcw: ElementType;
   Sparkles: ElementType;
   X: ElementType;
+  addWrittenSkillToBrain: () => void | Promise<void>;
   filteredSkillBrowserSkills: SkillBrowserSkill[];
   fleetClass: (...names: string[]) => string;
   hermesUpdateRequired: boolean;
@@ -32,13 +34,22 @@ type SkillBrowserModalProps = {
   skillBrowserOpen: boolean;
   skillBrowserSearch: string;
   skillBrowserStatus: string;
+  skillBrowserView: "browse" | "write";
+  skillBrowserWrittenContent: string;
+  skillBrowserWriting: boolean;
   skillRequiresHermesUpdate: (skill: SkillBrowserSkill, hermesUpdateRequired: boolean) => boolean;
+  setSkillBrowserView: Dispatch<SetStateAction<"browse" | "write">>;
+  setSkillBrowserWrittenContent: Dispatch<SetStateAction<string>>;
   vaultClass: (...names: string[]) => string;
 };
 
 export function SkillBrowserModal(props: SkillBrowserModalProps) {
-  const { Button, Copy, Download, GitBranch, Image, LoaderCircle, RefreshCcw, Sparkles, X, filteredSkillBrowserSkills, fleetClass, hermesUpdateRequired, hermesUpdateRequiredDetail, importRemoteSkillToBrain, installGithubSkillToBrain, openSkillBrowser, setSkillBrowserGithubOpen, setSkillBrowserGithubUrl, setSkillBrowserOpen, setSkillBrowserSearch, skillBrowserGithubInstalling, skillBrowserGithubOpen, skillBrowserGithubUrl, skillBrowserImporting, skillBrowserLoading, skillBrowserOpen, skillBrowserSearch, skillBrowserStatus, skillRequiresHermesUpdate, vaultClass } = props;
-  return (<>
+  const { Button, Copy, Download, GitBranch, Image, LoaderCircle, RefreshCcw, Sparkles, X, addWrittenSkillToBrain, filteredSkillBrowserSkills, fleetClass, hermesUpdateRequired, hermesUpdateRequiredDetail, importRemoteSkillToBrain, installGithubSkillToBrain, openSkillBrowser, setSkillBrowserGithubOpen, setSkillBrowserGithubUrl, setSkillBrowserOpen, setSkillBrowserSearch, setSkillBrowserView, setSkillBrowserWrittenContent, skillBrowserGithubInstalling, skillBrowserGithubOpen, skillBrowserGithubUrl, skillBrowserImporting, skillBrowserLoading, skillBrowserOpen, skillBrowserSearch, skillBrowserStatus, skillBrowserView, skillBrowserWrittenContent, skillBrowserWriting, skillRequiresHermesUpdate, vaultClass } = props;
+  const portalTarget = typeof document === "undefined" ? null : document.body;
+
+  if (!portalTarget) return null;
+
+  return createPortal((<>
       {skillBrowserOpen ? (
         <div
           className={fleetClass("setupModalBackdrop")}
@@ -62,7 +73,7 @@ export function SkillBrowserModal(props: SkillBrowserModalProps) {
                 Close
               </Button>
             </div>
-            <div className={fleetClass("skillBrowserSearch")}>
+            {skillBrowserView === "browse" ? <div className={fleetClass("skillBrowserSearch")}>
               <input
                 value={skillBrowserSearch}
                 onChange={(event) => setSkillBrowserSearch(event.target.value)}
@@ -72,18 +83,31 @@ export function SkillBrowserModal(props: SkillBrowserModalProps) {
               <Button
                 type="button"
                 variant="secondary"
+                size="sm"
                 onClick={() => setSkillBrowserGithubOpen((open) => !open)}
                 disabled={skillBrowserGithubInstalling}
               >
                 <GitBranch aria-hidden="true" />
                 Install From Github
               </Button>
-              <Button type="button" variant="secondary" onClick={openSkillBrowser} disabled={skillBrowserLoading}>
+              <Button
+                type="button"
+                variant="secondary"
+                size="sm"
+                onClick={() => {
+                  setSkillBrowserGithubOpen(false);
+                  setSkillBrowserView("write");
+                }}
+              >
+                <Sparkles aria-hidden="true" />
+                Write Skill
+              </Button>
+              <Button type="button" variant="secondary" size="sm" onClick={openSkillBrowser} disabled={skillBrowserLoading}>
                 {skillBrowserLoading ? <LoaderCircle aria-hidden="true" className={vaultClass("spinIcon")} /> : <RefreshCcw aria-hidden="true" />}
                 Refresh
               </Button>
-            </div>
-            {skillBrowserGithubOpen ? (
+            </div> : null}
+            {skillBrowserView === "browse" && skillBrowserGithubOpen ? (
               <form className={fleetClass("skillBrowserGithubForm")} onSubmit={(event) => void installGithubSkillToBrain(event)}>
                 <input
                   value={skillBrowserGithubUrl}
@@ -97,10 +121,55 @@ export function SkillBrowserModal(props: SkillBrowserModalProps) {
                 </Button>
               </form>
             ) : null}
-            {skillBrowserStatus ? <p className={fleetClass("skillBrowserStatus")}>{skillBrowserStatus}</p> : null}
-            {hermesUpdateRequired ? (
-              <p className={fleetClass("skillBrowserStatus", "skillBrowserWarning")}>Hermes update available: {hermesUpdateRequiredDetail}. Update-gated skills are marked before you add them to the brain.</p>
+            {skillBrowserStatus || hermesUpdateRequired ? (
+              <div className={fleetClass("skillBrowserNotices")}>
+                {skillBrowserStatus ? <p className={fleetClass("skillBrowserStatus")}>{skillBrowserStatus}</p> : null}
+                {hermesUpdateRequired ? (
+                  <p className={fleetClass("skillBrowserStatus", "skillBrowserWarning")}>Hermes update available: {hermesUpdateRequiredDetail}. Update-gated skills are marked before you add them to the brain.</p>
+                ) : null}
+              </div>
             ) : null}
+            {skillBrowserView === "write" ? (
+              <div className={fleetClass("skillWriterPanel")}>
+                <textarea
+                  value={skillBrowserWrittenContent}
+                  onChange={(event) => setSkillBrowserWrittenContent(event.target.value)}
+                  placeholder={[
+                    "---",
+                    "name: My Skill",
+                    "description: Use when...",
+                    "---",
+                    "",
+                    "# My Skill",
+                    "",
+                    "## When to use",
+                    "",
+                    "## Steps",
+                    "",
+                    "## Notes",
+                  ].join("\n")}
+                  autoFocus
+                />
+                <div className={fleetClass("setupModalActions", "skillWriterActions")}>
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    onClick={() => {
+                      setSkillBrowserWrittenContent("");
+                      setSkillBrowserView("browse");
+                    }}
+                    disabled={skillBrowserWriting}
+                  >
+                    <X aria-hidden="true" />
+                    Cancel
+                  </Button>
+                  <Button type="button" onClick={() => void addWrittenSkillToBrain()} disabled={skillBrowserWriting || !skillBrowserWrittenContent.trim()}>
+                    {skillBrowserWriting ? <LoaderCircle aria-hidden="true" className={vaultClass("spinIcon")} /> : <Download aria-hidden="true" />}
+                    Add Skill
+                  </Button>
+                </div>
+              </div>
+            ) : (
             <div className={fleetClass("skillBrowserGrid")}>
               {skillBrowserLoading ? (
                 <div className={fleetClass("scheduleEmpty")}><LoaderCircle aria-hidden="true" className={vaultClass("spinIcon")} /><strong>Loading skills</strong><p>Checking installed skills and community catalogs.</p></div>
@@ -133,8 +202,9 @@ export function SkillBrowserModal(props: SkillBrowserModalProps) {
                 <div className={fleetClass("scheduleEmpty")}><Sparkles aria-hidden="true" /><strong>No skills found</strong><p>Try a different search, or import from provider installs below the shared skills shelf.</p></div>
               )}
             </div>
+            )}
           </section>
         </div>
       ) : null}
-  </>);
+  </>), portalTarget);
 }

@@ -4,6 +4,7 @@ import {
   importGitHubBrainSkill,
   importBrainSkills,
   importRemoteBrainSkill,
+  writeBrainSkill,
   type BrainSkillProviderId,
 } from "@/lib/services/obsidian/brain-skills";
 import { remoteSkillProviders } from "@/lib/services/fleet/remote-skill-providers";
@@ -24,10 +25,11 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json().catch(() => ({})) as {
-      action?: "import-github" | "import-remote";
+      action?: "import-github" | "import-remote" | "write-skill";
       vaultPath?: string;
       provider?: BrainSkillProviderId | "all";
       githubUrl?: string;
+      markdown?: string;
       skill?: {
         slug?: string;
         name?: string;
@@ -53,6 +55,13 @@ export async function POST(request: NextRequest) {
         skill: body.skill,
       });
       return NextResponse.json({ ok: true, ...result, imported: [body.skill], skipped: [] });
+    }
+    if (body.action === "write-skill") {
+      const result = await writeBrainSkill({
+        vaultPath: body.vaultPath,
+        markdown: body.markdown ?? "",
+      });
+      return NextResponse.json({ ok: true, ...result, imported: [], skipped: [] });
     }
     const result = await importBrainSkills({
       vaultPath: body.vaultPath,

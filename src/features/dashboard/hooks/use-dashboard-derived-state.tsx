@@ -281,7 +281,7 @@ export function useDashboardDerivedState(props: any) {
       groups.push({
         key,
         name: displayMachineName(machine.device.name, machine.device.self),
-        address: machine.device.ip || machine.device.dnsName || "Local collector",
+        address: machine.device.ip || machine.device.dnsName || "Local agent bridge",
         collectorUrl: machine.device.collectorUrl,
         dnsName: machine.device.dnsName,
         ip: machine.device.ip,
@@ -327,7 +327,7 @@ export function useDashboardDerivedState(props: any) {
     const unassigned: MachineGroup = {
       key: "unassigned",
       name: "Not connected yet",
-      address: "These saved agents are waiting for a machine collector",
+      address: "These saved agents are waiting for a machine agent bridge",
       collectorUrl: "",
       dnsName: "",
       ip: "",
@@ -437,7 +437,7 @@ export function useDashboardDerivedState(props: any) {
         name: machine.self ? "This Mac" : machine.name,
         kind: mobile ? "Mobile" : machine.self ? "Desktop" : machine.collector === "ready" ? "Tailnet Node" : "Setup Target",
         role: mobile ? "Roaming" : machine.self ? "Primary" : machine.collector === "ready" ? "Workhorse" : "Pending",
-        os: mobile ? machine.os ?? "Mobile" : machine.version?.branch ? `${machine.version.branch} · ${machine.version.shortCommit ?? "local"}` : machine.collector === "ready" ? "Collector online" : "Collector pending",
+        os: mobile ? machine.os ?? "Mobile" : machine.version?.branch ? `${machine.version.branch} · ${machine.version.shortCommit ?? "local"}` : machine.collector === "ready" ? "Agent bridge online" : "Agent bridge pending",
         tailnet: machine.dnsName || machine.collectorUrl || machine.address || "not connected",
         ip: machine.ip || machine.address || "—",
         ping: machine.online ? fleetMetric(machine.key, 4, 68) : 0,
@@ -544,10 +544,10 @@ export function useDashboardDerivedState(props: any) {
             id: `machine-${machine.key}`,
             tone: machine.online ? "warn" : "danger",
             priority: machine.online ? "normal" : "high",
-            title: machine.online ? `${machine.name} collector setup pending` : `${machine.name} is offline`,
-            agent: "collector",
+            title: machine.online ? `${machine.name} agent bridge setup pending` : `${machine.name} is offline`,
+            agent: "agent bridge",
             machine: machine.name,
-            text: machine.online ? "Collector setup pending" : "Machine offline",
+            text: machine.online ? "Agent bridge setup pending" : "Machine offline",
             since: timestamp > 0 ? formatRelativeTime(timestamp) : "no timestamp",
             timestamp: timestamp || undefined,
           };
@@ -857,7 +857,7 @@ export function useDashboardDerivedState(props: any) {
   const activeNavItem = navItems.find((item) => (
     item.id === activeView
     || (item.id === "kanban" && isWorkView(activeView))
-    || (item.id === "more" && (activeView === "maintenance" || activeView === "files" || activeView === "notifications" || activeView === "env" || activeView === "integrations"))
+    || (item.id === "more" && (activeView === "maintenance" || activeView === "memory" || activeView === "files" || activeView === "notifications" || activeView === "env" || activeView === "integrations"))
   ));
   const activeHeader = (() => {
     const detail = activeNavItem?.detail ?? "";
@@ -871,6 +871,7 @@ export function useDashboardDerivedState(props: any) {
       vault: { label: "Brain Graph", title: "What the hive remembers" },
       integrations: { label: "Integrations", title: "Where external API access lives" },
       maintenance: { label: "Fleet Diagnostics", title: "What needs repair" },
+      memory: { label: "Memory", title: "What is growing in RAM" },
       files: { label: "Brain Files", title: "What agents can inspect" },
       notifications: { label: "Alerts", title: "What needs attention" },
       chat: { label: "Agent Chat", title: selectedAgent?.name ? `Talking with ${selectedAgent.name}` : "Choose an agent to chat with" },

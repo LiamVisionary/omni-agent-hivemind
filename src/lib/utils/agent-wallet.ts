@@ -183,7 +183,23 @@ export function calculateHoneyForTokens(tokensUsed: number, honeyPerThousandToke
 }
 
 export function getHoneyAgentRewards(agentIds: string[], config: HoneyTreasuryConfig): HoneyAgentReward[] {
+  const balancesByAgent = new Map((config.balances ?? []).map((balance) => [balance.agentId, balance]));
   return agentIds.map((agentId) => {
+    const balance = balancesByAgent.get(agentId);
+    if (balance) {
+      const honeyAvailable = Math.max(0, Math.round(Number(balance.availableHoney || 0) * 1_000_000) / 1_000_000);
+      const honeyEarned = Math.max(0, Math.round(Number(balance.lifetimeHoney || 0) * 1_000_000) / 1_000_000);
+      const hiveBalance = Math.max(0, Math.round(Number(balance.hiveBalance || 0) * 1_000_000) / 1_000_000);
+      return {
+        agentId,
+        tokensUsed: Math.max(0, Math.round(Number(balance.tokensUsed || 0))),
+        honeyEarned,
+        honeyAvailable,
+        honeyExchanged: Math.max(0, Math.round((honeyEarned - honeyAvailable) * 1_000_000) / 1_000_000),
+        tokenReward: Math.round(honeyAvailable * config.tokenPerHoney * 1_000_000) / 1_000_000,
+        hiveBalance,
+      };
+    }
     const tokensUsed = Math.max(0, Math.round(Number(config.agentTokenUsage[agentId] ?? 0)));
     const honeyEarned = calculateHoneyForTokens(tokensUsed, config.honeyPerThousandTokens);
     const honeyExchanged = Math.min(honeyEarned, Math.max(0, Number(config.agentHoneyExchanged[agentId] ?? 0)));

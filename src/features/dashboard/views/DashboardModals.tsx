@@ -404,7 +404,7 @@ export function DashboardModals(props: DashboardModalsProps) {
                     },
                     {
                       label: "Verify machine",
-                      hint: "We auto-detect the collector once it starts.",
+                      hint: "We auto-detect the local agent bridge once it starts.",
                       state: "pending",
                     },
                     { label: "Configure features", hint: "Wallet caps, provider keys, x402, and debug only when you need them.", state: "pending" },

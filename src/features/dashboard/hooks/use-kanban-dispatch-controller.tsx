@@ -4,10 +4,11 @@
 
 /* eslint-disable react-hooks/immutability, react-hooks/purity */
 
-import { useCallback, useEffect, useMemo } from "react";
+import { useCallback, useEffect, useMemo, useRef } from "react";
 
 export function useKanbanDispatchController(props: any) {
   const { AbortController, KANBAN_COLUMNS, KANBAN_DISPATCH_NO_PROGRESS_MS, KANBAN_NO_ASSISTANT_QUIET_MS, KANBAN_NO_ASSISTANT_STALL_MS, KANBAN_SESSION_POLL_FAILURE_LIMIT, KANBAN_STALE_AGENT_COOLDOWN_MS, KANBAN_TOOL_OUTPUT_STALL_MS, addKanbanSystemComment, appVersion, appendMessage, attachmentSizeLabel, attachmentSummary, chatSetupIssue, commentDraft, compactDiagnosticPreview, createDefaultAgentWallet, displayAgents, extractKanbanVisualBrief, formatDurationShort, honeyLedgerEnabled, hydrated, isHermesAuthFailure, isInternalHermesSessionPrelude, isKanbanAwaitingAgentUpdate, isKanbanStaleWorkingTask, isTransientDelegationMessage, kanbanBoard, kanbanBoardSlug, kanbanDispatchCooldownRef, kanbanNoAssistantStalledDetail, kanbanReadyPickupAttemptRef, kanbanReadyPickupInFlightRef, kanbanReadyPickupSignature, kanbanRuntimeAbortRef, kanbanSessionPollFailureRef, kanbanSessionPollRef, kanbanStaleAge, kanbanStaleRequeueAttemptRef, kanbanSteerAttachments, kanbanSteerDirectories, kanbanSteerDraft, kanbanSteerTargetStatus, kanbanSteeringTaskId, kanbanStorageBody, kanbanTaskAssigneeAgent, kanbanTaskAssignmentForAgent, kanbanTaskDispatchPrompt, kanbanToolOutputStalledDetail, kanbanWorkspaceChangeSummary, logClientTelemetry, messageContentParts, messagesByAgent, orchestrateReadyKanbanTask, patchKanbanTask, raiseHermesAuthAlert, readWorkspaceGitSnapshot, refreshHoneyLedger, refreshKanbanOnce, selectedKanbanAgent, selectedKanbanTask, setCommentDraft, setKanbanError, setKanbanSteerAttachmentError, setKanbanSteerAttachmentMenuOpen, setKanbanSteerAttachments, setKanbanSteerDirectories, setKanbanSteerDraft, setKanbanSteeringTaskId, setMessagesByAgent, sharedVault, simpleStableHash, summarizeKanbanToolOutput, updateTask, upsertTask, walletsByAgent } = props;
+  const kanbanSessionPollInFlightRef = useRef(new Set<string>());
   async function createKanbanArtistHandoffTask(parentTask: KanbanTask, sourceAgent: AgentProfile, result: string) {
     const visualBrief = extractKanbanVisualBrief(result);
     if (!visualBrief) return null;
@@ -450,6 +451,10 @@ export function useKanbanDispatchController(props: any) {
   async function refreshKanbanAgentSession(task: KanbanTask) {
     const session = task.agentSession;
     if (!session?.sessionId) return;
+    const inFlightKey = `${task.id}:${session.sessionId}`;
+    if (kanbanSessionPollInFlightRef.current.has(inFlightKey)) return;
+    kanbanSessionPollInFlightRef.current.add(inFlightKey);
+    try {
     const agent = displayAgents.find((item) => item.id === session.agentId || item.name === session.agentName || item.telemetryUrl === session.telemetryUrl);
     if (!agent?.telemetryUrl) {
       logClientTelemetry("kanban.session.poll.skipped", {
@@ -649,6 +654,9 @@ export function useKanbanDispatchController(props: any) {
             ? { result: `${agent.name} is still working.\n\n${summarizeKanbanToolOutput(latestRaw.content)}`.slice(0, 4000) }
             : {}),
       });
+    }
+    } finally {
+      kanbanSessionPollInFlightRef.current.delete(inFlightKey);
     }
   }
 

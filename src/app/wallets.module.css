@@ -408,11 +408,30 @@
   background: rgba(10, 13, 19, 0.45);
 }
 
+.hiveRailHeader {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) clamp(66px, 26%, 96px);
+  gap: 10px;
+  align-items: center;
+}
+
+.hiveRailHeader > div {
+  min-width: 0;
+}
+
 .hiveRailHeader h3 {
   margin: 0;
   font-size: 15px;
   font-weight: 700;
   letter-spacing: -0.1px;
+}
+
+.hiveRailPot {
+  width: 100%;
+  height: auto;
+  justify-self: end;
+  object-fit: contain;
+  filter: drop-shadow(0 10px 18px rgba(242, 183, 5, 0.14));
 }
 
 .hiveRailBlurb {
@@ -461,11 +480,33 @@
 }
 
 .hiveRailConvert {
+  display: grid;
+  grid-template-columns: 30px minmax(0, 1fr);
+  align-items: center;
   justify-content: center;
   width: 100%;
+  height: auto;
+  min-height: 50px;
+  padding: 7px 12px 7px 10px;
   white-space: normal;
-  text-align: center;
-  line-height: 1.35;
+  text-align: left;
+  line-height: 1.25;
+}
+
+.hiveRailConvertIcon {
+  width: 30px;
+  height: 30px;
+  object-fit: contain;
+}
+
+.hiveRailConvert > span {
+  display: grid;
+  min-width: 0;
+  gap: 1px;
+}
+
+.hiveRailConvert > span > span {
+  overflow-wrap: anywhere;
 }
 
 .hiveRailDetails {

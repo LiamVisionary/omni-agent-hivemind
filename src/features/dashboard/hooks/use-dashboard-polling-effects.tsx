@@ -199,11 +199,19 @@ export function useDashboardPollingEffects(props: UseDashboardPollingEffectsProp
 
   useEffect(() => {
     if (!hydrated || !sharedVault.enabled) return;
+    let inFlight = false;
+    const refreshOnce = () => {
+      if (inFlight) return;
+      inFlight = true;
+      void Promise.resolve(refreshNotifications()).finally(() => {
+        inFlight = false;
+      });
+    };
     const timer = window.setTimeout(() => {
-      void refreshNotifications();
+      refreshOnce();
     }, activeView === "notifications" ? 0 : 300);
     const interval = window.setInterval(() => {
-      void refreshNotifications();
+      refreshOnce();
     }, 30_000);
     return () => {
       window.clearTimeout(timer);
@@ -255,7 +263,15 @@ export function useDashboardPollingEffects(props: UseDashboardPollingEffectsProp
 
   useEffect(() => {
     if (mirosharkRun?.archived || !mirosharkRun?.jobId || mirosharkRun.status === "started" || mirosharkRun.status === "failed") return;
-    const timer = window.setInterval(refreshMirosharkRun, 3_000);
+    let inFlight = false;
+    const refreshOnce = () => {
+      if (inFlight) return;
+      inFlight = true;
+      void Promise.resolve(refreshMirosharkRun()).finally(() => {
+        inFlight = false;
+      });
+    };
+    const timer = window.setInterval(refreshOnce, 3_000);
     return () => window.clearInterval(timer);
   }, [mirosharkRun?.archived, mirosharkRun?.jobId, mirosharkRun?.status, refreshMirosharkRun]);
 
@@ -275,16 +291,28 @@ export function useDashboardPollingEffects(props: UseDashboardPollingEffectsProp
     const platform = mirosharkRun.platform ?? mirosharkPlatform;
     const graphId = mirosharkRun.graphId;
     const projectId = mirosharkRun.projectId;
+    let inFlight = false;
+    const controllers = new Set<AbortController>();
     const pollRun = async () => {
+      if (inFlight) return;
+      inFlight = true;
+      const controller = new AbortController();
+      controllers.add(controller);
       const params = new URLSearchParams({ simulation_id: simulationId, platform });
       if (graphId) params.set("graph_id", graphId);
       if (projectId) params.set("project_id", projectId);
       const response = await fetch(`/api/miroshark/swarm?${params.toString()}`, {
         cache: "no-store",
+        signal: controller.signal,
       }).catch(() => null);
-      const data = await response?.json().catch(() => null) as MiroSharkRunResult | null;
-      if (data) {
-        setMirosharkRun((current) => ({ ...(current ?? {}), ...data }));
+      try {
+        const data = await response?.json().catch(() => null) as MiroSharkRunResult | null;
+        if (data) {
+          setMirosharkRun((current) => ({ ...(current ?? {}), ...data }));
+        }
+      } finally {
+        controllers.delete(controller);
+        inFlight = false;
       }
     };
 
@@ -295,6 +323,7 @@ export function useDashboardPollingEffects(props: UseDashboardPollingEffectsProp
       void pollRun();
     }, 2_000);
     return () => {
+      controllers.forEach((controller) => controller.abort());
       window.clearTimeout(kickoff);
       window.clearInterval(timer);
     };
@@ -312,19 +341,38 @@ export function useDashboardPollingEffects(props: UseDashboardPollingEffectsProp
   useEffect(() => {
     if (!hydrated || activeView !== "kanban") return;
     let cancelled = false;
+    let boardRefreshInFlight = false;
+    let kanbanRefreshInFlight = false;
+    const controllers = new Set<AbortController>();
     async function refreshKanbanBoards() {
+      if (boardRefreshInFlight) return;
+      boardRefreshInFlight = true;
+      const controller = new AbortController();
+      controllers.add(controller);
       const params = new URLSearchParams({ board: kanbanBoardSlug, boards_only: "true" });
       if (sharedVault.enabled) {
         if (sharedVault.vaultPath.trim()) params.set("vaultPath", sharedVault.vaultPath.trim());
         if (sharedVault.kanbanFolder?.trim()) params.set("kanbanFolder", sharedVault.kanbanFolder.trim());
       }
-      const response = await fetch(`/api/kanban?${params.toString()}`, { cache: "no-store" }).catch(() => null);
-      const data = await response?.json().catch(() => null) as KanbanResponse | null;
-      if (cancelled || !data?.ok) return;
-      setKanbanBoards(data.boards ?? []);
-      setKanbanStorage(data.storage ?? null);
+      const response = await fetch(`/api/kanban?${params.toString()}`, {
+        cache: "no-store",
+        signal: controller.signal,
+      }).catch(() => null);
+      try {
+        const data = await response?.json().catch(() => null) as KanbanResponse | null;
+        if (cancelled || !data?.ok) return;
+        setKanbanBoards(data.boards ?? []);
+        setKanbanStorage(data.storage ?? null);
+      } finally {
+        controllers.delete(controller);
+        boardRefreshInFlight = false;
+      }
     }
     async function refreshKanban() {
+      if (kanbanRefreshInFlight) return;
+      kanbanRefreshInFlight = true;
+      const controller = new AbortController();
+      controllers.add(controller);
       setKanbanLoading(true);
       const params = new URLSearchParams({
         board: kanbanBoardSlug,
@@ -338,24 +386,32 @@ export function useDashboardPollingEffects(props: UseDashboardPollingEffectsProp
       if (kanbanTenantFilter) params.set("tenant", kanbanTenantFilter);
       if (kanbanAssigneeFilter) params.set("assignee", kanbanAssigneeFilter);
       if (kanbanSearch) params.set("q", kanbanSearch);
-      const response = await fetch(`/api/kanban?${params.toString()}`, { cache: "no-store" }).catch(() => null);
-      const data = await response?.json().catch(() => null) as KanbanResponse | null;
-      if (cancelled) return;
-      if (!data?.ok || !data.board) {
-        setKanbanError(data?.error ?? "Kanban board is unavailable.");
+      const response = await fetch(`/api/kanban?${params.toString()}`, {
+        cache: "no-store",
+        signal: controller.signal,
+      }).catch(() => null);
+      try {
+        const data = await response?.json().catch(() => null) as KanbanResponse | null;
+        if (cancelled) return;
+        if (!data?.ok || !data.board) {
+          setKanbanError(data?.error ?? "Kanban board is unavailable.");
+          setKanbanLoading(false);
+          return;
+        }
+        setKanbanError("");
+        setKanbanBoard(data.board);
+        if (data.boards) setKanbanBoards(data.boards);
+        setKanbanTenants(data.tenants ?? []);
+        setKanbanAssignees(data.assignees ?? []);
+        setKanbanStorage(data.storage ?? null);
+        setSelectedKanbanTaskId((current) => (
+          current && data.board?.tasks.some((task) => task.id === current) ? current : data.board?.tasks[0]?.id ?? ""
+        ));
         setKanbanLoading(false);
-        return;
+      } finally {
+        controllers.delete(controller);
+        kanbanRefreshInFlight = false;
       }
-      setKanbanError("");
-      setKanbanBoard(data.board);
-      if (data.boards) setKanbanBoards(data.boards);
-      setKanbanTenants(data.tenants ?? []);
-      setKanbanAssignees(data.assignees ?? []);
-      setKanbanStorage(data.storage ?? null);
-      setSelectedKanbanTaskId((current) => (
-        current && data.board?.tasks.some((task) => task.id === current) ? current : data.board?.tasks[0]?.id ?? ""
-      ));
-      setKanbanLoading(false);
     }
     refreshKanban();
     refreshKanbanBoards();
@@ -363,6 +419,7 @@ export function useDashboardPollingEffects(props: UseDashboardPollingEffectsProp
     const boardsTimer = window.setInterval(refreshKanbanBoards, 60_000);
     return () => {
       cancelled = true;
+      controllers.forEach((controller) => controller.abort());
       window.clearInterval(timer);
       window.clearInterval(boardsTimer);
     };

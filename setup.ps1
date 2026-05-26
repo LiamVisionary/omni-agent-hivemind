@@ -258,6 +258,7 @@ function Set-EnvLocal($Key, $Value) {
     }
   }
   if (-not $replaced) { $next += "$Key=$Value" }
+  if (($lines -join "`n") -eq ($next -join "`n")) { return }
   Set-Content -Path $envFile -Value $next
 }
 

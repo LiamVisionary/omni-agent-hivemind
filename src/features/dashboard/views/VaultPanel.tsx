@@ -4,8 +4,11 @@
 
 /* eslint-disable react-hooks/immutability, react-hooks/purity */
 
+import { BrainModule } from "@/features/dashboard/brain-modules";
+import { useEffect, useRef, useState } from "react";
+
 export function VaultPanel(props: any) {
-  const { Activity, BRAIN_SKILL_PROVIDER_FALLBACK, Bot, BrainCircuit, BrainGraphLoader, Button, Cell, Check, CircleAlert, Clock3, DEFAULT_SHARED_VAULT, Download, Eye, FileText, FolderOpen, GitBranch, Hexagon, Image, KeyRound, LoaderCircle, MemoryCell, Network, PlugZap, RefreshCcw, Repeat2, Sparkles, activeView, brainGraph, brainGraphEdgePath, brainGraphLoading, brainGraphStats, brainGraphStatus, brainLayout, brainNodePoints, brainPan, brainSkillAeonSyncing, brainSkillImportAllDescription, brainSkillImportAllLabel, brainSkillImportProvider, brainSkillImportSuccess, brainSkillImportableCount, brainSkills, brainSkillsLoading, brainSkillsStatus, checkControlRoomStatus, checkVaultStatus, controlRoomStatus, displayAgents, endBrainPan, formatBrainDate, gbrainActionStatus, gbrainBusy, gbrainQuery, gbrainQueryResult, gbrainStatus, hermesUpdateRequired, hermesUpdateRequiredDetail, importBrainSkills, inspectBrainNode, moveBrainPan, openSkillBrowser, pairSyncthingVaultSync, queryGbrainFromDashboard, refreshBrainGraph, refreshBrainSkills, refreshGbrainStatus, refreshRuntimeFileRoots, runGbrainAction, runVaultTailnetSync, selectedAgent, selectedBrainNode, selectedBrainTargetIds, setActiveView, setGbrainQuery, setVaultPanelMode, sharedVault, skillRequiresHermesUpdate, splitBrainLabel, startBrainPan, syncBrainSkillsToAeon, updateAllSkillAutoSync, updateSharedVault, updateSkillAutoSync, vaultClass, vaultPanelMode, vaultStatus, vaultSyncPending, vaultSyncStatus, visibleBrainNodes, walletClass } = props;
+  const { Activity, BRAIN_SKILL_PROVIDER_FALLBACK, Bot, BrainCircuit, BrainGraphLoader, Button, Cell, Check, CircleAlert, Clock3, DEFAULT_SHARED_VAULT, Download, Eye, FileText, FolderOpen, GitBranch, Hexagon, Image, KeyRound, LoaderCircle, MemoryCell, Network, PlugZap, RefreshCcw, Repeat2, Sparkles, activeView, brainGraph, brainGraphEdgePath, brainGraphLoading, brainGraphStats, brainGraphStatus, brainLayout, brainNodePoints, brainPan, brainSkillAeonSyncing, brainSkillImportAllDescription, brainSkillImportAllLabel, brainSkillImportProvider, brainSkillImportSuccess, brainSkillImportableCount, brainSkills, brainSkillsLoading, brainSkillsStatus, checkControlRoomStatus, checkVaultStatus, controlRoomStatus, displayAgents, endBrainPan, formatBrainDate, gbrainActionStatus, gbrainBusy, gbrainQuery, gbrainQueryResult, gbrainStatus, hermesUpdateRequired, hermesUpdateRequiredDetail, importBrainSkills, inspectBrainNode, installTradingBrainFromDashboard, moveBrainPan, openSkillBrowser, pairSyncthingVaultSync, queryGbrainFromDashboard, refreshBrainGraph, refreshBrainSkills, refreshGbrainStatus, refreshRuntimeFileRoots, refreshTradingBrainStatus, runGbrainAction, runVaultTailnetSync, selectedAgent, selectedBrainNode, selectedBrainTargetIds, setActiveView, setGbrainQuery, setTradingBrainForAllRuntimes, setTradingBrainForRuntime, setVaultPanelMode, sharedVault, skillRequiresHermesUpdate, splitBrainLabel, startBrainPan, syncBrainSkillsToAeon, tradingBrainActionStatus, tradingBrainAllRuntimeAttached, tradingBrainBusy, tradingBrainRuntimeCards, tradingBrainStatus, updateAllSkillAutoSync, updateSharedVault, updateSkillAutoSync, vaultClass, vaultPanelMode, vaultStatus, vaultSyncPending, vaultSyncStatus, visibleBrainNodes, walletClass } = props;
   const gbrainMetric = (keys: string[]) => {
     const stats = gbrainStatus?.stats ?? {};
     for (const key of keys) {
@@ -16,6 +19,270 @@ export function VaultPanel(props: any) {
   };
   const gbrainKeys = gbrainStatus?.keyStatus ?? {};
   const gbrainRecommendations = gbrainStatus?.features?.recommendations ?? [];
+  const [brainModuleSuccess, setBrainModuleSuccess] = useState<Record<string, boolean>>({});
+  const previousGbrainBusyRef = useRef("");
+  const previousTradingBrainBusyRef = useRef("");
+  const tradingCounts = tradingBrainStatus?.counts ?? {};
+  const tradingBrainConfiguredFiles = tradingBrainStatus?.files?.filter((file) => file.exists).length ?? 0;
+  const tradingBrainTotalFiles = tradingBrainStatus?.files?.length ?? 0;
+  useEffect(() => {
+    const previousBusy = previousGbrainBusyRef.current;
+    previousGbrainBusyRef.current = gbrainBusy;
+    if ((previousBusy === "install" || previousBusy === "connect") && !gbrainBusy && gbrainStatus?.installed) {
+      setBrainModuleSuccess((current) => ({ ...current, gbrain: true }));
+      const timer = window.setTimeout(() => {
+        setBrainModuleSuccess((current) => ({ ...current, gbrain: false }));
+      }, 2000);
+      return () => window.clearTimeout(timer);
+    }
+  }, [gbrainBusy, gbrainStatus?.installed]);
+  useEffect(() => {
+    const previousBusy = previousTradingBrainBusyRef.current;
+    previousTradingBrainBusyRef.current = tradingBrainBusy;
+    if (previousBusy === "install" && !tradingBrainBusy && tradingBrainStatus?.installed) {
+      setBrainModuleSuccess((current) => ({ ...current, "trading-brain": true }));
+      const timer = window.setTimeout(() => {
+        setBrainModuleSuccess((current) => ({ ...current, "trading-brain": false }));
+      }, 2000);
+      return () => window.clearTimeout(timer);
+    }
+  }, [tradingBrainBusy, tradingBrainStatus?.installed]);
+  const gbrainStatusNote = gbrainStatus?.error?.includes("ENOENT") || gbrainStatus?.error?.includes("not found")
+    ? "GBrain CLI is not available on this machine yet."
+    : gbrainStatus?.error ?? "";
+  const gbrainFailedInstallMessage = !gbrainStatus?.installed && !gbrainBusy && gbrainActionStatus && !gbrainActionStatus.includes("ready to install")
+    ? gbrainActionStatus
+    : "";
+  const gbrainInstallFailureLabel = gbrainFailedInstallMessage.includes("Bun is required")
+    ? "GBrain install needs Bun first. Install Bun, then press Install GBrain again."
+    : gbrainFailedInstallMessage.includes("ENOENT") || gbrainFailedInstallMessage.includes("Could not run the configured GBrain CLI")
+      ? "GBrain CLI was not found. Use Install GBrain, or set the CLI path before connecting an existing install."
+      : gbrainFailedInstallMessage;
+  const tradingBrainFailedInstallMessage = !tradingBrainStatus?.installed && !tradingBrainBusy && tradingBrainActionStatus && !tradingBrainActionStatus.includes("ready to install")
+    ? tradingBrainActionStatus
+    : "";
+  const gbrainInstallState = brainModuleSuccess.gbrain
+    ? "success"
+    : gbrainBusy === "install" || gbrainBusy === "connect"
+      ? "installing"
+      : gbrainStatus?.installed
+        ? "installed"
+        : gbrainInstallFailureLabel
+          ? "failed"
+          : "install";
+  const tradingBrainInstallState = brainModuleSuccess["trading-brain"]
+    ? "success"
+    : tradingBrainBusy === "install"
+      ? "installing"
+      : tradingBrainStatus?.installed
+        ? "installed"
+        : tradingBrainFailedInstallMessage
+          ? "failed"
+          : "install";
+  const brainServiceFooterStatus = [
+    tradingBrainStatus?.installed || tradingBrainBusy === "install" ? tradingBrainActionStatus : "",
+    gbrainStatus?.installed || gbrainBusy === "install" || gbrainBusy === "connect" ? gbrainActionStatus : "",
+  ].find(Boolean) || "";
+  const brainModules = [
+    new BrainModule({
+      id: "gbrain",
+      name: "GBrain",
+      icon: <BrainCircuit aria-hidden="true" />,
+      statusLabel: gbrainInstallState === "installed" ? "Installed" : gbrainInstallState === "installing" ? "Installing" : "Optional",
+      statusTone: gbrainStatus?.installed ? "live" : "idle",
+      active: gbrainStatus?.installed,
+      title: "Retrieval, graph, MCP, and dream cycle",
+      description: "Install or connect GBrain when you want semantic retrieval and synthesized answers over the shared vault.",
+      install: {
+        state: gbrainInstallState,
+        buttonLabel: "Install GBrain",
+        disabled: Boolean(gbrainBusy) || !sharedVault.enabled,
+        failureLabel: gbrainInstallFailureLabel,
+        icon: gbrainBusy === "install" ? <LoaderCircle aria-hidden="true" className={vaultClass("spinIcon")} /> : <Download aria-hidden="true" />,
+        installingLabel: gbrainBusy === "connect" ? "Connecting GBrain runtime" : "Installing GBrain retrieval core",
+        onInstall: () => void runGbrainAction("install"),
+        successLabel: "Installed!",
+        features: [
+          <>Semantic retrieval across the shared vault</>,
+          <>Graph-aware answers, source trails, and MCP exposure</>,
+          <>Dream cycles that synthesize stale notes into working memory</>,
+          <>Namespaced skills that do not take over Synthesis</>,
+        ],
+        secondaryActions: [
+          {
+            key: "connect",
+            label: "Connect existing",
+            disabled: Boolean(gbrainBusy) || !sharedVault.enabled,
+            icon: gbrainBusy === "connect" ? <LoaderCircle aria-hidden="true" className={vaultClass("spinIcon")} /> : <PlugZap aria-hidden="true" />,
+            onClick: () => void runGbrainAction("connect"),
+          },
+        ],
+      },
+      stats: [
+        { key: "pages", label: "Pages", value: gbrainMetric(["page_count", "pages", "pageCount"]), icon: <FileText aria-hidden="true" /> },
+        { key: "links", label: "Links", value: gbrainMetric(["link_count", "links", "linkCount"]), icon: <GitBranch aria-hidden="true" /> },
+        { key: "score", label: "Score", value: gbrainStatus?.features?.brainScore ?? "—", icon: <Activity aria-hidden="true" /> },
+        { key: "mcp", label: "MCP", value: gbrainStatus?.mcp?.mode ?? sharedVault.gbrain.mcpMode, icon: <PlugZap aria-hidden="true" /> },
+      ],
+      badges: [
+        ...(gbrainStatusNote ? [gbrainStatusNote] : []),
+        <><KeyRound aria-hidden="true" />ZE {gbrainKeys.ZEROENTROPY_API_KEY ? "ready" : "missing"}</>,
+        <>OpenAI {gbrainKeys.OPENAI_API_KEY ? "ready" : "missing"}</>,
+        <>Anthropic {gbrainKeys.ANTHROPIC_API_KEY ? "ready" : "optional"}</>,
+        sharedVault.gbrain.searchMode,
+      ],
+      actions: [
+        {
+          key: "import",
+          label: "Import vault",
+          disabled: Boolean(gbrainBusy),
+          icon: gbrainBusy === "import" ? <LoaderCircle aria-hidden="true" className={vaultClass("spinIcon")} /> : <Download aria-hidden="true" />,
+          onClick: () => void runGbrainAction("import"),
+        },
+        {
+          key: "embed",
+          label: "Embed stale",
+          disabled: Boolean(gbrainBusy),
+          icon: gbrainBusy === "embed" ? <LoaderCircle aria-hidden="true" className={vaultClass("spinIcon")} /> : <Network aria-hidden="true" />,
+          onClick: () => void runGbrainAction("embed"),
+        },
+        {
+          key: "dream",
+          label: "Dream",
+          disabled: Boolean(gbrainBusy),
+          icon: gbrainBusy === "dream" ? <LoaderCircle aria-hidden="true" className={vaultClass("spinIcon")} /> : <Sparkles aria-hidden="true" />,
+          onClick: () => void runGbrainAction("dream"),
+        },
+      ],
+      body: (
+        <div className={vaultClass("gbrainQueryBox")}>
+          <label>
+            <span>Ask GBrain</span>
+            <textarea
+              value={gbrainQuery}
+              onChange={(event) => setGbrainQuery(event.target.value)}
+              rows={3}
+              placeholder="What changed across active projects this week?"
+            />
+          </label>
+          <Button type="button" size="sm" variant="secondary" disabled={Boolean(gbrainBusy) || !gbrainStatus?.installed} onClick={() => void queryGbrainFromDashboard()}>
+            {gbrainBusy === "query" ? <LoaderCircle aria-hidden="true" className={vaultClass("spinIcon")} /> : <BrainCircuit aria-hidden="true" />}
+            Think
+          </Button>
+          {gbrainQueryResult ? <pre>{gbrainQueryResult}</pre> : null}
+        </div>
+      ),
+    }),
+    new BrainModule({
+      id: "trading-brain",
+      name: "Trading Brain",
+      icon: <Activity aria-hidden="true" />,
+      statusLabel: tradingBrainInstallState === "installed" ? "Installed" : tradingBrainInstallState === "installing" ? "Installing" : "Optional",
+      statusTone: tradingBrainStatus?.installed ? "live" : "idle",
+      active: tradingBrainStatus?.installed,
+      variant: "trading",
+      title: "Trade capture, edge analysis, and pre-trade intelligence",
+      description: tradingBrainStatus?.error || "Installs a local Obsidian trading brain with strict trade templates, weekly and monthly analysis prompts, pattern alerts, market context, and emotional performance tracking.",
+      install: {
+        state: tradingBrainInstallState,
+        buttonLabel: "Install Trading Brain",
+        disabled: Boolean(tradingBrainBusy) || !sharedVault.enabled,
+        failureLabel: tradingBrainFailedInstallMessage,
+        icon: tradingBrainBusy === "install" ? <LoaderCircle aria-hidden="true" className={vaultClass("spinIcon")} /> : <Download aria-hidden="true" />,
+        installingLabel: "Building Trading Brain vault scaffold",
+        onInstall: () => void installTradingBrainFromDashboard(),
+        successLabel: "Installed!",
+        features: [
+          <>Structured trade capture templates for open and closed positions</>,
+          <>Weekly performance analysis, monthly edge reports, and pattern alerts</>,
+          <>Pre-trade intelligence prompts that compare a setup to your history</>,
+          <>Agent-agnostic runtime instructions for Hermes, Aeon, OpenClaw, Codex, and OpenAI-compatible agents</>,
+        ],
+      },
+      stats: [
+        { key: "closed", label: "Closed trades", value: tradingCounts.closedTrades ?? "—", icon: <FileText aria-hidden="true" /> },
+        { key: "weekly", label: "Weekly reports", value: tradingCounts.weeklyAnalyses ?? "—", icon: <Activity aria-hidden="true" /> },
+        { key: "edge", label: "Edge reports", value: tradingCounts.monthlyEdgeReports ?? "—", icon: <GitBranch aria-hidden="true" /> },
+        { key: "root", label: "Root", value: "TRADING-BRAIN", icon: <FolderOpen aria-hidden="true" /> },
+      ],
+      badges: [
+        "Agent agnostic",
+        "Obsidian templates",
+        tradingBrainTotalFiles ? `${tradingBrainConfiguredFiles}/${tradingBrainTotalFiles} files` : "Scaffold pending",
+        "Local markdown only",
+      ],
+      actions: [
+        {
+          key: "install",
+          label: tradingBrainStatus?.installed ? "Repair scaffold" : "Install Trading Brain",
+          disabled: Boolean(tradingBrainBusy),
+          icon: tradingBrainBusy === "install" ? <LoaderCircle aria-hidden="true" className={vaultClass("spinIcon")} /> : tradingBrainStatus?.installed ? <Check aria-hidden="true" /> : <Download aria-hidden="true" />,
+          onClick: () => void installTradingBrainFromDashboard(),
+        },
+        {
+          key: "check",
+          label: "Check",
+          disabled: Boolean(tradingBrainBusy),
+          icon: tradingBrainBusy === "status" ? <LoaderCircle aria-hidden="true" className={vaultClass("spinIcon")} /> : <RefreshCcw aria-hidden="true" />,
+          onClick: () => void refreshTradingBrainStatus(),
+        },
+        {
+          key: "all-runtimes",
+          label: tradingBrainAllRuntimeAttached ? "Remove From All Agent Runtimes" : "Add To All Agent Runtimes",
+          disabled: !tradingBrainRuntimeCards?.length,
+          icon: tradingBrainAllRuntimeAttached ? <Check aria-hidden="true" /> : <PlugZap aria-hidden="true" />,
+          onClick: () => setTradingBrainForAllRuntimes(!tradingBrainAllRuntimeAttached),
+        },
+      ],
+      body: (
+        <>
+          <div className={vaultClass("tradingBrainPillars")}>
+            {["Capture", "Performance", "Pre-trade", "Market context", "Emotion"].map((pillar) => <span key={pillar}>{pillar}</span>)}
+          </div>
+
+          <div className={vaultClass("tradingRuntimeGrid")}>
+            {(tradingBrainRuntimeCards ?? []).map((runtimeCard) => (
+              <article key={runtimeCard.id} className={vaultClass("tradingRuntimeCard", runtimeCard.allAttached && "active")}>
+                <div>
+                  <strong>{runtimeCard.label}</strong>
+                  <span>{runtimeCard.attachedCount}/{runtimeCard.agentCount} attached · {runtimeCard.detail}</span>
+                </div>
+                <Button type="button" size="sm" variant="secondary" onClick={() => setTradingBrainForRuntime(runtimeCard.id, !runtimeCard.allAttached)}>
+                  {runtimeCard.allAttached ? <Check aria-hidden="true" /> : <PlugZap aria-hidden="true" />}
+                  {runtimeCard.allAttached ? "Remove From Agent Runtime" : "Add to Agent Runtime"}
+                </Button>
+              </article>
+            ))}
+            {tradingBrainRuntimeCards?.length ? null : (
+              <p className={vaultClass("brainStatus")}>No agent runtimes are configured yet. Add an agent first, then attach Trading Brain instructions to its runtime profile.</p>
+            )}
+          </div>
+        </>
+      ),
+    }),
+    new BrainModule({
+      id: "synthesis",
+      name: "Synthesis",
+      icon: <Sparkles aria-hidden="true" />,
+      statusLabel: "Foundation",
+      statusTone: "live",
+      variant: "synthesis",
+      active: true,
+      title: "Reviewed Synto layer",
+      description: "Synthesis is the curated layer for drafts, reviewed wiki articles, source trails, and agent packs. It can read from the same vault surface GBrain indexes.",
+      install: {
+        state: "installed",
+        buttonLabel: "Installed",
+      },
+      stats: [
+        { key: "root", label: "Root", value: sharedVault.synthesisFolder || DEFAULT_SHARED_VAULT.synthesisFolder, icon: <FolderOpen aria-hidden="true" /> },
+        { key: "queue", label: "Queue", value: "raw", icon: <FileText aria-hidden="true" /> },
+        { key: "reviewed", label: "Reviewed", value: "wiki", icon: <Check aria-hidden="true" /> },
+        { key: "agents", label: "Agents", value: "pack", icon: <Download aria-hidden="true" /> },
+      ],
+      badges: ["Manual review default", "Local Ollama preferred", "No vector DB conflict"],
+    }),
+  ];
   const vaultPanelHref = (mode: string) => `/?view=vault&vaultPanel=${mode}`;
   const selectVaultPanel = (mode: string) => {
     setVaultPanelMode(mode);
@@ -472,105 +739,15 @@ export function VaultPanel(props: any) {
               <p>GBrain stays optional but first-class: it can index the vault, expose MCP, scaffold its namespaced skills, and run retrieval or dream cycles without taking over the Synthesis layer.</p>
             </div>
             <div className={vaultClass("brainSkillsActions")}>
-              <Button type="button" size="sm" variant="secondary" onClick={refreshGbrainStatus} disabled={Boolean(gbrainBusy)}>
-                {gbrainBusy === "status" ? <LoaderCircle aria-hidden="true" className={vaultClass("spinIcon")} /> : <RefreshCcw aria-hidden="true" />}
-                {gbrainBusy === "status" ? "Checking" : "Refresh"}
+              <Button type="button" size="sm" variant="secondary" onClick={() => { void refreshGbrainStatus(); void refreshTradingBrainStatus(); }} disabled={Boolean(gbrainBusy) || Boolean(tradingBrainBusy)}>
+                {gbrainBusy === "status" || tradingBrainBusy === "status" ? <LoaderCircle aria-hidden="true" className={vaultClass("spinIcon")} /> : <RefreshCcw aria-hidden="true" />}
+                {gbrainBusy === "status" || tradingBrainBusy === "status" ? "Checking" : "Refresh"}
               </Button>
             </div>
           </div>
 
           <div className={vaultClass("brainServiceGrid")}>
-            <article className={vaultClass("brainServiceCard", gbrainStatus?.installed && "active")}>
-              <div className={vaultClass("brainServiceTopline")}>
-                <span><BrainCircuit aria-hidden="true" /> GBrain</span>
-                <small className={vaultClass(gbrainStatus?.installed ? "serviceBadgeLive" : "serviceBadgeIdle")}>
-                  {gbrainStatus?.installed ? "Installed" : "Optional"}
-                </small>
-              </div>
-              <h4>Retrieval, graph, MCP, and dream cycle</h4>
-              <p>{gbrainStatus?.error || "Install or connect GBrain when you want semantic retrieval and synthesized answers over the shared vault."}</p>
-
-              <div className={vaultClass("brainServiceStats")}>
-                <span><FileText aria-hidden="true" /><strong>{gbrainMetric(["page_count", "pages", "pageCount"])}</strong>Pages</span>
-                <span><GitBranch aria-hidden="true" /><strong>{gbrainMetric(["link_count", "links", "linkCount"])}</strong>Links</span>
-                <span><Activity aria-hidden="true" /><strong>{gbrainStatus?.features?.brainScore ?? "—"}</strong>Score</span>
-                <span><PlugZap aria-hidden="true" /><strong>{gbrainStatus?.mcp?.mode ?? sharedVault.gbrain.mcpMode}</strong>MCP</span>
-              </div>
-
-              <div className={vaultClass("brainServiceBadges")}>
-                <span><KeyRound aria-hidden="true" />ZE {gbrainKeys.ZEROENTROPY_API_KEY ? "ready" : "missing"}</span>
-                <span>OpenAI {gbrainKeys.OPENAI_API_KEY ? "ready" : "missing"}</span>
-                <span>Anthropic {gbrainKeys.ANTHROPIC_API_KEY ? "ready" : "optional"}</span>
-                <span>{sharedVault.gbrain.searchMode}</span>
-              </div>
-
-              <div className={vaultClass("brainServiceActions")}>
-                {!gbrainStatus?.installed ? (
-                  <>
-                    <Button type="button" size="sm" variant="secondary" disabled={Boolean(gbrainBusy)} onClick={() => void runGbrainAction("install")}>
-                      {gbrainBusy === "install" ? <LoaderCircle aria-hidden="true" className={vaultClass("spinIcon")} /> : <Download aria-hidden="true" />}
-                      Install GBrain
-                    </Button>
-                    <Button type="button" size="sm" variant="secondary" disabled={Boolean(gbrainBusy)} onClick={() => void runGbrainAction("connect")}>
-                      {gbrainBusy === "connect" ? <LoaderCircle aria-hidden="true" className={vaultClass("spinIcon")} /> : <PlugZap aria-hidden="true" />}
-                      Connect existing
-                    </Button>
-                  </>
-                ) : (
-                  <>
-                    <Button type="button" size="sm" variant="secondary" disabled={Boolean(gbrainBusy)} onClick={() => void runGbrainAction("import")}>
-                      {gbrainBusy === "import" ? <LoaderCircle aria-hidden="true" className={vaultClass("spinIcon")} /> : <Download aria-hidden="true" />}
-                      Import vault
-                    </Button>
-                    <Button type="button" size="sm" variant="secondary" disabled={Boolean(gbrainBusy)} onClick={() => void runGbrainAction("embed")}>
-                      {gbrainBusy === "embed" ? <LoaderCircle aria-hidden="true" className={vaultClass("spinIcon")} /> : <Network aria-hidden="true" />}
-                      Embed stale
-                    </Button>
-                    <Button type="button" size="sm" variant="secondary" disabled={Boolean(gbrainBusy)} onClick={() => void runGbrainAction("dream")}>
-                      {gbrainBusy === "dream" ? <LoaderCircle aria-hidden="true" className={vaultClass("spinIcon")} /> : <Sparkles aria-hidden="true" />}
-                      Dream
-                    </Button>
-                  </>
-                )}
-              </div>
-
-              <div className={vaultClass("gbrainQueryBox")}>
-                <label>
-                  <span>Ask GBrain</span>
-                  <textarea
-                    value={gbrainQuery}
-                    onChange={(event) => setGbrainQuery(event.target.value)}
-                    rows={3}
-                    placeholder="What changed across active projects this week?"
-                  />
-                </label>
-                <Button type="button" size="sm" variant="secondary" disabled={Boolean(gbrainBusy) || !gbrainStatus?.installed} onClick={() => void queryGbrainFromDashboard()}>
-                  {gbrainBusy === "query" ? <LoaderCircle aria-hidden="true" className={vaultClass("spinIcon")} /> : <BrainCircuit aria-hidden="true" />}
-                  Think
-                </Button>
-                {gbrainQueryResult ? <pre>{gbrainQueryResult}</pre> : null}
-              </div>
-            </article>
-
-            <article className={vaultClass("brainServiceCard", "synthesis")}>
-              <div className={vaultClass("brainServiceTopline")}>
-                <span><Sparkles aria-hidden="true" /> Synthesis</span>
-                <small className={vaultClass("serviceBadgeLive")}>Foundation</small>
-              </div>
-              <h4>Reviewed Synto layer</h4>
-              <p>Synthesis is the curated layer for drafts, reviewed wiki articles, source trails, and agent packs. It can read from the same vault surface GBrain indexes.</p>
-              <div className={vaultClass("brainServiceStats")}>
-                <span><FolderOpen aria-hidden="true" /><strong>{sharedVault.synthesisFolder || DEFAULT_SHARED_VAULT.synthesisFolder}</strong>Root</span>
-                <span><FileText aria-hidden="true" /><strong>raw</strong>Queue</span>
-                <span><Check aria-hidden="true" /><strong>wiki</strong>Reviewed</span>
-                <span><Download aria-hidden="true" /><strong>pack</strong>Agents</span>
-              </div>
-              <div className={vaultClass("brainServiceBadges")}>
-                <span>Manual review default</span>
-                <span>Local Ollama preferred</span>
-                <span>No vector DB conflict</span>
-              </div>
-            </article>
+            {brainModules.map((module) => module.render({ Button, vaultClass }))}
           </div>
 
           {gbrainRecommendations.length ? (
@@ -582,7 +759,7 @@ export function VaultPanel(props: any) {
             </div>
           ) : null}
 
-          <p className={vaultClass("brainStatus")}>{gbrainActionStatus || "GBrain is optional until you install or connect it. Provider key readiness is shown without revealing secrets."}</p>
+          {brainServiceFooterStatus ? <p className={vaultClass("brainStatus")}>{brainServiceFooterStatus}</p> : null}
         </section>
         ) : null}
 
@@ -666,7 +843,7 @@ export function VaultPanel(props: any) {
                       <input
                         value={sharedVault.tailnetSyncPath}
                         onChange={(event) => updateSharedVault({ tailnetSyncPath: event.target.value })}
-                        placeholder="Leave blank for collector default"
+                        placeholder="Leave blank for agent bridge default"
                         className="rounded-md border border-[rgba(148,163,184,0.18)] bg-[rgba(10,14,21,0.7)] px-2 py-1 text-[var(--foreground)]"
                       />
 	                    </label>
@@ -679,7 +856,7 @@ export function VaultPanel(props: any) {
 	                          checked={sharedVault.syncthingAutoPairEnabled}
 	                          onChange={(event) => updateSharedVault({ syncthingAutoPairEnabled: event.target.checked })}
 	                        />
-	                        Auto-pair Syncthing with reachable Tailnet collectors
+	                        Auto-pair Syncthing with reachable Tailnet agent bridges
 	                      </label>
 	                    ) : null}
 	                    <label className="flex items-center gap-2 text-xs text-[var(--muted)]">

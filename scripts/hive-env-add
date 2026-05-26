@@ -103,7 +103,7 @@ def quote_env(value: str) -> str:
     return value
 
 
-def update_env_file(path: pathlib.Path, key: str, value: str) -> None:
+def update_env_file(path: pathlib.Path, key: str, value: str) -> bool:
     path.parent.mkdir(parents=True, exist_ok=True)
     lines = path.read_text().splitlines() if path.exists() else []
     replacement = f"{key}={quote_env(value)}"
@@ -118,7 +118,10 @@ def update_env_file(path: pathlib.Path, key: str, value: str) -> None:
         existing_key = line.split("=", 1)[0].removeprefix("export ").strip()
         if existing_key == key:
             if not found:
-                output.append(replacement)
+                if parse_env_text(line).get(key) == value:
+                    output.append(line)
+                else:
+                    output.append(replacement)
                 found = True
             continue
         output.append(line)
@@ -128,13 +131,17 @@ def update_env_file(path: pathlib.Path, key: str, value: str) -> None:
             output.append("")
         output.append(replacement)
 
-    path.write_text("\n".join(output) + "\n")
+    next_text = "\n".join(output) + "\n"
+    if path.exists() and path.read_text() == next_text:
+        return False
+    path.write_text(next_text)
     path.chmod(0o600)
+    return True
 
 
-def remove_env_file_key(path: pathlib.Path, key: str) -> None:
+def remove_env_file_key(path: pathlib.Path, key: str) -> bool:
     if not path.exists():
-        return
+        return False
     lines = path.read_text().splitlines()
     output: list[str] = []
     for line in lines:
@@ -146,8 +153,12 @@ def remove_env_file_key(path: pathlib.Path, key: str) -> None:
         if existing_key == key:
             continue
         output.append(line)
-    path.write_text("\n".join(output).rstrip() + ("\n" if output else ""))
+    next_text = "\n".join(output).rstrip() + ("\n" if output else "")
+    if path.read_text() == next_text:
+        return False
+    path.write_text(next_text)
     path.chmod(0o600)
+    return True
 
 
 def env_meta_file(path: pathlib.Path) -> pathlib.Path:
@@ -173,7 +184,10 @@ def read_env_meta(path: pathlib.Path) -> dict[str, float]:
 def write_env_meta(path: pathlib.Path, updated_at: dict[str, float]) -> None:
     meta_path = env_meta_file(path)
     meta_path.parent.mkdir(parents=True, exist_ok=True)
-    meta_path.write_text(json.dumps({"version": 1, "updatedAt": dict(sorted(updated_at.items()))}, indent=2) + "\n")
+    next_text = json.dumps({"version": 1, "updatedAt": dict(sorted(updated_at.items()))}, indent=2) + "\n"
+    if meta_path.exists() and meta_path.read_text() == next_text:
+        return
+    meta_path.write_text(next_text)
     meta_path.chmod(0o600)
 
 
@@ -195,19 +209,23 @@ def read_json(path: pathlib.Path) -> dict[str, object]:
         return {}
 
 
-def write_json(path: pathlib.Path, data: dict[str, object]) -> None:
+def write_json(path: pathlib.Path, data: dict[str, object]) -> bool:
     path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
-    path.write_text(json.dumps(data, indent=2) + "\n")
+    next_text = json.dumps(data, indent=2) + "\n"
+    if path.exists() and path.read_text() == next_text:
+        return False
+    path.write_text(next_text)
     path.chmod(0o600)
+    return True
 
 
-def update_openclaw_stores(key: str, value: str) -> None:
+def update_openclaw_stores(key: str, value: str) -> bool:
     secrets = read_json(OPENCLAW_SECRETS)
     if value == "":
         secrets.pop(key, None)
     else:
         secrets[key] = value
-    write_json(OPENCLAW_SECRETS, secrets)
+    changed = write_json(OPENCLAW_SECRETS, secrets)
 
     config = read_json(OPENCLAW_JSON)
     env = config.get("env")
@@ -222,7 +240,7 @@ def update_openclaw_stores(key: str, value: str) -> None:
         vars_[key] = value
     env["vars"] = vars_
     config["env"] = env
-    write_json(OPENCLAW_JSON, config)
+    return write_json(OPENCLAW_JSON, config) or changed
 
 
 def openclaw_values() -> dict[str, str]:
@@ -792,42 +810,44 @@ def parse_args() -> argparse.Namespace:
 
 def apply_update(args: argparse.Namespace, env_file: pathlib.Path, key: str, value: str, quiet: bool = False) -> None:
     touched_file = env_store_file(args, env_file)
+    changed = False
     if args.scope in ("all", "app"):
         if value == "":
-            remove_env_file_key(env_file, key)
+            changed = remove_env_file_key(env_file, key) or changed
         else:
-            update_env_file(env_file, key, value)
+            changed = update_env_file(env_file, key, value) or changed
         if not quiet:
             print(f"updated {env_file}: {key}")
     if args.scope in ("all", "agent"):
         if args.runtime == "openclaw":
-            update_openclaw_stores(key, value)
+            changed = update_openclaw_stores(key, value) or changed
             if not quiet:
                 print(f"updated OpenClaw runtime secret stores: {key}")
         elif args.runtime == "hermes":
             if value == "":
-                remove_env_file_key(HERMES_ENV_FILE, key)
+                changed = remove_env_file_key(HERMES_ENV_FILE, key) or changed
             else:
-                update_env_file(HERMES_ENV_FILE, key, value)
+                changed = update_env_file(HERMES_ENV_FILE, key, value) or changed
             if not quiet:
                 print(f"updated Hermes runtime env: {key}")
         elif args.runtime == "aeon":
             if value == "":
-                remove_env_file_key(AEON_ENV_FILE, key)
+                changed = remove_env_file_key(AEON_ENV_FILE, key) or changed
             else:
-                update_env_file(AEON_ENV_FILE, key, value)
+                changed = update_env_file(AEON_ENV_FILE, key, value) or changed
             if not quiet:
                 print(f"updated Aeon runtime env: {key}")
             sync_aeon_github_secret(args, key, value, quiet=quiet)
         else:
             path = agent_env_file(args)
             if value == "":
-                remove_env_file_key(path, key)
+                changed = remove_env_file_key(path, key) or changed
             else:
-                update_env_file(path, key, value)
+                changed = update_env_file(path, key, value) or changed
             if not quiet:
                 print(f"updated generic hive agent env {path}: {key}")
-    touch_env_meta(touched_file, [key])
+    if changed:
+        touch_env_meta(touched_file, [key])
 
 
 def main() -> int:

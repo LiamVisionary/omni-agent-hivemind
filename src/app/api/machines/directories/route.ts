@@ -100,7 +100,7 @@ function parseRemoteDirectoryOutput(stdout: string) {
 
 async function listRemoteDirectoriesViaTailscale(collectorUrl: string, path: string) {
   const host = remoteHostFromCollectorUrl(collectorUrl);
-  if (!host) throw new Error("Remote collector URL is missing a host.");
+  if (!host) throw new Error("Remote agent bridge URL is missing a host.");
   const quotedPath = shellQuote(path.trim() || "~");
   const script = [
     "set -eu",
@@ -154,15 +154,15 @@ export async function GET(request: Request) {
         if (response.ok) return Response.json(data);
         collectorError = data && typeof data === "object" && "error" in data
           ? String(data.error)
-          : `Remote collector returned HTTP ${response.status}.`;
+          : `Remote agent bridge returned HTTP ${response.status}.`;
       } catch (error) {
-        collectorError = error instanceof Error ? error.message : "Remote collector request failed.";
+        collectorError = error instanceof Error ? error.message : "Remote agent bridge request failed.";
       }
       try {
         return Response.json({ ok: true, ...(await listRemoteDirectoriesViaTailscale(collectorUrl, path)) });
       } catch (error) {
         const sshError = error instanceof Error ? error.message : "Tailscale SSH fallback failed.";
-        throw new Error(`Remote collector could not list directories${collectorError ? ` (${collectorError})` : ""}; Tailscale SSH fallback failed: ${sshError}`);
+        throw new Error(`Remote agent bridge could not list directories${collectorError ? ` (${collectorError})` : ""}; Tailscale SSH fallback failed: ${sshError}`);
       }
     }
     return Response.json({ ok: true, ...(await listLocalDirectories(path)) });

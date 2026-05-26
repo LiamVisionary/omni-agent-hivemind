@@ -191,7 +191,8 @@ import {
   splitBrainLabel,
 } from "@/features/dashboard/dashboard-display-helpers";
 import { createStyleClass } from "@/features/dashboard/style-classes";
-import type { DashboardGBrainStatus } from "@/features/dashboard/dashboard-types";
+import type { DashboardGBrainStatus, DashboardTradingBrainStatus } from "@/features/dashboard/dashboard-types";
+import type { MemoryTelemetryPayload } from "@/lib/types/memory-telemetry";
 import type { WorkHistoryPayload } from "@/lib/types/work-history";
 import {
   compactDiagnosticPreview,
@@ -369,6 +370,7 @@ const DASHBOARD_VIEWS = new Set<DashboardView>([
   "vault",
   "integrations",
   "maintenance",
+  "memory",
   "files",
   "notifications",
   "chat",
@@ -388,6 +390,46 @@ function initialDashboardView(): DashboardView {
 
 const STORAGE_KEY = "hivemindos.agentProfiles.v1";
 const VAULT_STORAGE_KEY = "hivemindos.sharedVault.v1";
+const TRADING_BRAIN_PROMPT_START = "<!-- HivemindOS:TradingBrain:start -->";
+const TRADING_BRAIN_PROMPT_END = "<!-- HivemindOS:TradingBrain:end -->";
+
+function stripTradingBrainPrompt(prompt = "") {
+  return prompt.replace(new RegExp(`\\n?${TRADING_BRAIN_PROMPT_START}[\\s\\S]*?${TRADING_BRAIN_PROMPT_END}\\n?`, "g"), "").trim();
+}
+
+function hasTradingBrainPrompt(agent: AgentProfile) {
+  return (agent.skillProfilePrompt ?? "").includes(TRADING_BRAIN_PROMPT_START);
+}
+
+function tradingBrainPromptBlock(runtimeLabel: string) {
+  return [
+    TRADING_BRAIN_PROMPT_START,
+    "## HivemindOS Trading Brain",
+    "",
+    `This ${runtimeLabel} runtime has access to the optional Obsidian Trading Brain module.`,
+    "",
+    "When the user asks for trading journal capture, trade review, edge analysis, market-context review, pattern alerts, emotional performance correlation, or pre-trade historical context:",
+    "- Use `TRADING-BRAIN/system/runtime-instructions.md` as the runtime-agnostic operating contract.",
+    "- Use `TRADING-BRAIN/system/AGENTS.md`, `edge-definition.md`, and `rules.md` for local safety and strategy context.",
+    "- Read/write only local markdown under `TRADING-BRAIN/` unless the user explicitly asks for a different path.",
+    "- Never place trades, sign transactions, move funds, or present output as financial advice.",
+    TRADING_BRAIN_PROMPT_END,
+  ].join("\n");
+}
+
+function withTradingBrainPrompt(agent: AgentProfile) {
+  const base = stripTradingBrainPrompt(agent.skillProfilePrompt ?? "");
+  const label = RUNTIME_LABELS[agent.runtime] ?? agent.runtime;
+  return [base, tradingBrainPromptBlock(label)].filter(Boolean).join("\n\n");
+}
+
+function runtimeCardIdForAgent(agent: AgentProfile) {
+  return agent.runtime;
+}
+
+function isCodexBackedAgent(agent: AgentProfile) {
+  return agent.runtimeCapabilities?.codexRuntime || /codex/i.test(`${agent.provider ?? ""} ${agent.model ?? ""} ${agent.name ?? ""}`);
+}
 const TASK_STORAGE_KEY = "hivemindos.agentTasks.v1";
 const SCHEDULE_STORAGE_KEY = "hivemindos.agentSchedules.v1";
 const WALLET_STORAGE_KEY = "hivemindos.agentWallets.v1";
@@ -468,6 +510,9 @@ export default function DashboardApp({ initialView, initialVaultPanelMode, initi
   const [gbrainBusy, setGbrainBusy] = useState("");
   const [gbrainQuery, setGbrainQuery] = useState("");
   const [gbrainQueryResult, setGbrainQueryResult] = useState("");
+  const [tradingBrainStatus, setTradingBrainStatus] = useState<DashboardTradingBrainStatus | null>(null);
+  const [tradingBrainActionStatus, setTradingBrainActionStatus] = useState("");
+  const [tradingBrainBusy, setTradingBrainBusy] = useState("");
   const [hermesUpdateRequiredDetail, setHermesUpdateRequiredDetail] = useState("");
   const [brainSkillImportProvider, setBrainSkillImportProvider] = useState<BrainSkillProviderId | "all" | "">("");
   const [brainSkillImportSuccess, setBrainSkillImportSuccess] = useState<BrainSkillProviderId | "all" | "">("");
@@ -481,6 +526,9 @@ export default function DashboardApp({ initialView, initialVaultPanelMode, initi
   const [skillBrowserGithubOpen, setSkillBrowserGithubOpen] = useState(false);
   const [skillBrowserGithubUrl, setSkillBrowserGithubUrl] = useState("");
   const [skillBrowserGithubInstalling, setSkillBrowserGithubInstalling] = useState(false);
+  const [skillBrowserView, setSkillBrowserView] = useState<"browse" | "write">("browse");
+  const [skillBrowserWrittenContent, setSkillBrowserWrittenContent] = useState("");
+  const [skillBrowserWriting, setSkillBrowserWriting] = useState(false);
   const [messagesByAgent, setMessagesByAgent] = useState<Record<string, ChatMessage[]>>({});
   const [tasks, setTasks] = useState<AgentTask[]>([]);
   const [schedules, setSchedules] = useState<AgentSchedule[]>([]);
@@ -523,6 +571,8 @@ export default function DashboardApp({ initialView, initialVaultPanelMode, initi
   const [maintenanceReport, setMaintenanceReport] = useState<MaintenanceReport | null>(null);
   const [maintenanceBusy, setMaintenanceBusy] = useState("");
   const [maintenanceMessage, setMaintenanceMessage] = useState("");
+  const [memoryTelemetry, setMemoryTelemetry] = useState<MemoryTelemetryPayload | null>(null);
+  const [memoryTelemetryLoading, setMemoryTelemetryLoading] = useState(false);
   const [runtimeFileRoots, setRuntimeFileRoots] = useState<RuntimeFileRoot[]>([]);
   const [runtimeFileRootKey, setRuntimeFileRootKey] = useState("");
   const [runtimeFilePath, setRuntimeFilePath] = useState("");
@@ -860,6 +910,34 @@ export default function DashboardApp({ initialView, initialVaultPanelMode, initi
 	      setHiveEnvLoading(false);
 	    }
 	  }, []);
+  const refreshMemoryTelemetry = useCallback(async (options: { silent?: boolean } = {}) => {
+    if (!options.silent) setMemoryTelemetryLoading(true);
+    try {
+      const response = await fetch("/api/memory-telemetry", { cache: "no-store" }).catch(() => null);
+      const data = await response?.json().catch(() => null) as MemoryTelemetryPayload | null;
+      if (response?.ok && data?.ok) setMemoryTelemetry(data);
+    } finally {
+      if (!options.silent) setMemoryTelemetryLoading(false);
+    }
+  }, []);
+  useEffect(() => {
+    if (!hydrated) return;
+    let cancelled = false;
+    let inFlight = false;
+    const sample = () => {
+      if (cancelled || inFlight) return;
+      inFlight = true;
+      void refreshMemoryTelemetry({ silent: true }).finally(() => {
+        inFlight = false;
+      });
+    };
+    sample();
+    const timer = window.setInterval(sample, 30_000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+    };
+  }, [hydrated, refreshMemoryTelemetry]);
   const toggleEnvValue = useCallback((key: string) => {
     setRevealedEnvValues((current) => ({ ...current, [key]: !current[key] }));
   }, []);
@@ -1059,9 +1137,17 @@ export default function DashboardApp({ initialView, initialVaultPanelMode, initi
   /* eslint-enable react-hooks/set-state-in-effect */
   useEffect(() => {
     if (!hydrated || !honeyLedgerEnabled) return;
-    void observeHoneyUsage();
+    let inFlight = false;
+    const observeOnce = () => {
+      if (inFlight) return;
+      inFlight = true;
+      void observeHoneyUsage().finally(() => {
+        inFlight = false;
+      });
+    };
+    observeOnce();
     const timer = window.setInterval(() => {
-      void observeHoneyUsage();
+      observeOnce();
     }, 30_000);
     return () => window.clearInterval(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -1479,7 +1565,7 @@ export default function DashboardApp({ initialView, initialVaultPanelMode, initi
       window.clearInterval(timer);
     };
   }, [mirosharkStatus?.install.running]);
-  const { refreshMirosharkMetadata, runMirosharkAction, startNewMirosharkSimulation, applyMirosharkTemplate, updateMirosharkTemplateInput, extractMirosharkHelperText, runMirosharkScenarioHelper, launchMirosharkSwarm, runMirosharkSwarm, runMirosharkExperiment, analyzeMirosharkRun, refreshMirosharkArchive, refreshBrainGraph, refreshRecentDirectories, recordRecentDirectory, loadMachineDirectories, chooseDirectoryForMachine, refreshHermesUpdateRequirement, refreshBrainSkills, importBrainSkills, syncBrainSkillsToAeon, openSkillBrowser, importRemoteSkillToBrain, installGithubSkillToBrain, refreshNotifications, loadMirosharkArchivedRun, refreshMirosharkRun, mirosharkRunStatus, mirosharkRunIsArchived, mirosharkRunnerStatus, mirosharkPosts, mirosharkFeedIsWaiting, mirosharkFeedIsLive, mirosharkObservedRound, mirosharkTotalRounds, mirosharkCurrentRound, mirosharkProgressPercent, mirosharkRunIsWorking, mirosharkDisplayStep, mirosharkDisplayStatus, mirosharkProgressLabel, mirosharkTemplates, allMirosharkTemplates, mirosharkSelectedTemplate, mirosharkSelectedTemplateFields, mirosharkMissingTemplateFields, mirosharkTelemetryCount, mirosharkActionCount, mirosharkMarketCount, mirosharkTimelineItems, mirosharkActionItems, mirosharkProfileItems, mirosharkMarketItems, mirosharkObservabilityItems, mirosharkLlmCallItems, swarmTemplates, swarmTimelineItems, swarmObservabilityItems, swarmAgents, swarmDecisions, swarmThreadPosts, swarmSocialPosts, mirosharkMarketPricePayloads, swarmMarket, swarmIntegrationItems, swarmMarketPriceItems, swarmExportLinks, currentSwarmRun, swarmRuns, swarmStatusLabel, selectedSwarmRunId } = useMirosharkBrainController({ BRAIN_GRAPH_CLIENT_CACHE_MS, MIROSHARK_TEMPLATE_INPUTS, SWARM_LAUNCH_PRESETS, activeView, agents, appVersion, asRecord, brainGraph, brainGraphLoadedAtRef, brainGraphVaultPathRef, brainSkills, compactValue, composeMirosharkTemplateScenario, createDefaultAgentWallet, defaultMirosharkTemplateInputs, formatRelativeTime, getMiroSharkPosts, getMiroSharkRunStatus, getMiroSharkTemplates, hermesUpdateDetail, hermesUpdateRequiredDetail, honeyLedgerEnabled, isEmptyIntegrationPayload, isLoopbackCollector, isMiroSharkRunTerminal, isUnpublishedSimulationPayload, mirosharkAnalysisAgentId, mirosharkArchiveRuns, mirosharkExperimentEvent, mirosharkHandle, mirosharkMetadata, mirosharkPlatform, mirosharkRounds, mirosharkRun, mirosharkRunPending, mirosharkScenario, mirosharkSelectedTemplateId, mirosharkStat, mirosharkStatus, mirosharkTemplateInputs, mirosharkUserName, mirosharkWorkspaceMode, notificationCountRef, notificationCursorRef, numericRecordValue, payloadArray, payloadCount, payloadData, payloadPreview, pickLinkedDirectory, selectedAgentId, selectedMirosharkRunId, setBrainGraph, setBrainGraphLoading, setBrainGraphStatus, setBrainSkillAeonSyncing, setBrainSkillImportProvider, setBrainSkillImportSuccess, setBrainSkills, setBrainSkillsLoading, setBrainSkillsStatus, setHermesUpdateRequiredDetail, setMachineDirectoryBrowser, setMirosharkActionPending, setMirosharkAnalysisPending, setMirosharkAnalysisResult, setMirosharkAnalysisStatus, setMirosharkArchiveLoading, setMirosharkArchiveRuns, setMirosharkArchiveStatus, setMirosharkExperimentPending, setMirosharkExperimentStatus, setMirosharkHelperPending, setMirosharkHelperStatus, setMirosharkMetadata, setMirosharkPlatform, setMirosharkRounds, setMirosharkRun, setMirosharkRunPending, setMirosharkScenario, setMirosharkSelectedTemplateId, setMirosharkStatus, setMirosharkTemplateInputs, setMirosharkWorkbenchTab, setMirosharkWorkspaceMode, setNotificationCursor, setNotificationSummary, setNotifications, setNotificationsLoading, setNotificationsStatus, setRecentDirectories, setSelectedBrainNodeId, setSelectedMirosharkRunId, setSkillBrowserGithubInstalling, setSkillBrowserGithubOpen, setSkillBrowserGithubUrl, setSkillBrowserImporting, setSkillBrowserLoading, setSkillBrowserOpen, setSkillBrowserSkills, setSkillBrowserStatus, sharedVault, skillBrowserGithubUrl, skillRequiresHermesUpdate, swarmEventItem, swarmMarketEventItem, swarmMarketFromItems, swarmMarketPriceEventItem, swarmRunState, swarmTemplateIdFromMirosharkTemplate, swarmTemplateIdFromSurface, walletsByAgent });
+  const { refreshMirosharkMetadata, runMirosharkAction, startNewMirosharkSimulation, applyMirosharkTemplate, updateMirosharkTemplateInput, extractMirosharkHelperText, runMirosharkScenarioHelper, launchMirosharkSwarm, runMirosharkSwarm, runMirosharkExperiment, analyzeMirosharkRun, refreshMirosharkArchive, refreshBrainGraph, refreshRecentDirectories, recordRecentDirectory, loadMachineDirectories, chooseDirectoryForMachine, refreshHermesUpdateRequirement, refreshBrainSkills, importBrainSkills, syncBrainSkillsToAeon, openSkillBrowser, importRemoteSkillToBrain, installGithubSkillToBrain, addWrittenSkillToBrain, refreshNotifications, loadMirosharkArchivedRun, refreshMirosharkRun, mirosharkRunStatus, mirosharkRunIsArchived, mirosharkRunnerStatus, mirosharkPosts, mirosharkFeedIsWaiting, mirosharkFeedIsLive, mirosharkObservedRound, mirosharkTotalRounds, mirosharkCurrentRound, mirosharkProgressPercent, mirosharkRunIsWorking, mirosharkDisplayStep, mirosharkDisplayStatus, mirosharkProgressLabel, mirosharkTemplates, allMirosharkTemplates, mirosharkSelectedTemplate, mirosharkSelectedTemplateFields, mirosharkMissingTemplateFields, mirosharkTelemetryCount, mirosharkActionCount, mirosharkMarketCount, mirosharkTimelineItems, mirosharkActionItems, mirosharkProfileItems, mirosharkMarketItems, mirosharkObservabilityItems, mirosharkLlmCallItems, swarmTemplates, swarmTimelineItems, swarmObservabilityItems, swarmAgents, swarmDecisions, swarmThreadPosts, swarmSocialPosts, mirosharkMarketPricePayloads, swarmMarket, swarmIntegrationItems, swarmMarketPriceItems, swarmExportLinks, currentSwarmRun, swarmRuns, swarmStatusLabel, selectedSwarmRunId } = useMirosharkBrainController({ BRAIN_GRAPH_CLIENT_CACHE_MS, MIROSHARK_TEMPLATE_INPUTS, SWARM_LAUNCH_PRESETS, activeView, agents, appVersion, asRecord, brainGraph, brainGraphLoadedAtRef, brainGraphVaultPathRef, brainSkills, compactValue, composeMirosharkTemplateScenario, createDefaultAgentWallet, defaultMirosharkTemplateInputs, formatRelativeTime, getMiroSharkPosts, getMiroSharkRunStatus, getMiroSharkTemplates, hermesUpdateDetail, hermesUpdateRequiredDetail, honeyLedgerEnabled, isEmptyIntegrationPayload, isLoopbackCollector, isMiroSharkRunTerminal, isUnpublishedSimulationPayload, mirosharkAnalysisAgentId, mirosharkArchiveRuns, mirosharkExperimentEvent, mirosharkHandle, mirosharkMetadata, mirosharkPlatform, mirosharkRounds, mirosharkRun, mirosharkRunPending, mirosharkScenario, mirosharkSelectedTemplateId, mirosharkStat, mirosharkStatus, mirosharkTemplateInputs, mirosharkUserName, mirosharkWorkspaceMode, notificationCountRef, notificationCursorRef, numericRecordValue, payloadArray, payloadCount, payloadData, payloadPreview, pickLinkedDirectory, selectedAgentId, selectedMirosharkRunId, setBrainGraph, setBrainGraphLoading, setBrainGraphStatus, setBrainSkillAeonSyncing, setBrainSkillImportProvider, setBrainSkillImportSuccess, setBrainSkills, setBrainSkillsLoading, setBrainSkillsStatus, setHermesUpdateRequiredDetail, setMachineDirectoryBrowser, setMirosharkActionPending, setMirosharkAnalysisPending, setMirosharkAnalysisResult, setMirosharkAnalysisStatus, setMirosharkArchiveLoading, setMirosharkArchiveRuns, setMirosharkArchiveStatus, setMirosharkExperimentPending, setMirosharkExperimentStatus, setMirosharkHelperPending, setMirosharkHelperStatus, setMirosharkMetadata, setMirosharkPlatform, setMirosharkRounds, setMirosharkRun, setMirosharkRunPending, setMirosharkScenario, setMirosharkSelectedTemplateId, setMirosharkStatus, setMirosharkTemplateInputs, setMirosharkWorkbenchTab, setMirosharkWorkspaceMode, setNotificationCursor, setNotificationSummary, setNotifications, setNotificationsLoading, setNotificationsStatus, setRecentDirectories, setSelectedBrainNodeId, setSelectedMirosharkRunId, setSkillBrowserGithubInstalling, setSkillBrowserGithubOpen, setSkillBrowserGithubUrl, setSkillBrowserImporting, setSkillBrowserLoading, setSkillBrowserOpen, setSkillBrowserSearch, setSkillBrowserSkills, setSkillBrowserStatus, setSkillBrowserView, setSkillBrowserWriting, setSkillBrowserWrittenContent, sharedVault, skillBrowserGithubUrl, skillBrowserWrittenContent, skillRequiresHermesUpdate, swarmEventItem, swarmMarketEventItem, swarmMarketFromItems, swarmMarketPriceEventItem, swarmRunState, swarmTemplateIdFromMirosharkTemplate, swarmTemplateIdFromSurface, walletsByAgent });
   const appendMessage = useCallback((agentId: string, message: ChatMessage, storageKey = agentId) => {
     logClientTelemetry("chat.message.appended", { agentId, storageKey, role: message.role, kanbanTaskId: message.kanbanTaskId ?? null, surface: message.surface ?? null, contentLength: message.content.length, attachmentCount: message.attachments?.length ?? 0 });
     setMessagesByAgent((current) => ({
@@ -1521,6 +1607,57 @@ export default function DashboardApp({ initialView, initialVaultPanelMode, initi
   refreshHoneyLedgerRef.current = walletRefreshHoneyLedger;
   // eslint-disable-next-line react-hooks/refs
   observeHoneyUsageRef.current = walletObserveHoneyUsage;
+
+  const tradingBrainRuntimeCards = useMemo(() => {
+    const groups = new Map<string, { id: string; label: string; agents: AgentProfile[]; detail: string }>();
+    const addAgentToGroup = (id: string, label: string, agent: AgentProfile, detail: string) => {
+      const existing = groups.get(id) ?? { id, label, agents: [], detail };
+      if (!existing.agents.some((candidate) => candidate.id === agent.id)) existing.agents.push(agent);
+      groups.set(id, existing);
+    };
+    displayAgents.forEach((agent) => {
+      const runtimeId = runtimeCardIdForAgent(agent);
+      addAgentToGroup(runtimeId, RUNTIME_LABELS[agent.runtime] ?? agent.runtime, agent, `${agent.runtimeKind ?? "runtime"} runtime`);
+      if (isCodexBackedAgent(agent)) addAgentToGroup("codex", "Codex", agent, "Codex-backed agent profile");
+    });
+    return Array.from(groups.values()).map((group) => {
+      const attachedCount = group.agents.filter(hasTradingBrainPrompt).length;
+      return {
+        id: group.id,
+        label: group.label,
+        detail: group.detail,
+        agentCount: group.agents.length,
+        attachedCount,
+        allAttached: group.agents.length > 0 && attachedCount === group.agents.length,
+      };
+    }).sort((left, right) => left.label.localeCompare(right.label));
+  }, [displayAgents]);
+  const tradingBrainAllRuntimeAttached = tradingBrainRuntimeCards.length > 0 && tradingBrainRuntimeCards.every((card) => card.allAttached);
+
+  const setTradingBrainForRuntime = useCallback((runtimeId: string, attach: boolean) => {
+    const targets = displayAgents.filter((agent) => (
+      runtimeCardIdForAgent(agent) === runtimeId || (runtimeId === "codex" && isCodexBackedAgent(agent))
+    ));
+    targets.forEach((agent) => {
+      updateAgentProfile(agent.id, {
+        skillProfilePrompt: attach
+          ? withTradingBrainPrompt(agent)
+          : stripTradingBrainPrompt(agent.skillProfilePrompt ?? ""),
+      });
+    });
+    setTradingBrainActionStatus(`${attach ? "Added Trading Brain to" : "Removed Trading Brain from"} ${targets.length} agent runtime${targets.length === 1 ? "" : "s"}.`);
+  }, [displayAgents, updateAgentProfile]);
+
+  const setTradingBrainForAllRuntimes = useCallback((attach: boolean) => {
+    displayAgents.forEach((agent) => {
+      updateAgentProfile(agent.id, {
+        skillProfilePrompt: attach
+          ? withTradingBrainPrompt(agent)
+          : stripTradingBrainPrompt(agent.skillProfilePrompt ?? ""),
+      });
+    });
+    setTradingBrainActionStatus(`${attach ? "Added Trading Brain to" : "Removed Trading Brain from"} all ${displayAgents.length} available agent runtime${displayAgents.length === 1 ? "" : "s"}.`);
+  }, [displayAgents, updateAgentProfile]);
 
   useEffect(() => {
     if (!hydrated || activeView !== "scheduler" || !sharedVault.enabled) return;
@@ -1582,7 +1719,7 @@ export default function DashboardApp({ initialView, initialVaultPanelMode, initi
       return;
     }
     const configured = data.collectors?.filter((collector) => collector.ok).length ?? 0;
-    setBrainSkillsStatus(`Skill auto-sync updated on ${configured} collector${configured === 1 ? "" : "s"}.`);
+    setBrainSkillsStatus(`Skill auto-sync updated on ${configured} agent bridge${configured === 1 ? "" : "s"}.`);
   }, [setBrainSkillsStatus, sharedVault.skillAutoSync, sharedVault.skillAutoSyncAll, sharedVault.vaultPath, updateSharedVault]);
   const updateAllSkillAutoSync = useCallback(async (enabled: boolean) => {
     const providerIds = (brainSkills?.providers ?? BRAIN_SKILL_PROVIDER_FALLBACK).map((provider) => provider.id);
@@ -1615,7 +1752,7 @@ export default function DashboardApp({ initialView, initialVaultPanelMode, initi
       return;
     }
     const configured = data.collectors?.filter((collector) => collector.ok).length ?? 0;
-    setBrainSkillsStatus(`${enabled ? "Enabled" : "Disabled"} all-provider skill auto-sync on ${configured} collector${configured === 1 ? "" : "s"}.`);
+    setBrainSkillsStatus(`${enabled ? "Enabled" : "Disabled"} all-provider skill auto-sync on ${configured} agent bridge${configured === 1 ? "" : "s"}.`);
   }, [brainSkills?.providers, setBrainSkillsStatus, sharedVault.vaultPath, updateSharedVault]);
 
   const refreshGbrainStatus = useCallback(async () => {
@@ -1708,13 +1845,61 @@ export default function DashboardApp({ initialView, initialVaultPanelMode, initi
     setGbrainBusy("");
   }
 
+  const refreshTradingBrainStatus = useCallback(async () => {
+    if (!sharedVault.enabled) {
+      setTradingBrainActionStatus("Turn on the shared vault before checking Trading Brain.");
+      return;
+    }
+    setTradingBrainBusy("status");
+    const params = new URLSearchParams();
+    if (sharedVault.vaultPath?.trim()) params.set("vaultPath", sharedVault.vaultPath.trim());
+    if (sharedVault.brainServicesFolder?.trim()) params.set("brainServicesFolder", sharedVault.brainServicesFolder.trim());
+    const response = await fetch(`/api/brain/trading-brain/status?${params.toString()}`, { cache: "no-store" }).catch(() => null);
+    const data = await response?.json().catch(() => null) as { ok?: boolean; status?: DashboardTradingBrainStatus; error?: string } | null;
+    if (data?.status) {
+      setTradingBrainStatus(data.status);
+      setTradingBrainActionStatus(data.status.installed ? "Trading Brain status refreshed." : data.status.error ?? "Trading Brain is ready to install.");
+    } else {
+      setTradingBrainActionStatus(data?.error ?? "Could not check Trading Brain status.");
+    }
+    setTradingBrainBusy("");
+  }, [sharedVault.brainServicesFolder, sharedVault.enabled, sharedVault.vaultPath]);
+
+  async function installTradingBrainFromDashboard() {
+    if (!sharedVault.enabled) {
+      setTradingBrainActionStatus("Turn on the shared vault before installing Trading Brain.");
+      return;
+    }
+    setTradingBrainBusy("install");
+    setTradingBrainActionStatus("Installing Trading Brain scaffold...");
+    const response = await fetch("/api/brain/trading-brain/install", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        vaultPath: sharedVault.vaultPath.trim() || undefined,
+        brainServicesFolder: sharedVault.brainServicesFolder.trim() || undefined,
+      }),
+    }).catch(() => null);
+    const data = await response?.json().catch(() => null) as { ok?: boolean; status?: DashboardTradingBrainStatus; written?: string[]; error?: string } | null;
+    if (!response?.ok || !data?.ok) {
+      setTradingBrainActionStatus(data?.error ?? "Trading Brain install failed.");
+      setTradingBrainBusy("");
+      return;
+    }
+    if (data.status) setTradingBrainStatus(data.status);
+    setTradingBrainActionStatus(`Trading Brain installed${data?.written?.length ? ` with ${data.written.length} new file${data.written.length === 1 ? "" : "s"}` : ""}.`);
+    setTradingBrainBusy("");
+    void refreshBrainGraph();
+  }
+
   useEffect(() => {
     if (!hydrated || activeView !== "vault" || vaultPanelMode !== "brain-services") return;
     const refreshTimer = window.setTimeout(() => {
       void refreshGbrainStatus();
+      void refreshTradingBrainStatus();
     }, 0);
     return () => window.clearTimeout(refreshTimer);
-  }, [activeView, hydrated, refreshGbrainStatus, vaultPanelMode]);
+  }, [activeView, hydrated, refreshGbrainStatus, refreshTradingBrainStatus, vaultPanelMode]);
 
   const agentSettingsMachineName = agentCreateMachine?.name ?? roleModalAgent?.machineName ?? "this machine";
   const agentSettingsTitle = agentCreateMachine ? "Add agent" : "Agent settings";
@@ -1742,10 +1927,10 @@ export default function DashboardApp({ initialView, initialVaultPanelMode, initi
       <SchedulerPanel {...{ AlignLeft, Button, Check, ChevronDown, Clock3, Cpu, FileText, FileUp, FolderOpen, Link, List, LoaderCircle, Paperclip, Pencil, Plus, Puzzle, RUNTIME_LABELS, Repeat2, SCHEDULER_MODEL_OPTIONS, SCHEDULE_PRESETS, SchedulerView, Search, Send, Sparkles, TaskModal, Trash2, X, activeView, addSchedulePath, addSchedulerStep, addSchedulerStepPath, browseSchedulerFolder, createSchedule, displayAgents, editSchedule, editingScheduleId, filteredSchedulerSkills, findScheduleForJob, fleetClass, importExistingSchedules, isSchedulerFilePath, machineGroups, openSkillBrowser, pickSchedulerFiles, pickSchedulerFolder, refreshSharedSchedulesFromVault, removeSchedule, removeSchedulePath, removeScheduleSkill, removeSchedulerStep, removeSchedulerStepPath, renderAgentKey, resetScheduleDraft, runScheduleNow, saveScheduleFromModal, scheduleDraft, scheduleImportStatus, scheduleImporting, schedulerAttachMenu, schedulerDraftOpen, schedulerJobs, schedulerModalInitial, schedulerPathDraft, schedulerPathKind, schedulerRunStates, schedulerSelectedStep, schedulerSkillSearch, schedules, selectedAgent, setScheduleDraft, setScheduleImportStatus, setSchedulerAttachMenu, setSchedulerDraftOpen, setSchedulerPathDraft, setSchedulerPathKind, setSchedulerSelectedStep, setSchedulerSkillSearch, sharedSkillOptions, toggleSchedule, toggleScheduleSkill, toggleSchedulerStepMode, toggleSchedulerStepSkill, updateSchedulerStep, updateSchedulerStepModel, vaultClass }} />
       <SwarmPanel {...{ SwarmView, activeView, allMirosharkTemplates, analyzeMirosharkRun, applyMirosharkTemplate, currentSwarmRun, displayAgents, launchMirosharkSwarm, loadMirosharkArchivedRun, mirosharkAnalysisAgentId, mirosharkAnalysisPending, mirosharkAnalysisResult, mirosharkAnalysisStatus, mirosharkArchiveLoading, mirosharkArchiveStatus, mirosharkExperimentPending, mirosharkExperimentStatus, mirosharkHelperPending, mirosharkHelperStatus, mirosharkMissingTemplateFields, mirosharkPlatform, mirosharkProgressLabel, mirosharkRounds, mirosharkRunPending, mirosharkScenario, mirosharkSelectedTemplate, mirosharkSelectedTemplateFields, mirosharkTemplateInputs, runMirosharkExperiment, runMirosharkScenarioHelper, runtimeModelSelectionsByRuntime, selectedAgent, selectedSwarmRunId, setMirosharkAnalysisAgentId, setMirosharkPlatform, setMirosharkRounds, setMirosharkScenario, startNewMirosharkSimulation, swarmAgents, swarmDecisions, swarmMarket, swarmRuns, swarmSocialPosts, swarmStatusLabel, swarmTemplates, updateMirosharkTemplateInput }} />
       <WalletPanel {...{ AGENT_PAYMENT_PROVIDER_COPY, AgentWalletCard, AgentWalletCardCompact, Button, ChevronLeft, Download, HandCoins, LoaderCircle, RUNTIME_LABELS, RefreshCcw, activeView, copyPaymentPrompt, createDefaultAgentWallet, createLocalWallet, displayAgents, enableHoneyLedger, exchangeAllHoneyForHive, exchangeHoneyForHive, formatHiveAmount, formatRelativeTime, getSurvivalSnapshot, honeyLedgerEnabled, honeyStats, initializeCoreWalletRails, moneyClawStatusByEnvName, refreshRuntimeUsage, refreshWalletBalance, renderAgentKey, resetWalletBurnClock, runWalletVaultBackupAction, runtimeUsage, runtimeUsageLoading, saveMoneyClawKey, selectedAgent, selectedHoneyReward, selectedWallet, selectedWalletSnapshot, sendWalletUsdc, setSelectedAgentId, setWalletExpanded, setWalletPanelMode, testX402Fetch, updateWallet, updateWalletAction, vaultClass, walletActionsByAgent, walletClass, walletExpanded, walletPanelMode, walletStats, walletVaultBackupBusy, walletVaultBackupMessage, walletVaultBackupStatus, walletsByAgent }} />
-      <VaultPanel {...{ Activity, BRAIN_SKILL_PROVIDER_FALLBACK, Bot, BrainCircuit, BrainGraphLoader, Button, Cell, Check, CircleAlert, Clock3, DEFAULT_SHARED_VAULT, Download, Eye, FileText, FolderOpen, GitBranch, Hexagon, Image, KeyRound, LoaderCircle, MemoryCell, Network, PlugZap, RefreshCcw, Repeat2, Sparkles, activeView, brainGraph, brainGraphEdgePath, brainGraphLoading, brainGraphStats, brainGraphStatus, brainLayout, brainNodePoints, brainPan, brainSkillAeonSyncing, brainSkillImportAllDescription, brainSkillImportAllLabel, brainSkillImportProvider, brainSkillImportSuccess, brainSkillImportableCount, brainSkills, brainSkillsLoading, brainSkillsStatus, checkControlRoomStatus, checkVaultStatus, controlRoomStatus, displayAgents, endBrainPan, formatBrainDate, gbrainActionStatus, gbrainBusy, gbrainQuery, gbrainQueryResult, gbrainStatus, hermesUpdateRequired, hermesUpdateRequiredDetail, importBrainSkills, inspectBrainNode, moveBrainPan, openSkillBrowser, pairSyncthingVaultSync, queryGbrainFromDashboard, refreshBrainGraph, refreshBrainSkills, refreshGbrainStatus, refreshRuntimeFileRoots, runGbrainAction, runVaultTailnetSync, selectedAgent, selectedBrainNode, selectedBrainTargetIds, setActiveView, setGbrainQuery, setVaultPanelMode, sharedVault, skillRequiresHermesUpdate, splitBrainLabel, startBrainPan, syncBrainSkillsToAeon, updateAllSkillAutoSync, updateSharedVault, updateSkillAutoSync, vaultClass, vaultPanelMode, vaultStatus, vaultSyncPending, vaultSyncStatus, visibleBrainNodes, walletClass }} />
+      <VaultPanel {...{ Activity, BRAIN_SKILL_PROVIDER_FALLBACK, Bot, BrainCircuit, BrainGraphLoader, Button, Cell, Check, CircleAlert, Clock3, DEFAULT_SHARED_VAULT, Download, Eye, FileText, FolderOpen, GitBranch, Hexagon, Image, KeyRound, LoaderCircle, MemoryCell, Network, PlugZap, RefreshCcw, Repeat2, Sparkles, activeView, brainGraph, brainGraphEdgePath, brainGraphLoading, brainGraphStats, brainGraphStatus, brainLayout, brainNodePoints, brainPan, brainSkillAeonSyncing, brainSkillImportAllDescription, brainSkillImportAllLabel, brainSkillImportProvider, brainSkillImportSuccess, brainSkillImportableCount, brainSkills, brainSkillsLoading, brainSkillsStatus, checkControlRoomStatus, checkVaultStatus, controlRoomStatus, displayAgents, endBrainPan, formatBrainDate, gbrainActionStatus, gbrainBusy, gbrainQuery, gbrainQueryResult, gbrainStatus, hermesUpdateRequired, hermesUpdateRequiredDetail, importBrainSkills, inspectBrainNode, installTradingBrainFromDashboard, moveBrainPan, openSkillBrowser, pairSyncthingVaultSync, queryGbrainFromDashboard, refreshBrainGraph, refreshBrainSkills, refreshGbrainStatus, refreshRuntimeFileRoots, refreshTradingBrainStatus, runGbrainAction, runVaultTailnetSync, selectedAgent, selectedBrainNode, selectedBrainTargetIds, setActiveView, setGbrainQuery, setTradingBrainForAllRuntimes, setTradingBrainForRuntime, setVaultPanelMode, sharedVault, skillRequiresHermesUpdate, splitBrainLabel, startBrainPan, syncBrainSkillsToAeon, tradingBrainActionStatus, tradingBrainAllRuntimeAttached, tradingBrainBusy, tradingBrainRuntimeCards, tradingBrainStatus, updateAllSkillAutoSync, updateSharedVault, updateSkillAutoSync, vaultClass, vaultPanelMode, vaultStatus, vaultSyncPending, vaultSyncStatus, visibleBrainNodes, walletClass }} />
       {activeView === "integrations" ? <NangoIntegrationsView embedded /> : null}
-      <UtilityPanels {...{ AgentEnvCard, Button, Check, ChevronDown, ChevronLeft, Download, EnvValueRow, FileText, FileUp, FolderOpen, LoaderCircle, MorePanel, NotificationsPanel, Pencil, Plus, RefreshCcw, RotateCcw, ShieldCheck, Sparkles, URL, Upload, X, activeView, addAgentEnvValue, addSharedEnvValue, agentEnvDrafts, agentSpecificEnvCount, displayAgents, fleetClass, generateSharedEnvSecret, hiveEnvLoading, hiveEnvRestoring, hiveEnvSavingKey, hiveEnvStatus, hiveEnvSyncing, importSharedEnvEntries, listRuntimeFiles, maintenanceBusy, maintenanceMessage, maintenanceReport, markAllNotificationsRead, markNotificationRead, notificationCursor, notificationGroups, notificationSummary, notifications, notificationsLoading, notificationsStatus, openRuntimeFile, promoteRuntimeEnvValue, refreshHiveEnv, refreshMaintenanceReport, refreshNotifications, refreshRuntimeFileRoots, renderAgentKey, restoreSharedEnvBackup, revealedEnvValues, runMaintenanceAction, runtimeEnvSources, runtimeFileDraft, runtimeFileOpen, runtimeFilePath, runtimeFileRootKey, runtimeFileRoots, runtimeFileStatus, runtimeFiles, runtimeModelSelectionsByRuntime, saveAgentEnvValue, saveRuntimeFile, saveSharedEnvValue, selectedRuntimeEnvSource, setActiveView, setAgentEnvDrafts, setHiveEnvRuntimeSourceId, setRuntimeFileDraft, setRuntimeFileOpen, setRuntimeFilePath, setRuntimeFileRootKey, setSharedEnvAddMenuOpen, setSharedEnvDraft, setSharedEnvEditable, setSharedEnvImportOpen, setSharedEnvImportText, sharedBackupStatus, sharedEnvAddMenuOpen, sharedEnvCount, sharedEnvDraft, sharedEnvEditable, sharedEnvImport, sharedEnvImportChangedCount, sharedEnvImportDiff, sharedEnvImportNewCount, sharedEnvImportOpen, sharedEnvImportSameCount, sharedEnvImportText, sharedEnvImporting, sharedEnvSource, sharedVault, syncSharedEnvMachines, toggleEnvValue, updateNotificationSettings, vaultClass, walletClass }} />
-      <ChatPanel {...{ Activity, AgentResponseLoader, BEE_WORKER_PRESET_LIST, BrainCircuit, Button, ChatMarkdown, Check, ChevronRight, ComposerField, Copy, Cpu, Download, Eye, Folder, FolderOpen, FolderPlus, GitBranch, HERMES_UPDATE_INTEGRATION_KEYS, Image, KanbanSquare, LoaderCircle, MessageAttachments, MessageSquare, Monitor, Pencil, PlugZap, Plus, RUNTIME_LABELS, RefreshCcw, Repeat2, Search, Send, Settings2, ShieldCheck, Sparkles, Tooltip, TooltipContent, TooltipProvider, TooltipTrigger, Upload, X, activeView, addHermesModelFromDraft, aeonEnvKeys, aeonEnvSyncStatus, aeonEnvSyncing, agentCreateDraft, agentCreateMachine, agentRenameDraft, agentRenameEditing, agentRuntimeAdvancedOpen, agentRuntimeFolderBrowsing, agentRuntimeFolderEditing, agentRuntimeFolderStatus, agentSettingsCustomWorker, agentSettingsCustomWorkers, agentSettingsDescription, agentSettingsIntegrationTarget, agentSettingsPanel, agentSettingsPreferredSkills, agentSettingsProvider, agentSettingsRuntime, agentSettingsSelectedCustomWorkerId, agentSettingsSkillProfile, agentSettingsTitle, agentSettingsWorkerClass, agentSettingsWorkerImage, agentSettingsWorkerLabel, agentSettingsWorkerPreset, agentWorkerClassView, applyCustomWorkerClass, attachChatDirectory, attachChatRecentDirectory, attachmentError, attachmentMenuOpen, attachmentMenuRef, beeRoleIconPath, beeRoleLabel, browseAgentRuntimeFolder, busy, chatAttachments, chatClass, chatContextMenu, chatContextMenuRef, chatDirectories, chatDisplayContent, chatFileInputRef, chatFolderCreatorMachine, chatFolderCreatorParentOptions, chatFolderDraft, chatImageInputRef, chatKanbanGeneration, chatSidebarTree, checkStatus, closeAgentSettingsModal, closeChatFolderCreator, createAgentFromModal, createChatFolder, customWorkerDraft, customWorkerImageError, customWorkerImageInputRef, customWorkerSkillSearch, displayAgents, expandedChatFolders, filteredCustomWorkerSkills, filteredSkillBrowserSkills, fleetClass, formatAgentEnvText, formatRelativeTime, generateKanbanTaskFromChat, handleChatFileChange, handleChatImageChange, hasStreamingChunk, hermesUpdateRequired, hermesUpdateRequiredDetail, importRemoteSkillToBrain, installGithubSkillToBrain, lastAssistant, machineGroups, messagesEndRef, messagesScrollRef, openCustomWorkerClassCreator, openSkillBrowser, parseAgentEnvText, recentDirectories, recentDirectoriesExpanded, recording, refreshRuntimeIntegrations, removeChatAttachment, removeChatDirectory, roleModalAgent, runRuntimeIntegrationAction, runtimeBackgroundPrompt, runtimeCapabilities, runtimeIntegrationBusy, runtimeIntegrationMessage, runtimeIntegrationStatus, runtimeModelDraft, runtimeModelProviders, runtimeModelSetupMode, runtimeSessionQuery, runtimeSessionResults, runtimeSetupDefinition, runtimeSetupKey, runtimeUpdateConfirmKey, searchRuntimeSessionsForAgent, selectAgentWorkerClass, selectCustomWorkerClass, selectedAgent, selectedChatDirectory, selectedChatMachine, selectedRuntimeModel, selectedRuntimeModelId, selectedRuntimeModels, selectedRuntimeProvider, sendMessage, sessionNotice, setAeonEnvKeys, setAgentCreateDraft, setAgentRenameDraft, setAgentRenameEditing, setAgentRuntimeAdvancedOpen, setAgentRuntimeFolderEditing, setAgentRuntimeFolderStatus, setAgentSettingsPanel, setAgentWorkerClassView, setAttachmentMenuOpen, setChatContextMenu, setChatFolderDraft, setCustomWorkerDraft, setCustomWorkerSkillSearch, setExpandedChatFolders, setRecentDirectoriesExpanded, setRuntimeBackgroundPrompt, setRuntimeModelDraft, setRuntimeModelSetupMode, setRuntimeSessionQuery, setRuntimeSetupKey, setRuntimeUpdateConfirmKey, setSkillBrowserGithubOpen, setSkillBrowserGithubUrl, setSkillBrowserOpen, setSkillBrowserSearch, setText, sharedVault, skillBrowserGithubInstalling, skillBrowserGithubOpen, skillBrowserGithubUrl, skillBrowserImporting, skillBrowserLoading, skillBrowserOpen, skillBrowserSearch, skillBrowserStatus, skillRequiresHermesUpdate, startAgentChat, startAudioRecording, status, statusAgentId, stopAudioRecording, switchRuntime, syncAeonEnvToGitHub, text, toggleCustomWorkerSkill, updateAgent, updateAgentProfile, updateAgentRuntimeModel, updateAgentSkillProfile, updateChatAutoScroll, uploadCustomWorkerImage, vaultClass, visibleMessages, voiceBands, voiceTarget, voiceTranscript, workerCapabilityBadges }} />
+      <UtilityPanels {...{ AgentEnvCard, Activity, Button, Check, ChevronDown, ChevronLeft, Download, EnvValueRow, FileText, FileUp, FolderOpen, LoaderCircle, MorePanel, NotificationsPanel, Pencil, Plus, RefreshCcw, RotateCcw, ShieldCheck, Sparkles, URL, Upload, X, activeView, addAgentEnvValue, addSharedEnvValue, agentEnvDrafts, agentSpecificEnvCount, displayAgents, fleetClass, formatRelativeTime, generateSharedEnvSecret, hiveEnvLoading, hiveEnvRestoring, hiveEnvSavingKey, hiveEnvStatus, hiveEnvSyncing, importSharedEnvEntries, listRuntimeFiles, maintenanceBusy, maintenanceMessage, maintenanceReport, markAllNotificationsRead, markNotificationRead, memoryTelemetry, memoryTelemetryLoading, notificationCursor, notificationGroups, notificationSummary, notifications, notificationsLoading, notificationsStatus, openRuntimeFile, promoteRuntimeEnvValue, refreshHiveEnv, refreshMaintenanceReport, refreshMemoryTelemetry, refreshNotifications, refreshRuntimeFileRoots, renderAgentKey, restoreSharedEnvBackup, revealedEnvValues, runMaintenanceAction, runtimeEnvSources, runtimeFileDraft, runtimeFileOpen, runtimeFilePath, runtimeFileRootKey, runtimeFileRoots, runtimeFileStatus, runtimeFiles, runtimeModelSelectionsByRuntime, saveAgentEnvValue, saveRuntimeFile, saveSharedEnvValue, selectedRuntimeEnvSource, setActiveView, setAgentEnvDrafts, setHiveEnvRuntimeSourceId, setRuntimeFileDraft, setRuntimeFileOpen, setRuntimeFilePath, setRuntimeFileRootKey, setSharedEnvAddMenuOpen, setSharedEnvDraft, setSharedEnvEditable, setSharedEnvImportOpen, setSharedEnvImportText, sharedBackupStatus, sharedEnvAddMenuOpen, sharedEnvCount, sharedEnvDraft, sharedEnvEditable, sharedEnvImport, sharedEnvImportChangedCount, sharedEnvImportDiff, sharedEnvImportNewCount, sharedEnvImportOpen, sharedEnvImportSameCount, sharedEnvImportText, sharedEnvImporting, sharedEnvSource, sharedVault, syncSharedEnvMachines, toggleEnvValue, updateNotificationSettings, vaultClass, walletClass }} />
+      <ChatPanel {...{ Activity, AgentResponseLoader, BEE_WORKER_PRESET_LIST, BrainCircuit, Button, ChatMarkdown, Check, ChevronRight, ComposerField, Copy, Cpu, Download, Eye, Folder, FolderOpen, FolderPlus, GitBranch, HERMES_UPDATE_INTEGRATION_KEYS, Image, KanbanSquare, LoaderCircle, MessageAttachments, MessageSquare, Monitor, Pencil, PlugZap, Plus, RUNTIME_LABELS, RefreshCcw, Repeat2, Search, Send, Settings2, ShieldCheck, Sparkles, Tooltip, TooltipContent, TooltipProvider, TooltipTrigger, Upload, X, activeView, addHermesModelFromDraft, aeonEnvKeys, aeonEnvSyncStatus, aeonEnvSyncing, agentCreateDraft, agentCreateMachine, agentRenameDraft, agentRenameEditing, agentRuntimeAdvancedOpen, agentRuntimeFolderBrowsing, agentRuntimeFolderEditing, agentRuntimeFolderStatus, agentSettingsCustomWorker, agentSettingsCustomWorkers, agentSettingsDescription, agentSettingsIntegrationTarget, agentSettingsPanel, agentSettingsPreferredSkills, agentSettingsProvider, agentSettingsRuntime, agentSettingsSelectedCustomWorkerId, agentSettingsSkillProfile, agentSettingsTitle, agentSettingsWorkerClass, agentSettingsWorkerImage, agentSettingsWorkerLabel, agentSettingsWorkerPreset, agentWorkerClassView, applyCustomWorkerClass, attachChatDirectory, attachChatRecentDirectory, attachmentError, attachmentMenuOpen, attachmentMenuRef, beeRoleIconPath, beeRoleLabel, browseAgentRuntimeFolder, busy, chatAttachments, chatClass, chatContextMenu, chatContextMenuRef, chatDirectories, chatDisplayContent, chatFileInputRef, chatFolderCreatorMachine, chatFolderCreatorParentOptions, chatFolderDraft, chatImageInputRef, chatKanbanGeneration, chatSidebarTree, checkStatus, closeAgentSettingsModal, closeChatFolderCreator, createAgentFromModal, createChatFolder, customWorkerDraft, customWorkerImageError, customWorkerImageInputRef, customWorkerSkillSearch, displayAgents, expandedChatFolders, filteredCustomWorkerSkills, filteredSkillBrowserSkills, fleetClass, formatAgentEnvText, formatRelativeTime, generateKanbanTaskFromChat, handleChatFileChange, handleChatImageChange, hasStreamingChunk, hermesUpdateRequired, hermesUpdateRequiredDetail, importRemoteSkillToBrain, installGithubSkillToBrain, addWrittenSkillToBrain, lastAssistant, machineGroups, messagesEndRef, messagesScrollRef, openCustomWorkerClassCreator, openSkillBrowser, parseAgentEnvText, recentDirectories, recentDirectoriesExpanded, recording, refreshRuntimeIntegrations, removeChatAttachment, removeChatDirectory, roleModalAgent, runRuntimeIntegrationAction, runtimeBackgroundPrompt, runtimeCapabilities, runtimeIntegrationBusy, runtimeIntegrationMessage, runtimeIntegrationStatus, runtimeModelDraft, runtimeModelProviders, runtimeModelSetupMode, runtimeSessionQuery, runtimeSessionResults, runtimeSetupDefinition, runtimeSetupKey, runtimeUpdateConfirmKey, searchRuntimeSessionsForAgent, selectAgentWorkerClass, selectCustomWorkerClass, selectedAgent, selectedChatDirectory, selectedChatMachine, selectedRuntimeModel, selectedRuntimeModelId, selectedRuntimeModels, selectedRuntimeProvider, sendMessage, sessionNotice, setAeonEnvKeys, setAgentCreateDraft, setAgentRenameDraft, setAgentRenameEditing, setAgentRuntimeAdvancedOpen, setAgentRuntimeFolderEditing, setAgentRuntimeFolderStatus, setAgentSettingsPanel, setAgentWorkerClassView, setAttachmentMenuOpen, setChatContextMenu, setChatFolderDraft, setCustomWorkerDraft, setCustomWorkerSkillSearch, setExpandedChatFolders, setRecentDirectoriesExpanded, setRuntimeBackgroundPrompt, setRuntimeModelDraft, setRuntimeModelSetupMode, setRuntimeSessionQuery, setRuntimeSetupKey, setRuntimeUpdateConfirmKey, setSkillBrowserGithubOpen, setSkillBrowserGithubUrl, setSkillBrowserOpen, setSkillBrowserSearch, setSkillBrowserView, setSkillBrowserWrittenContent, setText, sharedVault, skillBrowserGithubInstalling, skillBrowserGithubOpen, skillBrowserGithubUrl, skillBrowserImporting, skillBrowserLoading, skillBrowserOpen, skillBrowserSearch, skillBrowserStatus, skillBrowserView, skillBrowserWrittenContent, skillBrowserWriting, skillRequiresHermesUpdate, startAgentChat, startAudioRecording, status, statusAgentId, stopAudioRecording, switchRuntime, syncAeonEnvToGitHub, text, toggleCustomWorkerSkill, updateAgent, updateAgentProfile, updateAgentRuntimeModel, updateAgentSkillProfile, updateChatAutoScroll, uploadCustomWorkerImage, vaultClass, visibleMessages, voiceBands, voiceTarget, voiceTranscript, workerCapabilityBadges }} />
 
       <DashboardModals {...{ Button, Check, ChevronLeft, Copy, CopyPlus, FileText, FolderOpen, HETZNER_IMAGE_OPTIONS, HETZNER_LOCATION_OPTIONS, HETZNER_SERVER_TYPE_OPTIONS, LoaderCircle, Plus, SetupCell, X, copyMachineInitCommand, copySetupCommand, displayAgents, duplicateAgent, duplicateAgentDraft, fleetClass, initializeMachineProject, kanbanClass, loadMachineDirectories, machineDirectoryBrowser, machineInitCopiedKey, machineInitDraft, machineInitOpen, machineInitStatus, machineInitToken, machineInitTokenStatus, openHetznerEnvFile, saveHetznerToken, selectedHetznerServerType, setDuplicateAgentDraft, setMachineDirectoryBrowser, setMachineInitDraft, setMachineInitOpen, setMachineInitToken, setMachineInitTokenStatus, setSetupMachineKey, setupCollectorCommand, setupCommandCopied, setupMachine }} />
       </div>

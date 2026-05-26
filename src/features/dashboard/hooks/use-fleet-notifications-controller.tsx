@@ -106,7 +106,7 @@ export function useFleetNotificationsController(props: any) {
     const needsEnvHttpSyncRepair = machineNeedsEnvHttpSyncRepair(machine);
     const needsSkillSyncRepair = machineNeedsSkillSyncRepair(machine);
     if ((needsChatBridgeRepair || needsEnvHttpSyncRepair || needsSkillSyncRepair) && localDashboardHasUnpublishedChanges(appVersion)) {
-      const missingFeature = needsSkillSyncRepair ? "shared skills collector" : needsEnvHttpSyncRepair ? "shared-env sync endpoint" : "Hermes chat bridge";
+      const missingFeature = needsSkillSyncRepair ? "shared skills bridge" : needsEnvHttpSyncRepair ? "shared-env sync endpoint" : "Hermes chat bridge";
       setUpdateStatusByMachine((current) => ({
         ...current,
         [machine.key]: {
@@ -122,7 +122,7 @@ export function useFleetNotificationsController(props: any) {
         ...current,
         [machine.key]: {
           label: "Already up to date",
-          detail: "This collector is already reporting the latest dashboard tools.",
+          detail: "This local agent bridge is already reporting the latest dashboard tools.",
           tone: "success",
         },
       }));
@@ -158,8 +158,8 @@ export function useFleetNotificationsController(props: any) {
     const verified = Boolean(data?.ok && data.verified);
     const detail = verified
       ? machine.self
-        ? "The local checkout update finished, dependencies were installed, and the local collector was restarted."
-        : "The update command finished. The machine pulled the latest changes, installed dependencies, and restarted the collector."
+        ? "The local checkout update finished, dependencies were installed, and the local agent bridge was restarted."
+        : "The update command finished. The machine pulled the latest changes, installed dependencies, and restarted the agent bridge."
       : [data?.error ?? "Update failed", data?.fallbackCommand ? `Fallback script:\n${data.fallbackCommand}` : ""].filter(Boolean).join("\n\n");
     setUpdateStatusByMachine((current) => ({
       ...current,

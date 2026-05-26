@@ -219,6 +219,14 @@ function slugToName(slug: string) {
     .join(" ");
 }
 
+function skillNameFromMarkdown(markdown: string) {
+  const frontmatter = parseFrontmatter(markdown);
+  const frontmatterName = frontmatter.get("name");
+  if (frontmatterName) return frontmatterName;
+  const heading = markdown.match(/^#\s+(.+)$/m)?.[1]?.trim();
+  return heading || "Written Skill";
+}
+
 function parseFrontmatter(markdown: string) {
   const match = markdown.match(/^---\n([\s\S]*?)\n---/);
   const fields = new Map<string, string>();
@@ -971,6 +979,37 @@ export async function importGitHubBrainSkill(input: {
     sourceRef: ref,
     sourcePath,
     importedAt: new Date().toISOString(),
+  }, null, 2), "utf8");
+
+  const after = await getBrainSkillInventory(input.vaultPath);
+  await writeSkillsReadme(after);
+  return after;
+}
+
+export async function writeBrainSkill(input: {
+  vaultPath?: string;
+  markdown: string;
+}): Promise<BrainSkillInventory> {
+  const markdown = input.markdown.trim();
+  if (!markdown) throw new Error("Write the skill content before adding it.");
+
+  const before = await getBrainSkillInventory(input.vaultPath);
+  await mkdir(before.skillsFolder, { recursive: true });
+
+  const sharedBySlug = new Map(before.shared.map((item) => [item.slug, item]));
+  const destinationSlug = await nextDestinationSlug(
+    before.skillsFolder,
+    sanitizeSlug(skillNameFromMarkdown(markdown)),
+    "shared",
+    sharedBySlug,
+  );
+  const destinationDir = join(before.skillsFolder, destinationSlug);
+  await mkdir(destinationDir, { recursive: true });
+  await writeFile(join(destinationDir, "SKILL.md"), `${markdown}\n`, "utf8");
+  await writeFile(join(destinationDir, SOURCE_METADATA_FILE), JSON.stringify({
+    provider: "written",
+    providerLabel: "Written skills",
+    writtenAt: new Date().toISOString(),
   }, null, 2), "utf8");
 
   const after = await getBrainSkillInventory(input.vaultPath);

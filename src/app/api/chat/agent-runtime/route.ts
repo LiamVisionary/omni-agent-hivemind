@@ -77,6 +77,12 @@ function recordRuntimeTelemetry(telemetry: RuntimeRouteTelemetry | undefined, ty
   });
 }
 
+function userFacingMachineName(profile: AgentProfile) {
+  const name = profile.machineName?.trim();
+  if (!name || /^this machine$/i.test(name)) return "This Mac";
+  return name;
+}
+
 function interactiveRuntimeLockKey(profile: AgentProfile, url: string) {
   if (profile.runtime !== "hermes" && profile.runtime !== "openai-compatible") return "";
   if ((profile.runtimeKind ?? "interactive") !== "interactive") return "";
@@ -330,7 +336,7 @@ function validateHttpRuntimeProfile(profile: AgentProfile): string | null {
   const gatewayUrl = profile.gatewayUrl?.trim();
   if (!gatewayUrl) {
     return profile.telemetryUrl
-      ? "This discovered agent is connected through the read-only telemetry collector. Add a runtime chat URL before sending messages."
+      ? "This discovered agent is connected through a local agent bridge. Add a runtime chat URL before sending messages."
       : "Missing runtime chat URL.";
   }
 
@@ -348,6 +354,9 @@ function validateHttpRuntimeProfile(profile: AgentProfile): string | null {
 
 function runtimeFetchError(profile: AgentProfile, url: string, error: unknown) {
   const reason = error instanceof Error ? error.message : "Runtime did not respond";
+  if (profile.runtime === "hermes" && profile.telemetryUrl?.trim() && /fetch failed/i.test(reason)) {
+    return `${profile.name || "This agent"} is connected through ${userFacingMachineName(profile)}, but the local agent bridge did not respond. Try again in a moment.`;
+  }
   if (error instanceof Error && error.name === "TimeoutError") {
     return `${profile.name || profile.runtime} accepted the chat connection at ${url}, but the delegated work did not produce a response before the dashboard timeout. The runtime may still be working; check the agent activity before retrying. (${reason})`;
   }
@@ -361,7 +370,7 @@ function runtimeStreamErrorMessage(profile: AgentProfile, error: unknown) {
   const reason = error instanceof Error ? error.message : "";
   const aborted = error instanceof Error && error.name === "AbortError";
   if (aborted || /^(terminated|aborted)$/i.test(reason)) {
-    return `Connection to ${profile.name || profile.runtime} closed before a final response arrived. The collector may have restarted or the stream was interrupted; retry the message.`;
+    return `Connection to ${profile.name || profile.runtime} closed before a final response arrived. The local agent bridge may have restarted or the stream was interrupted; retry the message.`;
   }
   return reason || "Runtime stream failed";
 }
@@ -493,7 +502,7 @@ async function streamHttpRuntime(
   if (!upstream.ok) {
     const errorText = await upstream.text().catch(() => "");
     const message = upstream.status === 404 && profile.runtime === "hermes" && profile.telemetryUrl
-      ? "This machine's collector is connected but does not have the Hermes chat bridge yet. Run Update/Setup on that machine, then try again."
+      ? "This machine's local agent bridge is connected but does not have the Hermes chat bridge yet. Run Update/Setup on that machine, then try again."
       : errorText || `${profile.runtime} returned ${upstream.status}`;
     recordRuntimeTelemetry(telemetry, "agent_runtime.http.upstream_error", {
       ...telemetryPayloadForProfile(profile),
@@ -899,7 +908,7 @@ export async function POST(request: NextRequest) {
         elapsedMs: Date.now() - routeStartedAt,
       });
       return Response.json({
-        error: `${profile.machineName || "This machine"} is connected, but its collector does not have the Hermes chat bridge installed yet. Run setup/update on that machine after these dashboard changes are available there.`,
+        error: `${userFacingMachineName(profile)} is connected, but its local agent bridge does not have the Hermes chat bridge installed yet. Run setup/update on that machine after these dashboard changes are available there.`,
       }, { status: 400 });
     }
     const effectiveProfile = collectorChatProfile(profile) ?? profile;

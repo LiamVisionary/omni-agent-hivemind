@@ -1373,7 +1373,10 @@ set_env_local() {
   local key="$1"
   local value="$2"
   local env_file="$ROOT/.env.local"
-  touch "$env_file"
+  [[ -f "$env_file" ]] || touch "$env_file"
+  if awk -v key="$key" -v value="$value" -F= '$1 == key && substr($0, length(key) + 2) == value { found=1 } END { exit found ? 0 : 1 }' "$env_file"; then
+    return 0
+  fi
   if grep -q "^${key}=" "$env_file"; then
     local tmp_file
     tmp_file="$(mktemp)"

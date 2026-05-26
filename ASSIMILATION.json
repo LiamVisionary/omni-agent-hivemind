@@ -813,6 +813,27 @@
       "target_path": "src/features/chat/chat-composer.tsx",
       "reuse_type": "adapted_code",
       "note": "Compact animated thinking-sprite role adapted to use HivemindOS' existing Honey bee Lottie asset beside the chat loading label"
+    },
+    {
+      "source_repo": "amy-juan-li/example-nextjs-markdown-editor",
+      "source_path": "pages/index.tsx",
+      "target_path": "src/features/dashboard/views/chat/SkillBrowserModal.tsx",
+      "reuse_type": "adapted_code",
+      "note": "markdown editor mode state/action layout adapted into the Skill Browser modal"
+    },
+    {
+      "source_repo": "amy-juan-li/example-nextjs-markdown-editor",
+      "source_path": "components/editor.tsx",
+      "target_path": "src/features/dashboard/views/chat/SkillBrowserModal.tsx",
+      "reuse_type": "adapted_code",
+      "note": "editor input contract adapted into the modal markdown textarea"
+    },
+    {
+      "source_repo": "amy-juan-li/example-nextjs-markdown-editor",
+      "source_path": "components/use-codemirror.tsx",
+      "target_path": "src/app/fleet.module.css",
+      "reuse_type": "adapted_code",
+      "note": "markdown editor focus and scrollable editing surface adapted into local CSS without adding CodeMirror dependency"
     }
   ]
 }

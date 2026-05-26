@@ -2,6 +2,7 @@ import type { AgentProfile, AgentRuntime, RuntimeCapabilities, SharedVaultConfig
 import type { AgentNotification, AgentNotificationSummary } from "@/lib/types/agent-notifications";
 import type { KanbanBoard, KanbanLinkedDirectory, KanbanMachineTarget, KanbanTask, KanbanTaskAttachment } from "@/lib/types/kanban";
 import type { GBrainStatus } from "@/lib/services/brain/gbrain";
+import type { TradingBrainStatus } from "@/lib/services/brain/trading-brain";
 
 export type GatewayStatus = {
   ok?: boolean;
@@ -193,6 +194,7 @@ export type StoredSharedVaultConfig = Partial<SharedVaultConfig> & {
 };
 
 export type DashboardGBrainStatus = GBrainStatus;
+export type DashboardTradingBrainStatus = TradingBrainStatus;
 
 export type ChatMessage = {
   role: "user" | "assistant" | "system";
@@ -861,7 +863,7 @@ export type MiroSharkSurfaceView = "x" | "reddit" | "polymarket" | "timeline";
 
 export type MiroSharkWorkspaceMode = "new" | "run";
 
-export type DashboardView = "agents" | "kanban" | "scheduler" | "swarm" | "history" | "wallet" | "vault" | "integrations" | "maintenance" | "files" | "notifications" | "chat" | "more" | "env";
+export type DashboardView = "agents" | "kanban" | "scheduler" | "swarm" | "history" | "wallet" | "vault" | "integrations" | "maintenance" | "memory" | "files" | "notifications" | "chat" | "more" | "env";
 
 export type WorkView = Extract<DashboardView, "kanban" | "scheduler" | "swarm" | "history">;
 

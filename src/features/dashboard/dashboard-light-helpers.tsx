@@ -1,4 +1,4 @@
-import { Activity, Bell, BrainCircuit, FolderOpen, KanbanSquare, KeyRound, Layers3, MessageSquare, Network, PlugZap, Repeat2, ShieldCheck, WalletCards } from "lucide-react";
+import { Activity, Bell, BrainCircuit, Cpu, FolderOpen, KanbanSquare, KeyRound, Layers3, MessageSquare, Network, PlugZap, Repeat2, ShieldCheck, WalletCards } from "lucide-react";
 
 import { beeRoleIconPath } from "@/lib/config/bee-role-icons";
 import { RUNTIME_LABELS, type AgentProfile, type BeeWorkerClass } from "@/lib/types/agent-runtime";
@@ -98,12 +98,12 @@ export function chatSetupIssue(agent: AgentProfile) {
     return agent.gatewayUrl.trim() ? "" : "Add the OpenClaw gateway URL before chatting.";
   }
   if (agent.runtime === "hermes" && agent.telemetryUrl?.trim() && agent.collectorCapabilities?.chat === false) {
-    return `${agent.machineName || "This machine"} is connected, but its collector does not have the Hermes chat bridge installed yet. Run setup/update on that machine after these dashboard changes are available there.`;
+    return `${agent.machineName || "This Mac"} is connected, but its local agent bridge does not have the Hermes chat bridge installed yet. Run setup/update on that machine after these dashboard changes are available there.`;
   }
   if (!agent.gatewayUrl.trim()) {
     if (agent.runtime === "hermes" && agent.telemetryUrl?.trim()) return "";
     return agent.telemetryUrl
-      ? "This agent was found through the read-only collector. Add its runtime chat URL in setup before sending messages."
+      ? "This agent was found through a local agent bridge. Add its runtime chat URL in setup before sending messages."
       : "Add the runtime chat URL before sending messages.";
   }
   return "";
@@ -321,6 +321,7 @@ export function viewIcon(view: DashboardView) {
   if (view === "vault") return <BrainCircuit aria-hidden="true" />;
   if (view === "integrations") return <PlugZap aria-hidden="true" />;
   if (view === "maintenance") return <ShieldCheck aria-hidden="true" />;
+  if (view === "memory") return <Cpu aria-hidden="true" />;
   if (view === "files") return <FolderOpen aria-hidden="true" />;
   if (view === "notifications") return <Bell aria-hidden="true" />;
   if (view === "more") return <Layers3 aria-hidden="true" />;

@@ -18,7 +18,7 @@ export async function POST(request: NextRequest) {
     const response = await fetch(url, { cache: "no-store", signal: AbortSignal.timeout(8_000) });
     const data = await response.json().catch(() => null);
     if (!response.ok || !data?.ok) {
-      return NextResponse.json({ ok: false, error: data?.error || `Collector returned ${response.status}` }, { status: response.ok ? 502 : response.status });
+      return NextResponse.json({ ok: false, error: data?.error || `Agent bridge returned ${response.status}` }, { status: response.ok ? 502 : response.status });
     }
     return NextResponse.json({ ok: true, session: data.session });
   } catch (error) {

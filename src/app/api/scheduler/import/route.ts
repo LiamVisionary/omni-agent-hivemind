@@ -52,7 +52,7 @@ async function importCollectorSchedules(baseUrl: string): Promise<{ schedules: R
   try {
     const response = await fetch(`${baseUrl}/schedules`, { cache: "no-store", signal: AbortSignal.timeout(5000) });
     const data = await response.json().catch(() => null) as { ok?: boolean; schedules?: RuntimeSchedule[]; error?: string } | null;
-    if (!response.ok || !data?.ok) return { schedules: [], errors: [data?.error ?? `${baseUrl} schedule collector unavailable`] };
+    if (!response.ok || !data?.ok) return { schedules: [], errors: [data?.error ?? `${baseUrl} schedule agent bridge unavailable`] };
     return { schedules: data.schedules ?? [], errors: [] };
   } catch (error) {
     return { schedules: [], errors: [error instanceof Error ? error.message : `${baseUrl} schedule import failed`] };

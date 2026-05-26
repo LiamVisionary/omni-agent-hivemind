@@ -12,6 +12,7 @@ const DASHBOARD_VIEWS = new Set<DashboardView>([
   "vault",
   "integrations",
   "maintenance",
+  "memory",
   "files",
   "notifications",
   "chat",

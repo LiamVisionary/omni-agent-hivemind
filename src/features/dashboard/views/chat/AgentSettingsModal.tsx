@@ -290,7 +290,7 @@ export function AgentSettingsModal(props: any) {
                       />
                     </label>
                     <label className={fleetClass("agentSettingsField")}>
-                      <span>Collector</span>
+                      <span>Agent bridge</span>
                       <input
                         value={roleModalAgent.telemetryUrl ?? ""}
                         onChange={(event) => updateAgentProfile(roleModalAgent.id, { telemetryUrl: event.target.value })}

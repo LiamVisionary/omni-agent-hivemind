@@ -123,16 +123,16 @@ async function setupNangoHostViaCollector(collectorUrl: string, config: NangoHos
     signal: AbortSignal.timeout(360_000),
     cache: "no-store",
   }).catch((error) => {
-    throw new Error(`Remote collector is not reachable: ${error instanceof Error ? error.message : String(error)}`);
+    throw new Error(`Remote agent bridge is not reachable: ${error instanceof Error ? error.message : String(error)}`);
   });
   const payload = await response.json().catch(() => null) as (NangoHostSetupResult & { error?: string }) | null;
   if (response.status === 404) {
-    throw new Error("That machine is reachable through the HivemindOS collector, but the collector does not have the Nango setup endpoint yet. Run the machine update once from Fleet, then try setup again.");
+    throw new Error("That machine is reachable through the HivemindOS agent bridge, but the agent bridge does not have the Nango setup endpoint yet. Run the machine update once from Fleet, then try setup again.");
   }
   if (!response.ok || payload?.ok === false) {
-    throw new Error(payload?.error ?? `Remote collector returned HTTP ${response.status}.`);
+    throw new Error(payload?.error ?? `Remote agent bridge returned HTTP ${response.status}.`);
   }
-  if (!payload) throw new Error("Remote collector returned an empty setup response.");
+  if (!payload) throw new Error("Remote agent bridge returned an empty setup response.");
   return {
     ...payload,
     method: "collector-api",

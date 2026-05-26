@@ -13,7 +13,7 @@ export async function POST(request: NextRequest) {
       agent?: Partial<AgentProfile>;
     } & Partial<AgentProfile>;
     const collectorUrl = body.collectorUrl?.trim().replace(/\/+$/, "");
-    if (!collectorUrl) throw new Error("collectorUrl is required.");
+    if (!collectorUrl) throw new Error("Agent bridge URL is required.");
     const agent = body.agent ?? body;
     const response = await fetch(`${collectorUrl}/agents`, {
       method: "POST",
@@ -28,10 +28,10 @@ export async function POST(request: NextRequest) {
       error?: string;
     };
     if (response.ok && data.ok !== false && !data.agent) {
-      throw new Error("That collector does not support runtime agent creation yet. Update the machine, then try again.");
+      throw new Error("That agent bridge does not support runtime agent creation yet. Update the machine, then try again.");
     }
     if (!response.ok || data.ok === false || !data.agent) {
-      throw new Error(data.error || `Collector returned HTTP ${response.status}.`);
+      throw new Error(data.error || `Agent bridge returned HTTP ${response.status}.`);
     }
     return NextResponse.json({ ok: true, agent: data.agent });
   } catch (error) {
@@ -53,7 +53,7 @@ export async function DELETE(request: NextRequest) {
       name?: string;
     };
     const collectorUrl = body.collectorUrl?.trim().replace(/\/+$/, "");
-    if (!collectorUrl) throw new Error("collectorUrl is required.");
+    if (!collectorUrl) throw new Error("Agent bridge URL is required.");
     const response = await fetch(`${collectorUrl}/agents`, {
       method: "DELETE",
       headers: { "Content-Type": "application/json" },
@@ -73,7 +73,7 @@ export async function DELETE(request: NextRequest) {
       error?: string;
     };
     if (!response.ok || data.ok === false) {
-      throw new Error(data.error || `Collector returned HTTP ${response.status}.`);
+      throw new Error(data.error || `Agent bridge returned HTTP ${response.status}.`);
     }
     return NextResponse.json({ ok: true, deleted: Boolean(data.deleted) });
   } catch (error) {

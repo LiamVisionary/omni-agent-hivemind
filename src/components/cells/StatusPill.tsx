@@ -27,7 +27,7 @@ import { cn } from "@/lib/utils/cn";
  *  - running             — agent is actively doing work
  *  - idle                — connected but not doing anything right now
  *  - blocked             — something needs attention to continue
- *  - collector-offline   — read-only collector can't be reached
+ *  - collector-offline   — local agent bridge can't be reached
  *  - needs-setup         — first-run / configuration step required
  *  - needs-funding       — wallet is low or empty
  *  - requires-approval   — money-moving action is waiting on the user
@@ -68,7 +68,7 @@ const STATUS_VISUALS: Record<StatusKind, StatusVisual> = {
   idle: { label: "Idle", icon: <Moon aria-hidden="true" />, tone: "neutral" },
   blocked: { label: "Blocked", icon: <PauseCircle aria-hidden="true" />, tone: "warning" },
   "collector-offline": {
-    label: "Collector offline",
+    label: "Agent bridge offline",
     icon: <CircleSlash aria-hidden="true" />,
     tone: "warning",
   },

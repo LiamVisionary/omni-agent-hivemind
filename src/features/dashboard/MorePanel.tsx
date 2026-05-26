@@ -1,11 +1,11 @@
-import { Bell, FolderOpen, KeyRound, PlugZap, ShieldCheck } from "lucide-react";
+import { Activity, Bell, FolderOpen, KeyRound, PlugZap, ShieldCheck } from "lucide-react";
 
 import fleetStyles from "@/app/fleet.module.css";
 import { createStyleClass } from "@/features/dashboard/style-classes";
 
 const fleetClass = createStyleClass(fleetStyles);
 
-type MorePanelTarget = "integrations" | "env" | "maintenance" | "files" | "notifications";
+type MorePanelTarget = "integrations" | "env" | "maintenance" | "files" | "notifications" | "memory";
 
 export type MorePanelProps = {
   sharedEnvCount: number;
@@ -14,6 +14,8 @@ export type MorePanelProps = {
   runtimeFileRootCount: number;
   notificationUnread: number;
   notificationTotal: number;
+  memoryRssMb?: number;
+  memoryGrowthMb?: number;
   onNavigate: (target: MorePanelTarget) => void;
 };
 
@@ -24,6 +26,8 @@ export function MorePanel({
   runtimeFileRootCount,
   notificationUnread,
   notificationTotal,
+  memoryRssMb,
+  memoryGrowthMb,
   onNavigate,
 }: MorePanelProps) {
   const items = [
@@ -47,6 +51,13 @@ export function MorePanel({
       eyebrow: maintenanceOk === false ? "Needs attention" : "Fleet checks",
       title: "Diagnostics",
       body: "Run dashboard and runtime health checks.",
+    },
+    {
+      id: "memory" as const,
+      icon: <Activity aria-hidden="true" />,
+      eyebrow: memoryRssMb ? `${Math.round(memoryRssMb)} MB RSS` : "RAM sampler",
+      title: "Memory",
+      body: memoryGrowthMb && memoryGrowthMb > 0 ? `Growing ${memoryGrowthMb.toFixed(1)} MB in the sample window.` : "Track process RSS growth and leak suspects.",
     },
     {
       id: "files" as const,
@@ -73,7 +84,7 @@ export function MorePanel({
           <p>Integrations, diagnostics, scoped files, and agent notifications live here so the main navigation stays focused.</p>
         </div>
       </div>
-      <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-5">
+      <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-6">
         {items.map((item) => (
           <button
             type="button"

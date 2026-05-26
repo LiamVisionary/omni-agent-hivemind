@@ -24,7 +24,7 @@ export function machineVersionCopy(machine: MachineGroup, latestCommit?: string)
       ? { label: "Local update ready", detail: "New dashboard tools available for this checkout", state: "stale" }
       : { label: "Update ready", detail: "New dashboard tools available", state: "stale" };
   }
-  return { label: "Refresh setup", detail: "Collector needs one update", state: "unknown" };
+  return { label: "Refresh setup", detail: "Agent bridge needs one update", state: "unknown" };
 }
 
 export function isCollectorAutoUpdateable(versionCopy: ReturnType<typeof machineVersionCopy>) {
@@ -73,7 +73,7 @@ export function machineNetworkIssue(machine: MachineGroup, tailscaleStatus: stri
     return {
       label: "Tailscale disconnected. Fix?",
       title: "Machine is offline in Tailscale",
-      detail: "This machine is known to the Tailnet but is not online, so HivemindOS cannot reach its collector or update it remotely.",
+      detail: "This machine is known to the Tailnet but is not online, so HivemindOS cannot reach its agent bridge or update it remotely.",
       commands: [
         "tailscale status",
         "sudo tailscale up",
@@ -85,9 +85,9 @@ export function machineNetworkIssue(machine: MachineGroup, tailscaleStatus: stri
   if (machine.collector !== "ready") {
     if (machine.self) {
       return {
-        label: "Collector not reachable. Fix?",
-        title: "Local HivemindOS collector is not reachable",
-        detail: "This dashboard cannot reach the collector on this Mac at localhost:8787. Start or reinstall the local collector, then refresh Fleet.",
+        label: "Agent bridge not reachable. Fix?",
+        title: "Local agent bridge is not reachable",
+        detail: "This dashboard cannot reach the local agent bridge on this Mac at localhost:8787. Start or reinstall the local agent bridge, then refresh Fleet.",
         commands: [
           "# On this Mac",
           "cd ~/hivemindos",
@@ -102,7 +102,7 @@ export function machineNetworkIssue(machine: MachineGroup, tailscaleStatus: stri
       return {
         label: "Tailnet unreachable. Fix?",
         title: "Tailnet peer is not reachable",
-        detail: "Tailscale lists this machine as online, but this dashboard has never completed a peer handshake with it. Restart or reconnect Tailscale on both Macs before reinstalling the collector.",
+        detail: "Tailscale lists this machine as online, but this dashboard has never completed a peer handshake with it. Restart or reconnect Tailscale on both Macs before reinstalling the agent bridge.",
         commands: [
           "# From this dashboard machine",
           `tailscale ping ${tailnetTarget}`,
@@ -121,9 +121,9 @@ export function machineNetworkIssue(machine: MachineGroup, tailscaleStatus: stri
     }
     const tailnetTarget = machine.dnsName || machine.ip || "<tailnet-ip>";
     return {
-      label: "Collector not reachable. Fix?",
-      title: "HivemindOS collector is not reachable",
-      detail: "Tailscale lists this machine, but this dashboard cannot reach its collector on port 8787. The collector may be healthy locally while macOS firewall, Tailscale Shields Up, or Tailnet reachability blocks inbound access from this dashboard.",
+      label: "Agent bridge not reachable. Fix?",
+      title: "Agent bridge is not reachable",
+      detail: "Tailscale lists this machine, but this dashboard cannot reach its agent bridge on port 8787. The agent bridge may be healthy locally while macOS firewall, Tailscale Shields Up, or Tailnet reachability blocks inbound access from this dashboard.",
       commands: [
         "# From this dashboard machine",
         `tailscale ping ${tailnetTarget}`,
@@ -150,7 +150,7 @@ export function machineNetworkIssue(machine: MachineGroup, tailscaleStatus: stri
     return {
       label: "Env sync not ready. Fix?",
       title: "Tailscale SSH / env sync is not ready",
-      detail: machine.envSync.error || "The collector is online, but it does not report a working hive-env-add command for env reconciliation.",
+      detail: machine.envSync.error || "The local agent bridge is online, but it does not report a working hive-env-add command for env reconciliation.",
       commands: [
         "cd ~/hivemindos",
         "./setup.sh",
@@ -184,9 +184,9 @@ export function localDashboardHasUnpublishedChanges(version?: AppVersion | null)
 }
 
 export function friendlyEmptyTitle(snapshot: AgentSnapshot | undefined, hasTelemetryUrl: boolean) {
-  if (!hasTelemetryUrl) return "Waiting for a collector";
+  if (!hasTelemetryUrl) return "Waiting for an agent bridge";
   if (snapshot?.summary?.startsWith("Configured data dir is not available")) return "Agent folder needs a path";
-  if (snapshot?.summary?.startsWith("Remote collector unavailable")) return "Machine is temporarily unreachable";
+  if (snapshot?.summary?.startsWith("Remote agent bridge unavailable")) return "Machine is temporarily unreachable";
   if (snapshot?.processRunning) return "Agent is running";
   return "Waiting for new work";
 }
@@ -313,7 +313,7 @@ export function machineVersionState(machine: MachineGroup, latestCommit?: string
   const version = machine.version;
   const commit = version?.commit;
   const target = latestCommit || version?.latestCommit;
-  if (!commit) return { state: "unknown", label: "Update collector", detail: "This machine has an older collector that does not report its version yet." };
+  if (!commit) return { state: "unknown", label: "Update agent bridge", detail: "This machine has an older local agent bridge that does not report its version yet." };
   if (target && commit !== target) return { state: "stale", label: "Update available", detail: `${version?.shortCommit ?? commit.slice(0, 7)} -> ${version?.latestShortCommit ?? target.slice(0, 7)}` };
   if (version?.dirty) return { state: "current", label: "Up to date", detail: `Running ${version.shortCommit ?? commit.slice(0, 7)} with local changes present.` };
   return { state: "current", label: "Up to date", detail: version?.shortCommit ?? commit.slice(0, 7) };

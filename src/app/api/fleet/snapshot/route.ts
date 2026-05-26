@@ -97,17 +97,17 @@ async function readRemoteSnapshot(agent: AgentWithLocal): Promise<AgentSnapshot 
         ok: false,
         runtimeReachable: false,
         processRunning: false,
-        summary: `Collector responded without a snapshot: ${baseUrl}`,
-        sources: ["remote collector"],
+        summary: `Agent bridge responded without a snapshot: ${baseUrl}`,
+        sources: ["remote agent bridge"],
         tasks: [],
         checkedAt: Date.now(),
-        error: "No snapshot in collector response",
+        error: "No snapshot in agent bridge response",
       };
     }
     return {
       ...snapshot,
       agentId: agent.id,
-      sources: [...new Set(["remote collector", ...snapshot.sources])],
+      sources: [...new Set(["remote agent bridge", ...snapshot.sources])],
     };
   } catch (error) {
     return {
@@ -115,11 +115,11 @@ async function readRemoteSnapshot(agent: AgentWithLocal): Promise<AgentSnapshot 
       ok: false,
       runtimeReachable: false,
       processRunning: false,
-      summary: `Remote collector unavailable: ${baseUrl}`,
-      sources: ["remote collector"],
+      summary: `Remote agent bridge unavailable: ${baseUrl}`,
+      sources: ["remote agent bridge"],
       tasks: [],
       checkedAt: Date.now(),
-      error: error instanceof Error ? error.message : "Could not reach remote collector",
+      error: error instanceof Error ? error.message : "Could not reach remote agent bridge",
     };
   }
 }

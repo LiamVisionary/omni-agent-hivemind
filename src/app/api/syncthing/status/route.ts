@@ -19,7 +19,7 @@ export async function GET(request: NextRequest) {
   } catch (error) {
     return Response.json({
       ok: false,
-      error: error instanceof Error ? error.message : "Could not reach collector Syncthing status.",
+      error: error instanceof Error ? error.message : "Could not reach agent bridge Syncthing status.",
     }, { status: 502 });
   }
 }

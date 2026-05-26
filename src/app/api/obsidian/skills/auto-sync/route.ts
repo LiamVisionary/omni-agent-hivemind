@@ -25,7 +25,7 @@ export async function POST(request: NextRequest) {
         signal: AbortSignal.timeout(12_000),
       }).catch((error) => ({ ok: false, error } as const));
       if ("error" in response) {
-        return { machineName: collector.machineName, ok: false, error: response.error instanceof Error ? response.error.message : "Collector unavailable." };
+        return { machineName: collector.machineName, ok: false, error: response.error instanceof Error ? response.error.message : "Agent bridge unavailable." };
       }
       const payload = await response.json().catch(() => null) as { ok?: boolean; error?: string } | null;
       return {

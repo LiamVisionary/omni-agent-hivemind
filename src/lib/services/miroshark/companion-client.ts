@@ -79,7 +79,7 @@ const SETUP_LOG_PATH = "/tmp/openclaw-miroshark-setup.log";
 const BOOTSTRAP_ENV_PATH = "/tmp/openclaw-miroshark.env";
 const SCREEN_SESSION_NAME = "miroshark-5101";
 const DEFAULT_MANAGED_PORT = "5101";
-const REQUIREMENTS_CACHE_MS = 10_000;
+const REQUIREMENTS_CACHE_MS = 120_000;
 const execFileAsync = promisify(execFile);
 let cachedRequirements: {
   key: string;

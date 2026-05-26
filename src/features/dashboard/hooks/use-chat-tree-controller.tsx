@@ -377,7 +377,7 @@ export function useChatTreeController(props: any) {
       return {
         key: machine.key,
         name: machine.name,
-        detail: machine.collector === "ready" ? `${machine.agents.length} available` : "Collector not ready",
+        detail: machine.collector === "ready" ? `${machine.agents.length} available` : "Agent bridge not ready",
         onStartChat: chatAgents.length > 0
           ? () => startAgentChat(chatAgents[0].id, {
             fresh: true,

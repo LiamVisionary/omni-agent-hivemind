@@ -96,14 +96,14 @@ function verificationError(body: UpdateBody, health: CollectorHealth | null) {
   if (body.expectedCommit?.trim() && health?.version?.commit !== body.expectedCommit.trim()) {
     const current = health?.version?.shortCommit || health?.version?.commit?.slice(0, 7) || "unknown";
     const expected = health?.version?.latestShortCommit || body.expectedCommit.trim().slice(0, 7);
-    return `The update started, but this collector still reports ${current} instead of ${expected}. It may still be building, or the remote update failed.`;
+    return `The update started, but this agent bridge still reports ${current} instead of ${expected}. It may still be building, or the remote update failed.`;
   }
-  if (body.requiredCapabilities?.chat && health?.capabilities?.chat !== true) return "The update command finished, but the collector still does not report the Hermes chat bridge.";
-  if (body.requiredCapabilities?.envHttpSync && health?.capabilities?.envHttpSync !== true) return "The update command finished, but the collector still does not report the shared-env sync endpoint.";
-  if (body.requiredCapabilities?.skillInventory && health?.capabilities?.skillInventory !== true) return "The update command finished, but the collector still does not report the skill inventory endpoint.";
-  if (body.requiredCapabilities?.skillAutoSync && health?.capabilities?.skillAutoSync !== true) return "The update command finished, but the collector still does not report skill auto-sync.";
+  if (body.requiredCapabilities?.chat && health?.capabilities?.chat !== true) return "The update command finished, but the agent bridge still does not report the Hermes chat bridge.";
+  if (body.requiredCapabilities?.envHttpSync && health?.capabilities?.envHttpSync !== true) return "The update command finished, but the agent bridge still does not report the shared-env sync endpoint.";
+  if (body.requiredCapabilities?.skillInventory && health?.capabilities?.skillInventory !== true) return "The update command finished, but the agent bridge still does not report the skill inventory endpoint.";
+  if (body.requiredCapabilities?.skillAutoSync && health?.capabilities?.skillAutoSync !== true) return "The update command finished, but the agent bridge still does not report skill auto-sync.";
   if (!body.expectedCommit?.trim()) return "The update request did not include or expose a target commit to verify.";
-  return "The update command finished, but collector verification did not pass.";
+  return "The update command finished, but agent bridge verification did not pass.";
 }
 
 async function waitForCollectorVerification(body: UpdateBody) {
@@ -125,7 +125,7 @@ async function waitForCollectorVerification(body: UpdateBody) {
 
 async function startCollectorUpdate(collectorUrl?: string) {
   const base = collectorBase(collectorUrl);
-  if (!base) throw new Error("No collector URL was provided.");
+  if (!base) throw new Error("No agent bridge URL was provided.");
   const response = await fetch(`${base}/update`, {
     method: "POST",
     signal: AbortSignal.timeout(8_000),
@@ -133,7 +133,7 @@ async function startCollectorUpdate(collectorUrl?: string) {
   });
   const payload = await response.json().catch(() => null);
   if (!response.ok || payload?.ok === false) {
-    throw new Error(payload?.error ?? `collector update returned HTTP ${response.status}`);
+    throw new Error(payload?.error ?? `agent bridge update returned HTTP ${response.status}`);
   }
   return payload ?? { ok: true, accepted: true };
 }

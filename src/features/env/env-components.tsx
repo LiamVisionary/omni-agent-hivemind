@@ -51,7 +51,7 @@ export function chatSeedMessagesForTask(task: AgentTask): ChatMessage[] {
       role: "system" as const,
       content: placeholderOnly
         ? `Resuming ${task.title || "previous chat"} from Hermes session metadata. The session id is available, but the dashboard could not display prior Hermes messages yet. Send the next message to continue this runtime session.`
-        : `Resuming ${task.title || "previous chat"} from recent collector metadata.`,
+        : `Resuming ${task.title || "previous chat"} from recent agent bridge metadata.`,
     },
     ...(placeholderOnly ? [] : [{ role: "assistant" as const, content: task.lastMessage }]),
   ];

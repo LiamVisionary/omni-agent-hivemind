@@ -7,7 +7,7 @@
 import { useCallback, useEffect, useMemo } from "react";
 
 export function useMirosharkBrainController(props: any) {
-  const { BRAIN_GRAPH_CLIENT_CACHE_MS, MIROSHARK_TEMPLATE_INPUTS, SWARM_LAUNCH_PRESETS, activeView, agents, appVersion, asRecord, brainGraph, brainGraphLoadedAtRef, brainGraphVaultPathRef, brainSkills, compactValue, composeMirosharkTemplateScenario, createDefaultAgentWallet, defaultMirosharkTemplateInputs, formatRelativeTime, getMiroSharkPosts, getMiroSharkRunStatus, getMiroSharkTemplates, hermesUpdateDetail, hermesUpdateRequiredDetail, honeyLedgerEnabled, isEmptyIntegrationPayload, isLoopbackCollector, isMiroSharkRunTerminal, isUnpublishedSimulationPayload, mirosharkAnalysisAgentId, mirosharkArchiveRuns, mirosharkExperimentEvent, mirosharkHandle, mirosharkMetadata, mirosharkPlatform, mirosharkRounds, mirosharkRun, mirosharkRunPending, mirosharkScenario, mirosharkSelectedTemplateId, mirosharkStat, mirosharkStatus, mirosharkTemplateInputs, mirosharkUserName, mirosharkWorkspaceMode, notificationCountRef, notificationCursorRef, numericRecordValue, payloadArray, payloadCount, payloadData, payloadPreview, selectedAgentId, selectedMirosharkRunId, setBrainGraph, setBrainGraphLoading, setBrainGraphStatus, setBrainSkillAeonSyncing, setBrainSkillImportProvider, setBrainSkillImportSuccess, setBrainSkills, setBrainSkillsLoading, setBrainSkillsStatus, setHermesUpdateRequiredDetail, setMachineDirectoryBrowser, setMirosharkActionPending, setMirosharkAnalysisPending, setMirosharkAnalysisResult, setMirosharkAnalysisStatus, setMirosharkArchiveLoading, setMirosharkArchiveRuns, setMirosharkArchiveStatus, setMirosharkExperimentPending, setMirosharkExperimentStatus, setMirosharkHelperPending, setMirosharkHelperStatus, setMirosharkMetadata, setMirosharkPlatform, setMirosharkRounds, setMirosharkRun, setMirosharkRunPending, setMirosharkScenario, setMirosharkSelectedTemplateId, setMirosharkStatus, setMirosharkTemplateInputs, setMirosharkWorkbenchTab, setMirosharkWorkspaceMode, setNotificationCursor, setNotificationSummary, setNotifications, setNotificationsLoading, setNotificationsStatus, setRecentDirectories, setSelectedBrainNodeId, setSelectedMirosharkRunId, setSkillBrowserGithubInstalling, setSkillBrowserGithubOpen, setSkillBrowserGithubUrl, setSkillBrowserImporting, setSkillBrowserLoading, setSkillBrowserOpen, setSkillBrowserSkills, setSkillBrowserStatus, sharedVault, skillBrowserGithubUrl, skillRequiresHermesUpdate, swarmEventItem, swarmMarketEventItem, swarmMarketFromItems, swarmMarketPriceEventItem, swarmRunState, swarmTemplateIdFromMirosharkTemplate, swarmTemplateIdFromSurface, walletsByAgent } = props;
+  const { BRAIN_GRAPH_CLIENT_CACHE_MS, MIROSHARK_TEMPLATE_INPUTS, SWARM_LAUNCH_PRESETS, activeView, agents, appVersion, asRecord, brainGraph, brainGraphLoadedAtRef, brainGraphVaultPathRef, brainSkills, compactValue, composeMirosharkTemplateScenario, createDefaultAgentWallet, defaultMirosharkTemplateInputs, formatRelativeTime, getMiroSharkPosts, getMiroSharkRunStatus, getMiroSharkTemplates, hermesUpdateDetail, hermesUpdateRequiredDetail, honeyLedgerEnabled, isEmptyIntegrationPayload, isLoopbackCollector, isMiroSharkRunTerminal, isUnpublishedSimulationPayload, mirosharkAnalysisAgentId, mirosharkArchiveRuns, mirosharkExperimentEvent, mirosharkHandle, mirosharkMetadata, mirosharkPlatform, mirosharkRounds, mirosharkRun, mirosharkRunPending, mirosharkScenario, mirosharkSelectedTemplateId, mirosharkStat, mirosharkStatus, mirosharkTemplateInputs, mirosharkUserName, mirosharkWorkspaceMode, notificationCountRef, notificationCursorRef, numericRecordValue, payloadArray, payloadCount, payloadData, payloadPreview, selectedAgentId, selectedMirosharkRunId, setBrainGraph, setBrainGraphLoading, setBrainGraphStatus, setBrainSkillAeonSyncing, setBrainSkillImportProvider, setBrainSkillImportSuccess, setBrainSkills, setBrainSkillsLoading, setBrainSkillsStatus, setHermesUpdateRequiredDetail, setMachineDirectoryBrowser, setMirosharkActionPending, setMirosharkAnalysisPending, setMirosharkAnalysisResult, setMirosharkAnalysisStatus, setMirosharkArchiveLoading, setMirosharkArchiveRuns, setMirosharkArchiveStatus, setMirosharkExperimentPending, setMirosharkExperimentStatus, setMirosharkHelperPending, setMirosharkHelperStatus, setMirosharkMetadata, setMirosharkPlatform, setMirosharkRounds, setMirosharkRun, setMirosharkRunPending, setMirosharkScenario, setMirosharkSelectedTemplateId, setMirosharkStatus, setMirosharkTemplateInputs, setMirosharkWorkbenchTab, setMirosharkWorkspaceMode, setNotificationCursor, setNotificationSummary, setNotifications, setNotificationsLoading, setNotificationsStatus, setRecentDirectories, setSelectedBrainNodeId, setSelectedMirosharkRunId, setSkillBrowserGithubInstalling, setSkillBrowserGithubOpen, setSkillBrowserGithubUrl, setSkillBrowserImporting, setSkillBrowserLoading, setSkillBrowserOpen, setSkillBrowserSearch, setSkillBrowserSkills, setSkillBrowserStatus, setSkillBrowserView, setSkillBrowserWriting, setSkillBrowserWrittenContent, sharedVault, skillBrowserGithubUrl, skillBrowserWrittenContent, skillRequiresHermesUpdate, swarmEventItem, swarmMarketEventItem, swarmMarketFromItems, swarmMarketPriceEventItem, swarmRunState, swarmTemplateIdFromMirosharkTemplate, swarmTemplateIdFromSurface, walletsByAgent } = props;
   const refreshMirosharkMetadata = useCallback(async () => {
     const response = await fetch("/api/miroshark/swarm?metadata=1", { cache: "no-store" }).catch(() => null);
     const data = await response?.json().catch(() => null) as MiroSharkMetadata | null;
@@ -16,11 +16,19 @@ export function useMirosharkBrainController(props: any) {
 
   useEffect(() => {
     if (activeView !== "swarm" || !mirosharkStatus?.ok) return;
+    let inFlight = false;
+    const refreshOnce = () => {
+      if (inFlight) return;
+      inFlight = true;
+      void refreshMirosharkMetadata().finally(() => {
+        inFlight = false;
+      });
+    };
     const kickoff = window.setTimeout(() => {
-      void refreshMirosharkMetadata();
+      refreshOnce();
     }, 0);
     const timer = window.setInterval(() => {
-      void refreshMirosharkMetadata();
+      refreshOnce();
     }, 20_000);
     return () => {
       window.clearTimeout(kickoff);
@@ -704,6 +712,61 @@ export function useMirosharkBrainController(props: any) {
     void refreshBrainSkills();
   }, [refreshBrainGraph, refreshBrainSkills, sharedVault.enabled, sharedVault.vaultPath, skillBrowserGithubUrl]);
 
+  const addWrittenSkillToBrain = useCallback(async () => {
+    const markdown = skillBrowserWrittenContent.trim();
+    if (!markdown) {
+      setSkillBrowserStatus("Write the skill content before adding it.");
+      return;
+    }
+    if (!sharedVault.enabled) {
+      setSkillBrowserStatus("Turn on the shared brain before adding written skills.");
+      return;
+    }
+
+    setSkillBrowserWriting(true);
+    setSkillBrowserStatus("");
+    const response = await fetch("/api/obsidian/skills", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        action: "write-skill",
+        vaultPath: sharedVault.vaultPath.trim() || undefined,
+        markdown,
+      }),
+    }).catch(() => null);
+    const data = await response?.json().catch(() => null) as BrainSkillInventory | { ok?: boolean; error?: string } | null;
+    setSkillBrowserWriting(false);
+    if (!response?.ok || !data?.ok) {
+      setSkillBrowserStatus(data?.error ?? "Could not add that written skill.");
+      return;
+    }
+
+    const inventory = data as BrainSkillInventory;
+    const sharedSkills: SkillBrowserSkill[] = (inventory.shared ?? []).map((skill) => ({
+      id: `shared-${skill.slug}`,
+      slug: skill.slug,
+      name: skill.name,
+      description: skill.description,
+      source: "Shared brain",
+      category: "Ready",
+      providerId: "shared" as const,
+      imported: true,
+      requiresHermesUpdate: skillRequiresHermesUpdate({ ...skill, providerId: "shared" as const, source: "Shared brain" }, Boolean(hermesUpdateRequiredDetail)),
+    }));
+    setBrainSkills(inventory);
+    setSkillBrowserSearch("");
+    setSkillBrowserSkills((current: SkillBrowserSkill[]) => {
+      const next = new Map(current.map((skill) => [skill.skillMdUrl || skill.githubUrl || skill.slug, skill]));
+      for (const skill of sharedSkills) next.set(skill.slug, skill);
+      return [...next.values()];
+    });
+    setSkillBrowserWrittenContent("");
+    setSkillBrowserView("browse");
+    setSkillBrowserStatus("Added written skill to the shared brain.");
+    void refreshBrainGraph();
+    void refreshBrainSkills();
+  }, [hermesUpdateRequiredDetail, refreshBrainGraph, refreshBrainSkills, setSkillBrowserSearch, setSkillBrowserSkills, setSkillBrowserView, setSkillBrowserWriting, setSkillBrowserWrittenContent, sharedVault.enabled, sharedVault.vaultPath, skillBrowserWrittenContent, skillRequiresHermesUpdate]);
+
   const refreshNotifications = useCallback(async (options: { append?: boolean } = {}) => {
     if (!sharedVault.enabled) {
       setNotifications([]);
@@ -1128,5 +1191,5 @@ export function useMirosharkBrainController(props: any) {
   const swarmStatusLabel = mirosharkStatus?.ok ? "connected" : mirosharkStatus?.install.running ? "starting" : "offline";
   const selectedSwarmRunId = selectedMirosharkRunId || currentSwarmRun?.id || (mirosharkWorkspaceMode === "new" ? "" : undefined);
 
-  return { refreshMirosharkMetadata, runMirosharkAction, startNewMirosharkSimulation, applyMirosharkTemplate, updateMirosharkTemplateInput, extractMirosharkHelperText, runMirosharkScenarioHelper, launchMirosharkSwarm, runMirosharkSwarm, runMirosharkExperiment, analyzeMirosharkRun, refreshMirosharkArchive, refreshBrainGraph, refreshRecentDirectories, recordRecentDirectory, loadMachineDirectories, chooseDirectoryForMachine, refreshHermesUpdateRequirement, refreshBrainSkills, importBrainSkills, syncBrainSkillsToAeon, openSkillBrowser, importRemoteSkillToBrain, installGithubSkillToBrain, refreshNotifications, loadMirosharkArchivedRun, refreshMirosharkRun, mirosharkRunStatus, mirosharkRunIsArchived, mirosharkRunnerStatus, mirosharkPosts, mirosharkFeedIsWaiting, mirosharkFeedIsLive, mirosharkObservedRound, mirosharkTotalRounds, mirosharkCurrentRound, mirosharkProgressPercent, mirosharkRunIsWorking, mirosharkDisplayStep, mirosharkDisplayStatus, mirosharkProgressLabel, mirosharkTemplates, allMirosharkTemplates, mirosharkSelectedTemplate, mirosharkSelectedTemplateFields, mirosharkMissingTemplateFields, mirosharkTelemetryCount, mirosharkActionCount, mirosharkMarketCount, mirosharkTimelineItems, mirosharkActionItems, mirosharkProfileItems, mirosharkMarketItems, mirosharkObservabilityItems, mirosharkLlmCallItems, swarmTemplates, swarmTimelineItems, swarmObservabilityItems, swarmAgents, swarmDecisions, swarmThreadPosts, swarmSocialPosts, mirosharkMarketPricePayloads, swarmMarket, swarmIntegrationItems, swarmMarketPriceItems, swarmExportLinks, currentSwarmRun, swarmRuns, swarmStatusLabel, selectedSwarmRunId };
+  return { refreshMirosharkMetadata, runMirosharkAction, startNewMirosharkSimulation, applyMirosharkTemplate, updateMirosharkTemplateInput, extractMirosharkHelperText, runMirosharkScenarioHelper, launchMirosharkSwarm, runMirosharkSwarm, runMirosharkExperiment, analyzeMirosharkRun, refreshMirosharkArchive, refreshBrainGraph, refreshRecentDirectories, recordRecentDirectory, loadMachineDirectories, chooseDirectoryForMachine, refreshHermesUpdateRequirement, refreshBrainSkills, importBrainSkills, syncBrainSkillsToAeon, openSkillBrowser, importRemoteSkillToBrain, installGithubSkillToBrain, addWrittenSkillToBrain, refreshNotifications, loadMirosharkArchivedRun, refreshMirosharkRun, mirosharkRunStatus, mirosharkRunIsArchived, mirosharkRunnerStatus, mirosharkPosts, mirosharkFeedIsWaiting, mirosharkFeedIsLive, mirosharkObservedRound, mirosharkTotalRounds, mirosharkCurrentRound, mirosharkProgressPercent, mirosharkRunIsWorking, mirosharkDisplayStep, mirosharkDisplayStatus, mirosharkProgressLabel, mirosharkTemplates, allMirosharkTemplates, mirosharkSelectedTemplate, mirosharkSelectedTemplateFields, mirosharkMissingTemplateFields, mirosharkTelemetryCount, mirosharkActionCount, mirosharkMarketCount, mirosharkTimelineItems, mirosharkActionItems, mirosharkProfileItems, mirosharkMarketItems, mirosharkObservabilityItems, mirosharkLlmCallItems, swarmTemplates, swarmTimelineItems, swarmObservabilityItems, swarmAgents, swarmDecisions, swarmThreadPosts, swarmSocialPosts, mirosharkMarketPricePayloads, swarmMarket, swarmIntegrationItems, swarmMarketPriceItems, swarmExportLinks, currentSwarmRun, swarmRuns, swarmStatusLabel, selectedSwarmRunId };
 }
