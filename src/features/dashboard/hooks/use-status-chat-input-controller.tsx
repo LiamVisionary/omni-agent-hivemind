@@ -389,7 +389,7 @@ export function useStatusChatInputController(props: any) {
       const machine = selectedAgent
         ? machineGroups.find((group) => group.agents.some((agent) => agent.id === selectedAgent.id))
         : null;
-      const target = machine ? { key: machine.key, name: machine.self ? "This Mac" : machine.name, collectorUrl: machine.collectorUrl } : localKanbanMachineTarget;
+      const target = machine ? { key: machine.key, name: machine.name, collectorUrl: machine.collectorUrl } : localKanbanMachineTarget;
       await chooseDirectoryForMachine(target, (directory) => {
         setChatDirectories((current) => [...current, directory]);
         setAttachmentError("");
@@ -521,7 +521,7 @@ export function useStatusChatInputController(props: any) {
         ? machineGroups.find((group) => group.agents.some((agent) => agent.id === selectedKanbanAgent.id))
         : null;
       const target = selectedKanbanTask?.targetMachine
-        ?? (agentMachine ? { key: agentMachine.key, name: agentMachine.self ? "This Mac" : agentMachine.name, collectorUrl: agentMachine.collectorUrl } : localKanbanMachineTarget);
+        ?? (agentMachine ? { key: agentMachine.key, name: agentMachine.name, collectorUrl: agentMachine.collectorUrl } : localKanbanMachineTarget);
       await chooseDirectoryForMachine(target, (directory) => {
         setKanbanSteerDirectories((current) => [...current, directory]);
         setKanbanSteerAttachmentError("");

@@ -239,6 +239,15 @@ export function useDashboardDerivedState(props: any) {
     chatAutoScrollRef.current = element.scrollHeight - element.scrollTop - element.clientHeight < 180;
   }, []);
 
+  const mobileDashboardViewer = useMemo(() => {
+    if (!hydrated || typeof navigator === "undefined") return false;
+    return /Android|iPhone|iPad|iPod|Mobile|CriOS|FxiOS/i.test(navigator.userAgent);
+  }, [hydrated]);
+
+  const dashboardHostName = useCallback((name: string, self?: boolean, os?: string) => (
+    displayMachineName(name, self, { os, mobileViewer: mobileDashboardViewer })
+  ), [displayMachineName, mobileDashboardViewer]);
+
   const machineGroups = useMemo<MachineGroup[]>(() => {
     const discoveryByKey = new Map(discoveredMachines.map((machine) => [collectorKey(machine.device.collectorUrl), machine]));
     const selfDevice = tailscaleDevices.find((device) => device.self);
@@ -246,7 +255,7 @@ export function useDashboardDerivedState(props: any) {
       const discovered = discoveryByKey.get(collectorKey(device.collectorUrl));
       return {
       key: collectorKey(device.collectorUrl) || device.name,
-      name: displayMachineName(device.name, device.self),
+      name: dashboardHostName(device.name, device.self, device.os),
       address: device.ip || device.dnsName,
       collectorUrl: device.collectorUrl,
       dnsName: device.dnsName,
@@ -280,7 +289,7 @@ export function useDashboardDerivedState(props: any) {
       }
       groups.push({
         key,
-        name: displayMachineName(machine.device.name, machine.device.self),
+        name: dashboardHostName(machine.device.name, machine.device.self, machine.device.os),
         address: machine.device.ip || machine.device.dnsName || "Local agent bridge",
         collectorUrl: machine.device.collectorUrl,
         dnsName: machine.device.dnsName,
@@ -360,7 +369,7 @@ export function useDashboardDerivedState(props: any) {
         ...machine,
         name: machineNameAliases[machine.key]?.trim() || machine.name,
       }));
-  }, [displayAgents, discoveredMachines, machineNameAliases, tailscaleDevices]);
+  }, [dashboardHostName, displayAgents, discoveredMachines, machineNameAliases, tailscaleDevices]);
 
   const renameMachine = useCallback((machineId: string, nextName: string) => {
     const normalized = nextName.trim();
@@ -390,12 +399,12 @@ export function useDashboardDerivedState(props: any) {
     .filter((machine) => machine.key !== "unassigned" && machine.collector === "ready" && machine.agents.length > 0)
     .map((machine) => ({
       key: machine.key,
-      name: machine.self ? "This Mac" : machine.name,
+      name: dashboardHostName(machine.name, machine.self, machine.os),
       collectorUrl: machine.collectorUrl,
-    })), [machineGroups]);
+    })), [dashboardHostName, machineGroups]);
 
   const localKanbanMachineTarget = useMemo(
-    () => kanbanMachineTargets.find((machine) => machine.name === "This Mac" || isLoopbackCollector(machine.collectorUrl)) ?? null,
+    () => kanbanMachineTargets.find((machine) => isLoopbackCollector(machine.collectorUrl)) ?? null,
     [kanbanMachineTargets],
   );
 
@@ -434,7 +443,7 @@ export function useDashboardDerivedState(props: any) {
       );
       return {
         id: machine.key,
-        name: machine.self ? "This Mac" : machine.name,
+        name: dashboardHostName(machine.name, machine.self, machine.os),
         kind: mobile ? "Mobile" : machine.self ? "Desktop" : machine.collector === "ready" ? "Tailnet Node" : "Setup Target",
         role: mobile ? "Roaming" : machine.self ? "Primary" : machine.collector === "ready" ? "Workhorse" : "Pending",
         os: mobile ? machine.os ?? "Mobile" : machine.version?.branch ? `${machine.version.branch} · ${machine.version.shortCommit ?? "local"}` : machine.collector === "ready" ? "Agent bridge online" : "Agent bridge pending",
@@ -578,7 +587,7 @@ export function useDashboardDerivedState(props: any) {
       edges,
       ticker: ticker.length ? ticker : ["Fleet telemetry is connected · waiting for agent activity"],
     };
-  }, [agentWorkById, displayAgents, fleetSnapshots, machineGroups, notifications, tailscaleStatus, walletsByAgent]);
+  }, [agentWorkById, dashboardHostName, displayAgents, fleetSnapshots, machineGroups, notifications, tailscaleStatus, walletsByAgent]);
 
   const fleetUpdateStatusByMachine = useMemo<Record<string, "updating" | "updated" | "failed">>(() => {
     return Object.fromEntries(Object.entries(updateStatusByMachine).map(([key, status]) => [

@@ -157,7 +157,7 @@ export function useChatTreeController(props: any) {
     if (!agent) return;
     void chooseDirectoryForMachine?.({
       key: machine.key,
-      name: machine.self ? "This Mac" : machine.name,
+      name: machine.name,
       collectorUrl: machine.collectorUrl,
     }, (directory) => {
       const path = directory.path?.trim();

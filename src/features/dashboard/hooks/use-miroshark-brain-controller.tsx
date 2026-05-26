@@ -428,8 +428,7 @@ export function useMirosharkBrainController(props: any) {
     onChoose: (directory: LinkedDirectory) => void,
   ) {
     if (!machine) return;
-    const isLocalMachine = machine.name === "This Mac"
-      || isLoopbackCollector(machine.collectorUrl)
+    const isLocalMachine = isLoopbackCollector(machine.collectorUrl)
       || (false);
     if (isLocalMachine) {
       const response = await fetch("/api/agents/browse-folder", {

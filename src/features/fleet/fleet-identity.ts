@@ -83,8 +83,23 @@ export function isLocalLinkDuplicateOfSelf(self: FleetMachineIdentity | undefine
   return Boolean(physicalSelfBase && physicalSelfBase === deviceBase);
 }
 
-export function displayMachineName(name: string, self?: boolean) {
-  if (self) return "This Mac";
+export function displayMachineName(
+  name: string,
+  self?: boolean,
+  options?: { os?: string; mobileViewer?: boolean },
+) {
+  if (self) {
+    const os = options?.os?.toLowerCase() ?? "";
+    const localLabel = os === "windows" || os === "win32"
+      ? "This PC"
+      : os === "linux"
+        ? "This computer"
+        : "This Mac";
+    if (!options?.mobileViewer) return localLabel;
+    if (localLabel === "This PC") return "Dashboard PC";
+    if (localLabel === "This computer") return "Dashboard computer";
+    return "Dashboard Mac";
+  }
   return name.replace(/^hivemindos[-_]?/i, "") || name;
 }
 

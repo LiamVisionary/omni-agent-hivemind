@@ -3,6 +3,14 @@
 This file records user-visible changes before they are committed. New work should
 be added here first, then marked `Committed` or `Pushed` after the git action.
 
+## 2026-05-26 07:08:53 EDT - Clarify Dashboard Host Labels On Mobile
+
+- Status: Committed
+- Areas changed: Fleet machine identity helpers, dashboard derived machine labels, setup modal and machine-target copy, changelog
+- Summary: Keep `self` semantics as the dashboard host while making the visible local-machine label OS-aware for desktop (`This Mac`, `This PC`, or `This computer`) and mobile-aware for remote mobile viewing (`Dashboard Mac`, `Dashboard PC`, or `Dashboard computer`). Reuse the derived machine name in setup/directory target flows instead of hardcoded `This Mac` checks.
+- Verification: `npm exec --yes --package pnpm@8.6.12 -- pnpm exec tsc --noEmit --pretty false --skipLibCheck`; `git diff --check -- CHANGELOG.md src/features/fleet/fleet-identity.ts src/features/dashboard/hooks/use-dashboard-derived-state.tsx src/features/dashboard/views/DashboardModals.tsx src/features/dashboard/hooks/use-chat-tree-controller.tsx src/features/dashboard/hooks/use-miroshark-brain-controller.tsx src/features/dashboard/hooks/use-status-chat-input-controller.tsx`; temporary dashboard on port 5021 kept `/api/fleet/discover` self collector ready at `http://127.0.0.1:8792`; browser smoke loaded the Fleet route without console errors.
+- Intended commit message: `Clarify dashboard host labels on mobile`
+
 ## 2026-05-26 07:01:36 EDT - Read Persisted Collector Port In Fleet APIs
 
 - Status: Committed

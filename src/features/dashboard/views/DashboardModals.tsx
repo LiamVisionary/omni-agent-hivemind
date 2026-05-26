@@ -355,7 +355,7 @@ export function DashboardModals(props: DashboardModalsProps) {
             <div className={fleetClass("setupModalHeader")}>
               <div>
                 <p className="eyebrow">Connect machine</p>
-                <h2 id="setup-modal-title">{setupMachine.self ? "This Mac" : setupMachine.name}</h2>
+                <h2 id="setup-modal-title">{setupMachine.name}</h2>
                 <p>Use this when you are physically on the computer you want to add.</p>
               </div>
               <CloseIconButton aria-label="Close setup instructions" onClick={() => setSetupMachineKey("")} />
@@ -413,7 +413,7 @@ export function DashboardModals(props: DashboardModalsProps) {
                       Tailscale is optional. Install and sign in only if you want multi-machine collaboration and shared memory; without it, setup continues in local-only mode.
                     </p>
                     <p>
-                      Open Terminal on <strong className="text-[var(--foreground)]">{setupMachine?.self ? "this Mac" : setupMachine?.name}</strong>, paste this command, then press Return:
+                      Open Terminal on <strong className="text-[var(--foreground)]">{setupMachine?.name}</strong>, paste this command, then press Return:
                     </p>
                     <pre className="overflow-auto rounded-md border border-[rgba(148,163,184,0.18)] bg-[rgba(10,14,21,0.7)] p-3 text-[0.78rem] text-[var(--foreground)]">{setupCollectorCommand()}</pre>
                     <p className="text-[var(--muted)]">
