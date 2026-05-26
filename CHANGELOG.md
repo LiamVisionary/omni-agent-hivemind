@@ -3,6 +3,14 @@
 This file records user-visible changes before they are committed. New work should
 be added here first, then marked `Committed` or `Pushed` after the git action.
 
+## 2026-05-26 08:01:41 EDT - Restore Cross-Mac Link Discovery
+
+- Status: Pushed
+- Areas changed: Fleet discovery duplicate detection, dashboard machine merge identity, changelog
+- Summary: Revert unsafe host-only machine identity so two Macs that report the same macOS local hostname do not collapse into one Fleet card. Keep collector host metadata for display/debugging, but use Link/Tailscale device identity for discovery and client merge keys so a remote dashboard can still see this Mac.
+- Verification: `npm exec --yes --package pnpm@8.6.12 -- pnpm exec tsc --noEmit --pretty false --skipLibCheck`; live `/api/fleet/discover` on port 5020 lists `This Mac` at `100.84.93.114`, the other reachable `hivemindos-liams-macbook-pro-local-1` Link node at `100.116.251.116`, and the Linux node, proving same-hostname Macs are not collapsed.
+- Intended commit message: `Restore cross-Mac Link discovery`
+
 ## 2026-05-26 07:54:24 EDT - Collapse Duplicate Hivemind Machine Reports
 
 - Status: Pushed

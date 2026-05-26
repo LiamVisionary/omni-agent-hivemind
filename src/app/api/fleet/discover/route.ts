@@ -244,17 +244,6 @@ function dedupeDevices(devices: Device[]) {
   return [...byIdentity.values()].filter((device) => isHivemindLinkDevice(device) || isMacDevice(device));
 }
 
-function normalizeCollectorHost(value?: string) {
-  return normalizeName(value?.replace(/\.local$/i, ""));
-}
-
-function machinePhysicalIdentity(machine: { device: Device; collector: string; collectorHost?: string }) {
-  const collectorHost = machine.collector === "ready" ? normalizeCollectorHost(machine.collectorHost) : "";
-  if (collectorHost) return `host:${collectorHost}`;
-  const physicalBase = physicalMachineBase(machine.device);
-  return physicalBase ? `physical:${physicalBase}` : deviceIdentityKey(machine.device);
-}
-
 function linkCollectorUrl(ip: string) {
   return `${hivemindLinkControlUrl()}/peer/${encodeURIComponent(`${ip}:8787`)}`;
 }
@@ -526,7 +515,6 @@ export async function GET(request: Request) {
 function machineScore(machine: {
   device: Device;
   collector: string;
-  collectorHost?: string;
   agents: AgentProfile[];
   version?: CollectorVersion;
 }) {
@@ -537,10 +525,10 @@ function machineScore(machine: {
     + deviceFreshnessScore(machine.device);
 }
 
-function dedupeMachines<T extends { device: Device; collector: string; collectorHost?: string; agents: AgentProfile[]; version?: CollectorVersion }>(machines: T[]) {
+function dedupeMachines<T extends { device: Device; collector: string; agents: AgentProfile[]; version?: CollectorVersion }>(machines: T[]) {
   const byIdentity = new Map<string, T>();
   for (const machine of machines) {
-    const key = machinePhysicalIdentity(machine);
+    const key = deviceIdentityKey(machine.device);
     const previous = byIdentity.get(key);
     if (!previous) {
       byIdentity.set(key, machine);
