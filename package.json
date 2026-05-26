@@ -21,6 +21,7 @@
     "test:e2e:dashboard-smoke": "node scripts/e2e-real-fleet.mjs --suite=smoke",
     "test:honey-economics": "node scripts/simulate-honey-economics.mjs",
     "test:gbrain-foundation": "node scripts/test-gbrain-foundation.mjs",
+    "test:hive-transfer": "node scripts/test-hive-transfer.mjs",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

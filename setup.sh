@@ -938,7 +938,7 @@ install_hive_env_add() {
   local bin_dir="${HOME}/.local/bin"
   local command_name command_path script_path
   mkdir -p "$bin_dir"
-  for command_name in hive-env-add hive-env-run hive-env-check; do
+  for command_name in hive-env-add hive-env-run hive-env-check hive-transfer; do
     command_path="$bin_dir/$command_name"
     script_path="$ROOT/scripts/$command_name"
     chmod +x "$script_path"
@@ -978,7 +978,7 @@ EOF
   done
   case ":$PATH:" in
     *":$bin_dir:"*) ;;
-    *) warn "Add $bin_dir to PATH to run hive-env-add, hive-env-run, and hive-env-check from any folder" ;;
+    *) warn "Add $bin_dir to PATH to run hive-env-add, hive-env-run, hive-env-check, and hive-transfer from any folder" ;;
   esac
 }
 install_pnpm_if_missing() {

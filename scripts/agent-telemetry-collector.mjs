@@ -9,6 +9,8 @@ import { basename, delimiter, dirname, join, relative, resolve, sep } from "node
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 
+import { acknowledgeTransfer, createTransfer, listTransfers } from "./hive-transfer.mjs";
+
 const execFileAsync = promisify(execFile);
 const port = Number(process.env.AGENT_TELEMETRY_PORT || 8787);
 const host = process.env.AGENT_TELEMETRY_HOST || "0.0.0.0";
@@ -908,6 +910,10 @@ async function configureSyncthingFolder(input) {
     body: JSON.stringify({ folder: folderId }),
     timeoutMs: 8_000,
   }).catch(() => null);
+  const restartRequested = await syncthingFetch("/rest/system/restart", {
+    method: "POST",
+    timeoutMs: 5_000,
+  }).then(() => true).catch(() => false);
 
   return {
     ok: true,
@@ -917,6 +923,7 @@ async function configureSyncthingFolder(input) {
     label: folder.label,
     path: folder.path,
     peerDeviceID,
+    restartRequested,
   };
 }
 
@@ -2472,6 +2479,7 @@ createServer(async (request, response) => {
         runtimeAgentCreation: true,
         skillInventory: true,
         skillAutoSync: true,
+        fileTransfers: true,
         syncthing: syncthing.installed,
         defaultSyncPath,
       },
@@ -2697,6 +2705,76 @@ createServer(async (request, response) => {
     const agents = await localAgents();
     const schedules = (await Promise.all(agents.map((agent) => scanRuntimeSchedules(agent, agent.localDataDir)))).flat();
     jsonResponse(response, 200, { ok: true, host: hostname(), schedules });
+    return;
+  }
+  if (pathname === "/transfers" && request.method === "GET") {
+    try {
+      const transfers = await listTransfers({
+        syncPath: requestUrl.searchParams.get("syncPath") || defaultSyncPath,
+        machineId: requestUrl.searchParams.get("machineId") || await stableMachineId(),
+        host: requestUrl.searchParams.get("host") || hostname(),
+        runtime: requestUrl.searchParams.get("runtime") || "",
+        agentId: requestUrl.searchParams.get("agentId") || requestUrl.searchParams.get("agent") || "",
+        includeAcknowledged: requestUrl.searchParams.get("includeAcknowledged") === "true" || requestUrl.searchParams.get("all") === "true",
+      });
+      jsonResponse(response, 200, { ok: true, host: hostname(), machineId: await stableMachineId(), transfers });
+    } catch (error) {
+      jsonResponse(response, 400, {
+        ok: false,
+        error: error instanceof Error ? error.message : "Could not list file transfers.",
+      });
+    }
+    return;
+  }
+  if (pathname === "/transfers" && request.method === "POST") {
+    try {
+      const rawBody = await readBody(request);
+      const body = rawBody ? JSON.parse(rawBody) : {};
+      const transfer = await createTransfer({
+        syncPath: body.syncPath || defaultSyncPath,
+        file: body.file,
+        files: body.files,
+        note: body.note,
+        from: {
+          machineId: body.from?.machineId || await stableMachineId(),
+          host: body.from?.host || hostname(),
+          runtime: body.from?.runtime,
+          agentId: body.from?.agentId || body.from?.agent,
+        },
+        to: {
+          machineId: body.to?.machineId,
+          host: body.to?.host,
+          runtime: body.to?.runtime,
+          agentId: body.to?.agentId || body.to?.agent,
+        },
+      });
+      jsonResponse(response, 200, { ok: true, host: hostname(), machineId: await stableMachineId(), transfer });
+    } catch (error) {
+      jsonResponse(response, 400, {
+        ok: false,
+        error: error instanceof Error ? error.message : "Could not create file transfer.",
+      });
+    }
+    return;
+  }
+  if (pathname === "/transfers/ack" && request.method === "POST") {
+    try {
+      const rawBody = await readBody(request);
+      const body = rawBody ? JSON.parse(rawBody) : {};
+      const result = await acknowledgeTransfer({
+        syncPath: body.syncPath || defaultSyncPath,
+        id: body.id,
+        machineId: body.machineId || await stableMachineId(),
+        runtime: body.runtime || "",
+        agentId: body.agentId || body.agent || "",
+      });
+      jsonResponse(response, 200, { host: hostname(), machineId: await stableMachineId(), ...result });
+    } catch (error) {
+      jsonResponse(response, 400, {
+        ok: false,
+        error: error instanceof Error ? error.message : "Could not acknowledge file transfer.",
+      });
+    }
     return;
   }
   if (pathname === "/syncthing/status") {

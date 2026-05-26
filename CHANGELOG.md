@@ -3,6 +3,14 @@
 This file records user-visible changes before they are committed. New work should
 be added here first, then marked `Committed` or `Pushed` after the git action.
 
+## 2026-05-26 17:27:26 UTC - Add Targeted Hive File Transfers
+
+- Status: Pending
+- Areas changed: Transfer helper scripts, telemetry collector transfer endpoints, Syncthing configure behavior, setup/uninstall scripts, docs, package scripts, changelog
+- Summary: Add a vault-backed `hive-transfer` helper that creates targeted transfer envelopes under `.hivemindos-transfers`, copies payloads with media type/size/SHA-256 metadata, filters inboxes by machine/runtime/agent, and records receiver acknowledgements. Expose the same inbox/create/ack semantics through collector `/transfers` endpoints and advertise `fileTransfers` in `/health`. Install the helper beside the shared hive env commands, document receiver polling/ack flow, and request a Syncthing restart after folder configure so peer sharing changes take effect.
+- Verification: `npm run test:hive-transfer`; `node --check scripts/hive-transfer.mjs`; `node --check scripts/agent-telemetry-collector.mjs`; `bash -n setup.sh uninstall.sh scripts/hive-transfer`; `git diff --check -- docs/syncing-and-tailscale.md package.json scripts/agent-telemetry-collector.mjs scripts/hive-transfer scripts/hive-transfer.mjs scripts/test-hive-transfer.mjs setup.ps1 setup.sh uninstall.ps1 uninstall.sh`; `npm run typecheck -- --pretty false --skipLibCheck`; local CLI+HTTP smoke created a transfer for `hivemind-machine-08bf834423b5883edc65c753262afae2`/`hermes`/`receiver-test`, confirmed wrong-agent filtering, confirmed `/transfers` visibility, acknowledged through `/transfers/ack`, and confirmed the inbox cleared. Mac collector is reachable but still running the old build until this commit is pulled there; live Mac→Ubuntu Syncthing test remains blocked by the Mac peer reporting `notSharing` for `hivemindos-vault` until the updated collector restarts/reconfigures Syncthing on the Mac.
+- Intended commit message: `Add targeted hive file transfers`
+
 ## 2026-05-26 11:07:59 EDT - Add Stable Machine IDs For Fleet Discovery
 
 - Status: Pushed

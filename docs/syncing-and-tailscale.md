@@ -182,9 +182,12 @@ Tailnet. Important endpoints include:
 - `/syncthing/status`
 - `/syncthing/configure`
 - `/syncthing/test-note`
+- `/transfers` (`GET` inbox, `POST` create)
+- `/transfers/ack` (`POST` acknowledge)
 
 The dashboard uses these endpoints for read-only fleet status, runtime
-capability detection, Syncthing pairing, and setup-time sync verification.
+capability detection, Syncthing pairing, setup-time sync verification, and
+file-transfer inbox checks.
 
 ## Syncthing Over Tailscale
 
@@ -200,6 +203,66 @@ Syncthing can also fall back to `dynamic` discovery if available. The important
 point is that HivemindOS does not implement a realtime file sync engine; it
 coordinates Syncthing setup and lets Syncthing own the continuous replication
 loop.
+
+## Targeted File Transfers
+
+For agent-to-agent files and images, use the vault-backed `hive-transfer`
+helper. It writes a transfer envelope under:
+
+```text
+<hivemindos-vault>/.hivemindos-transfers/<transfer-id>/
+  manifest.json
+  payload/<files>
+  acks/<receiver>.json
+```
+
+The manifest is explicit about who should pick it up:
+
+- `to.machineId` or `to.host` targets the receiving machine.
+- Optional `to.runtime` targets a runtime such as `hermes`, `aeon`, or
+  `openclaw`.
+- Optional `to.agentId` targets one agent identity inside that runtime.
+- Payloads include byte size, media type, and SHA-256, so receivers can verify
+  the local file after Syncthing has replicated it.
+
+Example send:
+
+```bash
+hive-transfer send \
+  --toMachine hivemind-machine-... \
+  --toRuntime hermes \
+  --toAgent renderer \
+  --note "source screenshot for preview QA" \
+  ./screenshot.png
+```
+
+Example receiver inbox check:
+
+```bash
+hive-transfer inbox --machine hivemind-machine-... --runtime hermes --agent renderer
+```
+
+Runtime-level inboxes are supported: if an agent calls `hive-transfer inbox`
+with `--runtime hermes` and no `--agent`, it can see all transfers for Hermes on
+that machine, including agent-specific ones, and route internally. A different
+machine, runtime, or explicit non-matching agent does not see the transfer.
+After collecting the payload, the receiver should acknowledge it:
+
+```bash
+hive-transfer ack hive-transfer-... --machine hivemind-machine-... --runtime hermes --agent renderer
+```
+
+Collectors expose the same semantics over HTTP:
+
+- `GET /transfers?machineId=...&runtime=hermes&agentId=renderer`
+- `POST /transfers` with `{ files, to: { machineId, runtime, agentId } }`
+- `POST /transfers/ack` with `{ id, machineId, runtime, agentId }`
+
+A receiving agent knows there is a waiting file by polling its own collector
+inbox or running the CLI inbox check. The dashboard can also poll `/transfers`
+for each discovered machine/runtime and surface the pending manifest count.
+Syncthing is still the replication layer; the transfer inbox is only the routing
+and notification envelope.
 
 ## Tailscale SSH
 
@@ -229,7 +292,11 @@ running.
 ## Safety Boundaries
 
 Secrets do not belong in the shared vault. Env sync uses `hive-env-add` and
-Tailscale SSH so secret values travel through stdin rather than shared notes.
+collector HTTP env-sync/Tailscale SSH paths so secret values travel directly to
+trusted peers rather than through shared notes. Do not use `hive-transfer` for
+secrets; the transfer manifest and payload live in the shared Syncthing vault
+and are intended for files/images/artifacts that all paired vault devices may
+replicate at rest.
 
 The collector should be reachable only on trusted private networks. Keep it on
 Tailscale, bind it to the expected port, and use Tailnet ACLs when a deployment

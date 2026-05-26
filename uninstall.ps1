@@ -260,9 +260,9 @@ if (Ask-YesNo "Remove .env.local from this checkout?" $false) {
   Ok "Removed .env.local"
 }
 
-if (Ask-YesNo "Remove hive env commands from ~/.local/bin if they point to this checkout?" $true) {
+if (Ask-YesNo "Remove hive env and transfer commands from ~/.local/bin if they point to this checkout?" $true) {
   $binDir = Join-Path ([Environment]::GetFolderPath("UserProfile")) ".local\bin"
-  foreach ($commandName in @("hive-env-add", "hive-env-run", "hive-env-check")) {
+  foreach ($commandName in @("hive-env-add", "hive-env-run", "hive-env-check", "hive-transfer")) {
     $shimPath = Join-Path $binDir "$commandName.cmd"
     if (Test-Path $shimPath) {
       $content = Get-Content $shimPath -Raw

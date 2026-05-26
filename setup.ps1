@@ -217,21 +217,25 @@ function Ensure-HiveEnvAdd {
     Warn "Python is missing; hive env shims installed but will need Python to run."
     $pythonCommand = "python"
   }
-  foreach ($commandName in @("hive-env-add", "hive-env-run", "hive-env-check")) {
+  foreach ($commandName in @("hive-env-add", "hive-env-run", "hive-env-check", "hive-transfer")) {
     $shimPath = Join-Path $binDir "$commandName.cmd"
     $scriptPath = Join-Path $Root "scripts\$commandName"
-    Set-Content -Path $shimPath -Value "@echo off`r`n$pythonCommand `"$scriptPath`" %*`r`n" -Encoding ASCII
+    if ($commandName -eq "hive-transfer") {
+      Set-Content -Path $shimPath -Value "@echo off`r`nnode `"$scriptPath.mjs`" %*`r`n" -Encoding ASCII
+    } else {
+      Set-Content -Path $shimPath -Value "@echo off`r`n$pythonCommand `"$scriptPath`" %*`r`n" -Encoding ASCII
+    }
     Ok "$commandName installed: $shimPath"
   }
   $userPath = [Environment]::GetEnvironmentVariable("Path", "User")
   if (($userPath -split ";") -notcontains $binDir) {
-    if (Ask-YesNo "Add $binDir to your user PATH for hive env commands?" $true) {
+    if (Ask-YesNo "Add $binDir to your user PATH for hive env and transfer commands?" $true) {
       $nextPath = if ($userPath) { "$userPath;$binDir" } else { $binDir }
       [Environment]::SetEnvironmentVariable("Path", $nextPath, "User")
       Refresh-Path
       Ok "Added $binDir to user PATH"
     } else {
-      Warn "Add $binDir to PATH to run hive-env-add, hive-env-run, and hive-env-check from any folder"
+      Warn "Add $binDir to PATH to run hive-env-add, hive-env-run, hive-env-check, and hive-transfer from any folder"
     }
   } else {
     Refresh-Path
