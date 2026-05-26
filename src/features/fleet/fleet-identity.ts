@@ -75,6 +75,7 @@ export function machinePhysicalBase(name?: string, dnsName?: string) {
 
 export function isLocalLinkDuplicateOfSelf(self: FleetMachineIdentity | undefined, device: FleetMachineIdentity) {
   if (!self || device.self) return false;
+  if (isHivemindMachineName(device.name, device.dnsName)) return false;
   const deviceBase = machineHivemindBase(device.name, device.dnsName);
   const selfBase = machineHivemindBase(self.name, self.dnsName);
   if (selfBase && deviceBase && selfBase === deviceBase) return true;

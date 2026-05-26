@@ -3,13 +3,13 @@
 This file records user-visible changes before they are committed. New work should
 be added here first, then marked `Committed` or `Pushed` after the git action.
 
-## 2026-05-26 07:35:51 EDT - Hide Physical Tailnet Duplicate Of Link Host
+## 2026-05-26 07:54:24 EDT - Collapse Duplicate Hivemind Machine Reports
 
-- Status: Uncommitted
-- Areas changed: Fleet discovery duplicate detection, Tailscale devices API, client fleet identity helper, changelog
-- Summary: Treat the system Tailscale node for the same physical Mac as a duplicate of the app-managed Hivemind Link self node, even when the system node is named `Liams-MacBook-Pro` instead of `hivemindos-*`, and hide mobile Tailnet viewer devices from agent-bridge machine lists so Fleet does not show misleading `not-installed`/unreachable cards for devices that are only viewing dashboards.
-- Verification: `npm exec --yes --package pnpm@8.6.12 -- pnpm exec tsc --noEmit --pretty false --skipLibCheck`; `git diff --check -- CHANGELOG.md src/app/api/fleet/discover/route.ts src/app/api/tailscale/devices/route.ts src/features/fleet/fleet-identity.ts`; live `/api/fleet/discover` on port 5020 now lists only `This Mac` ready at `http://127.0.0.1:8792` plus the real Linux Hivemind node, omitting the duplicate physical `Liams-MacBook-Pro` system Tailnet node and `iphone182` viewer device; `/api/tailscale/devices` matches the same filtered machine list.
-- Intended commit message: `Hide physical Tailnet duplicate of Link host`
+- Status: Pushed
+- Areas changed: Fleet discovery duplicate detection, dashboard machine merge identity, dashboard types, changelog
+- Summary: Make each Hivemind dashboard report a physical machine once by carrying the collector-reported host through discovery, deduping ready collectors by that host after health probing, and using the same host identity when merging client-side Fleet state. This keeps stale sidecar/system Tailnet duplicates from hiding the real machine while still allowing the healthy collector to appear.
+- Verification: `npm exec --yes --package pnpm@8.6.12 -- pnpm exec tsc --noEmit --pretty false --skipLibCheck`; live `/api/fleet/discover` on port 5020 reports `This Mac` once at `http://127.0.0.1:8792` with collector host `Liams-MacBook-Pro.local` and the Linux Hivemind node once, with no duplicate Mac/iPhone rows.
+- Intended commit message: `Collapse duplicate Hivemind machine reports`
 
 ## 2026-05-26 07:08:53 EDT - Clarify Dashboard Host Labels On Mobile
 

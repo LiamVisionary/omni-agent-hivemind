@@ -497,6 +497,7 @@ export type ChatTreeMachine = {
 export type DiscoveredMachine = {
   device: TailscaleDevice;
   collector: MachineGroup["collector"];
+  collectorHost?: string;
   agents: AgentProfile[];
   snapshots: AgentSnapshot[];
   version?: AppVersion;

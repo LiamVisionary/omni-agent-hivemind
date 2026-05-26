@@ -97,6 +97,7 @@ const DISCOVERY_CACHE_MS = 5_000;
 type DiscoveredMachine = {
   device: Device;
   collector: string;
+  collectorHost?: string;
   version?: CollectorVersion;
   capabilities?: CollectorCapabilities;
   envSync?: CollectorEnvSync;
@@ -208,9 +209,12 @@ function physicalMachineBase(device: Device) {
 
 function isStaleSelfDuplicate(self: Device | undefined, device: Device) {
   if (!self || device.self) return false;
+  const deviceIsHivemindLink = isHivemindLinkDevice(device);
   const selfBase = hivemindMachineBase(self);
   const deviceBase = hivemindMachineBase(device);
-  if (selfBase && deviceBase && selfBase === deviceBase) return true;
+  if (deviceIsHivemindLink) {
+    return Boolean(!device.online && selfBase && deviceBase && selfBase === deviceBase);
+  }
   const physicalSelfBase = physicalMachineBase(self);
   const physicalDeviceBase = physicalMachineBase(device);
   if (physicalSelfBase && physicalDeviceBase && physicalSelfBase === physicalDeviceBase) return true;
@@ -238,6 +242,17 @@ function dedupeDevices(devices: Device[]) {
     }
   }
   return [...byIdentity.values()].filter((device) => isHivemindLinkDevice(device) || isMacDevice(device));
+}
+
+function normalizeCollectorHost(value?: string) {
+  return normalizeName(value?.replace(/\.local$/i, ""));
+}
+
+function machinePhysicalIdentity(machine: { device: Device; collector: string; collectorHost?: string }) {
+  const collectorHost = machine.collector === "ready" ? normalizeCollectorHost(machine.collectorHost) : "";
+  if (collectorHost) return `host:${collectorHost}`;
+  const physicalBase = physicalMachineBase(machine.device);
+  return physicalBase ? `physical:${physicalBase}` : deviceIdentityKey(machine.device);
 }
 
 function linkCollectorUrl(ip: string) {
@@ -394,12 +409,15 @@ async function readDiscovery(includeSnapshots: boolean): Promise<FleetDiscoverPa
     let version: CollectorVersion | undefined;
     let capabilities: CollectorCapabilities | undefined;
     let envSync: CollectorEnvSync | undefined;
+    let collectorHost: string | undefined;
     try {
       const healthData = await fetchJson(`${device.collectorUrl}/health`) as {
+        host?: string;
         version?: CollectorVersion;
         capabilities?: CollectorCapabilities;
         envSync?: CollectorEnvSync;
       };
+      collectorHost = healthData.host;
       version = healthData.version;
       capabilities = healthData.capabilities ?? { chat: false, runtimes: [] };
       envSync = healthData.envSync;
@@ -427,6 +445,7 @@ async function readDiscovery(includeSnapshots: boolean): Promise<FleetDiscoverPa
       return {
         device,
         collector: "ready",
+        collectorHost,
         version,
         capabilities,
         envSync,
@@ -444,6 +463,7 @@ async function readDiscovery(includeSnapshots: boolean): Promise<FleetDiscoverPa
       return {
         device,
         collector: "ready",
+        collectorHost,
         version,
         capabilities,
         envSync,
@@ -454,6 +474,7 @@ async function readDiscovery(includeSnapshots: boolean): Promise<FleetDiscoverPa
       return {
         device,
         collector: "ready",
+        collectorHost,
         version,
         capabilities,
         envSync,
@@ -505,18 +526,21 @@ export async function GET(request: Request) {
 function machineScore(machine: {
   device: Device;
   collector: string;
+  collectorHost?: string;
   agents: AgentProfile[];
+  version?: CollectorVersion;
 }) {
   return (machine.device.self ? 10_000 : 0)
     + (machine.collector === "ready" ? 1_000 : 0)
+    + (machine.version?.appDir?.replace(/\/+$/, "").endsWith("/hivemindos") ? 100 : 0)
     + (machine.agents.length * 10)
     + deviceFreshnessScore(machine.device);
 }
 
-function dedupeMachines<T extends { device: Device; collector: string; agents: AgentProfile[] }>(machines: T[]) {
+function dedupeMachines<T extends { device: Device; collector: string; collectorHost?: string; agents: AgentProfile[]; version?: CollectorVersion }>(machines: T[]) {
   const byIdentity = new Map<string, T>();
   for (const machine of machines) {
-    const key = deviceIdentityKey(machine.device);
+    const key = machinePhysicalIdentity(machine);
     const previous = byIdentity.get(key);
     if (!previous) {
       byIdentity.set(key, machine);

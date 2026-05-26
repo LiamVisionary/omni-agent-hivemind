@@ -6,6 +6,7 @@ import {
   isLocalLinkDuplicateOfSelf,
   isLoopbackCollector,
   machineIdentityFromParts,
+  normalizeMachineName,
   shouldPreserveMissingDiscoveredMachine,
 } from "@/features/fleet/fleet-identity";
 import type { AgentProfile } from "@/lib/types/agent-runtime";
@@ -224,6 +225,10 @@ export function mergeMachineSnapshots(previous: AgentSnapshot[] = [], incoming: 
 }
 
 export function discoveredMachineIdentity(machine: DiscoveredMachine) {
+  if (machine.collector === "ready" && machine.collectorHost) {
+    const normalizedHost = normalizeMachineName(machine.collectorHost.replace(/\.local$/i, ""));
+    if (normalizedHost) return `host:${normalizedHost}`;
+  }
   return machineIdentityFromParts({
     self: machine.device.self,
     name: machine.device.name,
