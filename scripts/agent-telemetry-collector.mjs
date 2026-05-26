@@ -16,6 +16,7 @@ const port = Number(process.env.AGENT_TELEMETRY_PORT || 8787);
 const host = process.env.AGENT_TELEMETRY_HOST || "0.0.0.0";
 const appDir = resolve(join(fileURLToPath(import.meta.url), "..", ".."));
 const defaultHermesDir = process.env.HERMES_HOME || join(homedir(), ".hermes");
+const defaultOpenClawDir = process.env.OPENCLAW_HOME || join(homedir(), ".openclaw");
 const defaultAeonDir = process.env.AEON_LOCAL_PATH || process.env.AEON_HOME || join(homedir(), ".aeon");
 const maxChars = 1000;
 const HERMES_EMPTY_TRANSCRIPT_MESSAGE = "Hermes session found. Send a message to resume it.";
@@ -212,6 +213,7 @@ function runtimeCapabilitiesFor(runtime) {
       notifications: true,
       setup: true,
       walletTools: true,
+      modelSelection: true,
     };
   }
   if (runtime === "aeon") {
@@ -259,6 +261,27 @@ function normalizeRuntimeAgent(entry) {
 async function configuredRuntimeAgents() {
   const agents = await readRuntimeAgentRegistry();
   return agents.map(normalizeRuntimeAgent);
+}
+
+async function detectedOpenClawAgent() {
+  const configPath = join(defaultOpenClawDir, "openclaw.json");
+  const configReadable = await access(configPath, constants.R_OK).then(() => true).catch(() => false);
+  if (!configReadable) return null;
+  const config = await readOpenClawConfig();
+  const modelRef = defaultOpenClawAgentModel(config);
+  const parsed = modelRef ? splitOpenClawModelRef(modelRef) : null;
+  return normalizeRuntimeAgent({
+    id: `openclaw-${hostname().toLowerCase().replace(/[^a-z0-9]+/g, "-")}`,
+    name: "OpenClaw",
+    runtime: "openclaw",
+    gatewayUrl: "ws://127.0.0.1:18789",
+    agentId: "main",
+    localDataDir: defaultOpenClawDir,
+    provider: parsed?.provider,
+    model: parsed?.model,
+    beeRole: "queen",
+    workerClass: "general",
+  });
 }
 
 async function createHermesProfileAgent(input) {
@@ -1140,6 +1163,193 @@ async function runHermesIntegrationAction(action, input = {}) {
   return { ok: false, error: `Unsupported Hermes action: ${action}` };
 }
 
+function asRecord(value) {
+  return value && typeof value === "object" && !Array.isArray(value) ? value : {};
+}
+
+function getConfigPath(config, path) {
+  let current = config;
+  for (const part of path.split(".")) {
+    if (!current || typeof current !== "object") return undefined;
+    current = current[part];
+  }
+  return current;
+}
+
+function splitOpenClawModelRef(value) {
+  const ref = String(value || "").trim();
+  const slash = ref.indexOf("/");
+  if (slash <= 0 || slash >= ref.length - 1) return null;
+  return { provider: ref.slice(0, slash), model: ref.slice(slash + 1) };
+}
+
+function openClawProviderName(slug) {
+  const known = {
+    openai: "OpenAI",
+    "openai-codex": "OpenAI Codex",
+    anthropic: "Anthropic",
+    google: "Google",
+    openrouter: "OpenRouter",
+    xai: "xAI",
+  };
+  if (known[slug]) return known[slug];
+  return String(slug || "")
+    .split(/[-_]/)
+    .filter(Boolean)
+    .map((part) => part.toLowerCase() === "ai" ? "AI" : `${part.slice(0, 1).toUpperCase()}${part.slice(1)}`)
+    .join(" ") || String(slug || "Provider");
+}
+
+function openClawModelOptions(value) {
+  if (Array.isArray(value)) {
+    return value
+      .map((model) => typeof model === "string" ? { id: model } : asRecord(model))
+      .map((model) => ({
+        id: typeof model.id === "string" ? model.id : "",
+        name: typeof model.name === "string" ? model.name : undefined,
+      }))
+      .filter((model) => model.id);
+  }
+  return Object.entries(asRecord(value))
+    .map(([id, meta]) => ({
+      id,
+      name: typeof asRecord(meta).name === "string" ? asRecord(meta).name : undefined,
+    }))
+    .filter((model) => model.id);
+}
+
+function defaultOpenClawAgentModel(config) {
+  const agents = asRecord(config.agents);
+  const list = Array.isArray(agents.list) ? agents.list.filter((item) => item && typeof item === "object") : [];
+  const agent = list.find((item) => item.default === true) || list[0];
+  return typeof agent?.model === "string"
+    ? agent.model
+    : typeof getConfigPath(config, "agents.defaults.model.primary") === "string"
+      ? getConfigPath(config, "agents.defaults.model.primary")
+      : typeof getConfigPath(config, "agents.defaults.model") === "string"
+        ? getConfigPath(config, "agents.defaults.model")
+        : "";
+}
+
+function openClawConfiguredModelRefs(config) {
+  const refs = new Set();
+  const add = (value) => {
+    if (typeof value === "string" && splitOpenClawModelRef(value)) refs.add(value);
+  };
+  add(defaultOpenClawAgentModel(config));
+  const agents = asRecord(config.agents);
+  for (const agent of Array.isArray(agents.list) ? agents.list : []) add(asRecord(agent).model);
+  for (const value of Object.keys(asRecord(getConfigPath(config, "agents.defaults.models")))) add(value);
+  return [...refs];
+}
+
+function openClawConfiguredProviders(config, extraRefs = []) {
+  const providers = new Map();
+  for (const [slug, rawProvider] of Object.entries(asRecord(getConfigPath(config, "models.providers")))) {
+    const provider = asRecord(rawProvider);
+    const models = openClawModelOptions(provider.models);
+    if (!models.length) continue;
+    providers.set(slug, {
+      name: typeof provider.name === "string" ? provider.name : openClawProviderName(slug),
+      models,
+      source: "~/.openclaw/openclaw.json",
+      isUserDefined: true,
+    });
+  }
+  for (const ref of [...openClawConfiguredModelRefs(config), ...extraRefs]) {
+    const parsed = splitOpenClawModelRef(ref);
+    if (!parsed) continue;
+    const existing = providers.get(parsed.provider);
+    if (existing) {
+      if (!existing.models.some((model) => model.id === parsed.model)) existing.models.unshift({ id: parsed.model });
+    } else {
+      providers.set(parsed.provider, {
+        name: openClawProviderName(parsed.provider),
+        models: [{ id: parsed.model }],
+        source: "~/.openclaw/openclaw.json",
+        isUserDefined: true,
+      });
+    }
+  }
+  return providers;
+}
+
+async function readOpenClawConfig() {
+  const raw = await readFile(join(defaultOpenClawDir, "openclaw.json"), "utf8").catch(() => "");
+  if (!raw.trim()) return {};
+  try {
+    return JSON.parse(raw.replace(/\/\/[^\n]*/g, ""));
+  } catch {
+    return {};
+  }
+}
+
+async function writeOpenClawConfig(config) {
+  await mkdir(defaultOpenClawDir, { recursive: true, mode: 0o700 });
+  await writeFile(join(defaultOpenClawDir, "openclaw.json"), `${JSON.stringify(config, null, 2)}\n`, { mode: 0o600 });
+}
+
+async function openClawIntegrationStatus(agent = {}) {
+  const configPath = join(defaultOpenClawDir, "openclaw.json");
+  const configReadable = await access(configPath, constants.R_OK).then(() => true).catch(() => false);
+  const config = configReadable ? await readOpenClawConfig() : {};
+  const profileProvider = String(agent.provider || "").trim();
+  const profileModel = String(agent.model || "").trim();
+  const profilePair = profileProvider && profileModel ? `${profileProvider}/${profileModel}` : "";
+  const configuredDefault = defaultOpenClawAgentModel(config);
+  const providers = openClawConfiguredProviders(config, profilePair ? [profilePair] : []);
+  const current = profilePair || configuredDefault;
+  const parsed = current ? splitOpenClawModelRef(current) : null;
+  const firstProvider = providers.entries().next().value;
+  const provider = parsed?.provider || firstProvider?.[0] || profileProvider;
+  const model = parsed?.model || firstProvider?.[1]?.models?.[0]?.id || profileModel;
+  if (provider && model && !providers.has(provider)) {
+    providers.set(provider, {
+      name: openClawProviderName(provider),
+      models: [{ id: model }],
+      source: "current-agent-model",
+      isUserDefined: true,
+    });
+  } else if (provider && model && !providers.get(provider)?.models.some((item) => item.id === model)) {
+    providers.get(provider)?.models.unshift({ id: model });
+  }
+  return {
+    runtime: "openclaw",
+    machine: { host: hostname(), collectorUrl: `http://${hostname()}:${port}` },
+    capabilities: runtimeCapabilitiesFor("openclaw"),
+    integrations: {},
+    diagnostics: configReadable ? [`OpenClaw config: ${configPath}`] : [`OpenClaw config not found at ${configPath}.`],
+    modelSelection: {
+      provider: provider || "",
+      model: model || "",
+      providers: [...providers.entries()].map(([slug, item]) => ({
+        slug,
+        name: item.name,
+        models: item.models,
+        totalModels: item.models.length,
+        isCurrent: slug === provider,
+        isUserDefined: item.isUserDefined,
+        source: item.source,
+      })),
+    },
+  };
+}
+
+async function runOpenClawIntegrationAction(action, input = {}) {
+  if (action === "set-model") {
+    const provider = String(input.provider || "").trim();
+    const model = String(input.model || "").trim();
+    if (!provider || !model) return { ok: false, error: "Provider and model are required." };
+    const config = await readOpenClawConfig();
+    config.agents = asRecord(config.agents);
+    config.agents.defaults = asRecord(config.agents.defaults);
+    config.agents.defaults.model = { ...asRecord(config.agents.defaults.model), primary: `${provider}/${model}` };
+    await writeOpenClawConfig(config);
+    return { ok: true, message: `OpenClaw default model set to ${provider}/${model}.` };
+  }
+  return { ok: false, error: `Unsupported OpenClaw action: ${action}` };
+}
+
 function normalizeNangoBaseUrl(input) {
   const value = String(input || "http://localhost:3003").trim() || "http://localhost:3003";
   const parsed = new URL(value);
@@ -1825,6 +2035,10 @@ async function localAgents() {
     });
   }
   agents.push(...await configuredRuntimeAgents());
+  const openClawAgent = await detectedOpenClawAgent();
+  if (openClawAgent && !agents.some((agent) => agent.runtime === "openclaw")) {
+    agents.push(openClawAgent);
+  }
   const aeonConfig = join(defaultAeonDir, "aeon.yml");
   const aeonAvailable = await access(aeonConfig, constants.R_OK).then(() => true).catch(() => false);
   if (aeonAvailable) {
@@ -2684,6 +2898,14 @@ createServer(async (request, response) => {
       const rawBody = await readBody(request);
       const body = rawBody ? JSON.parse(rawBody) : {};
       const runtimeName = runtimeIntegrationMatch[1];
+      if (runtimeName === "openclaw") {
+        if (body.action) {
+          jsonResponse(response, 200, await runOpenClawIntegrationAction(body.action, body.input || {}));
+          return;
+        }
+        jsonResponse(response, 200, { ok: true, status: await openClawIntegrationStatus(body.agent || {}) });
+        return;
+      }
       if (runtimeName !== "hermes") {
         jsonResponse(response, 404, { ok: false, error: `${runtimeName} integrations are not exposed by this collector yet.` });
         return;

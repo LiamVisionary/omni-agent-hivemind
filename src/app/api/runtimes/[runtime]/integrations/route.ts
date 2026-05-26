@@ -18,7 +18,9 @@ function isLocalCollectorUrl(url?: string) {
   const normalized = normalizeCollectorUrl(url);
   if (!normalized) return false;
   try {
-    const hostname = new URL(normalized).hostname.toLowerCase();
+    const parsed = new URL(normalized);
+    if (parsed.pathname !== "/" && parsed.pathname !== "") return false;
+    const hostname = parsed.hostname.toLowerCase();
     return hostname === "localhost" || hostname === "127.0.0.1" || hostname === "::1" || hostname === "[::1]";
   } catch {
     return false;

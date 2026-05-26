@@ -161,7 +161,7 @@ export function AgentSettingsModal(props: any) {
                     })}
                   </div>
                 </div>
-                {agentSettingsRuntime === "hermes" ? (
+                {runtimeCapabilities(agentSettingsIntegrationTarget ?? { runtime: agentSettingsRuntime }).modelSelection ? (
                   <div className={fleetClass("agentRuntimeModelPanel")}>
                     <div className={fleetClass("agentRuntimeCardGroup")}>
                       <div className={fleetClass("agentRuntimeGroupHeader")}>
@@ -185,7 +185,12 @@ export function AgentSettingsModal(props: any) {
                           <Plus aria-hidden="true" />
                           <strong>Add provider</strong>
                         </button>
-                        {runtimeModelProviders.map((provider) => {
+                        {runtimeModelProviders.length === 0 ? (
+                          <article className={fleetClass("agentRuntimeEmptyCard")}>
+                            <strong>No providers returned</strong>
+                            <small>{runtimeIntegrationMessage || `${RUNTIME_LABELS[agentSettingsRuntime] ?? agentSettingsRuntime} did not return configured providers.`}</small>
+                          </article>
+                        ) : runtimeModelProviders.map((provider) => {
                           const selected = provider.slug === selectedRuntimeProvider?.slug;
                           const iconPath = providerIconPath(provider);
                           const iconMode = providerIconRenderMode(provider);
@@ -219,7 +224,12 @@ export function AgentSettingsModal(props: any) {
                         <span>Model</span>
                       </div>
                       <div className={fleetClass("agentRuntimeModelCards")}>
-                        {selectedRuntimeModels.map((model) => {
+                        {selectedRuntimeModels.length === 0 ? (
+                          <article className={fleetClass("agentRuntimeEmptyCard")}>
+                            <strong>No models returned</strong>
+                            <small>{runtimeIntegrationMessage || `${selectedRuntimeProvider?.name ?? "This provider"} did not return configured models.`}</small>
+                          </article>
+                        ) : selectedRuntimeModels.map((model) => {
                           const selected = model.id === selectedRuntimeModelId;
                           return (
                             <button

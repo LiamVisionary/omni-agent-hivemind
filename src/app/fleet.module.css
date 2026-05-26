@@ -2071,9 +2071,20 @@
   text-align: left;
 }
 
+.agentRuntimeEmptyCard {
+  min-height: 42px;
+  border: 1px solid rgba(148, 163, 184, 0.16);
+  border-radius: 7px;
+  background: rgba(15, 23, 42, 0.35);
+  display: grid;
+  gap: 2px;
+  padding: 8px 9px;
+}
+
 .agentRuntimeProviderCard strong,
 .agentRuntimeModelCard strong,
-.agentRuntimeAddCard strong {
+.agentRuntimeAddCard strong,
+.agentRuntimeEmptyCard strong {
   font-size: 12px;
   line-height: 1.2;
   overflow-wrap: anywhere;
@@ -2087,7 +2098,8 @@
 }
 
 .agentRuntimeProviderCard small,
-.agentRuntimeModelCard small {
+.agentRuntimeModelCard small,
+.agentRuntimeEmptyCard small {
   color: var(--muted);
   font-size: 10px;
   line-height: 1.25;

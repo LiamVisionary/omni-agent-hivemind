@@ -3,6 +3,14 @@
 This file records user-visible changes before they are committed. New work should
 be added here first, then marked `Committed` or `Pushed` after the git action.
 
+## 2026-05-27 01:40 WITA - Enable Dynamic OpenClaw Model Discovery
+
+- Status: Pushed
+- Areas changed: Telemetry collector runtime integrations, runtime adapters, agent settings modal, runtime capability metadata, changelog
+- Summary: Make collectors detect OpenClaw when `~/.openclaw/openclaw.json` exists, advertise OpenClaw model selection, expose `/runtimes/openclaw/integrations`, and return providers/models from the machine's actual OpenClaw config instead of dashboard fallbacks. Keep Link proxy collector URLs proxied even when they use local `127.0.0.1/peer/...` paths, and render the model picker for all model-selectable runtimes.
+- Verification: `node --check scripts/agent-telemetry-collector.mjs`; `pnpm exec eslint scripts/agent-telemetry-collector.mjs 'src/app/api/runtimes/[runtime]/integrations/route.ts' src/features/dashboard/views/chat/AgentSettingsModal.tsx src/lib/services/runtime-adapters/openclaw.ts src/lib/services/runtime-adapters/types.ts src/lib/services/runtime-integrations.ts src/lib/types/agent-runtime.ts --max-warnings=999`; `pnpm exec tsc --noEmit --pretty false --skipLibCheck`; `git diff --check`; collector smoke with temporary `OPENCLAW_HOME` returned `runtimes:["hermes","openclaw"]`, an OpenClaw agent, and model selection for `custom-provider/not-hardcoded-model-123`.
+- Intended commit message: `Enable dynamic OpenClaw model discovery`
+
 ## 2026-05-26 17:27:26 UTC - Add Targeted Hive File Transfers
 
 - Status: Pushed

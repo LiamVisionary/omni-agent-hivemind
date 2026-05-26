@@ -100,6 +100,12 @@ export type RuntimeAdapter = {
     jobId: string,
     context: RuntimeAdapterContext,
   ) => Promise<{ ok: boolean; error?: string; result?: unknown }>;
+  runIntegrationAction?: (
+    profile: AgentProfile | undefined,
+    action: string,
+    input: Record<string, unknown>,
+    context: RuntimeAdapterContext,
+  ) => Promise<{ ok: boolean; error?: string; message?: string; result?: unknown }>;
   listRuns?: (profile: AgentProfile, context: RuntimeAdapterContext) => Promise<RuntimeRun[]>;
   listOutputs?: (profile: AgentProfile, context: RuntimeAdapterContext) => Promise<unknown[]>;
 };

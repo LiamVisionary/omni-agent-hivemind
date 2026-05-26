@@ -212,6 +212,7 @@ export const RUNTIME_CAPABILITIES: Record<string, RuntimeCapabilities> = {
     notifications: true,
     setup: true,
     walletTools: true,
+    modelSelection: true,
   },
   hermes: {
     status: true,

@@ -159,6 +159,10 @@ export async function searchRuntimeSessions(runtime: AgentRuntime, query: string
 
 export async function runRuntimeIntegrationAction(runtime: AgentRuntime, action: string, input: Record<string, unknown> = {}) {
   if (runtime !== "hermes") {
+    const adapter = getRuntimeAdapter(runtime);
+    if (adapter?.runIntegrationAction) {
+      return adapter.runIntegrationAction(undefined, action, input, {});
+    }
     return { ok: false, error: `${runtime} does not expose this dashboard integration action yet.` };
   }
   if (action === "enable-tool") {
