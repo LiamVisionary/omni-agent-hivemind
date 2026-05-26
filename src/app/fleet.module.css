@@ -1428,6 +1428,10 @@
   gap: 6px;
 }
 
+.runtimeSegmentShell {
+  display: inline-flex;
+}
+
 .agentRuntimeSegments button {
   display: inline-flex;
   align-items: center;
@@ -1446,6 +1450,26 @@
   border-color: rgba(94, 234, 212, 0.42);
   background: rgba(45, 212, 191, 0.1);
   color: var(--foreground);
+}
+
+.agentRuntimeSegments button:disabled {
+  border-color: rgba(148, 163, 184, 0.1);
+  background: rgba(15, 23, 42, 0.24);
+  color: rgba(148, 163, 184, 0.45);
+  cursor: not-allowed;
+  opacity: 0.72;
+}
+
+.agentRuntimeSegments button:disabled:hover {
+  border-color: rgba(148, 163, 184, 0.1);
+  background: rgba(15, 23, 42, 0.24);
+  color: rgba(148, 163, 184, 0.45);
+}
+
+.agentRuntimeSegments button:disabled .runtimeIconMark {
+  color: rgba(148, 163, 184, 0.52);
+  filter: grayscale(0.8);
+  opacity: 0.68;
 }
 
 .agentRuntimeSegments strong {
@@ -2057,7 +2081,8 @@
 
 .agentRuntimeProviderCard,
 .agentRuntimeModelCard,
-.agentRuntimeAddCard {
+.agentRuntimeAddCard,
+.agentRuntimeEmptyCard {
   min-height: 42px;
   border: 1px solid rgba(148, 163, 184, 0.16);
   border-radius: 7px;
@@ -2103,6 +2128,18 @@
   color: var(--muted);
   font-size: 10px;
   line-height: 1.25;
+  overflow-wrap: anywhere;
+}
+
+.agentRuntimeEmptyCard {
+  cursor: default;
+  grid-column: 1 / -1;
+  width: 100%;
+}
+
+.agentRuntimeEmptyCard strong {
+  font-size: 12px;
+  line-height: 1.2;
   overflow-wrap: anywhere;
 }
 

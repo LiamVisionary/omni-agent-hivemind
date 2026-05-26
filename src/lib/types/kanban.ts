@@ -35,8 +35,10 @@ export type KanbanLink = {
 export type KanbanAgentSession = {
   agentId: string;
   agentName: string;
+  runtime?: string;
   telemetryUrl?: string;
   sessionId: string;
+  source?: string;
   startedAt: number;
   updatedAt: number;
   lastMessageCount?: number;
@@ -66,6 +68,18 @@ export type KanbanMachineTarget = {
   collectorUrl?: string;
 };
 
+export type KanbanDeliverableKind = "website" | "video" | "image" | "audio" | "document" | "directory" | "file" | "url";
+
+export type KanbanDeliverable = {
+  id: string;
+  label: string;
+  kind: KanbanDeliverableKind;
+  path?: string;
+  url?: string;
+  exists?: boolean;
+  createdAt: number;
+};
+
 export type KanbanTask = {
   id: string;
   title: string;
@@ -79,6 +93,7 @@ export type KanbanTask = {
   skills: string[];
   attachments?: KanbanTaskAttachment[];
   linkedDirectories?: KanbanLinkedDirectory[];
+  deliverables?: KanbanDeliverable[];
   targetMachine?: KanbanMachineTarget | null;
   agentSession?: KanbanAgentSession | null;
   claimLock?: string;

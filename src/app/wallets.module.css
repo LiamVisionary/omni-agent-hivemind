@@ -509,6 +509,22 @@
   overflow-wrap: anywhere;
 }
 
+.hiveRailLegacy {
+  display: grid;
+  gap: 10px;
+  border: 1px solid rgba(242, 183, 5, 0.18);
+  border-radius: 8px;
+  background: rgba(242, 183, 5, 0.07);
+  padding: 12px;
+}
+
+.hiveRailLegacy p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
 .hiveRailDetails {
   border-top: 1px solid rgba(148, 163, 184, 0.1);
   padding-top: 12px;

@@ -92,7 +92,7 @@ type CollectorEnvSync = {
 
 const QUEEN_RUNTIME_PRIORITY: AgentRuntime[] = ["hermes", "openclaw", "openai-compatible", "aeon"];
 const COLLECTOR_FETCH_TIMEOUT_MS = 2_500;
-const DISCOVERY_CACHE_MS = 5_000;
+const DISCOVERY_CACHE_MS = 15_000;
 
 type DiscoveredMachine = {
   device: Device;

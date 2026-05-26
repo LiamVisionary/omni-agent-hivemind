@@ -7,7 +7,7 @@
 import { useCallback, useEffect, useMemo } from "react";
 
 export function useDashboardDerivedState(props: any) {
-  const { RUNTIME_LABELS, activeView, agentAliasMap, agentCreateDraft, agentCreateMachineKey, agentRoleModalId, agentSettingsPanel, agents, beeRoleLabel, brainGraph, brainGraphLayout, brainSkills, busy, chatAutoScrollRef, chatDisplayContent, chatMessageStorageKey, chatMessageWindow, cleanActivityTitle, collectorKey, createAgentProfile, createDefaultAgentWallet, dedupeAgents, discoveredMachines, displayMachineName, fleetAgentState, fleetMachineLocation, fleetMetric, fleetSnapshots, fleetVersionState, formatRelativeTime, getHoneyAgentRewards, getSurvivalSnapshot, groupKanbanTasks, groupNotifications, hermesUpdateRequiredDetail, hiveEnv, hiveEnvRuntimeSourceId, honeyTreasury, hydrated, inferCurrentTask, inferLatestAgentMessage, isChatSidebarTask, isLoopbackCollector, isManualAgentChatMessage, isMeaningfulActive, isMobileMachineOs, isStarterPlaceholder, isVisibleFleetMachine, isWorkView, kanbanAssignees, kanbanBoard, kanbanBoardScrollRef, kanbanError, kanbanIncludeArchived, kanbanLoading, kanbanTaskAssigneeAgent, machineIdentityFromParts, machineNameAliases, machineNeedsChatBridgeRepair, machineNeedsEnvHttpSyncRepair, machineNeedsSkillSyncRepair, machineNetworkIssue, maintenanceReport, messagesByAgent, messagesScrollRef, mirosharkAnalysisAgentId, mirosharkStatus, moneyClawLoadingEnvName, moneyClawStatusByEnvName, normalizeAgentProfile, notificationActorMeta, notificationDisplayBody, notificationDisplayTitle, notificationSourceLabel, notificationSummary, notifications, parseEnvImportText, quickAddMachineTargets, refreshMoneyClawStatus, refreshRuntimeIntegrations, refreshSharedSchedulesFromVault, runtimeCan, runtimeCount, runtimeFileRoots, runtimeModelSelectionsByRuntime, runtimeUsage, schedulerSkillSearch, schedules, selectedAgentId, selectedBrainNodeId, selectedChatLeafKey, selectedChatPreview, selectedKanbanTaskId, selectedKanbanTaskIds, setKanbanBoardScrollState, setMachineNameAliases, setScheduleDraft, setupMachineKey, sharedEnvImportText, sharedVault, skillBrowserSearch, skillBrowserSkills, tailscaleDevices, tailscaleStatus, tasks, updateStatusByMachine, walletExpanded, walletsByAgent, workPriority } = props;
+  const { RUNTIME_LABELS, activeView, agentAliasMap, agentCreateDraft, agentCreateMachineKey, agentRoleModalId, agentSettingsPanel, agents, beeRoleLabel, brainGraph, brainGraphLayout, brainSkills, busy, chatAutoScrollRef, chatDisplayContent, chatMessageStorageKey, chatMessageWindow, cleanActivityTitle, collectorKey, createAgentProfile, createDefaultAgentWallet, dedupeAgents, discoveredMachines, displayMachineName, fleetAgentState, fleetMachineLocation, fleetMetric, fleetSnapshots, fleetVersionState, formatRelativeTime, getHoneyAgentRewards, getSurvivalSnapshot, groupKanbanTasks, groupNotifications, hermesUpdateRequiredDetail, hiveEnv, hiveEnvRuntimeSourceId, honeyTreasury, hydrated, inferCurrentTask, inferLatestAgentMessage, isChatSidebarTask, isLoopbackCollector, isManualAgentChatMessage, isMeaningfulActive, isMobileMachineOs, isStarterPlaceholder, isVisibleFleetMachine, isWorkView, kanbanAssignees, kanbanBoard, kanbanBoardScrollRef, kanbanError, kanbanIncludeArchived, kanbanLoading, kanbanTaskAssigneeAgent, machineIdentityFromParts, machineNameAliases, machineNeedsChatBridgeRepair, machineNeedsEnvHttpSyncRepair, machineNeedsSkillSyncRepair, machineNetworkIssue, maintenanceReport, messagesByAgent, messagesScrollRef, mirosharkAnalysisAgentId, mirosharkStatus, moneyClawLoadingEnvName, moneyClawStatusByEnvName, normalizeAgentProfile, notificationActorMeta, notificationDisplayBody, notificationDisplayTitle, notificationSourceLabel, notificationSummary, notifications, parseEnvImportText, quickAddMachineTargets, refreshMoneyClawStatus, refreshRuntimeIntegrations, refreshSharedSchedulesFromVault, runtimeCan, runtimeCount, runtimeFileRoots, runtimeUsage, schedulerSkillSearch, schedules, selectedAgentId, selectedBrainNodeId, selectedChatLeafKey, selectedChatPreview, selectedKanbanTaskId, selectedKanbanTaskIds, setKanbanBoardScrollState, setMachineNameAliases, setScheduleDraft, setupMachineKey, sharedEnvImportText, sharedVault, skillBrowserSearch, skillBrowserSkills, tailscaleDevices, tailscaleStatus, tasks, updateStatusByMachine, walletExpanded, walletsByAgent, workPriority } = props;
   const discoveredAgents = useMemo(
     () => discoveredMachines.flatMap((machine) => machine.agents ?? []).map(normalizeAgentProfile),
     [discoveredMachines],
@@ -81,10 +81,9 @@ export function useDashboardDerivedState(props: any) {
     const agentId = mirosharkAnalysisAgentId || selectedAgent?.id;
     const agent = displayAgents.find((item) => item.id === agentId) ?? selectedAgent;
     if (!agent || !runtimeCan(agent, "modelSelection")) return;
-    if (runtimeModelSelectionsByRuntime[agent.runtime]) return;
     void refreshRuntimeIntegrations(agent);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeView, displayAgents, hydrated, mirosharkAnalysisAgentId, selectedAgent?.id, runtimeModelSelectionsByRuntime]);
+  }, [activeView, displayAgents, hydrated, mirosharkAnalysisAgentId, selectedAgent?.id]);
 
   const sharedSkillOptions = useMemo(() => {
     const deduped = new Map<string, { slug: string; name: string; description: string }>();
@@ -707,12 +706,12 @@ export function useDashboardDerivedState(props: any) {
   const honeyStats = useMemo(() => {
     const totalHoney = honeyAgentRewards.reduce((total, reward) => total + reward.honeyEarned, 0);
     const availableHoney = honeyAgentRewards.reduce((total, reward) => total + reward.honeyAvailable, 0);
-    const hiveBalance = honeyAgentRewards.reduce((total, reward) => total + reward.hiveBalance, 0);
+    const bankrHiveAwarded = honeyAgentRewards.reduce((total, reward) => total + reward.hiveBalance, 0);
     const hiveQuote = Math.round(availableHoney * honeyTreasury.tokenPerHoney * 1_000_000) / 1_000_000;
     return {
       totalHoney,
       availableHoney,
-      hiveBalance,
+      bankrHiveAwarded,
       hiveQuote,
       rewardPoolHive: honeyTreasury.rewardPoolHive,
       rewardPoolRemainingHive: honeyTreasury.rewardPoolRemainingHive,
@@ -913,7 +912,8 @@ export function useDashboardDerivedState(props: any) {
     const draftAgent = agentCreateMachine
       ? createAgentProfile(agentCreateDraft.runtime, runtimeCount(agents, agentCreateDraft.runtime) + 1)
       : roleModalAgent;
-    if (!draftAgent || !runtimeCan(draftAgent, "modelSelection") && agentSettingsPanel !== "tools") return;
+    if (!draftAgent) return;
+    if (agentSettingsPanel !== "tools" && !runtimeCan(draftAgent, "modelSelection")) return;
     void refreshRuntimeIntegrations({
       ...draftAgent,
       provider: agentCreateMachine ? agentCreateDraft.provider : draftAgent.provider,
@@ -921,6 +921,6 @@ export function useDashboardDerivedState(props: any) {
       telemetryUrl: agentCreateMachine?.collectorUrl ?? draftAgent.telemetryUrl,
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [agentSettingsPanel, roleModalAgent?.id, roleModalAgent?.runtime, agentCreateMachineKey, agentCreateDraft.runtime]);
+  }, [agentSettingsPanel, roleModalAgent?.id, roleModalAgent?.runtime, roleModalAgent?.provider, roleModalAgent?.model, roleModalAgent?.telemetryUrl, agentCreateMachineKey, agentCreateMachine?.collectorUrl, agentCreateDraft.runtime, agentCreateDraft.provider, agentCreateDraft.model]);
   return { discoveredAgents, agentAliases, candidateAgents, candidateWorkById, displayAgents, agentWorkById, effectiveSelectedAgentId, selectedAgent, sharedSkillOptions, filteredSkillBrowserSkills, hermesUpdateRequired, filteredSchedulerSkills, selectedBrainNode, visibleBrainNodes, brainLayout, brainGraphStats, selectedBrainTargetIds, messages, lastAssistant, visibleMessages, sessionNotice, updateChatAutoScroll, machineGroups, renameMachine, kanbanMachineTargets, localKanbanMachineTarget, quickAddMachineTarget, agentsForKanbanTask, visibleAgentCount, fleetViewData, fleetUpdateStatusByMachine, fleetUpdateDetailByMachine, kanbanColumns, visibleKanbanColumns, selectedKanbanTask, selectedKanbanComments, selectedKanbanAgent, selectedKanbanAgentMessages, notificationGroups, selectedKanbanEvents, selectedKanbanBulkIds, selectedWallet, selectedWalletSnapshot, walletStats, honeyAgentRewards, selectedHoneyReward, honeyStats, kanbanAssigneeOptions, workBoardStats, kanbanViewColumns, kanbanInitialLoading, updateKanbanBoardScrollState, agentSpecificEnvCount, sharedEnvSource, runtimeEnvSources, selectedRuntimeEnvSource, sharedEnvCount, unsharedRuntimeEnvCount, sharedBackupStatus, sharedEnvImport, sharedEnvImportDiff, sharedEnvImportNewCount, sharedEnvImportChangedCount, sharedEnvImportSameCount, brainSkillImportableCount, brainSkillImportableLabel, brainSkillImportAllLabel, brainSkillImportAllDescription, navItems, activeNavItem, activeHeader, setupMachine, roleModalAgent, agentCreateMachine };
 }

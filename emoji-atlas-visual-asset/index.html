@@ -1,0 +1,487 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Emoji Atlas</title>
+  <meta name="description" content="A playful one-page static website concept about emojis." />
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800;900&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --cream: #fff7df;
+      --cream-2: #fff0bd;
+      --purple: #321247;
+      --purple-soft: #5a2772;
+      --yellow: #ffd84f;
+      --pink: #ff8fbd;
+      --mint: #84e9c4;
+      --blue: #8bb7ff;
+      --white: #fffdf8;
+      --shadow: 0 18px 45px rgba(50, 18, 71, .13);
+      --line: rgba(50, 18, 71, .12);
+    }
+
+    * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
+    body {
+      margin: 0;
+      font-family: Inter, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      color: var(--purple);
+      background:
+        radial-gradient(circle at 10% 12%, rgba(255, 216, 79, .48), transparent 18rem),
+        radial-gradient(circle at 92% 18%, rgba(255, 143, 189, .36), transparent 16rem),
+        radial-gradient(circle at 50% 98%, rgba(132, 233, 196, .38), transparent 18rem),
+        var(--cream);
+      min-height: 100vh;
+      overflow-x: hidden;
+    }
+
+    a { color: inherit; text-decoration: none; }
+    button { font: inherit; }
+
+    .page {
+      position: relative;
+      width: min(1120px, calc(100% - 32px));
+      margin: 0 auto;
+      padding: 18px 0 42px;
+    }
+
+    .float {
+      position: fixed;
+      z-index: 0;
+      font-size: clamp(2.6rem, 8vw, 6.2rem);
+      filter: drop-shadow(0 12px 18px rgba(50, 18, 71, .12));
+      opacity: .68;
+      pointer-events: none;
+      animation: bob 6s ease-in-out infinite;
+    }
+    .float.one { top: 110px; left: -18px; transform: rotate(-14deg); }
+    .float.two { top: 68px; right: -12px; animation-delay: -1.7s; transform: rotate(16deg); }
+    .float.three { bottom: 118px; left: -8px; animation-delay: -3.4s; transform: rotate(9deg); }
+    .float.four { bottom: 38px; right: 10px; animation-delay: -2.3s; transform: rotate(-10deg); }
+    @keyframes bob { 0%, 100% { translate: 0 0; } 50% { translate: 0 16px; } }
+
+    header, main, footer { position: relative; z-index: 1; }
+    header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 14px;
+      padding: 12px 14px;
+      background: rgba(255, 253, 248, .76);
+      border: 1px solid rgba(255,255,255,.82);
+      border-radius: 999px;
+      box-shadow: 0 12px 35px rgba(50, 18, 71, .08);
+      backdrop-filter: blur(14px);
+      position: sticky;
+      top: 12px;
+      z-index: 3;
+    }
+
+    .brand {
+      display: inline-flex;
+      align-items: center;
+      gap: 9px;
+      font-weight: 900;
+      letter-spacing: -.04em;
+      font-size: 1.05rem;
+      white-space: nowrap;
+    }
+    .brand-mark {
+      display: grid;
+      place-items: center;
+      width: 36px;
+      height: 36px;
+      border-radius: 50%;
+      background: linear-gradient(135deg, var(--yellow), var(--pink));
+      box-shadow: inset 0 -5px 0 rgba(50, 18, 71, .08);
+    }
+
+    nav {
+      display: none;
+      align-items: center;
+      gap: 8px;
+      font-size: .92rem;
+      font-weight: 700;
+    }
+    nav a {
+      padding: 9px 12px;
+      border-radius: 999px;
+      color: var(--purple-soft);
+    }
+    nav a:hover, nav a:focus-visible { background: var(--cream-2); outline: none; }
+
+    .hero {
+      display: grid;
+      gap: 22px;
+      padding: 62px 0 34px;
+    }
+    .eyebrow {
+      display: inline-flex;
+      width: fit-content;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 12px;
+      border-radius: 999px;
+      background: rgba(255, 255, 255, .76);
+      border: 1px solid rgba(50, 18, 71, .1);
+      font-size: .83rem;
+      font-weight: 800;
+      color: var(--purple-soft);
+      box-shadow: 0 8px 26px rgba(50, 18, 71, .08);
+    }
+    h1 {
+      margin: 0;
+      font-size: clamp(3rem, 15vw, 7.1rem);
+      line-height: .91;
+      letter-spacing: -.09em;
+      max-width: 920px;
+    }
+    .hero p {
+      margin: 0;
+      max-width: 660px;
+      font-size: clamp(1.05rem, 3.5vw, 1.38rem);
+      line-height: 1.55;
+      color: var(--purple-soft);
+    }
+    .hero-actions { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; }
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      min-height: 46px;
+      border: 0;
+      border-radius: 999px;
+      padding: 13px 18px;
+      background: var(--purple);
+      color: white;
+      font-weight: 900;
+      cursor: pointer;
+      box-shadow: 0 12px 24px rgba(50, 18, 71, .2);
+      transition: transform .16s ease, box-shadow .16s ease;
+    }
+    .btn:hover { transform: translateY(-2px); box-shadow: 0 16px 30px rgba(50, 18, 71, .24); }
+    .btn.secondary { color: var(--purple); background: var(--white); border: 1px solid var(--line); box-shadow: none; }
+
+    .hero-card {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 9px;
+      padding: 14px;
+      border-radius: 30px;
+      background: rgba(255, 253, 248, .86);
+      box-shadow: var(--shadow);
+      border: 1px solid rgba(255,255,255,.85);
+      max-width: 420px;
+    }
+    .tile {
+      display: grid;
+      place-items: center;
+      min-height: 70px;
+      border-radius: 22px;
+      font-size: 2.2rem;
+      background: var(--cream-2);
+      box-shadow: inset 0 -6px 0 rgba(50,18,71,.05);
+    }
+    .tile:nth-child(2n) { background: #ffe1ef; }
+    .tile:nth-child(3n) { background: #d8faeb; }
+    .tile:nth-child(5n) { background: #e4edff; }
+
+    section { padding: 22px 0; }
+    .section-title {
+      display: flex;
+      align-items: end;
+      justify-content: space-between;
+      gap: 18px;
+      margin-bottom: 16px;
+    }
+    h2 {
+      margin: 0;
+      font-size: clamp(2rem, 8vw, 4.3rem);
+      line-height: .94;
+      letter-spacing: -.07em;
+    }
+    .section-title p { margin: 0; color: var(--purple-soft); line-height: 1.45; max-width: 430px; }
+
+    .cards, .reason-grid, .facts-grid, .gallery {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 14px;
+    }
+    .card {
+      background: rgba(255, 253, 248, .9);
+      border: 1px solid rgba(255,255,255,.88);
+      border-radius: 28px;
+      padding: 22px;
+      box-shadow: var(--shadow);
+    }
+    .card h3 { margin: 0 0 8px; font-size: 1.18rem; letter-spacing: -.03em; }
+    .card p { margin: 0; color: var(--purple-soft); line-height: 1.55; }
+    .what-card { background: linear-gradient(135deg, rgba(255,255,255,.94), rgba(255,225,239,.84)); }
+    .mini-icon { font-size: 2rem; margin-bottom: 10px; display: inline-block; }
+
+    .filters {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 9px;
+      margin: 8px 0 16px;
+    }
+    .filter {
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      background: rgba(255,255,255,.75);
+      color: var(--purple);
+      padding: 10px 13px;
+      font-weight: 850;
+      cursor: pointer;
+    }
+    .filter[aria-pressed="true"] { background: var(--yellow); border-color: rgba(50,18,71,.2); box-shadow: inset 0 -4px 0 rgba(50,18,71,.06); }
+
+    .emoji-card {
+      display: grid;
+      grid-template-columns: auto 1fr;
+      gap: 13px;
+      align-items: center;
+      background: rgba(255, 253, 248, .92);
+      border: 1px solid rgba(255,255,255,.9);
+      border-radius: 26px;
+      padding: 14px;
+      box-shadow: 0 10px 28px rgba(50,18,71,.08);
+    }
+    .emoji-bubble {
+      display: grid;
+      place-items: center;
+      width: 62px;
+      height: 62px;
+      border-radius: 22px;
+      background: #fff0bd;
+      font-size: 2.35rem;
+    }
+    .emoji-card:nth-child(3n+2) .emoji-bubble { background: #ffddec; }
+    .emoji-card:nth-child(3n+3) .emoji-bubble { background: #d8faeb; }
+    .emoji-card strong { display: block; font-size: 1rem; letter-spacing: -.02em; }
+    .emoji-card small { display: block; margin-top: 3px; color: var(--purple-soft); line-height: 1.35; }
+    .tag { display: inline-flex; width: fit-content; margin-top: 8px; border-radius: 999px; padding: 4px 8px; background: rgba(90,39,114,.08); font-size: .72rem; font-weight: 900; }
+
+    .cta {
+      margin-top: 24px;
+      display: grid;
+      gap: 18px;
+      border-radius: 36px;
+      padding: 28px;
+      background: linear-gradient(135deg, var(--purple), #6f2d79 56%, #d65c96);
+      color: #fffdf8;
+      box-shadow: 0 22px 56px rgba(50, 18, 71, .24);
+      overflow: hidden;
+      position: relative;
+    }
+    .cta::after {
+      content: "✨";
+      position: absolute;
+      right: 16px;
+      top: -12px;
+      font-size: 7rem;
+      opacity: .22;
+      transform: rotate(12deg);
+    }
+    .cta h2 { font-size: clamp(2rem, 9vw, 4.8rem); max-width: 760px; }
+    .cta p { margin: 0; max-width: 560px; color: rgba(255,253,248,.82); line-height: 1.55; }
+    .random-result {
+      min-height: 96px;
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      padding: 14px;
+      border-radius: 26px;
+      background: rgba(255,255,255,.13);
+      border: 1px solid rgba(255,255,255,.18);
+    }
+    .random-emoji { font-size: 3rem; }
+    .random-result strong { display: block; }
+    .random-result span:last-child { color: rgba(255,253,248,.78); }
+
+    footer {
+      padding: 18px 0 0;
+      color: var(--purple-soft);
+      text-align: center;
+      font-weight: 700;
+    }
+
+    @media (min-width: 720px) {
+      .page { width: min(1120px, calc(100% - 56px)); padding-top: 24px; }
+      nav { display: flex; }
+      .hero { grid-template-columns: minmax(0, 1.1fr) 420px; align-items: center; padding: 86px 0 46px; }
+      .reason-grid { grid-template-columns: repeat(3, 1fr); }
+      .cards { grid-template-columns: 1fr 1fr; }
+      .facts-grid { grid-template-columns: repeat(5, 1fr); }
+      .gallery { grid-template-columns: repeat(2, 1fr); }
+      .cta { grid-template-columns: 1.15fr .85fr; align-items: end; padding: 42px; }
+    }
+    @media (min-width: 1000px) {
+      .gallery { grid-template-columns: repeat(3, 1fr); }
+      section { padding: 34px 0; }
+    }
+  </style>
+</head>
+<body>
+  <span class="float one">😂</span>
+  <span class="float two">💬</span>
+  <span class="float three">🎉</span>
+  <span class="float four">💜</span>
+
+  <div class="page">
+    <header>
+      <a class="brand" href="#top" aria-label="Emoji Atlas home"><span class="brand-mark">🌍</span> Emoji Atlas</a>
+      <nav aria-label="Primary navigation">
+        <a href="#what">What</a>
+        <a href="#why">Why</a>
+        <a href="#gallery">Gallery</a>
+        <a href="#facts">Facts</a>
+      </nav>
+    </header>
+
+    <main id="top">
+      <section class="hero" aria-labelledby="hero-title">
+        <div>
+          <span class="eyebrow">✨ A pocket guide to tiny feelings</span>
+          <h1 id="hero-title">The Tiny Icons That Changed How We Talk</h1>
+          <p>Emojis add emotion, humor, rhythm, and personality to digital conversations — one tiny symbol at a time.</p>
+          <div class="hero-actions">
+            <a class="btn" href="#gallery">Explore Emojis</a>
+            <a class="btn secondary" href="#random">Surprise me</a>
+          </div>
+        </div>
+        <div class="hero-card" aria-label="Decorative emoji sample grid">
+          <span class="tile">😀</span><span class="tile">💖</span><span class="tile">🍕</span><span class="tile">🐶</span>
+          <span class="tile">🎧</span><span class="tile">✨</span><span class="tile">🔥</span><span class="tile">💡</span>
+        </div>
+      </section>
+
+      <section id="what" aria-labelledby="what-title">
+        <div class="section-title">
+          <h2 id="what-title">What are emojis?</h2>
+          <p>Standardized pictographic characters that help text sound more human.</p>
+        </div>
+        <div class="cards">
+          <article class="card what-card"><span class="mini-icon">🙂</span><h3>Picture characters</h3><p>Unlike old-school emoticons such as :-), emojis are Unicode characters that apps can render as colorful little pictures.</p></article>
+          <article class="card what-card"><span class="mini-icon">🌐</span><h3>A shared language</h3><p>Unicode keeps core meanings portable, while Apple, Google, Microsoft, and others give each emoji its own visual flavor.</p></article>
+        </div>
+      </section>
+
+      <section id="why" aria-labelledby="why-title">
+        <div class="section-title">
+          <h2 id="why-title">Why people use them</h2>
+          <p>They make short messages clearer, warmer, faster, and a little more fun.</p>
+        </div>
+        <div class="reason-grid">
+          <article class="card"><span class="mini-icon">🥰</span><h3>Emotion</h3><p>Show how a message feels instantly.</p></article>
+          <article class="card"><span class="mini-icon">😌</span><h3>Tone</h3><p>Soften, clarify, or brighten plain text.</p></article>
+          <article class="card"><span class="mini-icon">😂</span><h3>Humor</h3><p>Turn a tiny reaction into a punchline.</p></article>
+          <article class="card"><span class="mini-icon">⚡</span><h3>Speed</h3><p>Say more with one familiar symbol.</p></article>
+          <article class="card"><span class="mini-icon">🎊</span><h3>Culture</h3><p>Share rituals, references, and moments.</p></article>
+          <article class="card"><span class="mini-icon">💜</span><h3>Identity</h3><p>Express style, mood, and community.</p></article>
+        </div>
+      </section>
+
+      <section id="gallery" aria-labelledby="gallery-title">
+        <div class="section-title">
+          <h2 id="gallery-title">Emoji gallery</h2>
+          <p>Filter a small atlas of expressive favorites by category.</p>
+        </div>
+        <div class="filters" aria-label="Emoji category filters">
+          <button class="filter" type="button" aria-pressed="true" data-filter="All">All</button>
+          <button class="filter" type="button" aria-pressed="false" data-filter="Faces">Faces</button>
+          <button class="filter" type="button" aria-pressed="false" data-filter="Hearts">Hearts</button>
+          <button class="filter" type="button" aria-pressed="false" data-filter="Food">Food</button>
+          <button class="filter" type="button" aria-pressed="false" data-filter="Animals">Animals</button>
+          <button class="filter" type="button" aria-pressed="false" data-filter="Objects">Objects</button>
+          <button class="filter" type="button" aria-pressed="false" data-filter="Symbols">Symbols</button>
+        </div>
+        <div class="gallery" id="emojiGallery" aria-live="polite"></div>
+      </section>
+
+      <section id="facts" aria-labelledby="facts-title">
+        <div class="section-title">
+          <h2 id="facts-title">Fun facts</h2>
+          <p>Small symbols, surprisingly big history.</p>
+        </div>
+        <div class="facts-grid">
+          <article class="card"><h3>July 17</h3><p>World Emoji Day lands on the calendar emoji’s famous date.</p></article>
+          <article class="card"><h3>Unicode</h3><p>New emojis are standardized before they appear across platforms.</p></article>
+          <article class="card"><h3>Japanese roots</h3><p>“E” means picture and “moji” means character.</p></article>
+          <article class="card"><h3>Many styles</h3><p>The same emoji can look different across devices.</p></article>
+          <article class="card"><h3>Always changing</h3><p>Popularity shifts by culture, platform, and moment.</p></article>
+        </div>
+      </section>
+
+      <section class="cta" id="random" aria-labelledby="cta-title">
+        <div>
+          <h2 id="cta-title">What’s your favorite emoji?</h2>
+          <p>Tap the button for a tiny burst of meaning from the atlas.</p>
+          <button class="btn" type="button" id="randomButton">Random Emoji</button>
+        </div>
+        <div class="random-result" id="randomResult" aria-live="polite">
+          <span class="random-emoji">🎲</span>
+          <span><strong>Ready when you are</strong><span>Generate a cheerful pick.</span></span>
+        </div>
+      </section>
+    </main>
+
+    <footer>Made with HTML, CSS, JavaScript, and way too many tiny feelings.</footer>
+  </div>
+
+  <script>
+    const emojiData = [
+      { emoji: '😀', name: 'Grinning Face', meaning: 'cheerful happiness', category: 'Faces' },
+      { emoji: '😂', name: 'Face with Tears of Joy', meaning: 'laughter or something very funny', category: 'Faces' },
+      { emoji: '🥰', name: 'Smiling Face with Hearts', meaning: 'affection, warmth, being touched', category: 'Faces' },
+      { emoji: '😎', name: 'Smiling Face with Sunglasses', meaning: 'cool, confident, relaxed', category: 'Faces' },
+      { emoji: '❤️', name: 'Red Heart', meaning: 'love, care, support', category: 'Hearts' },
+      { emoji: '💖', name: 'Sparkling Heart', meaning: 'excited love or appreciation', category: 'Hearts' },
+      { emoji: '💜', name: 'Purple Heart', meaning: 'affection, fandom, compassion', category: 'Hearts' },
+      { emoji: '💔', name: 'Broken Heart', meaning: 'heartbreak, sadness, loss', category: 'Hearts' },
+      { emoji: '🍕', name: 'Pizza', meaning: 'comfort food, sharing', category: 'Food' },
+      { emoji: '🍩', name: 'Doughnut', meaning: 'sweets, treats, celebration', category: 'Food' },
+      { emoji: '🐶', name: 'Dog Face', meaning: 'dogs, pets, loyalty', category: 'Animals' },
+      { emoji: '🦊', name: 'Fox', meaning: 'cleverness, nature, playful mischief', category: 'Animals' },
+      { emoji: '📱', name: 'Mobile Phone', meaning: 'texting, apps, mobile life', category: 'Objects' },
+      { emoji: '🎧', name: 'Headphones', meaning: 'music, listening, focus', category: 'Objects' },
+      { emoji: '✨', name: 'Sparkles', meaning: 'magic, emphasis, excitement', category: 'Symbols' },
+      { emoji: '🔥', name: 'Fire', meaning: 'impressive, trending, high energy', category: 'Symbols' }
+    ];
+
+    const gallery = document.querySelector('#emojiGallery');
+    const filterButtons = [...document.querySelectorAll('.filter')];
+    const randomButton = document.querySelector('#randomButton');
+    const randomResult = document.querySelector('#randomResult');
+
+    function renderGallery(category = 'All') {
+      const items = category === 'All' ? emojiData : emojiData.filter(item => item.category === category);
+      gallery.innerHTML = items.map(item => `
+        <article class="emoji-card" tabindex="0" aria-label="${item.name}: ${item.meaning}">
+          <span class="emoji-bubble" aria-hidden="true">${item.emoji}</span>
+          <span><strong>${item.name}</strong><small>${item.meaning}</small><span class="tag">${item.category}</span></span>
+        </article>
+      `).join('');
+    }
+
+    filterButtons.forEach(button => {
+      button.addEventListener('click', () => {
+        filterButtons.forEach(item => item.setAttribute('aria-pressed', 'false'));
+        button.setAttribute('aria-pressed', 'true');
+        renderGallery(button.dataset.filter);
+      });
+    });
+
+    randomButton.addEventListener('click', () => {
+      const item = emojiData[Math.floor(Math.random() * emojiData.length)];
+      randomResult.innerHTML = `<span class="random-emoji">${item.emoji}</span><span><strong>${item.name}</strong><span>${item.meaning}</span></span>`;
+    });
+
+    renderGallery();
+  </script>
+</body>
+</html>

@@ -14,7 +14,7 @@ export const runtime = "nodejs";
 const execFileAsync = promisify(execFile);
 const MAX_FILES_PER_DIR = 20;
 const MAX_FILE_CHARS = 4_000;
-const SNAPSHOT_CACHE_MS = 2_000;
+const SNAPSHOT_CACHE_MS = 10_000;
 
 type FleetTaskStatus = "active" | "completed" | "failed" | "unknown";
 const HERMES_EMPTY_TRANSCRIPT_MESSAGE = "Hermes session found. Send a message to resume it.";

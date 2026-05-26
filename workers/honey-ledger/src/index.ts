@@ -79,6 +79,9 @@ const worker: ExportedHandler<Env> = {
       if (request.method === "POST" && url.pathname === "/exchange") {
         return handleExchange(request, env);
       }
+      if (request.method === "POST" && url.pathname === "/return-to-honey") {
+        return handleReturnToHoney(request, env);
+      }
       if (request.method === "POST" && url.pathname === "/pool-events") {
         return handlePoolEvent(request, env);
       }
@@ -291,6 +294,58 @@ async function handleExchange(request: Request, env: Env) {
       ).bind(availableHoneyMicro),
     ]);
     events.push({ id, agentId: row.agent_id, honeyDelta: -availableHoney, hiveDelta });
+  }
+
+  const refreshed = agentId
+    ? await env.DB.prepare("SELECT * FROM agent_balances WHERE workspace_id = ? AND agent_id = ?").bind(workspaceId, agentId).all<AgentBalanceRow>()
+    : await env.DB.prepare("SELECT * FROM agent_balances WHERE workspace_id = ?").bind(workspaceId).all<AgentBalanceRow>();
+
+  const pool = await getRewardPoolState(env);
+  return ok(env, { ok: true, ledger: toHoneyLedger(env, refreshed.results ?? [], pool), events });
+}
+
+async function handleReturnToHoney(request: Request, env: Env) {
+  await ensureRewardPoolState(env);
+  const body = await request.json().catch(() => null) as { workspaceId?: string; agentId?: string } | null;
+  const workspaceId = cleanId(body?.workspaceId ?? "");
+  const agentId = cleanId(body?.agentId ?? "");
+  if (!workspaceId) return fail(env, "Missing workspaceId.", 400);
+
+  const balances = agentId
+    ? await env.DB.prepare("SELECT * FROM agent_balances WHERE workspace_id = ? AND agent_id = ?").bind(workspaceId, agentId).all<AgentBalanceRow>()
+    : await env.DB.prepare("SELECT * FROM agent_balances WHERE workspace_id = ?").bind(workspaceId).all<AgentBalanceRow>();
+
+  const events = [];
+
+  for (const row of balances.results ?? []) {
+    const hiveBalanceMicro = Math.max(0, Math.round(Number(row.hive_balance_micro ?? 0)));
+    const exchangeableHoneyMicro = Math.max(0, Math.round(Number(row.lifetime_honey_micro ?? 0) - Number(row.available_honey_micro ?? 0)));
+    const honeyDeltaMicro = Math.min(hiveBalanceMicro, exchangeableHoneyMicro);
+    if (honeyDeltaMicro <= 0) continue;
+    const honeyDelta = fromMicro(honeyDeltaMicro);
+    const hiveDelta = honeyDelta;
+    const id = crypto.randomUUID();
+    await env.DB.batch([
+      env.DB.prepare(
+        `UPDATE agent_balances
+          SET available_honey_micro = available_honey_micro + ?,
+            available_honey = ROUND((available_honey_micro + ?) / 1000000.0, 6),
+            hive_balance_micro = hive_balance_micro - ?,
+            hive_balance = ROUND((hive_balance_micro - ?) / 1000000.0, 6),
+            updated_at = datetime('now')
+          WHERE workspace_id = ? AND agent_id = ?`,
+      ).bind(honeyDeltaMicro, honeyDeltaMicro, honeyDeltaMicro, honeyDeltaMicro, row.workspace_id, row.agent_id),
+      env.DB.prepare(
+        `INSERT INTO exchange_events (id, workspace_id, agent_id, honey_delta, hive_delta, honey_delta_micro, hive_delta_micro)
+          VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      ).bind(id, row.workspace_id, row.agent_id, honeyDelta, -hiveDelta, honeyDeltaMicro, -honeyDeltaMicro),
+      env.DB.prepare(
+        `UPDATE reward_pool_state
+          SET exchanged_micro = MAX(0, exchanged_micro - ?), updated_at = datetime('now')
+          WHERE id = 1`,
+      ).bind(honeyDeltaMicro),
+    ]);
+    events.push({ id, agentId: row.agent_id, honeyDelta, hiveDelta: -hiveDelta });
   }
 
   const refreshed = agentId

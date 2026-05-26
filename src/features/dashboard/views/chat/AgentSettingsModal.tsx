@@ -6,22 +6,42 @@ import { createPortal } from "react-dom";
 import { CloseIconButton } from "@/components/ui/close-icon-button";
 
 export function AgentSettingsModal(props: any) {
-  const { BEE_WORKER_PRESET_LIST, BrainCircuit, Button, Check, ChevronRight, Copy, Cpu, Eye, FolderOpen, HERMES_UPDATE_INTEGRATION_KEYS, Image, KanbanSquare, LoaderCircle, MessageSquare, Pencil, PlugZap, Plus, RUNTIME_LABELS, RefreshCcw, Repeat2, Search, Send, Settings2, ShieldCheck, Sparkles, Upload, addHermesModelFromDraft, agentCreateDraft, agentCreateMachine, agentRenameDraft, agentRenameEditing, agentRuntimeAdvancedOpen, agentRuntimeFolderBrowsing, agentRuntimeFolderEditing, agentRuntimeFolderStatus, agentSettingsCustomWorker, agentSettingsCustomWorkers, agentSettingsDescription, agentSettingsIntegrationTarget, agentSettingsPanel, agentSettingsPreferredSkills, agentSettingsProvider, agentSettingsRuntime, agentSettingsSelectedCustomWorkerId, agentSettingsSkillProfile, agentSettingsTitle, agentSettingsWorkerClass, agentSettingsWorkerImage, agentSettingsWorkerLabel, agentSettingsWorkerPreset, agentWorkerClassView, applyCustomWorkerClass, beeRoleIconPath, browseAgentRuntimeFolder, closeAgentSettingsModal, createAgentFromModal, customWorkerDraft, customWorkerImageError, customWorkerImageInputRef, customWorkerSkillSearch, filteredCustomWorkerSkills, fleetClass, hermesUpdateRequired, openCustomWorkerClassCreator, providerIconPath, providerIconRenderMode, refreshRuntimeIntegrations, roleModalAgent, runRuntimeIntegrationAction, runtimeBackgroundPrompt, runtimeCapabilities, runtimeIconFallback, runtimeIconPath, runtimeIconRenderMode, runtimeIntegrationBusy, runtimeIntegrationMessage, runtimeIntegrationStatus, runtimeModelDraft, runtimeModelProviders, runtimeModelSetupMode, runtimeSessionQuery, runtimeSessionResults, runtimeSetupDefinition, runtimeSetupKey, runtimeUpdateConfirmKey, searchRuntimeSessionsForAgent, selectAgentWorkerClass, selectCustomWorkerClass, selectedRuntimeModelId, selectedRuntimeModels, selectedRuntimeProvider, setAgentCreateDraft, setAgentRenameDraft, setAgentRenameEditing, setAgentRuntimeAdvancedOpen, setAgentRuntimeFolderEditing, setAgentRuntimeFolderStatus, setAgentSettingsPanel, setAgentWorkerClassView, setCustomWorkerDraft, setCustomWorkerSkillSearch, setRuntimeBackgroundPrompt, setRuntimeModelDraft, setRuntimeModelSetupMode, setRuntimeSessionQuery, setRuntimeSetupKey, setRuntimeUpdateConfirmKey, sharedVault, startAgentChat, toggleCustomWorkerSkill, updateAgentProfile, updateAgentRuntimeModel, updateAgentSkillProfile, uploadCustomWorkerImage, workerCapabilityBadges } = props;
+  const { BEE_WORKER_PRESET_LIST, BrainCircuit, Button, Check, ChevronRight, Copy, Cpu, Eye, FolderOpen, HERMES_UPDATE_INTEGRATION_KEYS, Image, KanbanSquare, LoaderCircle, MessageSquare, Pencil, PlugZap, Plus, RUNTIME_LABELS, RefreshCcw, Repeat2, Search, Send, Settings2, ShieldCheck, Sparkles, Upload, addHermesModelFromDraft, agentCreateDraft, agentCreateMachine, agentRenameDraft, agentRenameEditing, agentRuntimeAdvancedOpen, agentRuntimeFolderBrowsing, agentRuntimeFolderEditing, agentRuntimeFolderStatus, agentSettingsCustomWorker, agentSettingsCustomWorkers, agentSettingsDescription, agentSettingsIntegrationTarget, agentSettingsPanel, agentSettingsPreferredSkills, agentSettingsProvider, agentSettingsRuntime, agentSettingsSelectedCustomWorkerId, agentSettingsSkillProfile, agentSettingsTitle, agentSettingsWorkerClass, agentSettingsWorkerImage, agentSettingsWorkerLabel, agentSettingsWorkerPreset, agentWorkerClassView, applyCustomWorkerClass, beeRoleIconPath, browseAgentRuntimeFolder, closeAgentSettingsModal, createAgentFromModal, customWorkerDraft, customWorkerImageError, customWorkerImageInputRef, customWorkerSkillSearch, filteredCustomWorkerSkills, fleetClass, hermesUpdateRequired, openCustomWorkerClassCreator, providerIconPath, providerIconRenderMode, refreshRuntimeIntegrations, roleModalAgent, runRuntimeIntegrationAction, runtimeAvailability, runtimeBackgroundPrompt, runtimeCapabilities, runtimeIconFallback, runtimeIconPath, runtimeIconRenderMode, runtimeIntegrationBusy, runtimeIntegrationMessage, runtimeIntegrationStatus, runtimeModelDraft, runtimeModelProviders, runtimeModelSelection, runtimeModelSetupMode, runtimeSessionQuery, runtimeSessionResults, runtimeSetupDefinition, runtimeSetupKey, runtimeUpdateConfirmKey, searchRuntimeSessionsForAgent, selectAgentWorkerClass, selectCustomWorkerClass, selectedRuntimeModelId, selectedRuntimeModels, selectedRuntimeProvider, setAgentCreateDraft, setAgentRenameDraft, setAgentRenameEditing, setAgentRuntimeAdvancedOpen, setAgentRuntimeFolderEditing, setAgentRuntimeFolderStatus, setAgentSettingsPanel, setAgentWorkerClassView, setCustomWorkerDraft, setCustomWorkerSkillSearch, setRuntimeBackgroundPrompt, setRuntimeModelDraft, setRuntimeModelSetupMode, setRuntimeSessionQuery, setRuntimeSetupKey, setRuntimeUpdateConfirmKey, sharedVault, startAgentChat, toggleCustomWorkerSkill, updateAgentProfile, updateAgentRuntimeModel, updateAgentSkillProfile, uploadCustomWorkerImage, workerCapabilityBadges } = props;
   const portalTarget = typeof document === "undefined" ? null : document.body;
 
   const updateSettingsRuntime = (runtime: AgentRuntime) => {
+    if (runtimeAvailability?.[runtime]?.installed === false) return;
+    const currentProvider = agentCreateMachine ? agentCreateDraft.provider : roleModalAgent?.provider;
+    const currentModel = agentCreateMachine ? agentCreateDraft.model : roleModalAgent?.model;
+    const runtimeProvider = runtimeModelProviders.find((provider) => provider.slug === currentProvider);
+    const runtimeDefaultProvider = runtimeModelSelection?.provider || runtimeModelProviders[0]?.slug || "";
+    const runtimeDefaultModel = runtimeModelSelection?.model || runtimeModelProviders[0]?.models[0]?.id || "";
+    const provider = runtime === "hermes"
+      ? currentProvider || "openai-codex"
+      : runtime === "openclaw"
+        ? runtime === agentSettingsRuntime && runtimeProvider ? currentProvider : runtimeDefaultProvider
+        : runtime === "openai-compatible"
+          ? currentProvider || "lm-studio"
+          : "";
+    const model = runtime === "hermes"
+      ? currentModel || ""
+      : runtime === "openclaw"
+        ? runtime === agentSettingsRuntime && runtimeProvider ? currentModel || runtimeProvider.models[0]?.id || "" : runtimeDefaultModel
+        : runtime === "openai-compatible"
+          ? currentModel || ""
+          : "";
     if (agentCreateMachine) {
       setAgentCreateDraft((current) => ({
         ...current,
         runtime,
-        provider: runtime === "hermes" ? current.provider || "openai-codex" : "",
-        model: runtime === "hermes" ? current.model : "",
+        provider,
+        model,
       }));
     } else if (roleModalAgent) {
       updateAgentProfile(roleModalAgent.id, {
         runtime,
-        provider: runtime === "hermes" ? roleModalAgent.provider || "openai-codex" : "",
-        model: runtime === "hermes" ? roleModalAgent.model : "",
+        provider,
+        model,
       });
     }
   };
@@ -43,6 +63,12 @@ export function AgentSettingsModal(props: any) {
   const agentSettingsWorkerSubtitle = (agentSettingsCustomWorker?.label || agentSettingsWorkerPreset?.label || agentSettingsWorkerLabel || "")
     .replace(/\s+bee$/i, "")
     .trim();
+  const modelSelectableRuntime = Boolean(runtimeCapabilities(agentSettingsIntegrationTarget ?? roleModalAgent)?.modelSelection);
+  const runtimeModelPanelAvailable = runtimeModelProviders.length > 0
+    || modelSelectableRuntime
+    || runtimeIntegrationBusy === "status"
+    || Boolean(runtimeIntegrationMessage);
+  const runtimeCanAddModels = agentSettingsRuntime === "hermes";
 
   if (!portalTarget) return null;
 
@@ -146,30 +172,36 @@ export function AgentSettingsModal(props: any) {
                   <div className={fleetClass("agentRuntimeSegments")} role="group" aria-label="Runtime">
                     {Object.entries(RUNTIME_LABELS).map(([runtime, label]) => {
                       const selected = runtime === (agentCreateMachine ? agentCreateDraft.runtime : roleModalAgent?.runtime ?? "hermes");
+                      const unavailable = runtimeAvailability?.[runtime]?.installed === false;
+                      const title = unavailable ? `${label} is not installed.` : runtimeAvailability?.[runtime]?.detail;
                       return (
-                        <button
-                          type="button"
-                          key={runtime}
-                          aria-pressed={selected}
-                          className={selected ? fleetClass("selectedRuntimeSegment") : ""}
-                          onClick={() => updateSettingsRuntime(runtime as AgentRuntime)}
-                        >
-                          {renderRuntimeMark(runtime, label)}
-                          <strong>{label}</strong>
-                        </button>
+                        <span className={fleetClass("runtimeSegmentShell")} key={runtime} title={title}>
+                          <button
+                            type="button"
+                            aria-pressed={selected}
+                            aria-describedby={unavailable ? `runtime-${runtime}-unavailable` : undefined}
+                            className={selected ? fleetClass("selectedRuntimeSegment") : ""}
+                            disabled={unavailable}
+                            onClick={() => updateSettingsRuntime(runtime as AgentRuntime)}
+                          >
+                            {renderRuntimeMark(runtime, label)}
+                            <strong>{label}</strong>
+                          </button>
+                          {unavailable ? <span id={`runtime-${runtime}-unavailable`} className="sr-only">{`${label} is not installed.`}</span> : null}
+                        </span>
                       );
                     })}
                   </div>
                 </div>
-                {runtimeCapabilities(agentSettingsIntegrationTarget ?? { runtime: agentSettingsRuntime }).modelSelection ? (
+                {runtimeModelPanelAvailable ? (
                   <div className={fleetClass("agentRuntimeModelPanel")}>
                     <div className={fleetClass("agentRuntimeCardGroup")}>
                       <div className={fleetClass("agentRuntimeGroupHeader")}>
                         <span>Provider</span>
                         <button
                           type="button"
-                          aria-label="Refresh Hermes models"
-                          title="Refresh Hermes models"
+                          aria-label={`Refresh ${RUNTIME_LABELS[agentSettingsRuntime] ?? agentSettingsRuntime} models`}
+                          title={`Refresh ${RUNTIME_LABELS[agentSettingsRuntime] ?? agentSettingsRuntime} models`}
                           disabled={runtimeIntegrationBusy === "status"}
                           onClick={() => void refreshRuntimeIntegrations(agentSettingsIntegrationTarget ?? undefined)}
                         >
@@ -177,20 +209,17 @@ export function AgentSettingsModal(props: any) {
                         </button>
                       </div>
                       <div className={fleetClass("agentRuntimeProviderCards")}>
-                        <button
-                          type="button"
-                          className={fleetClass("agentRuntimeAddCard")}
-                          onClick={() => setRuntimeModelSetupMode((current) => current === "provider" ? null : "provider")}
-                        >
-                          <Plus aria-hidden="true" />
-                          <strong>Add provider</strong>
-                        </button>
-                        {runtimeModelProviders.length === 0 ? (
-                          <article className={fleetClass("agentRuntimeEmptyCard")}>
-                            <strong>No providers returned</strong>
-                            <small>{runtimeIntegrationMessage || `${RUNTIME_LABELS[agentSettingsRuntime] ?? agentSettingsRuntime} did not return configured providers.`}</small>
-                          </article>
-                        ) : runtimeModelProviders.map((provider) => {
+                        {runtimeCanAddModels ? (
+                          <button
+                            type="button"
+                            className={fleetClass("agentRuntimeAddCard")}
+                            onClick={() => setRuntimeModelSetupMode((current) => current === "provider" ? null : "provider")}
+                          >
+                            <Plus aria-hidden="true" />
+                            <strong>Add provider</strong>
+                          </button>
+                        ) : null}
+                        {runtimeModelProviders.map((provider) => {
                           const selected = provider.slug === selectedRuntimeProvider?.slug;
                           const iconPath = providerIconPath(provider);
                           const iconMode = providerIconRenderMode(provider);
@@ -217,6 +246,12 @@ export function AgentSettingsModal(props: any) {
                             </button>
                           );
                         })}
+                        {!runtimeModelProviders.length ? (
+                          <div className={fleetClass("agentRuntimeEmptyCard")}>
+                            <strong>{runtimeIntegrationBusy === "status" ? "Loading models..." : "No providers returned"}</strong>
+                            <small>{runtimeIntegrationMessage || `Refresh ${RUNTIME_LABELS[agentSettingsRuntime] ?? agentSettingsRuntime} models from this machine.`}</small>
+                          </div>
+                        ) : null}
                       </div>
                     </div>
                     <div className={fleetClass("agentRuntimeCardGroup")}>
@@ -224,12 +259,7 @@ export function AgentSettingsModal(props: any) {
                         <span>Model</span>
                       </div>
                       <div className={fleetClass("agentRuntimeModelCards")}>
-                        {selectedRuntimeModels.length === 0 ? (
-                          <article className={fleetClass("agentRuntimeEmptyCard")}>
-                            <strong>No models returned</strong>
-                            <small>{runtimeIntegrationMessage || `${selectedRuntimeProvider?.name ?? "This provider"} did not return configured models.`}</small>
-                          </article>
-                        ) : selectedRuntimeModels.map((model) => {
+                        {selectedRuntimeModels.map((model) => {
                           const selected = model.id === selectedRuntimeModelId;
                           return (
                             <button
@@ -244,17 +274,25 @@ export function AgentSettingsModal(props: any) {
                             </button>
                           );
                         })}
-                        <button
-                          type="button"
-                          className={fleetClass("agentRuntimeAddCard")}
-                          onClick={() => setRuntimeModelSetupMode((current) => current === "model" ? null : "model")}
-                        >
-                          <Plus aria-hidden="true" />
-                          <strong>Add model</strong>
-                        </button>
+                        {!selectedRuntimeModels.length ? (
+                          <div className={fleetClass("agentRuntimeEmptyCard")}>
+                            <strong>{runtimeIntegrationBusy === "status" ? "Loading models..." : "No models returned"}</strong>
+                            <small>{runtimeIntegrationMessage || "The selected provider has not reported any models yet."}</small>
+                          </div>
+                        ) : null}
+                        {runtimeCanAddModels ? (
+                          <button
+                            type="button"
+                            className={fleetClass("agentRuntimeAddCard")}
+                            onClick={() => setRuntimeModelSetupMode((current) => current === "model" ? null : "model")}
+                          >
+                            <Plus aria-hidden="true" />
+                            <strong>Add model</strong>
+                          </button>
+                        ) : null}
                       </div>
                     </div>
-                    {runtimeModelSetupMode ? (
+                    {runtimeCanAddModels && runtimeModelSetupMode ? (
                       <div className={fleetClass("agentRuntimeModelSetup")}>
                         <div>
                           <strong>{runtimeModelSetupMode === "provider" ? "Add provider" : "Add model"}</strong>

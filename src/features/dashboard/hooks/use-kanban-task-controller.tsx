@@ -488,7 +488,7 @@ export function useKanbanTaskController(props: any) {
             choices?: Array<{ delta?: { content?: string } }>;
             error?: string;
             honey?: unknown;
-            session?: { id?: string; startedAt?: number; updatedAt?: number; messageCount?: number };
+            session?: { id?: string; runtime?: string; source?: string; startedAt?: number; updatedAt?: number; messageCount?: number };
           };
           if (parsed.error) throw new Error(parsed.error);
           if (parsed.honey) {
@@ -501,8 +501,10 @@ export function useKanbanTaskController(props: any) {
               agentSession: {
                 agentId: agent.id,
                 agentName: agent.name,
+                runtime: parsed.session.runtime ?? agent.runtime,
                 telemetryUrl: agent.telemetryUrl,
                 sessionId: parsed.session.id,
+                source: parsed.session.source,
                 startedAt: parsed.session.startedAt ?? Date.now(),
                 updatedAt: parsed.session.updatedAt ?? Date.now(),
                 lastMessageCount: parsed.session.messageCount ?? 0,

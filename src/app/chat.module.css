@@ -852,6 +852,7 @@ details[open] > summary .treeDisclosure::before {
 
 .messageActions {
   position: relative;
+  z-index: 12;
   display: inline-flex;
   align-items: center;
   gap: 6px;
@@ -1043,9 +1044,9 @@ details[open] > summary .treeDisclosure::before {
 
 .generateKanbanPopover {
   position: absolute;
-  top: 30px;
+  bottom: 30px;
   left: 28px;
-  z-index: 8;
+  z-index: 40;
   display: grid;
   width: min(260px, calc(100vw - 48px));
   gap: 10px;
@@ -1061,12 +1062,12 @@ details[open] > summary .treeDisclosure::before {
 .generateKanbanPopover::before {
   content: "";
   position: absolute;
-  top: -5px;
+  bottom: -5px;
   left: 14px;
   width: 9px;
   height: 9px;
-  border-top: 1px solid rgba(148, 163, 184, 0.2);
-  border-left: 1px solid rgba(148, 163, 184, 0.2);
+  border-right: 1px solid rgba(148, 163, 184, 0.2);
+  border-bottom: 1px solid rgba(148, 163, 184, 0.2);
   background: rgba(13, 18, 28, 0.96);
   transform: rotate(45deg);
 }
@@ -1080,10 +1081,20 @@ details[open] > summary .treeDisclosure::before {
   font-weight: 800;
 }
 
-.generateKanbanHeader svg {
+.generateKanbanHeader span {
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.generateKanbanStatusIcon {
   width: 14px;
   height: 14px;
   color: #5eead4;
+}
+
+.generateKanbanClose {
+  margin-left: auto;
+  color: rgba(203, 213, 225, 0.8);
 }
 
 .generateKanbanActions {
@@ -1138,11 +1149,17 @@ details[open] > summary .treeDisclosure::before {
   color: #aeb9ca;
   font-size: 11px;
   line-height: 1.35;
+  white-space: normal;
+  word-spacing: 0.08em;
   overflow-wrap: anywhere;
 }
 
 .generateKanbanPopover.phase-done {
   border-color: rgba(34, 197, 94, 0.34);
+}
+
+.generateKanbanPopover.phase-done .generateKanbanStatusIcon {
+  animation: chatKanbanCheckPop 520ms cubic-bezier(0.2, 0.9, 0.3, 1.35) both;
 }
 
 .generateKanbanPopover.phase-done .generateKanbanProgress span::after {
@@ -1155,7 +1172,7 @@ details[open] > summary .treeDisclosure::before {
   border-color: rgba(248, 113, 113, 0.34);
 }
 
-.generateKanbanPopover.phase-error .generateKanbanHeader svg {
+.generateKanbanPopover.phase-error .generateKanbanStatusIcon {
   color: #fca5a5;
 }
 
@@ -1287,6 +1304,21 @@ details[open] > summary .treeDisclosure::before {
   55%,
   100% {
     transform: translateX(220%);
+  }
+}
+
+@keyframes chatKanbanCheckPop {
+  0% {
+    opacity: 0;
+    transform: scale(0.42) rotate(-18deg);
+  }
+  60% {
+    opacity: 1;
+    transform: scale(1.18) rotate(4deg);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1) rotate(0deg);
   }
 }
 

@@ -15,6 +15,7 @@ const HERMES_HOME = join(homedir(), ".hermes");
 const HERMES_AGENT_DIR = join(HERMES_HOME, "hermes-agent");
 const HERMES_PYTHON = join(HERMES_AGENT_DIR, "venv", "bin", "python");
 const HERMES_DB = join(HERMES_HOME, "state.db");
+const OPENCLAW_CONFIG = join(homedir(), ".openclaw", "openclaw.json");
 const OPENCLAW_AGENTS = join(homedir(), ".openclaw", "agents");
 const RUN_LOG_ROOT = join(homedir(), ".hivemindos", "runtime-runs");
 
@@ -81,9 +82,7 @@ export async function getRuntimeIntegrationStatus(runtime: AgentRuntime, agent?:
       runtime,
       capabilities,
       modelSelection,
-      integrations: integrationDefaults(capabilities, {
-        socialPosting: runtime === "openclaw" ? "Available through OpenClaw skills when installed." : "Not exposed by this adapter yet.",
-      }),
+      integrations: integrationDefaults(capabilities),
       diagnostics,
     };
   }
@@ -158,6 +157,13 @@ export async function searchRuntimeSessions(runtime: AgentRuntime, query: string
 }
 
 export async function runRuntimeIntegrationAction(runtime: AgentRuntime, action: string, input: Record<string, unknown> = {}) {
+  if (runtime === "openclaw" && action === "set-model") {
+    const provider = String(input.provider ?? "").trim();
+    const model = String(input.model ?? "").trim();
+    if (!provider || !model) return { ok: false, error: "Provider and model are required." };
+    await setOpenClawModel(provider, model);
+    return { ok: true, message: `OpenClaw default model set to ${provider}/${model}.` };
+  }
   if (runtime !== "hermes") {
     const adapter = getRuntimeAdapter(runtime);
     if (adapter?.runIntegrationAction) {
@@ -370,6 +376,44 @@ cfg["model"] = model_cfg
 save_config(cfg)
 `;
   await runHermesPython(script, { __PROVIDER__: provider, __MODEL__: model });
+}
+
+async function setOpenClawModel(provider: string, model: string) {
+  const raw = await readFile(OPENCLAW_CONFIG, "utf8").catch(() => "{}");
+  const config = parseJsonObject(raw.replace(/\/\/[^\n]*/g, "")) ?? {};
+  const fullModel = `${provider}/${model}`;
+  const agents = isRecord(config.agents) ? config.agents : {};
+  const list = Array.isArray(agents.list) ? agents.list.filter(isRecord) : [];
+  const agent = list.find((item) => item.default === true) ?? list[0];
+  if (agent) agent.model = fullModel;
+  if (!isRecord(config.agents)) config.agents = agents;
+  if (!Array.isArray(agents.list)) agents.list = list;
+  setNested(config, "agents.defaults.model.primary", fullModel);
+  await mkdir(dirname(OPENCLAW_CONFIG), { recursive: true, mode: 0o700 });
+  await writeFile(OPENCLAW_CONFIG, `${JSON.stringify(config, null, 2)}\n`, { mode: 0o600 });
+}
+
+function parseJsonObject(raw: string): Record<string, unknown> | null {
+  try {
+    const parsed = JSON.parse(raw) as unknown;
+    return isRecord(parsed) ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
+function setNested(obj: Record<string, unknown>, path: string, value: unknown) {
+  const parts = path.split(".");
+  let current = obj;
+  for (const part of parts.slice(0, -1)) {
+    if (!isRecord(current[part])) current[part] = {};
+    current = current[part] as Record<string, unknown>;
+  }
+  current[parts[parts.length - 1]] = value;
 }
 
 async function addHermesModel(provider: string, model: string, contextLength?: number) {

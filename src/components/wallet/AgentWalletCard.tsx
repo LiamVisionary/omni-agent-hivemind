@@ -537,7 +537,7 @@ export function AgentWalletCard({
             <span className={styles.tokenSub}>
               {honeyLedgerEnabled
                 ? `${formatNumber(honeyReward?.honeyAvailable ?? 0, 1)} available · ${(honeyReward?.tokensUsed ?? 0).toLocaleString()} tokens used`
-                : "Hive ledger off"}
+                : "Rewards off"}
             </span>
           </div>
           <button
@@ -546,7 +546,7 @@ export function AgentWalletCard({
             disabled={!honeyLedgerEnabled || !honeyReward || honeyReward.honeyAvailable <= 0}
             onClick={onExchangeHoney}
           >
-            Exchange
+            Award HIVE
           </button>
         </div>
 
@@ -557,8 +557,8 @@ export function AgentWalletCard({
             </svg>
           </span>
           <div className={styles.tokenBody}>
-            <span className={styles.tokenName}>HIVE</span>
-            <span className={styles.tokenSub}>Reward token</span>
+            <span className={styles.tokenName}>Bankr HIVE</span>
+            <span className={styles.tokenSub}>Awarded reward</span>
           </div>
           <div className={styles.tokenAmount}>
             <strong>{formatNumber(honeyReward?.hiveBalance ?? 0, 2)}</strong>

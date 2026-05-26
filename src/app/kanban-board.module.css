@@ -570,6 +570,127 @@
   margin-left: auto;
 }
 
+.kanbanDeliverablePicker {
+  position: relative;
+  display: inline-flex;
+}
+
+.kanbanDeliverableBadge {
+  display: inline-flex;
+  min-height: 28px;
+  align-items: center;
+  gap: 5px;
+  border: 1px solid rgba(94, 234, 212, 0.28);
+  border-radius: 999px;
+  background: rgba(20, 184, 166, 0.1);
+  color: #99f6e4;
+  cursor: pointer;
+  font: inherit;
+  font-size: 11px;
+  font-weight: 900;
+  line-height: 1;
+  padding: 6px 9px;
+}
+
+.kanbanDeliverableBadge:hover,
+.kanbanDeliverableBadge:focus-visible {
+  border-color: rgba(94, 234, 212, 0.48);
+  background: rgba(20, 184, 166, 0.16);
+  outline: none;
+}
+
+.kanbanDeliverableBadge svg {
+  width: 13px;
+  height: 13px;
+}
+
+.kanbanDeliverableMenu {
+  position: absolute;
+  right: 0;
+  bottom: calc(100% + 8px);
+  z-index: 55;
+  display: grid;
+  width: min(340px, calc(100vw - 48px));
+  gap: 8px;
+  border: 1px solid rgba(94, 234, 212, 0.2);
+  border-radius: 8px;
+  background: rgba(6, 11, 18, 0.98);
+  box-shadow: 0 18px 52px rgba(0, 0, 0, 0.38);
+  padding: 9px;
+}
+
+.kanbanDeliverableMenu p {
+  margin: 0 2px;
+  color: rgba(148, 163, 184, 0.84);
+  font-size: 11px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.kanbanDeliverableItem {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 6px;
+  border-radius: 7px;
+  background: rgba(15, 23, 42, 0.52);
+  padding: 8px;
+}
+
+.kanbanDeliverableItem span {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+}
+
+.kanbanDeliverableItem strong {
+  color: #f8fafc;
+  font-size: 12px;
+  line-height: 1.2;
+  overflow-wrap: anywhere;
+}
+
+.kanbanDeliverableItem small {
+  color: rgba(148, 163, 184, 0.84);
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.kanbanDeliverableItem button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 7px;
+  min-height: 30px;
+  border: 1px solid rgba(148, 163, 184, 0.16);
+  border-radius: 7px;
+  background: rgba(8, 13, 20, 0.52);
+  color: rgba(226, 232, 240, 0.9);
+  cursor: pointer;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 850;
+  padding: 7px 9px;
+}
+
+.kanbanDeliverableItem button:hover,
+.kanbanDeliverableItem button:focus-visible {
+  border-color: rgba(94, 234, 212, 0.36);
+  background: rgba(20, 184, 166, 0.11);
+  color: #ccfbf1;
+  outline: none;
+}
+
+.kanbanDeliverableItem button:disabled {
+  cursor: not-allowed;
+  opacity: 0.52;
+}
+
+.kanbanDeliverableItem button svg {
+  width: 13px;
+  height: 13px;
+  flex: 0 0 auto;
+}
+
 .kanbanCardFooter time {
   color: var(--muted);
   flex: 0 0 auto;

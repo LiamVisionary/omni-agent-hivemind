@@ -116,7 +116,7 @@ export const SWARM_LAUNCH_PRESETS: MiroSharkTemplate[] = [
     estimated_agents: 12,
     estimated_rounds: 12,
     platforms: ["twitter"],
-    tags: ["x", "autoposter", "thread"],
+    tags: ["x", "publisher", "thread"],
   },
   {
     id: "market-maker",

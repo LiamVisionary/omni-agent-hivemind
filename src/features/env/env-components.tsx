@@ -61,10 +61,12 @@ export function taskChatLeafKey(agentId: string, task: AgentTask, taskIndex = 0)
   return `task-${agentId}-${task.id}-${task.source ?? "unknown"}-${task.updatedAt || task.startedAt || taskIndex}`;
 }
 
-export function hermesRuntimeSessionIdFromTask(task: AgentTask) {
+export function runtimeSessionIdFromTask(task: AgentTask) {
   if (task.source !== "hermes-state") return "";
   return task.id.startsWith("hermes-state:") ? task.id.slice("hermes-state:".length) : "";
 }
+
+export const hermesRuntimeSessionIdFromTask = runtimeSessionIdFromTask;
 
 export function chatMessageStorageKey(agentId: string, leafKey?: string) {
   if (!leafKey || leafKey === `agent-${agentId}`) return agentId;

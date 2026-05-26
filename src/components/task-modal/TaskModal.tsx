@@ -53,7 +53,7 @@ const TEMPLATES = [
   { id: "brain/index-vault",    label: "Index Obsidian vault",   desc: "Refresh embeddings + sync to peers" },
   { id: "brain/pull-rss",       label: "Pull RSS digest",        desc: "Fetch + dedup hourly news" },
   { id: "secops/rotate-tokens", label: "Rotate broker tokens",   desc: "Refresh Coinbase/Kraken JWTs" },
-  { id: "channels/x-publish",   label: "Publish staged X thread",desc: "Push the autoposter draft" },
+  { id: "channels/x-publish",   label: "Publish staged X thread",desc: "Publish the staged draft" },
   { id: "sim/run-mm",           label: "Run MM simulation",      desc: "Start a market-making swarm" },
   { id: "ops/backup-env",       label: "Backup hive.env.gpg",    desc: "GPG-encrypt + push to vault" },
 ];

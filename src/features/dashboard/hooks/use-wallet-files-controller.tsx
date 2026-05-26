@@ -345,6 +345,16 @@ export function useWalletFilesController(props: any) {
     await refreshHoneyLedger();
   }
 
+  async function returnAllHiveToHoney() {
+    if (!honeyLedgerEnabled) return;
+    await fetch("/api/honey-ledger", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "return-to-honey" }),
+    }).catch(() => null);
+    await refreshHoneyLedger();
+  }
+
   async function enableHoneyLedger() {
     setHoneyLedgerEnabled(true);
     await observeHoneyUsage(true);
@@ -555,5 +565,5 @@ export function useWalletFilesController(props: any) {
     });
   }
 
-  return { updateSharedVault, updateWallet, resetWalletBurnClock, copyPaymentPrompt, refreshMoneyClawStatus, saveMoneyClawKey, initializeCoreWalletRails, refreshHoneyLedger, observeHoneyUsage, refreshRuntimeUsage, refreshWalletVaultBackupStatus, runWalletVaultBackupAction, refreshMaintenanceReport, runMaintenanceAction, runtimeFileRequest, refreshRuntimeFileRoots, listRuntimeFiles, openRuntimeFile, saveRuntimeFile, exchangeHoneyForHive, exchangeAllHoneyForHive, enableHoneyLedger, updateWalletAction, createLocalWallet, refreshWalletBalance, sendWalletUsdc, testX402Fetch, addAgentToMachine, requestDuplicateAgent, duplicateAgent, deleteAgent };
+  return { updateSharedVault, updateWallet, resetWalletBurnClock, copyPaymentPrompt, refreshMoneyClawStatus, saveMoneyClawKey, initializeCoreWalletRails, refreshHoneyLedger, observeHoneyUsage, refreshRuntimeUsage, refreshWalletVaultBackupStatus, runWalletVaultBackupAction, refreshMaintenanceReport, runMaintenanceAction, runtimeFileRequest, refreshRuntimeFileRoots, listRuntimeFiles, openRuntimeFile, saveRuntimeFile, exchangeHoneyForHive, exchangeAllHoneyForHive, returnAllHiveToHoney, enableHoneyLedger, updateWalletAction, createLocalWallet, refreshWalletBalance, sendWalletUsdc, testX402Fetch, addAgentToMachine, requestDuplicateAgent, duplicateAgent, deleteAgent };
 }

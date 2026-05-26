@@ -1,7 +1,36 @@
 import type { CompanionMemory } from "@/lib/services/zepService";
-import { createDefaultMemory } from "@/lib/services/openclaw/useOpenClawMemorySync";
 
 const memoryByKey = new Map<string, CompanionMemory>();
+
+function createDefaultMemory(): CompanionMemory {
+  return {
+    userName: "Unknown",
+    userNicknames: [],
+    userPreferences: [],
+    userDislikes: [],
+    relationshipLevel: 1,
+    relationshipMilestones: [],
+    emotionalState: "neutral",
+    userEmotionalPatterns: "",
+    conversationTopics: [],
+    userPersonality: "",
+    sharedMemories: [],
+    insideJokes: [],
+    importantDates: [],
+    lastConversationSummary: "",
+    totalConversations: 0,
+    characterSharedStories: [],
+    characterPreferences: [],
+    characterDislikes: [],
+    characterPromises: [],
+    characterOpinions: [],
+    musicLikes: [],
+    musicDislikes: [],
+    openclawTasks: [],
+    visionMemories: [],
+    rejectedNicknames: [],
+  };
+}
 
 function key(userId: string, characterId: string) {
   return `${userId}:${characterId}`;

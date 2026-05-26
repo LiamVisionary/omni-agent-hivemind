@@ -26,6 +26,8 @@ That means the reward pool receives at most 0.0684% of trading volume value. Exa
 
 The ledger tracks the pool in micro-HIVE. Usage receipts mint Honey as a HIVE-denominated entitlement, but each receipt is clipped by the remaining pool. Therefore cumulative Honey emitted and HIVE exchanged cannot exceed the cumulative reward pool recorded in Cloudflare D1.
 
+`POST /return-to-honey` reverses older ledger-only HIVE conversions back into available Honey so the dashboard can retire the confusing intermediate balance before real Bankr settlement.
+
 ## Free-tier setup
 
 ```bash

@@ -238,7 +238,7 @@ function getAdminAuthStatus(installPath?: string): MiroSharkCompanionStatus["adm
     return {
       configured: true,
       source: "environment",
-      hint: "Publish/export auth is configured in OpenClaw's environment.",
+      hint: "Publish/export auth is configured in the local HivemindOS runtime environment.",
     };
   }
   if (adminTokenFromEnvFile(installPath)) {
@@ -250,7 +250,7 @@ function getAdminAuthStatus(installPath?: string): MiroSharkCompanionStatus["adm
   }
   return {
     configured: false,
-    hint: "Publish/export requires MIROSHARK_ADMIN_TOKEN. OpenClaw can generate it, write it to MiroShark's .env, restart MiroShark, and keep using it from the local file.",
+    hint: "Publish/export requires MIROSHARK_ADMIN_TOKEN. HivemindOS can write it to MiroShark's .env, restart MiroShark, and keep using it from the local file.",
   };
 }
 
@@ -349,7 +349,7 @@ if [ ! -f .env ] && [ -f "${BOOTSTRAP_ENV_PATH}" ]; then
   chmod 600 .env
 fi
 if [ ! -f .env ]; then
-  echo "No .env found. OpenClaw will create it if an API key is available in its environment."
+  echo "No .env found. HivemindOS will create it if an API key is available in its environment."
 fi
 cd backend
 if command -v docker >/dev/null 2>&1; then
@@ -464,7 +464,7 @@ export async function getMiroSharkCompanionStatus(): Promise<MiroSharkCompanionS
           : [{ id: "install", label: setup.running ? "Installing..." : "Install & start", disabled: setup.running || !requirements.every((item) => item.name === "MiroShark .env" || item.ok) || !hasKey }],
       startCommand: discovered.installPath ? managedStartCommand(discovered.installPath) : undefined,
       installCommand: `git clone https://github.com/aaronjmars/MiroShark ${OPENCLAW_MIROSHARK_DIR}`,
-      configHint: hasKey ? undefined : "Add OPENROUTER_API_KEY or OPENAI_API_KEY to OpenClaw's environment so setup can write MiroShark's .env automatically.",
+      configHint: hasKey ? undefined : "Add OPENROUTER_API_KEY or OPENAI_API_KEY to the HivemindOS runtime environment so setup can write MiroShark's .env automatically.",
       endpoints,
       error: ok
         ? undefined
@@ -489,7 +489,7 @@ export async function getMiroSharkCompanionStatus(): Promise<MiroSharkCompanionS
         : [{ id: "install", label: setup.running ? "Installing..." : "Install & start", disabled: setup.running || !requirements.every((item) => item.name === "MiroShark .env" || item.ok) || !hasKey }],
       startCommand: discovered.installPath ? managedStartCommand(discovered.installPath) : undefined,
       installCommand: `git clone https://github.com/aaronjmars/MiroShark ${OPENCLAW_MIROSHARK_DIR}`,
-      configHint: hasKey ? undefined : "Add OPENROUTER_API_KEY or OPENAI_API_KEY to OpenClaw's environment so setup can write MiroShark's .env automatically.",
+      configHint: hasKey ? undefined : "Add OPENROUTER_API_KEY or OPENAI_API_KEY to the HivemindOS runtime environment so setup can write MiroShark's .env automatically.",
       endpoints,
       error: error instanceof Error ? error.message : "MiroShark companion is unreachable",
     };

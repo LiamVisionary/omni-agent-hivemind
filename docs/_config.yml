@@ -1,0 +1,6 @@
+title: HivemindOS Docs
+description: Local-first agent fleet control room documentation.
+theme: minima
+relative_links:
+  enabled: true
+  collections: true

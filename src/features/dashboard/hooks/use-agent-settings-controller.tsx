@@ -21,6 +21,14 @@ type MachineInitDraft = {
   serverType: string;
 };
 
+function runtimeIntegrationTargetKey(agent?: AgentProfile | null) {
+  if (!agent) return "";
+  const telemetryUrl = agent.telemetryUrl?.trim().replace(/\/+$/, "") || "local";
+  const localDataDir = agent.localDataDir?.trim() || "";
+  const agentId = agent.agentId?.trim() || agent.id;
+  return [agent.runtime, telemetryUrl, localDataDir, agentId].join("|");
+}
+
 type UseAgentSettingsControllerProps = {
   HETZNER_SERVER_TYPE_OPTIONS: readonly HetznerServerTypeOption[];
   agentCreateDraft: AgentCreateDraft;
@@ -69,7 +77,19 @@ export function useAgentSettingsController(props: UseAgentSettingsControllerProp
   const agentSettingsRuntime = agentCreateMachine ? agentCreateDraft.runtime : roleModalAgent?.runtime ?? "hermes";
   const agentSettingsProvider = agentCreateMachine ? agentCreateDraft.provider ?? "" : roleModalAgent?.provider ?? "";
   const agentSettingsModel = agentCreateMachine ? agentCreateDraft.model ?? "" : roleModalAgent?.model ?? "";
-  const runtimeModelSelection = runtimeIntegrationStatus?.runtime === agentSettingsRuntime ? runtimeIntegrationStatus.modelSelection : undefined;
+  const agentSettingsIntegrationTarget = agentCreateMachine
+    ? {
+      ...createAgentProfile(agentCreateDraft.runtime, runtimeCount(agents, agentCreateDraft.runtime) + 1),
+      provider: agentCreateDraft.provider,
+      model: agentCreateDraft.model,
+      telemetryUrl: agentCreateMachine.collectorUrl,
+      machineName: agentCreateMachine.name,
+    }
+    : roleModalAgent;
+  const runtimeModelSelection = runtimeIntegrationStatus?.runtime === agentSettingsRuntime
+    && runtimeIntegrationStatus.targetKey === runtimeIntegrationTargetKey(agentSettingsIntegrationTarget)
+    ? runtimeIntegrationStatus.modelSelection
+    : undefined;
   const runtimeModelProviders = runtimeModelSelection?.providers ?? [];
   const selectedRuntimeProvider = runtimeModelProviders.find((provider) => provider.slug === agentSettingsProvider)
     ?? runtimeModelProviders.find((provider) => provider.slug === runtimeModelSelection?.provider)
@@ -81,16 +101,11 @@ export function useAgentSettingsController(props: UseAgentSettingsControllerProp
     const patch = { provider, model };
     if (agentCreateMachine) setAgentCreateDraft((current) => ({ ...current, ...patch }));
     else if (roleModalAgent) updateAgentProfile(roleModalAgent.id, patch);
-  };
-  const agentSettingsIntegrationTarget = agentCreateMachine
-    ? {
-      ...createAgentProfile(agentCreateDraft.runtime, runtimeCount(agents, agentCreateDraft.runtime) + 1),
-      provider: agentCreateDraft.provider,
-      model: agentCreateDraft.model,
-      telemetryUrl: agentCreateMachine.collectorUrl,
-      machineName: agentCreateMachine.name,
+    const target = agentSettingsIntegrationTarget;
+    if (target && (target.runtime === "openclaw" || target.runtime === "hermes")) {
+      void runRuntimeIntegrationAction("set-model", patch, { ...target, ...patch });
     }
-    : roleModalAgent;
+  };
   const addHermesModelFromDraft = async () => {
     const provider = runtimeModelDraft.provider.trim() || selectedRuntimeProvider?.slug || "";
     const model = runtimeModelDraft.model.trim();

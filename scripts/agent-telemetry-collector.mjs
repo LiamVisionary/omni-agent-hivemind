@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import { createServer } from "node:http";
 import { execFile, spawn } from "node:child_process";
-import { createHash, randomBytes } from "node:crypto";
+import { constants as cryptoConstants, createHash, generateKeyPairSync, privateDecrypt, publicEncrypt, randomBytes } from "node:crypto";
 import { access, mkdir, readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { constants, watch } from "node:fs";
 import { homedir, hostname, userInfo } from "node:os";
@@ -20,7 +20,6 @@ const defaultOpenClawDir = process.env.OPENCLAW_HOME || join(homedir(), ".opencl
 const defaultAeonDir = process.env.AEON_LOCAL_PATH || process.env.AEON_HOME || join(homedir(), ".aeon");
 const maxChars = 1000;
 const HERMES_EMPTY_TRANSCRIPT_MESSAGE = "Hermes session found. Send a message to resume it.";
-const maxChatChars = 12_000;
 const chatTimeoutMs = Number(process.env.AGENT_TELEMETRY_CHAT_TIMEOUT_MS || 20 * 60_000);
 const sessionDiscoveryTimeoutMs = Number(process.env.AGENT_TELEMETRY_SESSION_DISCOVERY_TIMEOUT_MS || 15_000);
 const hermesApiHost = process.env.AGENT_TELEMETRY_HERMES_API_HOST || "127.0.0.1";
@@ -28,7 +27,7 @@ const hermesApiPort = Number(process.env.AGENT_TELEMETRY_HERMES_API_PORT || proc
 const hermesApiBaseUrl = `http://${hermesApiHost}:${hermesApiPort}`;
 const hermesApiKey = process.env.AGENT_TELEMETRY_HERMES_API_KEY || process.env.API_SERVER_KEY || "";
 const hermesApiStartTimeoutMs = Number(process.env.AGENT_TELEMETRY_HERMES_API_START_TIMEOUT_MS || 15_000);
-const hermesChatMode = (process.env.AGENT_TELEMETRY_HERMES_CHAT_MODE || "cli").toLowerCase();
+const hermesChatMode = (process.env.AGENT_TELEMETRY_HERMES_CHAT_MODE || "api").toLowerCase();
 const syncthingApiBaseUrl = process.env.SYNCTHING_API_URL || "http://127.0.0.1:8384";
 const defaultSyncPath = expandHome(
   process.env.HIVEMINDOS_SYNC_PATH
@@ -38,6 +37,7 @@ const defaultSyncPath = expandHome(
 const runLogRoot = join(homedir(), ".hivemindos", "runtime-runs");
 const machineIdPath = join(homedir(), ".hivemindos", "machine-id");
 const runtimeAgentRegistryPath = join(homedir(), ".hivemindos", "runtime-agents.json");
+const e2eFileShareRoot = join(homedir(), ".hivemindos", "e2e-file-share");
 const skillAutoSyncConfigPath = join(homedir(), ".hivemindos", "skill-auto-sync.json");
 const hermesProfilesDir = join(defaultHermesDir, "profiles");
 const skillProviderRoots = [
@@ -111,8 +111,91 @@ function stripHermesCliMetadata(value) {
   return String(value || "")
     .split(/\r?\n/)
     .filter((line) => !/^\s*session_id:\s*\S+\s*$/.test(line))
+    .map((line) => line.replace(/^\s*session_id:\s*\S+\s*/i, ""))
     .join("\n")
     .trim();
+}
+
+function couldBeSessionIdPrefix(value) {
+  const candidate = String(value || "").replace(/^\s+/, "").toLowerCase();
+  return "session_id:".startsWith(candidate) || candidate.startsWith("session_id:");
+}
+
+function createHermesCliOutputSanitizer(write) {
+  let pendingLineStart = "";
+  let filteringLineStart = true;
+
+  function emit(value) {
+    if (value) write(value);
+  }
+
+  function process(input) {
+    let text = String(input || "");
+    while (text) {
+      if (filteringLineStart) {
+        pendingLineStart += text;
+        text = "";
+
+        const prefix = pendingLineStart.match(/^\s*session_id:\s*\S+\s*/i);
+        if (prefix) {
+          const rest = pendingLineStart.slice(prefix[0].length);
+          pendingLineStart = "";
+          if (rest.startsWith("\r\n")) {
+            text = rest.slice(2);
+            filteringLineStart = true;
+          } else if (rest.startsWith("\n") || rest.startsWith("\r")) {
+            text = rest.slice(1);
+            filteringLineStart = true;
+          } else {
+            text = rest;
+            filteringLineStart = false;
+          }
+          continue;
+        }
+
+        const newline = pendingLineStart.match(/\r?\n/);
+        if (newline?.index !== undefined) {
+          const end = newline.index + newline[0].length;
+          const line = pendingLineStart.slice(0, end);
+          const rest = pendingLineStart.slice(end);
+          if (!/^\s*session_id:\s*\S+\s*\r?\n$/i.test(line)) emit(line);
+          pendingLineStart = "";
+          text = rest;
+          filteringLineStart = true;
+          continue;
+        }
+
+        if (!couldBeSessionIdPrefix(pendingLineStart)) {
+          emit(pendingLineStart);
+          pendingLineStart = "";
+          filteringLineStart = false;
+        }
+        continue;
+      }
+
+      const newlineIndex = text.search(/\r?\n/);
+      if (newlineIndex === -1) {
+        emit(text);
+        text = "";
+        continue;
+      }
+      const newlineText = text.slice(newlineIndex).startsWith("\r\n") ? "\r\n" : text.slice(newlineIndex, newlineIndex + 1);
+      const end = newlineIndex + newlineText.length;
+      emit(text.slice(0, end));
+      text = text.slice(end);
+      filteringLineStart = true;
+    }
+  }
+
+  function flush() {
+    if (!pendingLineStart) return;
+    const sanitized = pendingLineStart.replace(/^\s*session_id:\s*\S+\s*/i, "");
+    if (sanitized) emit(sanitized);
+    pendingLineStart = "";
+    filteringLineStart = true;
+  }
+
+  return { process, flush };
 }
 
 function slugify(value) {
@@ -143,6 +226,10 @@ function firstSkillParagraph(markdown) {
 }
 
 function skillChecksum(value) {
+  return createHash("sha256").update(value).digest("hex");
+}
+
+function sha256Hex(value) {
   return createHash("sha256").update(value).digest("hex");
 }
 
@@ -531,6 +618,24 @@ function readableChatContent(value) {
     if (content) return content;
   }
   return "";
+}
+
+function streamingChatContent(value) {
+  if (!value || typeof value !== "object") return typeof value === "string" ? value : "";
+  const record = value;
+  const choices = Array.isArray(record.choices) ? record.choices : [];
+  for (const choice of choices) {
+    const deltaContent = choice?.delta?.content;
+    if (typeof deltaContent === "string") return deltaContent;
+    const messageContent = choice?.message?.content;
+    if (typeof messageContent === "string") return messageContent;
+    const text = choice?.text;
+    if (typeof text === "string") return text;
+  }
+  for (const key of ["delta", "content", "text", "response", "answer", "output", "result", "summary"]) {
+    if (typeof record[key] === "string") return record[key];
+  }
+  return readableChatContent(value);
 }
 
 async function execJson(cmd, args, fallback) {
@@ -1109,6 +1214,202 @@ async function hermesIntegrationStatus(agent = {}) {
   };
 }
 
+function asRecord(value) {
+  return value && typeof value === "object" && !Array.isArray(value) ? value : {};
+}
+
+function getConfigPath(obj, path) {
+  let current = obj;
+  for (const part of path.split(".")) {
+    if (!current || typeof current !== "object") return undefined;
+    current = current[part];
+  }
+  return current;
+}
+
+function splitOpenClawModelRef(value) {
+  const text = String(value || "").trim();
+  const slash = text.indexOf("/");
+  if (slash <= 0 || slash >= text.length - 1) return null;
+  return { provider: text.slice(0, slash), model: text.slice(slash + 1) };
+}
+
+function openClawProviderName(slug) {
+  const known = new Map(Object.entries({
+    openai: "OpenAI",
+    "openai-codex": "OpenAI Codex",
+    xai: "xAI",
+    anthropic: "Anthropic",
+    google: "Google",
+    openrouter: "OpenRouter",
+  }));
+  if (known.has(slug)) return known.get(slug);
+  return String(slug || "")
+    .split(/[-_]/)
+    .filter(Boolean)
+    .map((part) => part.toLowerCase() === "ai" ? "AI" : part.slice(0, 1).toUpperCase() + part.slice(1))
+    .join(" ") || String(slug || "");
+}
+
+function openClawModelOptions(value) {
+  if (Array.isArray(value)) {
+    return value
+      .map((model) => typeof model === "string" ? { id: model } : asRecord(model))
+      .map((model) => ({
+        id: typeof model.id === "string" ? model.id : "",
+        name: typeof model.name === "string" ? model.name : undefined,
+      }))
+      .filter((model) => model.id);
+  }
+  return Object.entries(asRecord(value))
+    .map(([id, meta]) => ({ id, name: typeof asRecord(meta).name === "string" ? asRecord(meta).name : undefined }))
+    .filter((model) => model.id);
+}
+
+function defaultOpenClawAgentModel(config) {
+  const agents = asRecord(config.agents);
+  const list = Array.isArray(agents.list) ? agents.list.filter((item) => item && typeof item === "object") : [];
+  const agent = list.find((item) => item.default === true) || list[0];
+  return typeof agent?.model === "string"
+    ? agent.model
+    : typeof getConfigPath(config, "agents.defaults.model.primary") === "string"
+      ? getConfigPath(config, "agents.defaults.model.primary")
+      : typeof getConfigPath(config, "agents.defaults.model") === "string"
+        ? getConfigPath(config, "agents.defaults.model")
+        : "";
+}
+
+function openClawConfiguredModelRefs(config) {
+  const refs = new Set();
+  const add = (value) => {
+    if (typeof value === "string" && splitOpenClawModelRef(value)) refs.add(value);
+  };
+  add(defaultOpenClawAgentModel(config));
+  for (const agent of Array.isArray(asRecord(config.agents).list) ? asRecord(config.agents).list : []) {
+    add(asRecord(agent).model);
+  }
+  for (const value of Object.keys(asRecord(getConfigPath(config, "agents.defaults.models")))) add(value);
+  return [...refs];
+}
+
+function openClawConfiguredProviders(config, extraRefs = []) {
+  const providers = new Map();
+  for (const [slug, rawProvider] of Object.entries(asRecord(getConfigPath(config, "models.providers")))) {
+    const provider = asRecord(rawProvider);
+    const models = openClawModelOptions(provider.models);
+    if (!models.length) continue;
+    providers.set(slug, {
+      name: typeof provider.name === "string" ? provider.name : openClawProviderName(slug),
+      models,
+      source: "~/.openclaw/openclaw.json",
+      isUserDefined: true,
+    });
+  }
+  for (const ref of [...openClawConfiguredModelRefs(config), ...extraRefs]) {
+    const parsed = splitOpenClawModelRef(ref);
+    if (!parsed) continue;
+    const existing = providers.get(parsed.provider);
+    if (existing) {
+      if (!existing.models.some((model) => model.id === parsed.model)) existing.models.unshift({ id: parsed.model });
+    } else {
+      providers.set(parsed.provider, {
+        name: openClawProviderName(parsed.provider),
+        models: [{ id: parsed.model }],
+        source: "~/.openclaw/openclaw.json",
+        isUserDefined: true,
+      });
+    }
+  }
+  return providers;
+}
+
+async function readOpenClawConfig() {
+  const configPath = join(defaultOpenClawDir, "openclaw.json");
+  const raw = await readFile(configPath, "utf8").catch(() => "");
+  if (!raw.trim()) return {};
+  try {
+    return JSON.parse(raw.replace(/\/\/[^\n]*/g, ""));
+  } catch {
+    return {};
+  }
+}
+
+async function openClawIntegrationStatus(agent = {}) {
+  const config = await readOpenClawConfig();
+  const profileProvider = String(agent.provider || "").trim();
+  const profileModel = String(agent.model || "").trim();
+  const configuredDefault = defaultOpenClawAgentModel(config);
+  const profilePair = profileProvider && profileModel ? `${profileProvider}/${profileModel}` : "";
+  const providers = openClawConfiguredProviders(config, profilePair ? [profilePair] : []);
+  const current = profilePair || configuredDefault;
+  const parsed = current ? splitOpenClawModelRef(current) : null;
+  const firstProvider = providers.entries().next().value;
+  const provider = parsed?.provider || firstProvider?.[0] || profileProvider;
+  const model = parsed?.model || firstProvider?.[1]?.models?.[0]?.id || profileModel;
+  if (provider && model && !providers.has(provider)) {
+    providers.set(provider, {
+      name: openClawProviderName(provider),
+      models: [{ id: model }],
+      source: providers.size === 0 ? "current-agent-model" : "~/.openclaw/openclaw.json",
+      isUserDefined: true,
+    });
+  } else if (provider && model && !providers.get(provider).models.some((item) => item.id === model)) {
+    providers.get(provider).models.unshift({ id: model });
+  }
+  const configReadable = await access(join(defaultOpenClawDir, "openclaw.json"), constants.R_OK).then(() => true).catch(() => false);
+  return {
+    runtime: "openclaw",
+    machine: { host: hostname(), collectorUrl: `http://${hostname()}:${port}` },
+    capabilities: runtimeCapabilitiesFor("openclaw"),
+    modelSelection: {
+      provider,
+      model,
+      providers: [...providers.entries()].map(([slug, item]) => ({
+        slug,
+        name: item.name,
+        models: item.models,
+        totalModels: item.models.length,
+        isCurrent: slug === provider,
+        isUserDefined: item.isUserDefined,
+        source: item.source,
+      })),
+    },
+    integrations: {
+      modelSelection: {
+        supported: true,
+        enabled: configReadable,
+        detail: configReadable ? "OpenClaw model config is readable." : "OpenClaw config was not found.",
+      },
+    },
+    diagnostics: configReadable ? [] : ["OpenClaw config was not found."],
+  };
+}
+
+async function runOpenClawIntegrationAction(action, input = {}) {
+  if (action !== "set-model") return { ok: false, error: `Unsupported OpenClaw action: ${action}` };
+  const provider = String(input.provider || "").trim();
+  const model = String(input.model || "").trim();
+  if (!provider || !model) return { ok: false, error: "Provider and model are required." };
+  const configPath = join(defaultOpenClawDir, "openclaw.json");
+  const config = await readOpenClawConfig();
+  const nextConfig = {
+    ...config,
+    agents: {
+      ...asRecord(config.agents),
+      defaults: {
+        ...asRecord(asRecord(config.agents).defaults),
+        model: {
+          ...asRecord(asRecord(asRecord(config.agents).defaults).model),
+          primary: `${provider}/${model}`,
+        },
+      },
+    },
+  };
+  await mkdir(defaultOpenClawDir, { recursive: true, mode: 0o700 });
+  await writeFile(configPath, `${JSON.stringify(nextConfig, null, 2)}\n`, { mode: 0o600 });
+  return { ok: true, message: `OpenClaw default model set to ${provider}/${model}.` };
+}
+
 async function runHermesIntegrationAction(action, input = {}) {
   if (action === "enable-tool") {
     const tool = String(input.tool || "");
@@ -1161,193 +1462,6 @@ async function runHermesIntegrationAction(action, input = {}) {
     return { ok: true, output };
   }
   return { ok: false, error: `Unsupported Hermes action: ${action}` };
-}
-
-function asRecord(value) {
-  return value && typeof value === "object" && !Array.isArray(value) ? value : {};
-}
-
-function getConfigPath(config, path) {
-  let current = config;
-  for (const part of path.split(".")) {
-    if (!current || typeof current !== "object") return undefined;
-    current = current[part];
-  }
-  return current;
-}
-
-function splitOpenClawModelRef(value) {
-  const ref = String(value || "").trim();
-  const slash = ref.indexOf("/");
-  if (slash <= 0 || slash >= ref.length - 1) return null;
-  return { provider: ref.slice(0, slash), model: ref.slice(slash + 1) };
-}
-
-function openClawProviderName(slug) {
-  const known = {
-    openai: "OpenAI",
-    "openai-codex": "OpenAI Codex",
-    anthropic: "Anthropic",
-    google: "Google",
-    openrouter: "OpenRouter",
-    xai: "xAI",
-  };
-  if (known[slug]) return known[slug];
-  return String(slug || "")
-    .split(/[-_]/)
-    .filter(Boolean)
-    .map((part) => part.toLowerCase() === "ai" ? "AI" : `${part.slice(0, 1).toUpperCase()}${part.slice(1)}`)
-    .join(" ") || String(slug || "Provider");
-}
-
-function openClawModelOptions(value) {
-  if (Array.isArray(value)) {
-    return value
-      .map((model) => typeof model === "string" ? { id: model } : asRecord(model))
-      .map((model) => ({
-        id: typeof model.id === "string" ? model.id : "",
-        name: typeof model.name === "string" ? model.name : undefined,
-      }))
-      .filter((model) => model.id);
-  }
-  return Object.entries(asRecord(value))
-    .map(([id, meta]) => ({
-      id,
-      name: typeof asRecord(meta).name === "string" ? asRecord(meta).name : undefined,
-    }))
-    .filter((model) => model.id);
-}
-
-function defaultOpenClawAgentModel(config) {
-  const agents = asRecord(config.agents);
-  const list = Array.isArray(agents.list) ? agents.list.filter((item) => item && typeof item === "object") : [];
-  const agent = list.find((item) => item.default === true) || list[0];
-  return typeof agent?.model === "string"
-    ? agent.model
-    : typeof getConfigPath(config, "agents.defaults.model.primary") === "string"
-      ? getConfigPath(config, "agents.defaults.model.primary")
-      : typeof getConfigPath(config, "agents.defaults.model") === "string"
-        ? getConfigPath(config, "agents.defaults.model")
-        : "";
-}
-
-function openClawConfiguredModelRefs(config) {
-  const refs = new Set();
-  const add = (value) => {
-    if (typeof value === "string" && splitOpenClawModelRef(value)) refs.add(value);
-  };
-  add(defaultOpenClawAgentModel(config));
-  const agents = asRecord(config.agents);
-  for (const agent of Array.isArray(agents.list) ? agents.list : []) add(asRecord(agent).model);
-  for (const value of Object.keys(asRecord(getConfigPath(config, "agents.defaults.models")))) add(value);
-  return [...refs];
-}
-
-function openClawConfiguredProviders(config, extraRefs = []) {
-  const providers = new Map();
-  for (const [slug, rawProvider] of Object.entries(asRecord(getConfigPath(config, "models.providers")))) {
-    const provider = asRecord(rawProvider);
-    const models = openClawModelOptions(provider.models);
-    if (!models.length) continue;
-    providers.set(slug, {
-      name: typeof provider.name === "string" ? provider.name : openClawProviderName(slug),
-      models,
-      source: "~/.openclaw/openclaw.json",
-      isUserDefined: true,
-    });
-  }
-  for (const ref of [...openClawConfiguredModelRefs(config), ...extraRefs]) {
-    const parsed = splitOpenClawModelRef(ref);
-    if (!parsed) continue;
-    const existing = providers.get(parsed.provider);
-    if (existing) {
-      if (!existing.models.some((model) => model.id === parsed.model)) existing.models.unshift({ id: parsed.model });
-    } else {
-      providers.set(parsed.provider, {
-        name: openClawProviderName(parsed.provider),
-        models: [{ id: parsed.model }],
-        source: "~/.openclaw/openclaw.json",
-        isUserDefined: true,
-      });
-    }
-  }
-  return providers;
-}
-
-async function readOpenClawConfig() {
-  const raw = await readFile(join(defaultOpenClawDir, "openclaw.json"), "utf8").catch(() => "");
-  if (!raw.trim()) return {};
-  try {
-    return JSON.parse(raw.replace(/\/\/[^\n]*/g, ""));
-  } catch {
-    return {};
-  }
-}
-
-async function writeOpenClawConfig(config) {
-  await mkdir(defaultOpenClawDir, { recursive: true, mode: 0o700 });
-  await writeFile(join(defaultOpenClawDir, "openclaw.json"), `${JSON.stringify(config, null, 2)}\n`, { mode: 0o600 });
-}
-
-async function openClawIntegrationStatus(agent = {}) {
-  const configPath = join(defaultOpenClawDir, "openclaw.json");
-  const configReadable = await access(configPath, constants.R_OK).then(() => true).catch(() => false);
-  const config = configReadable ? await readOpenClawConfig() : {};
-  const profileProvider = String(agent.provider || "").trim();
-  const profileModel = String(agent.model || "").trim();
-  const profilePair = profileProvider && profileModel ? `${profileProvider}/${profileModel}` : "";
-  const configuredDefault = defaultOpenClawAgentModel(config);
-  const providers = openClawConfiguredProviders(config, profilePair ? [profilePair] : []);
-  const current = profilePair || configuredDefault;
-  const parsed = current ? splitOpenClawModelRef(current) : null;
-  const firstProvider = providers.entries().next().value;
-  const provider = parsed?.provider || firstProvider?.[0] || profileProvider;
-  const model = parsed?.model || firstProvider?.[1]?.models?.[0]?.id || profileModel;
-  if (provider && model && !providers.has(provider)) {
-    providers.set(provider, {
-      name: openClawProviderName(provider),
-      models: [{ id: model }],
-      source: "current-agent-model",
-      isUserDefined: true,
-    });
-  } else if (provider && model && !providers.get(provider)?.models.some((item) => item.id === model)) {
-    providers.get(provider)?.models.unshift({ id: model });
-  }
-  return {
-    runtime: "openclaw",
-    machine: { host: hostname(), collectorUrl: `http://${hostname()}:${port}` },
-    capabilities: runtimeCapabilitiesFor("openclaw"),
-    integrations: {},
-    diagnostics: configReadable ? [`OpenClaw config: ${configPath}`] : [`OpenClaw config not found at ${configPath}.`],
-    modelSelection: {
-      provider: provider || "",
-      model: model || "",
-      providers: [...providers.entries()].map(([slug, item]) => ({
-        slug,
-        name: item.name,
-        models: item.models,
-        totalModels: item.models.length,
-        isCurrent: slug === provider,
-        isUserDefined: item.isUserDefined,
-        source: item.source,
-      })),
-    },
-  };
-}
-
-async function runOpenClawIntegrationAction(action, input = {}) {
-  if (action === "set-model") {
-    const provider = String(input.provider || "").trim();
-    const model = String(input.model || "").trim();
-    if (!provider || !model) return { ok: false, error: "Provider and model are required." };
-    const config = await readOpenClawConfig();
-    config.agents = asRecord(config.agents);
-    config.agents.defaults = asRecord(config.agents.defaults);
-    config.agents.defaults.model = { ...asRecord(config.agents.defaults.model), primary: `${provider}/${model}` };
-    await writeOpenClawConfig(config);
-    return { ok: true, message: `OpenClaw default model set to ${provider}/${model}.` };
-  }
-  return { ok: false, error: `Unsupported OpenClaw action: ${action}` };
 }
 
 function normalizeNangoBaseUrl(input) {
@@ -1548,7 +1662,7 @@ async function scanHermesState(agent, hermesDir) {
       .sort((a, b) => a.timestamp - b.timestamp)
       .map((message) => ({
         role: message.role,
-        content: compact(message.content, "", maxChatChars),
+        content: compact(message.content, ""),
       }));
     if (!chatMessages.length) return null;
     return {
@@ -1756,6 +1870,151 @@ async function removeE2eProviderSkill(input) {
   if (!skillDir.startsWith(`${root}${sep}`)) throw new Error("Unsafe skill path.");
   await rm(skillDir, { recursive: true, force: true });
   return { ok: true, provider: provider.id, slug, removed: true };
+}
+
+function assertE2eRunId(value) {
+  const runId = String(value || "").trim();
+  if (!/^hive-e2e-[a-z0-9-]{8,80}$/i.test(runId)) throw new Error("E2E file sharing requires a hive-e2e-* run id.");
+  return runId;
+}
+
+function e2eSegment(value, fallback = "item") {
+  return String(value || fallback).trim().toLowerCase().replace(/[^a-z0-9._-]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 80) || fallback;
+}
+
+function e2eShareDir(runId, runtime, agentId = "") {
+  const safeRunId = assertE2eRunId(runId);
+  const safeRuntime = e2eSegment(runtime, "runtime");
+  const safeAgentId = e2eSegment(agentId || "agent", "agent");
+  return resolve(join(e2eFileShareRoot, safeRunId, `${safeRuntime}-${safeAgentId}`));
+}
+
+function assertInsideE2eShareRoot(path) {
+  const root = resolve(e2eFileShareRoot);
+  if (path !== root && !path.startsWith(`${root}${sep}`)) throw new Error("Unsafe E2E file share path.");
+}
+
+async function prepareE2eFileShareRecipient(input) {
+  const runId = assertE2eRunId(input.runId);
+  const runtime = normalizeRuntimeId(input.runtime, String(input.runtime || "openclaw"));
+  const agentId = String(input.agentId || input.agentName || "agent");
+  const dir = e2eShareDir(runId, runtime, agentId);
+  assertInsideE2eShareRoot(dir);
+  await mkdir(dir, { recursive: true, mode: 0o700 });
+  const publicKeyPath = join(dir, "recipient-public.pem");
+  const privateKeyPath = join(dir, "recipient-private.pem");
+  let publicKey = await readFile(publicKeyPath, "utf8").catch(() => "");
+  if (!publicKey) {
+    const pair = generateKeyPairSync("rsa", {
+      modulusLength: 2048,
+      publicKeyEncoding: { type: "spki", format: "pem" },
+      privateKeyEncoding: { type: "pkcs8", format: "pem" },
+    });
+    publicKey = pair.publicKey;
+    await writeFile(publicKeyPath, pair.publicKey, { mode: 0o600 });
+    await writeFile(privateKeyPath, pair.privateKey, { mode: 0o600 });
+  }
+  return {
+    ok: true,
+    host: hostname(),
+    runId,
+    runtime,
+    agentId,
+    publicKey,
+    publicKeySha256: sha256Hex(publicKey),
+  };
+}
+
+async function sendE2eEncryptedFile(input) {
+  const runId = assertE2eRunId(input.runId);
+  const senderRuntime = normalizeRuntimeId(input.senderRuntime, String(input.senderRuntime || "hermes"));
+  const recipientRuntime = normalizeRuntimeId(input.recipientRuntime, String(input.recipientRuntime || "openclaw"));
+  const senderAgentId = String(input.senderAgentId || input.senderAgentName || "sender");
+  const fileName = e2eSegment(input.fileName || `${runId}.txt`, `${runId}.txt`);
+  const plaintext = String(input.content ?? "");
+  if (!plaintext) throw new Error("File content is required.");
+  if (!String(input.recipientPublicKey || "").includes("BEGIN PUBLIC KEY")) throw new Error("Recipient public key is required.");
+  const ciphertext = publicEncrypt({
+    key: String(input.recipientPublicKey),
+    oaepHash: "sha256",
+    padding: cryptoConstants.RSA_PKCS1_OAEP_PADDING,
+  }, Buffer.from(plaintext, "utf8"));
+  const envelope = {
+    version: 1,
+    algorithm: "rsa-oaep-sha256",
+    runId,
+    fileName,
+    sender: { host: hostname(), runtime: senderRuntime, agentId: senderAgentId },
+    recipient: { runtime: recipientRuntime, agentId: String(input.recipientAgentId || input.recipientAgentName || "recipient") },
+    plaintextSha256: sha256Hex(plaintext),
+    ciphertextBase64: ciphertext.toString("base64"),
+    createdAt: new Date().toISOString(),
+  };
+  const dir = e2eShareDir(runId, senderRuntime, senderAgentId);
+  assertInsideE2eShareRoot(dir);
+  await mkdir(join(dir, "outbox"), { recursive: true, mode: 0o700 });
+  const envelopePath = join(dir, "outbox", `${fileName}.encrypted.json`);
+  await writeFile(envelopePath, `${JSON.stringify(envelope, null, 2)}\n`, { mode: 0o600 });
+  return {
+    ok: true,
+    host: hostname(),
+    envelope,
+    envelopePath,
+    ciphertextSha256: sha256Hex(ciphertext),
+  };
+}
+
+async function receiveE2eEncryptedFile(input) {
+  const envelope = input.envelope && typeof input.envelope === "object" ? input.envelope : {};
+  const runId = assertE2eRunId(envelope.runId || input.runId);
+  const runtime = normalizeRuntimeId(input.runtime || envelope.recipient?.runtime, String(input.runtime || envelope.recipient?.runtime || "openclaw"));
+  const agentId = String(input.agentId || envelope.recipient?.agentId || "recipient");
+  const dir = e2eShareDir(runId, runtime, agentId);
+  assertInsideE2eShareRoot(dir);
+  const privateKey = await readFile(join(dir, "recipient-private.pem"), "utf8").catch(() => "");
+  if (!privateKey) throw new Error("Recipient keypair has not been prepared on this machine.");
+  const ciphertext = Buffer.from(String(envelope.ciphertextBase64 || ""), "base64");
+  if (!ciphertext.length) throw new Error("Encrypted envelope has no ciphertext.");
+  const plaintext = privateDecrypt({
+    key: privateKey,
+    oaepHash: "sha256",
+    padding: cryptoConstants.RSA_PKCS1_OAEP_PADDING,
+  }, ciphertext);
+  const plaintextSha256 = sha256Hex(plaintext);
+  if (envelope.plaintextSha256 && envelope.plaintextSha256 !== plaintextSha256) {
+    throw new Error("Decrypted payload hash did not match the envelope.");
+  }
+  const fileName = e2eSegment(envelope.fileName || `${runId}.txt`, `${runId}.txt`);
+  await mkdir(join(dir, "inbox"), { recursive: true, mode: 0o700 });
+  const receivedPath = join(dir, "inbox", fileName);
+  await writeFile(receivedPath, plaintext, { mode: 0o600 });
+  return {
+    ok: true,
+    host: hostname(),
+    runId,
+    runtime,
+    agentId,
+    receivedPath,
+    plaintextSha256,
+    bytes: plaintext.length,
+    sender: envelope.sender,
+  };
+}
+
+async function cleanupE2eFileShare(input) {
+  const runId = assertE2eRunId(input.runId);
+  const dir = resolve(join(e2eFileShareRoot, runId));
+  assertInsideE2eShareRoot(dir);
+  await rm(dir, { recursive: true, force: true });
+  return { ok: true, host: hostname(), runId, removed: true };
+}
+
+async function handleE2eFileShare(input) {
+  if (input.action === "prepare-recipient") return prepareE2eFileShareRecipient(input);
+  if (input.action === "send") return sendE2eEncryptedFile(input);
+  if (input.action === "receive") return receiveE2eEncryptedFile(input);
+  if (input.action === "cleanup") return cleanupE2eFileShare(input);
+  throw new Error("Unknown E2E file share action.");
 }
 
 function providerSignature(provider) {
@@ -2083,7 +2342,6 @@ async function sendHermesChat(body) {
       : "";
   const text = (typeof message === "string" ? message.trim() : "") || (Array.isArray(body.messages) ? attachmentPromptFromMessages(body.messages) : "");
   if (!text) return { ok: false, status: 400, error: "Message is required." };
-  if (text.length > maxChatChars) return { ok: false, status: 413, error: `Message is too long. Limit: ${maxChatChars} characters.` };
 
   const agent = body.agent && typeof body.agent === "object" ? body.agent : {};
   const hermesHome = expandHome(agent.localDataDir || body.localDataDir || defaultHermesDir);
@@ -2238,6 +2496,13 @@ async function readHermesApiSession(hermesHome, sessionId) {
   }
 }
 
+function hermesSessionRoots(hermesHome) {
+  const roots = [expandHome(hermesHome || defaultHermesDir), defaultHermesDir]
+    .filter(Boolean)
+    .map((root) => resolve(root));
+  return [...new Set(roots)];
+}
+
 async function readHermesDbSession(hermesHome, sessionId) {
   const normalized = normalizeHermesSessionId(sessionId);
   if (!normalized) return null;
@@ -2317,6 +2582,28 @@ async function listRecentHermesApiSessions(hermesHome, sinceMs = 0) {
   )))).filter(Boolean);
 }
 
+async function readRuntimeSession(runtime, options = {}) {
+  if (runtime !== "hermes") return null;
+  const hermesHome = expandHome(options.localDataDir || defaultHermesDir);
+  const sessionId = options.sessionId || "";
+  const sinceMs = Number(options.sinceMs || 0);
+  if (sessionId) {
+    for (const root of hermesSessionRoots(hermesHome)) {
+      const apiSession = await readHermesApiSession(root, sessionId);
+      const dbSession = apiSession?.messages?.length ? null : await readHermesDbSession(root, sessionId);
+      const session = dbSession ?? apiSession;
+      if (session) return { ...session, runtime: "hermes" };
+    }
+    return null;
+  }
+  const sessionGroups = await Promise.all(hermesSessionRoots(hermesHome).map(async (root) => [
+    ...await listRecentHermesApiSessions(root, sinceMs),
+    ...await listRecentHermesDbSessions(root, sinceMs),
+  ]));
+  const session = sessionGroups.flat().sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0))[0] ?? null;
+  return session ? { ...session, runtime: "hermes" } : null;
+}
+
 async function waitForHermesCliSession(hermesHome, sinceMs, text) {
   const needle = text.trim().slice(0, 80);
   const deadline = Date.now() + sessionDiscoveryTimeoutMs;
@@ -2337,7 +2624,11 @@ async function waitForHermesApiSession(hermesHome, sinceMs, text, requestMarker 
   const needle = text.trim().slice(0, 80);
   const deadline = Date.now() + sessionDiscoveryTimeoutMs;
   while (Date.now() < deadline) {
-    const sessions = await listRecentHermesApiSessions(hermesHome, sinceMs);
+    const sessionGroups = await Promise.all(hermesSessionRoots(hermesHome).map(async (root) => [
+      ...await listRecentHermesApiSessions(root, sinceMs),
+      ...await listRecentHermesDbSessions(root, sinceMs),
+    ]));
+    const sessions = sessionGroups.flat();
     if (requestMarker) {
       const markerMatched = sessions.find((session) => (
         session.messages.some((message) => message.content.includes(requestMarker))
@@ -2361,6 +2652,7 @@ async function proxyHermesApiChat(body, response, text, hermesHome) {
   const timer = setTimeout(() => controller.abort(), chatTimeoutMs);
   let sessionTimer = null;
   let emittedSession = false;
+  let sessionLookupInFlight = false;
 
   const ensureHeaders = () => {
     if (response.headersSent || response.writableEnded) return;
@@ -2373,19 +2665,26 @@ async function proxyHermesApiChat(body, response, text, hermesHome) {
   };
 
   async function emitSession() {
-    if (emittedSession || response.writableEnded) return;
-    const session = await waitForHermesApiSession(hermesHome, requestStartedAt - 2_000, text, requestMarker);
-    if (!session) return;
-    ensureHeaders();
-    response.write(ssePayload({
-      session: {
-        id: session.sessionId,
-        startedAt: session.startedAt,
-        updatedAt: session.updatedAt,
-        messageCount: session.messages.length,
-      },
-    }));
-    emittedSession = true;
+    if (emittedSession || sessionLookupInFlight || response.writableEnded) return;
+    sessionLookupInFlight = true;
+    try {
+      const session = await waitForHermesApiSession(hermesHome, requestStartedAt - 2_000, text, requestMarker);
+      if (!session || emittedSession || response.writableEnded) return;
+      emittedSession = true;
+      ensureHeaders();
+      response.write(ssePayload({
+        session: {
+          id: session.sessionId,
+          runtime: session.runtime || "hermes",
+          source: session.source || "hermes",
+          startedAt: session.startedAt,
+          updatedAt: session.updatedAt,
+          messageCount: session.messages.length,
+        },
+      }));
+    } finally {
+      sessionLookupInFlight = false;
+    }
   }
 
   try {
@@ -2443,7 +2742,7 @@ async function proxyHermesApiChat(body, response, text, hermesHome) {
         }
         try {
           const parsed = JSON.parse(raw);
-          const content = readableChatContent(parsed);
+          const content = streamingChatContent(parsed);
           if (content) {
             wroteContent = true;
             ensureHeaders();
@@ -2497,12 +2796,6 @@ async function streamHermesChat(body, response) {
     response.end(ssePayload({ error: "Message is required." }) + "data: [DONE]\n\n");
     return;
   }
-  if (text.length > maxChatChars) {
-    response.writeHead(413, { "content-type": "text/event-stream", "cache-control": "no-cache", connection: "keep-alive" });
-    response.end(ssePayload({ error: `Message is too long. Limit: ${maxChatChars} characters.` }) + "data: [DONE]\n\n");
-    return;
-  }
-
   const agent = body.agent && typeof body.agent === "object" ? body.agent : {};
   const hermesHome = expandHome(agent.localDataDir || body.localDataDir || defaultHermesDir);
   const agentEnv = hermesContextEnv(safeAgentEnv(body.agentEnv), body.context);
@@ -2527,8 +2820,10 @@ async function streamHermesChat(body, response) {
 
   let stdout = "";
   let stderr = "";
+  let streamedStdout = "";
   let settled = false;
   let emittedSession = false;
+  let sessionLookupInFlight = false;
   let sessionTimer = null;
   response.writeHead(200, {
     "content-type": "text/event-stream",
@@ -2539,6 +2834,7 @@ async function streamHermesChat(body, response) {
 
   const finish = (payload = null) => {
     if (settled) return;
+    stdoutSanitizer.flush();
     settled = true;
     clearTimeout(timeout);
     if (sessionTimer) clearInterval(sessionTimer);
@@ -2547,20 +2843,32 @@ async function streamHermesChat(body, response) {
       response.end("data: [DONE]\n\n");
     }
   };
+  const stdoutSanitizer = createHermesCliOutputSanitizer((content) => {
+    if (!content || settled || response.writableEnded || response.destroyed) return;
+    streamedStdout += content;
+    response.write(ssePayload({ choices: [{ delta: { content } }] }));
+  });
 
   async function emitSession() {
-    if (emittedSession || settled || response.writableEnded || response.destroyed) return;
-    const session = await waitForHermesCliSession(hermesHome, requestStartedAt - 2_000, sessionMatchText);
-    if (!session) return;
-    emittedSession = true;
-    response.write(ssePayload({
-      session: {
-        id: session.sessionId,
-        startedAt: session.startedAt,
-        updatedAt: session.updatedAt,
-        messageCount: session.messages.length,
-      },
-    }));
+    if (emittedSession || sessionLookupInFlight || settled || response.writableEnded || response.destroyed) return;
+    sessionLookupInFlight = true;
+    try {
+      const session = await waitForHermesCliSession(hermesHome, requestStartedAt - 2_000, sessionMatchText);
+      if (!session || emittedSession || settled || response.writableEnded || response.destroyed) return;
+      emittedSession = true;
+      response.write(ssePayload({
+        session: {
+          id: session.sessionId,
+          runtime: session.runtime || "hermes",
+          source: session.source || "hermes",
+          startedAt: session.startedAt,
+          updatedAt: session.updatedAt,
+          messageCount: session.messages.length,
+        },
+      }));
+    } finally {
+      sessionLookupInFlight = false;
+    }
   }
 
   sessionTimer = setInterval(() => {
@@ -2591,7 +2899,9 @@ async function streamHermesChat(body, response) {
   });
 
   child.stdout.on("data", (chunk) => {
-    stdout += chunk.toString("utf8");
+    const textChunk = chunk.toString("utf8");
+    stdout += textChunk;
+    stdoutSanitizer.process(textChunk);
   });
 
   child.stderr.on("data", (chunk) => {
@@ -2604,12 +2914,13 @@ async function streamHermesChat(body, response) {
 
   child.on("close", (code) => {
     if (settled) return;
+    stdoutSanitizer.flush();
     const content = stripHermesCliMetadata(stdout);
     const errorText = stripHermesCliMetadata(stderr);
     if (code === 0) {
-      if (content) {
+      if (!streamedStdout.trim() && content) {
         response.write(ssePayload({ choices: [{ delta: { content } }] }));
-      } else if (errorText) {
+      } else if (!streamedStdout.trim() && errorText) {
         response.write(ssePayload({ choices: [{ delta: { content: errorText } }] }));
       }
       finish();
@@ -2651,7 +2962,6 @@ function readBody(request) {
     let body = "";
     request.on("data", (chunk) => {
       body += chunk;
-      if (body.length > 1_000_000) request.destroy();
     });
     request.on("end", () => resolveBody(body));
   });
@@ -2661,7 +2971,7 @@ createServer(async (request, response) => {
   const requestUrl = new URL(request.url || "/", "http://127.0.0.1");
   const pathname = requestUrl.pathname;
   response.setHeader("access-control-allow-origin", "*");
-  response.setHeader("access-control-allow-methods", "GET,POST,OPTIONS");
+  response.setHeader("access-control-allow-methods", "GET,POST,DELETE,OPTIONS");
   response.setHeader("access-control-allow-headers", "content-type");
   if (request.method === "OPTIONS") {
     response.writeHead(204).end();
@@ -2841,6 +3151,19 @@ createServer(async (request, response) => {
       jsonResponse(response, 400, {
         ok: false,
         error: error instanceof Error ? error.message : "Could not mutate E2E skill.",
+      });
+    }
+    return;
+  }
+  if (pathname === "/e2e/file-share" && request.method === "POST") {
+    try {
+      const rawBody = await readBody(request);
+      const body = rawBody ? JSON.parse(rawBody) : {};
+      jsonResponse(response, 200, await handleE2eFileShare(body));
+    } catch (error) {
+      jsonResponse(response, 400, {
+        ok: false,
+        error: error instanceof Error ? error.message : "Could not run E2E encrypted file sharing.",
       });
     }
     return;
@@ -3032,19 +3355,13 @@ createServer(async (request, response) => {
     }
     return;
   }
-  if (pathname === "/sessions" && request.method === "GET") {
+  if ((pathname === "/runtime-sessions" || pathname === "/sessions") && request.method === "GET") {
     const sessionId = requestUrl.searchParams.get("sessionId") || requestUrl.searchParams.get("id") || "";
-    const hermesHome = expandHome(requestUrl.searchParams.get("localDataDir") || defaultHermesDir);
+    const runtime = String(requestUrl.searchParams.get("runtime") || "hermes").trim().toLowerCase() || "hermes";
+    const localDataDir = requestUrl.searchParams.get("localDataDir") || "";
     const sinceMs = Number(requestUrl.searchParams.get("sinceMs") || 0);
-    let session = null;
-    if (sessionId) {
-      const apiSession = await readHermesApiSession(hermesHome, sessionId);
-      const dbSession = apiSession?.messages?.length ? null : await readHermesDbSession(hermesHome, sessionId);
-      session = dbSession ?? apiSession;
-    } else {
-      session = (await listRecentHermesApiSessions(hermesHome, sinceMs))[0] ?? null;
-    }
-    jsonResponse(response, session ? 200 : 404, session ? { ok: true, session } : { ok: false, error: "session not found" });
+    const session = await readRuntimeSession(runtime, { sessionId, localDataDir, sinceMs });
+    jsonResponse(response, session ? 200 : 404, session ? { ok: true, runtime, session } : { ok: false, runtime, error: "session not found" });
     return;
   }
   if (pathname === "/chat" && request.method === "POST") {

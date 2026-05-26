@@ -8,6 +8,8 @@ import type {
   KanbanBoard,
   KanbanBoardMeta,
   KanbanComment,
+  KanbanDeliverable,
+  KanbanDeliverableKind,
   KanbanEvent,
   KanbanPriority,
   KanbanRunStatus,
@@ -36,13 +38,14 @@ type CreateTaskInput = {
   skills?: string[];
   attachments?: KanbanTask["attachments"];
   linkedDirectories?: KanbanTask["linkedDirectories"];
+  deliverables?: KanbanTask["deliverables"];
   targetMachine?: KanbanTask["targetMachine"];
   parents?: string[];
   idempotencyKey?: string;
   maxRuntimeMs?: number;
 };
 
-type PatchTaskInput = Partial<Pick<KanbanTask, "title" | "body" | "result" | "assignee" | "tenant" | "status" | "priority" | "workspace" | "skills" | "attachments" | "linkedDirectories" | "targetMachine" | "agentSession" | "reviewedBy" | "undoRequestedBy">> & {
+type PatchTaskInput = Partial<Pick<KanbanTask, "title" | "body" | "result" | "assignee" | "tenant" | "status" | "priority" | "workspace" | "skills" | "attachments" | "linkedDirectories" | "deliverables" | "targetMachine" | "agentSession" | "reviewedBy" | "undoRequestedBy">> & {
   reviewedAt?: number | null;
   undoRequestedAt?: number | null;
 };
@@ -206,7 +209,7 @@ async function readDefaultVaultBoardIfPopulated(slug: string, options: KanbanSto
 
 function normalizeBoard(parsed: KanbanBoard, slug: string): KanbanBoard {
   const tasks = Array.isArray(parsed.tasks) ? parsed.tasks.map(normalizeTask) : [];
-  return {
+  const board = {
     ...emptyBoard(slug),
     ...parsed,
     meta: { ...emptyBoard(slug).meta, ...parsed.meta, slug },
@@ -216,17 +219,42 @@ function normalizeBoard(parsed: KanbanBoard, slug: string): KanbanBoard {
     events: Array.isArray(parsed.events) ? parsed.events : [],
     runs: Array.isArray(parsed.runs) ? parsed.runs.map(normalizeRun) : [],
   };
+  rollUpCompletedChildDeliverables(board);
+  return board;
 }
 
 function normalizeTask(task: KanbanTask): KanbanTask {
+  const storedDeliverables = Array.isArray(task.deliverables)
+    ? task.deliverables.map(normalizeDeliverable).filter(Boolean) as KanbanDeliverable[]
+    : [];
+  const normalizedStatus = normalizeKanbanStatus(task.status);
+  const extractedDeliverables = normalizedStatus === "done" ? extractTaskDeliverables(task, task.result, task.updatedAt) : [];
   return {
     ...task,
-    status: normalizeKanbanStatus(task.status),
+    status: normalizedStatus,
     attachments: Array.isArray(task.attachments) ? task.attachments : [],
     linkedDirectories: Array.isArray(task.linkedDirectories) ? task.linkedDirectories : [],
+    deliverables: filterSourceDeliverables(task, storedDeliverables.length ? storedDeliverables : extractedDeliverables),
     targetMachine: task.targetMachine?.key ? task.targetMachine : null,
     claimLock: cleanOptional(task.claimLock),
     currentRunId: cleanOptional(task.currentRunId),
+  };
+}
+
+function normalizeDeliverable(value: unknown): KanbanDeliverable | null {
+  if (!value || typeof value !== "object") return null;
+  const item = value as Partial<KanbanDeliverable>;
+  const target = item.path || item.url;
+  if (!target) return null;
+  const kind = normalizeDeliverableKind(item.kind, item.path, item.url);
+  return {
+    id: cleanOptional(item.id) ?? deliverableId(target),
+    label: cleanOptional(item.label) ?? deliverableLabel(target, kind),
+    kind,
+    path: cleanOptional(item.path),
+    url: cleanOptional(item.url),
+    exists: typeof item.exists === "boolean" ? item.exists : item.path ? existsSync(item.path) : undefined,
+    createdAt: positiveNumber(item.createdAt) ?? Date.now(),
   };
 }
 
@@ -304,6 +332,7 @@ export async function createTask(slug: string | null, input: CreateTaskInput, op
     skills: input.skills ?? [],
     attachments: Array.isArray(input.attachments) ? input.attachments : [],
     linkedDirectories: Array.isArray(input.linkedDirectories) ? input.linkedDirectories : [],
+    deliverables: Array.isArray(input.deliverables) ? input.deliverables : [],
     targetMachine: input.targetMachine?.key ? input.targetMachine : null,
     maxRuntimeMs: positiveNumber(input.maxRuntimeMs),
     idempotencyKey: cleanOptional(input.idempotencyKey),
@@ -337,6 +366,7 @@ export async function patchTask(slug: string | null, taskId: string, patch: Patc
     tenant: patch.tenant === "" ? undefined : patch.tenant ?? task.tenant,
     attachments: patch.attachments ?? task.attachments,
     linkedDirectories: patch.linkedDirectories ?? task.linkedDirectories,
+    deliverables: patch.deliverables ?? task.deliverables,
     targetMachine: patch.targetMachine === null ? null : patch.targetMachine ?? task.targetMachine,
     result: retryingWorking ? patch.result ?? "" : patch.result ?? task.result,
     agentSession: retryingWorking ? patch.agentSession ?? undefined : patch.agentSession ?? task.agentSession,
@@ -347,6 +377,14 @@ export async function patchTask(slug: string | null, taskId: string, patch: Patc
     updatedAt: Date.now(),
     completedAt: nextStatus ? (nextStatus === "done" ? Date.now() : undefined) : task.completedAt,
   };
+  if (changed.status === "done") {
+    changed.deliverables = mergeDeliverables(
+      changed.deliverables,
+      extractTaskDeliverables(changed, changed.result, changed.completedAt ?? changed.updatedAt),
+    );
+  } else if (nextStatus && nextStatus !== "done" && !patch.deliverables) {
+    changed.deliverables = [];
+  }
   if (nextStatus && nextStatus !== "working") {
     changed.claimLock = undefined;
     changed.claimExpiresAt = undefined;
@@ -364,6 +402,7 @@ export async function patchTask(slug: string | null, taskId: string, patch: Patc
     changed.result = "Agent accepted the task but did not attach a pollable session or return output. Check the agent runtime/auth, then move this card back to Ready for Queen.";
   }
   board.tasks = board.tasks.map((item) => item.id === taskId ? changed : item);
+  if (changed.status === "done") rollUpCompletedChildDeliverables(board, changed.id, true);
   board.events.unshift(event(
     nextStatus && nextStatus !== fromStatus ? "task.moved" : "task.updated",
     nextStatus && nextStatus !== fromStatus ? `Moved ${changed.title} from ${fromStatus} to ${nextStatus}` : `Updated ${changed.title}`,
@@ -395,6 +434,15 @@ export async function moveTask(slug: string | null, taskId: string, status: Kanb
   if (moved && status === "working" && isRetryBlockerResult(moved.result)) {
     moved.result = "";
     moved.agentSession = null;
+  }
+  if (moved && status === "done") {
+    moved.deliverables = mergeDeliverables(
+      moved.deliverables,
+      extractTaskDeliverables(moved, moved.result, Date.now()),
+    );
+    rollUpCompletedChildDeliverables(board, moved.id, true);
+  } else if (moved && status !== "done") {
+    moved.deliverables = [];
   }
   if (moved && isUnpollableAcceptedWorking(moved)) {
     moved.status = "needs-human";
@@ -488,6 +536,10 @@ export async function completeTask(slug: string | null, taskId: string, input: F
     ...task,
     status: "done",
     result,
+    deliverables: mergeDeliverables(
+      task.deliverables,
+      extractTaskDeliverables(task, result, now),
+    ),
     claimLock: undefined,
     claimExpiresAt: undefined,
     currentRunId: undefined,
@@ -495,6 +547,7 @@ export async function completeTask(slug: string | null, taskId: string, input: F
     completedAt: now,
   };
   board.tasks = board.tasks.map((item) => item.id === taskId ? changed : item);
+  rollUpCompletedChildDeliverables(board, taskId, true);
   board.events.unshift(event("task.completed", `Completed ${task.title}`, task.id, { summary: input.summary ?? result }, input.runId ?? task.currentRunId));
   createVisualHandoffChild(board, changed, result);
   promoteReadyChildren(board, "dependency.auto-promote");
@@ -722,6 +775,155 @@ function simpleStableHash(value: string) {
   return (hash >>> 0).toString(36);
 }
 
+function deliverableId(target: string) {
+  return `d_${simpleStableHash(target)}`;
+}
+
+function normalizeDeliverableKind(kind?: string, path?: string, url?: string): KanbanDeliverableKind {
+  if (kind && ["website", "video", "image", "audio", "document", "directory", "file", "url"].includes(kind)) {
+    return kind as KanbanDeliverableKind;
+  }
+  if (url && !url.startsWith("file:")) return "url";
+  if (path && existsSync(path)) {
+    try {
+      if (statSync(path).isDirectory()) return "directory";
+    } catch {
+      // Fall through to extension-based detection.
+    }
+  }
+  const target = (path || url || "").toLowerCase().split(/[?#]/)[0];
+  if (/\.(?:html?)$/.test(target)) return "website";
+  if (/\.(?:mp4|mov|m4v|webm|avi|mkv)$/.test(target)) return "video";
+  if (/\.(?:png|jpe?g|gif|webp|svg|avif)$/.test(target)) return "image";
+  if (/\.(?:mp3|wav|m4a|aac|flac|ogg)$/.test(target)) return "audio";
+  if (/\.(?:pdf|docx?|pptx?|xlsx?|csv|txt|md)$/.test(target)) return "document";
+  return path ? "file" : "url";
+}
+
+function deliverableLabel(target: string, kind: KanbanDeliverableKind) {
+  const clean = target.replace(/^file:\/\//, "").split(/[?#]/)[0].replace(/\/+$/, "");
+  return clean.split(/[\\/]/).filter(Boolean).at(-1) || kind;
+}
+
+function deliverableFromTarget(target: string, label?: string, createdAt = Date.now()): KanbanDeliverable | null {
+  const trimmed = target.trim().replace(/[),.;:]+$/, "");
+  if (!trimmed) return null;
+  if (/^https?:\/\//i.test(trimmed)) {
+    if (/^https?:\/\/(?:www\.)?w3\.org\/2000\/svg\b/i.test(trimmed)) return null;
+    const kind = normalizeDeliverableKind(undefined, undefined, trimmed);
+    return { id: deliverableId(trimmed), label: label?.trim() || deliverableLabel(trimmed, kind), kind, url: trimmed, createdAt };
+  }
+  const fileUrl = trimmed.match(/^file:\/\/(.+)/i)?.[1];
+  const path = decodeURIComponent(fileUrl || trimmed);
+  if (!isAbsolute(path)) return null;
+  const kind = normalizeDeliverableKind(undefined, path);
+  return {
+    id: deliverableId(path),
+    label: label?.trim() || deliverableLabel(path, kind),
+    kind,
+    path,
+    exists: existsSync(path),
+    createdAt,
+  };
+}
+
+function extractKanbanDeliverables(text: string, createdAt = Date.now()): KanbanDeliverable[] {
+  const deliverables = new Map<string, KanbanDeliverable>();
+  const lines = text.split(/\r?\n/);
+  for (const line of lines) {
+    const labeled = line.match(/^\s*(?:[-*]\s*)?([^:\n]{3,80}?)\s*:\s*(file:\/\/\/[^\s]+|https?:\/\/[^\s]+|\/[^\s"'<>]+(?:\s+[^\s"'<>]+)*?)(?:\s*)$/i);
+    if (labeled) {
+      const item = deliverableFromTarget(labeled[2], labeled[1], createdAt);
+      if (item) deliverables.set(item.path || item.url || item.id, item);
+    }
+  }
+  const targetPattern = /(?:file:\/\/\/[^\s"'<>]+|https?:\/\/[^\s"'<>]+|\/(?:Users|Volumes|tmp|var|private|home|opt)\/[^\s"'<>]+(?:\s[^\s"'<>]+)*?(?=\s{2,}|\n|$|[),.;]))/gi;
+  for (const match of text.matchAll(targetPattern)) {
+    const item = deliverableFromTarget(match[0], undefined, createdAt);
+    if (item) deliverables.set(item.path || item.url || item.id, item);
+  }
+  return [...deliverables.values()].slice(0, 12);
+}
+
+function mergeDeliverables(existing: KanbanDeliverable[] | undefined, next: KanbanDeliverable[]) {
+  const merged = new Map<string, KanbanDeliverable>();
+  for (const item of existing ?? []) {
+    const normalized = normalizeDeliverable(item);
+    if (normalized) merged.set(normalized.path || normalized.url || normalized.id, normalized);
+  }
+  for (const item of next) {
+    const key = item.path || item.url || item.id;
+    if (!merged.has(key)) merged.set(key, item);
+  }
+  return [...merged.values()].slice(0, 12);
+}
+
+function extractTaskDeliverables(task: Pick<KanbanTask, "body" | "result" | "idempotencyKey" | "title" | "skills">, result?: string, createdAt = Date.now()) {
+  const resultText = result ?? task.result ?? "";
+  const resultDeliverables = extractKanbanDeliverables(resultText, createdAt);
+  if (resultDeliverables.length) return filterSourceDeliverables(task, resultDeliverables);
+  return filterSourceDeliverables(task, extractKanbanDeliverables(stripSourceResultBlocks(task.body ?? ""), createdAt));
+}
+
+function stripSourceResultBlocks(text: string) {
+  return text.replace(/\n\s*Source result:\s*\n[\s\S]*?(?=\n\s*(?:VISUAL[_ -]?BRIEF|Source task|Source agent|Create the image|Create the visual|Files created|Verification)\b|$)/gi, "\n");
+}
+
+function sourceDeliverableKeys(task: Pick<KanbanTask, "body" | "idempotencyKey" | "title" | "skills">) {
+  if (!isVisualHandoffTask(task as KanbanTask)) return new Set<string>();
+  const keys = new Set<string>();
+  const body = task.body ?? "";
+  const sourceBlocks = [...body.matchAll(/\n\s*Source result:\s*\n([\s\S]*?)(?=\n\s*(?:VISUAL[_ -]?BRIEF|Source task|Source agent|Create the image|Create the visual|Files created|Verification)\b|$)/gi)];
+  for (const block of sourceBlocks) {
+    for (const item of extractKanbanDeliverables(block[1] ?? "", Date.now())) {
+      keys.add(item.path || item.url || item.id);
+    }
+  }
+  return keys;
+}
+
+function filterSourceDeliverables(task: Pick<KanbanTask, "body" | "idempotencyKey" | "title" | "skills">, deliverables: KanbanDeliverable[]) {
+  const sourceKeys = sourceDeliverableKeys(task);
+  if (!sourceKeys.size) return deliverables;
+  return deliverables.filter((item) => !sourceKeys.has(item.path || item.url || item.id));
+}
+
+function isPlanningDeliverable(item: KanbanDeliverable) {
+  const target = `${item.path ?? ""} ${item.url ?? ""} ${item.label ?? ""}`;
+  return item.kind === "document" && /(?:^|[/. -])(?:implementation[- ]?plan|plan)\.(?:md|txt|pdf)\b|\/\.hermes\/plans\//i.test(target);
+}
+
+function rollUpCompletedChildDeliverables(board: KanbanBoard, completedChildId?: string, recordEvents = false) {
+  const tasksById = new Map(board.tasks.map((task) => [task.id, task]));
+  const parentDeliverables = new Map<string, KanbanDeliverable[]>();
+  for (const link of board.links) {
+    if (completedChildId && link.childId !== completedChildId) continue;
+    const child = tasksById.get(link.childId);
+    if (!child || !["done", "archived"].includes(child.status) || !child.deliverables?.length) continue;
+    const childDeliverables = filterSourceDeliverables(child, child.deliverables).filter((item) => !isPlanningDeliverable(item));
+    if (!childDeliverables.length) continue;
+    parentDeliverables.set(link.parentId, mergeDeliverables(parentDeliverables.get(link.parentId), childDeliverables));
+  }
+  for (const [parentId, childDeliverables] of parentDeliverables) {
+    const parent = tasksById.get(parentId);
+    if (!parent) continue;
+    const parentBase = childDeliverables.some((item) => item.kind !== "document")
+      ? (parent.deliverables ?? []).filter((item) => !isPlanningDeliverable(item))
+      : parent.deliverables;
+    parent.deliverables = mergeDeliverables(parentBase, childDeliverables);
+    for (const link of board.links.filter((item) => item.parentId === parentId)) {
+      const child = tasksById.get(link.childId);
+      if (child?.status === "done" && isVisualHandoffTask(child)) {
+        child.status = "archived";
+        child.updatedAt = Date.now();
+        if (recordEvents) {
+          board.events.unshift(event("task.handoff-converged", `Rolled ${child.title} deliverables into ${parent.title}`, child.id, { parentId }));
+        }
+      }
+    }
+  }
+}
+
 function extractVisualBrief(text?: string) {
   const match = text?.match(/(?:^|\n)\s*VISUAL[\s_-]*BRIEF\s*:\s*([\s\S]*?)(?=\n\s*(?:[A-Z][A-Z0-9_ -]{2,}|Resume this session with|Session|Duration|Messages|---RESULT_LENGTH---)\s*:|\n\s*╰|$)/i);
   const brief = match?.[1]?.replace(/\s+/g, " ").trim() ?? "";
@@ -730,7 +932,7 @@ function extractVisualBrief(text?: string) {
 
 function isVisualHandoffTask(task: KanbanTask) {
   return Boolean(task.idempotencyKey?.startsWith("handoff:visual:"))
-    || (/^generate image for:/i.test(task.title) && task.skills.some((skill) => /image generation|visual asset|art direction/i.test(skill)));
+    || (/^generate image for:/i.test(task.title) && (task.skills ?? []).some((skill) => /image generation|visual asset|art direction/i.test(skill)));
 }
 
 function createVisualHandoffChild(board: KanbanBoard, parent: KanbanTask, result?: string) {

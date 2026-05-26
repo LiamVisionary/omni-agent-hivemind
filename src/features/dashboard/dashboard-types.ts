@@ -23,6 +23,7 @@ export type RuntimeIntegrationKey =
 
 export type RuntimeIntegrationStatus = {
   runtime: AgentRuntime;
+  targetKey?: string;
   capabilities: RuntimeCapabilities;
   integrations: Record<RuntimeIntegrationKey, {
     supported: boolean;
@@ -586,6 +587,8 @@ export type AgentSessionResponse = {
   error?: string;
   session?: {
     sessionId: string;
+    runtime?: string;
+    source?: string;
     updatedAt?: number;
     messageCount?: number;
     messages?: Array<{

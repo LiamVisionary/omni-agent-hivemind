@@ -3,6 +3,14 @@
 This file records user-visible changes before they are committed. New work should
 be added here first, then marked `Committed` or `Pushed` after the git action.
 
+## 2026-05-27 01:58 WITA - Clarify Bankr Honey Rewards
+
+- Status: Pushed
+- Areas changed: Honey ledger API, Honey ledger service, wallet reward rail, dashboard wallet stats
+- Summary: Rename the wallet rail copy from generic HIVE conversion to Bankr reward awarding, track Bankr HIVE awarded separately in dashboard stats, and add a return-to-Honey ledger action that can reverse awarded HIVE back into Honey locally or through the remote ledger endpoint.
+- Verification: `pnpm exec tsc --noEmit --pretty false --skipLibCheck`; `git diff --check HEAD~1..HEAD`; syntax checks for collector and real-fleet E2E scripts.
+- Intended commit message: `Clarify Bankr Honey rewards`
+
 ## 2026-05-27 01:40 WITA - Enable Dynamic OpenClaw Model Discovery
 
 - Status: Pushed
@@ -26,6 +34,112 @@ be added here first, then marked `Committed` or `Pushed` after the git action.
 - Summary: Add a durable per-machine ID at `~/.hivemindos/machine-id` and expose it from collector `/health` so duplicate checkouts/Link nodes on the same physical machine can collapse safely without hiding another Mac with the same hostname. Make Fleet server/client dedupe use that machine ID when present. Harden installer reruns to preserve Link mode from `collector.env`, reject non-Hivemind services on `/health`, choose a real free collector port on macOS, and make dashboard collector URL resolution prefer the live collector registry over stale process env.
 - Verification: `bash -n scripts/install-telemetry-collector.sh`; `node --check scripts/agent-telemetry-collector.mjs`; `npm exec --yes --package pnpm@8.6.12 -- pnpm exec tsc --noEmit --pretty false --skipLibCheck`; `git diff --check -- CHANGELOG.md scripts/install-telemetry-collector.sh scripts/agent-telemetry-collector.mjs src/app/api/fleet/discover/route.ts src/features/dashboard/dashboard-display-helpers.tsx src/features/dashboard/dashboard-types.ts src/features/dashboard/hooks/use-dashboard-derived-state.tsx src/lib/services/hivemind-link-control.ts`; `./scripts/install-telemetry-collector.sh` preserved Link mode, rejected Z-Image on 8787, selected private collector port 8791, and Link stayed connected on control port 8793; live `/health` reports `machineId`; live `/api/fleet/discover` reports local `This Mac` ready at `http://127.0.0.1:8791` with machine ID.
 - Intended commit message: `Add stable machine IDs for Fleet discovery`
+
+## 2026-05-27 01:35:57 WITA - Correct Memory Telemetry Process Scope
+
+- Status: Pushed
+- Areas changed: Memory telemetry process classification, Memory panel labels, changelog
+- Summary: Make the headline memory telemetry RSS track the dashboard dev-server process tree instead of counting unrelated Next.js apps, Terminal ancestors, git remotes, and helper runtimes as app memory; keep helper and system processes visible separately for diagnosis, reset stale in-memory telemetry after the classifier change, and stop double-counting ArrayBuffer memory in the External metric.
+- Verification: `pnpm exec eslint src/lib/services/runtime-memory-telemetry.ts src/lib/types/memory-telemetry.ts src/features/dashboard/views/MemoryTelemetryPanel.tsx --max-warnings=999`; `git diff --check -- src/lib/services/runtime-memory-telemetry.ts src/features/dashboard/views/MemoryTelemetryPanel.tsx CHANGELOG.md`; `pnpm exec tsc --noEmit --pretty false --skipLibCheck`; live `/api/memory-telemetry` on port 5020 reported dashboard-only RSS settling to ~777 MB across 5 dashboard processes with no app growth signal after the telemetry history reset.
+- Intended commit message: `Correct memory telemetry process scope`
+
+## 2026-05-27 01:35:55 WITA - Remove Ami OpenClaw Surfaces
+
+- Status: Pushed
+- Areas changed: OpenClaw docs, OpenClaw standalone API routes, OpenClaw skill/memory/channel/autoposter helpers, runtime capabilities, notifications route, docs preview/navigation, README, changelog
+- Summary: Remove the standalone OpenClaw user/setup guides and Ami-companion-derived OpenClaw product surfaces, keep only the generic Hivemind runtime bridge for OpenClaw chat/model selection, move shared notifications to `/api/notifications`, and update docs to describe the slimmer runtime-only OpenClaw support.
+- Verification: Pending.
+- Intended commit message: `Remove Ami OpenClaw surfaces`
+
+## 2026-05-27 01:14:46 WITA - Throttle Dashboard Polling Memory Pressure
+
+- Status: Pushed
+- Areas changed: Dashboard polling hooks, fleet/app/MiroShark API cache windows, changelog
+- Summary: Add a visibility-aware polling hook and move the noisy long-running dashboard pollers to one-at-a-time recursive polling that slows while the tab is hidden, reduces fleet snapshot/discovery, Honey ledger, memory telemetry, version, MiroShark status, notifications, and Kanban background request pressure, and keeps short server-side caches from rebuilding duplicate fleet/status payloads.
+- Verification: `pnpm exec tsc --noEmit --pretty false --skipLibCheck`; `pnpm exec eslint src/features/dashboard/hooks/use-visibility-aware-polling.tsx src/features/dashboard/hooks/use-dashboard-polling-effects.tsx src/features/dashboard/DashboardApp.tsx src/app/api/fleet/discover/route.ts src/app/api/fleet/snapshot/route.ts src/app/api/miroshark/status/route.ts src/app/api/app/version/route.ts --max-warnings=999` passed with existing warnings; `git diff --check -- src/features/dashboard/hooks/use-visibility-aware-polling.tsx src/features/dashboard/DashboardApp.tsx src/features/dashboard/hooks/use-dashboard-polling-effects.tsx src/app/api/fleet/discover/route.ts src/app/api/fleet/snapshot/route.ts src/app/api/miroshark/status/route.ts src/app/api/app/version/route.ts CHANGELOG.md`; live `curl` smokes returned `ok: true` for `/api/fleet/discover?includeSnapshots=0` and `/api/fleet/snapshot`, and `/api/miroshark/status` returned the cached stopped companion status successfully.
+- Intended commit message: `Throttle dashboard polling memory pressure`
+
+## 2026-05-27 01:13:02 WITA - Stabilize Fleet Graph Layout
+
+- Status: Pushed
+- Areas changed: Fleet network graph, changelog
+- Summary: Make fallback fleet graph cluster coordinates derive from a stable machine-id ordering instead of discovery response order, preventing the graph from appearing mirrored after live fleet refreshes.
+- Verification: `pnpm exec eslint src/components/fleet/network-graph.tsx --max-warnings=999`; `pnpm exec tsc --noEmit --pretty false --skipLibCheck`; `git diff --check -- src/components/fleet/network-graph.tsx CHANGELOG.md`.
+- Intended commit message: `Stabilize fleet graph layout`
+
+## 2026-05-27 01:03:17 WITA - Expand GitHub Pages Docs
+
+- Status: Pushed
+- Areas changed: docs index, docs preview page, GitHub Pages config, architecture docs, feature docs, integration docs, runtime docs, product docs, compatibility pages, changelog
+- Summary: Add a GitHub Pages-ready documentation entry point and preview page plus audited architecture, organized feature pages, API, storage, collector, worker, runtime, integration, product, and verification references for the current HivemindOS codebase.
+- Verification: Local docs link checker reported `docs links ok`; `git diff --check -- docs CHANGELOG.md`; `preview.html` parsed with Python's HTML parser; local static server on `127.0.0.1:5022` served `preview.html` and `features/index.md`.
+- Intended commit message: `Expand GitHub Pages docs`
+
+## 2026-05-27 00:45:09 WITA - Attach Kanban Deliverables
+
+- Status: Pushed
+- Areas changed: Kanban task model, local Kanban store, Kanban board cards, deliverable open/reveal API, Kanban board styling
+- Summary: Add persisted deliverables to Kanban tasks, auto-extract local paths and URLs from completed task results, show a deliverable badge on Done cards, open a portaled compact actions menu with preview/open plus Show in Finder, Show in Explorer, or Show in folder for local deliverables, roll completed handoff-child outputs back onto the original parent task, and archive completed visual handoff children from the normal Done lane after their outputs converge upstream.
+- Verification: `pnpm exec eslint src/lib/services/kanban/local-kanban-store.ts src/app/api/kanban/deliverable/route.ts src/features/dashboard/views/KanbanPanel.tsx src/features/dashboard/DashboardApp.tsx src/lib/types/kanban.ts --max-warnings=999` passed with existing DashboardApp warnings; `pnpm exec tsc --noEmit --pretty false --skipLibCheck`; `git diff --check -- src/lib/services/kanban/local-kanban-store.ts src/app/api/kanban/deliverable/route.ts src/features/dashboard/views/KanbanPanel.tsx src/features/dashboard/DashboardApp.tsx src/lib/types/kanban.ts src/app/kanban-board.module.css CHANGELOG.md`; `/api/kanban` smoke confirmed the repaired Emoji parent Done card exposes the `Emoji Atlas site` and `Emoji Atlas desktop preview` deliverables while the visual handoff child is hidden from the normal Done column; `/api/kanban/deliverable` reject-path smoke returned the expected web-URL reveal error; Browser smoke loaded the Kanban route on Liam's existing dev server with no console errors.
+- Intended commit message: `Attach Kanban deliverables`
+
+## 2026-05-27 00:48 WITA - Enable OpenClaw Model Selection
+
+- Status: Pushed
+- Areas changed: OpenClaw runtime adapter, telemetry collector runtime integrations, runtime capabilities, agent settings model picker, runtime model persistence
+- Summary: Mark OpenClaw as model-selectable, read provider/model options dynamically from the target machine's OpenClaw config and current agent refs instead of a hardcoded catalog, auto-detect OpenClaw as an installed runtime/agent when the collector can read `~/.openclaw/openclaw.json`, proxy OpenClaw model selection through the remote collector just like Hermes, treat local Hivemind Link `/peer/...` URLs as remote collectors instead of local runtime reads, keep the provider/model section visible with an explicit loading/error/empty state when a model-selectable runtime returns no inventory, preserve dynamic providers such as `openai-codex`, key modal integration results to the selected agent/collector so one machine's OpenClaw default cannot leak into another, prefer an explicit agent profile model such as `openai-codex/gpt-5.5` over a machine-wide OpenClaw default such as `openai/gpt-5.2`, and persist OpenClaw model changes back to its config.
+- Verification: `pnpm exec eslint src/lib/services/runtime-adapters/openclaw.ts src/lib/types/agent-runtime.ts src/features/dashboard/hooks/use-agent-controller.tsx src/features/dashboard/hooks/use-agent-settings-controller.tsx src/features/dashboard/hooks/use-dashboard-derived-state.tsx src/features/dashboard/DashboardApp.tsx scripts/agent-telemetry-collector.mjs --max-warnings=999` passed with existing DashboardApp/hook warnings; `pnpm exec eslint scripts/agent-telemetry-collector.mjs 'src/app/api/runtimes/[runtime]/integrations/route.ts' src/features/dashboard/views/chat/AgentSettingsModal.tsx --max-warnings=999`; `node --check scripts/agent-telemetry-collector.mjs`; `pnpm exec tsc --noEmit --pretty false --skipLibCheck`; local proxy smoke with `telemetryUrl: http://127.0.0.1:9880/peer/fake` returned `proxy-provider/proxy-model` from the proxy server instead of this Mac's OpenClaw config; temporary collector smoke with arbitrary `custom-provider/not-hardcoded-model-123` proved OpenClaw model discovery is config-driven and made `/health` report `openclaw`, `/agents` include an auto-detected OpenClaw agent, and `/runtimes/openclaw/integrations` return that config model; temporary collector smoke with `OPENCLAW_HOME` containing both `openai/gpt-5.2` and `openai-codex/gpt-5.5` returned `openai-codex/gpt-5.5` for the selected agent; live Ubuntu collector currently reports only `hermes` and returns 404 for OpenClaw integrations until its running collector is updated/restarted with this script.
+- Intended commit message: `Enable OpenClaw model selection`
+
+## 2026-05-27 00:31 WITA - Disable Missing Runtime Choices
+
+- Status: Pushed
+- Areas changed: Agent settings runtime selector, runtime availability API, fleet modal styling
+- Summary: Add a local runtime availability check for Hermes, OpenClaw, Aeon, and Local OpenAI-compatible endpoints, pass that status into the agent settings modal, and disable runtime picker options that are not installed with hover text saying the runtime is not installed.
+- Verification: `pnpm exec eslint src/lib/services/runtime-availability.ts src/app/api/runtimes/availability/route.ts src/features/dashboard/views/chat/AgentSettingsModal.tsx src/features/dashboard/DashboardApp.tsx --max-warnings=999` passed with existing DashboardApp warnings; `pnpm exec tsc --noEmit --pretty false --skipLibCheck`; `git diff --check -- src/lib/services/runtime-availability.ts src/app/api/runtimes/availability/route.ts src/features/dashboard/views/chat/AgentSettingsModal.tsx src/features/dashboard/DashboardApp.tsx src/app/fleet.module.css CHANGELOG.md`; `curl -fsS --max-time 20 http://127.0.0.1:5020/api/runtimes/availability` returned Hermes/OpenClaw installed and Aeon/Local OpenAI unavailable on this machine; Playwright smoke loaded `http://127.0.0.1:5020/?view=chat` without new console errors beyond the dev HMR WebSocket warning.
+- Intended commit message: `Disable missing runtime choices`
+
+## 2026-05-26 23:55 WITA - Add Encrypted File Share E2E
+
+- Status: Pushed
+- Areas changed: Real fleet E2E runner, telemetry collector E2E file-share hook, package scripts
+- Summary: Add a `file-share` real fleet E2E suite that requires Hermes and OpenClaw on different ready machines, prepares a recipient keypair on the OpenClaw machine, has the Hermes machine create an RSA-OAEP encrypted file envelope over the discovered HivemindOS/Tailscale collector path, verifies the OpenClaw machine can decrypt the payload by hash without writing plaintext into the test summary, and cleans up `hive-e2e-*` share artifacts on both machines.
+- Verification: `node --check scripts/agent-telemetry-collector.mjs && node --check scripts/e2e-real-fleet.mjs`; `pnpm exec eslint scripts/e2e-real-fleet.mjs scripts/agent-telemetry-collector.mjs --max-warnings=999`; `git diff --check -- scripts/e2e-real-fleet.mjs scripts/agent-telemetry-collector.mjs package.json CHANGELOG.md`.
+- Intended commit message: `Add encrypted file share E2E`
+
+## 2026-05-26 22:46:11 WITA - Keep Chat History Selection In Place
+
+- Status: Pushed
+- Areas changed: Dashboard chat sidebar history, dashboard app wiring, changelog
+- Summary: Stop promoting the active chat history row above newer rows when it is selected, and automatically open the newest visible chat history item when the Chat view first loads without an explicit selected chat leaf.
+- Verification: `pnpm exec eslint src/features/dashboard/hooks/use-chat-tree-controller.tsx src/features/dashboard/DashboardApp.tsx --max-warnings=999`; `pnpm exec tsc --noEmit --pretty false --skipLibCheck`; `git diff --check -- src/features/dashboard/hooks/use-chat-tree-controller.tsx src/features/dashboard/DashboardApp.tsx CHANGELOG.md`; `curl --max-time 20 -I 'http://localhost:5020/?view=chat'` returned `200 OK` after the prop wiring fix; Browser smoke loaded `http://localhost:5020/?view=chat` with Chat selected, Machines and Live conversation visible, and no console errors.
+- Intended commit message: `Keep chat history selection in place`
+
+## 2026-05-26 18:58:33 WITA - Make Update Build Opt-In
+
+- Status: Pushed
+- Areas changed: HivemindOS update command, changelog
+- Summary: Change `scripts/update-hivemindos.sh` so the default update path skips the production dashboard build and relies on the dev server compiling on demand; keep production builds available through `--build` or `--production-build`.
+- Verification: `bash -n scripts/update-hivemindos.sh`; `./scripts/update-hivemindos.sh --help`; `./scripts/update-hivemindos.sh --skip-pull --skip-install --skip-collector --skip-dashboard`; `git diff --check -- scripts/update-hivemindos.sh CHANGELOG.md`
+- Intended commit message: `Make update build opt-in`
+
+## 2026-05-26 18:52:32 WITA - Remove Agent Input Length Block
+
+- Status: Pushed
+- Areas changed: Agent security proxy, local telemetry collector chat bridge, runtime-session bridge, chat runtime stream route, chat-to-Kanban task generation, Kanban dispatch fallback, chat Kanban menu styling, changelog
+- Summary: Move the security proxy implementation from the OpenClaw service namespace into the runtime-agnostic agent security proxy module, remove hard agent input length blocks from the dashboard route and collector chat bridge, preserve streamed token whitespace so generated Kanban titles/bodies do not lose spaces, preserve the agent-shaped human-visible Kanban title while storing the complete selected chat message in the Kanban body for workers, normalize generated card titles that come back as slugs/camelCase/concatenated words, route dashboard session polling through a runtime-agnostic `/runtime-sessions` bridge with Hermes as the current adapter, discover Hermes API sessions from DB-backed default state as well as profile session JSON so Kanban can poll long-running workers, guard the dashboard runtime stream against late closed-controller writes, requeue no-progress worker dispatches to Ready with a worker cooldown instead of escalating them to Needs human, and make the chat Send to Kanban status popover open above the button, show a success check animation, auto-dismiss on success, and expose an explicit close button for done/error states.
+- Verification: `pnpm exec eslint src/lib/services/agent-security-proxy.ts src/app/api/openclaw/skill-action/route.ts --max-warnings=999`; `pnpm exec eslint scripts/agent-telemetry-collector.mjs src/features/dashboard/hooks/use-status-chat-input-controller.tsx --max-warnings=999` passed with existing hook warnings; `pnpm exec eslint src/features/dashboard/views/ChatPanel.tsx src/features/dashboard/DashboardApp.tsx src/features/dashboard/hooks/use-status-chat-input-controller.tsx --max-warnings=999` passed with existing DashboardApp/hook warnings; `pnpm exec eslint scripts/agent-telemetry-collector.mjs src/app/api/chat/agent-runtime/route.ts src/features/dashboard/hooks/use-kanban-dispatch-controller.tsx --max-warnings=999` passed with existing hook warnings; `pnpm exec eslint scripts/agent-telemetry-collector.mjs src/app/api/chat/agent-session/route.ts src/features/dashboard/hooks/use-kanban-dispatch-controller.tsx src/features/dashboard/hooks/use-kanban-task-controller.tsx src/features/dashboard/hooks/use-status-chat-input-controller.tsx src/features/dashboard/hooks/use-chat-tree-controller.tsx src/features/dashboard/DashboardApp.tsx src/features/env/env-components.tsx --max-warnings=999` passed with existing warnings; `pnpm exec tsc --noEmit --pretty false --skipLibCheck`; `git diff --check -- src/features/dashboard/views/ChatPanel.tsx src/features/dashboard/DashboardApp.tsx src/features/dashboard/hooks/use-status-chat-input-controller.tsx src/app/chat.module.css CHANGELOG.md`; `git diff --check -- scripts/agent-telemetry-collector.mjs src/features/dashboard/hooks/use-status-chat-input-controller.tsx src/app/chat.module.css src/lib/services/agent-security-proxy.ts src/app/api/openclaw/skill-action/route.ts CHANGELOG.md`; `git diff --check -- scripts/agent-telemetry-collector.mjs src/app/api/chat/agent-runtime/route.ts src/features/dashboard/hooks/use-kanban-dispatch-controller.tsx src/features/dashboard/views/ChatPanel.tsx src/features/dashboard/DashboardApp.tsx src/features/dashboard/hooks/use-status-chat-input-controller.tsx src/app/chat.module.css src/lib/services/agent-security-proxy.ts src/app/api/openclaw/skill-action/route.ts CHANGELOG.md`; title-normalizer smoke printed `Draft emoji website plan`, `draft emoji website plan`, and `Draft Emoji Website Plan` for concatenated/slug/camel title inputs; repaired existing `Draftemojiwebsiteplan` and `Generate image for: Draftemojiwebsiteplan` Kanban cards through `/api/kanban` using the original agent-shaped JSON and parent result; `rg -n "openclaw/security-proxy|MAX_INPUT_LENGTH|Input exceeds maximum length|8000 chars|length limits" src || true`; `rg -n "maxChatChars|Message is too long|Limit: 12000|12000 characters|body.length > 1_000_000|request.destroy\\(\\)|Input exceeds maximum length|MAX_INPUT_LENGTH" scripts/agent-telemetry-collector.mjs src || true`; `node --check scripts/agent-telemetry-collector.mjs`; restarted `com.agent-control-room.telemetry`; `curl -fsS --max-time 10 http://127.0.0.1:8787/health` returned `ok: true`; `curl -fsS --max-time 10 'http://127.0.0.1:8787/runtime-sessions?runtime=hermes&sessionId=api-c309e4da3489785a&localDataDir=/Users/liam/.hermes/profiles/henry-matisse'` returned the DB-backed session with runtime/source metadata and final assistant result; `curl -fsS --max-time 15 -X POST 'http://127.0.0.1:5020/api/chat/agent-session'` with the Henry session returned `ok: true`; Playwright smoke loaded `http://127.0.0.1:5020/?view=chat` and confirmed the updated `generateKanbanPopover` CSS is present, though the current dashboard state had no connected agent to click a live chat message action.
+- Intended commit message: `Remove agent input length block`
+
+## 2026-05-26 11:32:00 WITA - Stream Hermes CLI Chat Output
+
+- Status: Pushed
+- Areas changed: Agent telemetry collector Hermes chat bridge, changelog
+- Summary: Default Hermes dashboard chat to the streaming API bridge with CLI fallback, stop buffering CLI stdout until process exit, stream sanitized stdout chunks to the dashboard as SSE while filtering `session_id:` metadata, and prevent duplicate session events during polling.
+- Verification: `node --check scripts/agent-telemetry-collector.mjs`; `pnpm exec eslint scripts/agent-telemetry-collector.mjs --max-warnings=999`; `git diff --check -- scripts/agent-telemetry-collector.mjs CHANGELOG.md`; restarted `com.agent-control-room.telemetry`; local `/health` reports `ok: true`; direct `/chat` stream probe reported `x-hermes-stream-source: api-server`, an immediate SSE keepalive, token delta SSE events before `[DONE]`, and no visible `session_id:` text.
+- Intended commit message: `Stream Hermes CLI chat output`
+
+## 2026-05-26 07:35:51 EDT - Hide Physical Tailnet Duplicate Of Link Host
 
 ## 2026-05-26 08:01:41 EDT - Restore Cross-Mac Link Discovery
 
@@ -74,6 +188,7 @@ be added here first, then marked `Committed` or `Pushed` after the git action.
 - Summary: Detect when the default local Link control port is occupied, move the control API to the nearest available localhost port, persist the chosen URL and private collector port for dashboard discovery, use a fresh working LaunchAgent label after the legacy label became stuck in macOS background-task registration, make Fleet discovery honor fallback local collector ports, and make the Link daemon fail fast if its control listener cannot bind.
 - Verification: `bash -n scripts/install-telemetry-collector.sh setup.sh uninstall.sh`; `go test ./cmd/hivemind-linkd`; `./scripts/build-hivemind-linkd.sh`; `pnpm exec tsc --noEmit --pretty false`; `git diff --check -- scripts/install-telemetry-collector.sh setup.sh uninstall.sh cmd/hivemind-linkd/main.go src/app/api/fleet/discover/route.ts src/app/api/tailscale/devices/route.ts CHANGELOG.md`; `./setup.sh --non-interactive --skip-deps --skip-dashboard`; live checks confirmed `com.hivemindos.linkd.agent` is registered/running under launchd, nearest-available scanning chose distinct collector/control ports, Link `/health` returns the service marker, `/status` reports `Running`, `.env.local` persists the chosen `HIVE_LINK_CONTROL_URL` and `AGENT_TELEMETRY_PORT`, and `/api/fleet/discover` reports `This Mac` ready at the chosen local collector port.
 - Intended commit message: `Avoid Link control port conflicts`
+
 ## 2026-05-26 09:54 UTC - Harden Env Sync Peer Targeting
 
 - Status: Pushed

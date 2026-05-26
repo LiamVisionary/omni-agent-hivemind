@@ -293,14 +293,21 @@ export function NetworkGraph({
 
 function makeClusterLayout(machines: FleetMachine[]) {
   const fallback: Record<string, [number, number]> = {};
-  machines.forEach((machine, index) => {
-    const angle = (index / Math.max(machines.length, 1)) * Math.PI * 2 - Math.PI / 2;
+  const orderedMachines = [...machines].sort((left, right) => (
+    layoutSortKey(left).localeCompare(layoutSortKey(right))
+  ));
+  orderedMachines.forEach((machine, index) => {
+    const angle = (index / Math.max(orderedMachines.length, 1)) * Math.PI * 2 - Math.PI / 2;
     fallback[machine.id] = [
       0.5 + Math.cos(angle) * 0.22,
       0.54 + Math.sin(angle) * 0.16,
     ];
   });
   return { ...fallback, ...CLUSTER_LAYOUT };
+}
+
+function layoutSortKey(machine: FleetMachine) {
+  return `${machine.id}:${machine.name}`;
 }
 
 function contentBounds(clusters: Array<{ m: FleetMachine; cx: number; cy: number }>, addMachinePoint?: { x: number; y: number }) {

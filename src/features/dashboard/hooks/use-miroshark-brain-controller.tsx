@@ -561,8 +561,8 @@ export function useMirosharkBrainController(props: any) {
     setSkillBrowserLoading(true);
     const hermesDetailPromise = refreshHermesUpdateRequirement();
     const [featuredResponse, communityResponse] = await Promise.all([
-      fetch("/api/openclaw/hivemindos-openclaw-skills", { cache: "no-store" }).catch(() => null),
-      fetch("/api/openclaw/skills?limit=24", { cache: "no-store" }).catch(() => null),
+      Promise.resolve(null),
+      Promise.resolve(null),
     ]);
     const hermesDetail = await hermesDetailPromise;
     const hermesUpdateRequired = Boolean(hermesDetail || hermesUpdateRequiredDetail);
@@ -780,7 +780,7 @@ export function useMirosharkBrainController(props: any) {
     const params = new URLSearchParams({ cursor: String(cursor), limit: "40" });
     if (sharedVault.vaultPath.trim()) params.set("vaultPath", sharedVault.vaultPath.trim());
     if (sharedVault.notificationsFolder?.trim()) params.set("notificationsFolder", sharedVault.notificationsFolder.trim());
-    const response = await fetch(`/api/openclaw/notifications?${params.toString()}`, { cache: "no-store" }).catch(() => null);
+    const response = await fetch(`/api/notifications?${params.toString()}`, { cache: "no-store" }).catch(() => null);
     const data = await response?.json().catch(() => null) as NotificationsResponse | null;
     setNotificationsLoading(false);
     if (!response?.ok || !data?.ok) {

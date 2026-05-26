@@ -159,7 +159,7 @@ export function useKanbanDispatchController(props: any) {
             choices?: Array<{ delta?: { content?: string } }>;
             error?: string;
             honey?: unknown;
-            session?: { id?: string; startedAt?: number; updatedAt?: number; messageCount?: number };
+            session?: { id?: string; runtime?: string; source?: string; startedAt?: number; updatedAt?: number; messageCount?: number };
           };
           if (parsed.error) throw new Error(parsed.error);
           if (parsed.honey) {
@@ -172,8 +172,10 @@ export function useKanbanDispatchController(props: any) {
             lastAgentSession = {
               agentId: agent.id,
               agentName: agent.name,
+              runtime: parsed.session.runtime ?? agent.runtime,
               telemetryUrl: agent.telemetryUrl,
               sessionId: parsed.session.id,
+              source: parsed.session.source,
               startedAt: parsed.session.startedAt ?? Date.now(),
               updatedAt: parsed.session.updatedAt ?? Date.now(),
               lastMessageCount: parsed.session.messageCount ?? 0,
@@ -315,15 +317,18 @@ export function useKanbanDispatchController(props: any) {
             await addKanbanSystemComment(task.id, `${agent.name} completed delegated work with workspace changes.`);
             return { ok: true, message: workspaceSummary };
           }
-          const message = `${agent.name} accepted the runtime connection, but did not produce output or attach a fresh pollable session within ${Math.round(KANBAN_DISPATCH_NO_PROGRESS_MS / 1000)}s. Check the agent runtime session, then move this card back to Ready for Queen.`;
+          const message = `${agent.name} accepted the runtime connection, but did not produce output or attach a fresh pollable session within ${Math.round(KANBAN_DISPATCH_NO_PROGRESS_MS / 1000)}s. Requeued for Queen Bee pickup so another worker can retry without human intervention.`;
           logClientTelemetry("kanban.dispatch.no_progress_timeout", {
             taskId: task.id,
             agentId: agent.id,
             timeoutMs: KANBAN_DISPATCH_NO_PROGRESS_MS,
           });
+          kanbanDispatchCooldownRef.current.set(agent.id, Date.now() + 10 * 60 * 1000);
           updateTask(localTaskId, { status: "failed", lastMessage: message, completedAt: Date.now() });
           await patchKanbanTask(task.id, {
-            status: "needs-human",
+            status: "ready",
+            assignee: "",
+            tenant: "",
             agentSession: null,
             result: message,
           });
@@ -805,7 +810,7 @@ export function useKanbanDispatchController(props: any) {
             choices?: Array<{ delta?: { content?: string } }>;
             error?: string;
             honey?: unknown;
-            session?: { id?: string; startedAt?: number; updatedAt?: number; messageCount?: number };
+            session?: { id?: string; runtime?: string; source?: string; startedAt?: number; updatedAt?: number; messageCount?: number };
           };
           if (parsed.error) throw new Error(parsed.error);
           if (parsed.honey) {
@@ -817,8 +822,10 @@ export function useKanbanDispatchController(props: any) {
               agentSession: {
                 agentId: selectedKanbanAgent.id,
                 agentName: selectedKanbanAgent.name,
+                runtime: parsed.session.runtime ?? selectedKanbanAgent.runtime,
                 telemetryUrl: selectedKanbanAgent.telemetryUrl,
                 sessionId: parsed.session.id,
+                source: parsed.session.source,
                 startedAt: parsed.session.startedAt ?? Date.now(),
                 updatedAt: parsed.session.updatedAt ?? Date.now(),
                 lastMessageCount: parsed.session.messageCount ?? 0,

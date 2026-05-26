@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 
 import { observeHoneyUsage } from "@/lib/services/wallet/honey-usage-observer";
-import { exchangeHoneyForHive, readHoneyLedger } from "@/lib/services/wallet/honey-ledger";
+import { exchangeHoneyForHive, readHoneyLedger, returnHiveToHoney } from "@/lib/services/wallet/honey-ledger";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -67,6 +67,13 @@ export async function POST(request: NextRequest) {
   if (body.action === "observe") {
     const { result, ledger } = await observeCachedUsage();
     return NextResponse.json({ ok: result.ok, ledger, observer: result });
+  }
+  if (body.action === "return-to-honey") {
+    const { ledger, events } = await returnHiveToHoney(body.agentId);
+    honeyLedgerCacheVersion += 1;
+    cachedLedger = { checkedAt: Date.now(), ledger };
+    cachedObserve = null;
+    return NextResponse.json({ ok: true, ledger, events });
   }
   if (body.action !== "exchange") {
     return NextResponse.json({ ok: false, error: "Unsupported Honey ledger action." }, { status: 400 });

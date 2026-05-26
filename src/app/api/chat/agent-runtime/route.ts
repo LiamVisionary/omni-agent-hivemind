@@ -550,12 +550,32 @@ async function streamHttpRuntime(
   const decoder = new TextDecoder();
   const readable = new ReadableStream({
     async start(controller) {
+      let streamClosed = false;
+      const safeEnqueue = (payload: string) => {
+        if (streamClosed) return false;
+        try {
+          controller.enqueue(encoder.encode(payload));
+          return true;
+        } catch {
+          streamClosed = true;
+          return false;
+        }
+      };
+      const safeClose = () => {
+        if (streamClosed) return;
+        streamClosed = true;
+        try {
+          controller.close();
+        } catch {
+          // The browser may have already closed the SSE stream.
+        }
+      };
       const reader = upstream.body?.getReader();
       if (!reader) {
-        controller.enqueue(encoder.encode(ssePayload({ error: "Runtime response body is empty" })));
-        controller.enqueue(encoder.encode("data: [DONE]\n\n"));
+        safeEnqueue(ssePayload({ error: "Runtime response body is empty" }));
+        safeEnqueue("data: [DONE]\n\n");
         releaseInteractiveRuntime(lockKey);
-        controller.close();
+        safeClose();
         return;
       }
 
@@ -587,7 +607,7 @@ async function streamHttpRuntime(
             const dataLine = eventText.split("\n").find((line) => line.startsWith("data:"));
             if (!dataLine) {
               if (eventText.trim().startsWith(":")) {
-                controller.enqueue(encoder.encode(`${eventText}\n\n`));
+                safeEnqueue(`${eventText}\n\n`);
               }
               continue;
             }
@@ -597,20 +617,20 @@ async function streamHttpRuntime(
               const parsed = JSON.parse(raw);
               const outputCheck = proxyOutput(extractChunk(parsed));
               if (outputCheck.verdict === "block") {
-                controller.enqueue(encoder.encode(ssePayload({ error: outputCheck.reason ?? "Response blocked by security policy" })));
+                safeEnqueue(ssePayload({ error: outputCheck.reason ?? "Response blocked by security policy" }));
                 continue;
               }
               const chunk = outputCheck.text;
               if (chunk) fullText += chunk;
-              controller.enqueue(encoder.encode(chunk
+              safeEnqueue(chunk
                 ? ssePayload({ choices: [{ delta: { content: chunk } }] })
-                : ssePayload(parsed)));
+                : ssePayload(parsed));
             } catch {
               const outputCheck = proxyOutput(raw);
               if (outputCheck.verdict !== "block") fullText += outputCheck.text;
-              controller.enqueue(encoder.encode(outputCheck.verdict === "block"
+              safeEnqueue(outputCheck.verdict === "block"
                 ? ssePayload({ error: outputCheck.reason ?? "Response blocked by security policy" })
-                : ssePayload({ choices: [{ delta: { content: outputCheck.text } }] })));
+                : ssePayload({ choices: [{ delta: { content: outputCheck.text } }] }));
             }
           }
         }
@@ -619,7 +639,7 @@ async function streamHttpRuntime(
           const summary = workspaceChangeSummary(workspaceBefore, workspaceAfter);
           if (summary) {
             fullText = summary;
-            controller.enqueue(encoder.encode(ssePayload({ choices: [{ delta: { content: summary } }] })));
+            safeEnqueue(ssePayload({ choices: [{ delta: { content: summary } }] }));
             recordRuntimeTelemetry(telemetry, "agent_runtime.http.workspace_completed", {
               ...telemetryPayloadForProfile(profile),
               url,
@@ -629,7 +649,7 @@ async function streamHttpRuntime(
           }
         }
         const event = await recordChatHoney(profile, userText, fullText, honeyLedgerEnabled);
-        if (event) controller.enqueue(encoder.encode(ssePayload({ honey: event })));
+        if (event) safeEnqueue(ssePayload({ honey: event }));
         recordRuntimeTelemetry(telemetry, "agent_runtime.http.stream.completed", {
           ...telemetryPayloadForProfile(profile),
           url,
@@ -637,7 +657,7 @@ async function streamHttpRuntime(
           sawFirstChunk,
           streamElapsedMs: Date.now() - fetchStartedAt,
         });
-        controller.enqueue(encoder.encode("data: [DONE]\n\n"));
+        safeEnqueue("data: [DONE]\n\n");
       } catch (error) {
         const message = runtimeStreamErrorMessage(profile, error);
         recordRuntimeTelemetry(telemetry, "agent_runtime.http.stream.failed", {
@@ -646,11 +666,11 @@ async function streamHttpRuntime(
           message,
           streamElapsedMs: Date.now() - fetchStartedAt,
         });
-        controller.enqueue(encoder.encode(ssePayload({ error: message })));
-        controller.enqueue(encoder.encode("data: [DONE]\n\n"));
+        safeEnqueue(ssePayload({ error: message }));
+        safeEnqueue("data: [DONE]\n\n");
       } finally {
         releaseInteractiveRuntime(lockKey);
-        controller.close();
+        safeClose();
       }
     },
   });

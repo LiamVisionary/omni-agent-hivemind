@@ -15,6 +15,7 @@ import type {
   MiroSharkRunResult,
 } from "@/features/dashboard/dashboard-types";
 import type { KanbanBoard } from "@/lib/types/kanban";
+import { useVisibilityAwarePolling } from "@/features/dashboard/hooks/use-visibility-aware-polling";
 
 type KanbanStorageInfo = NonNullable<KanbanResponse["storage"]>;
 
@@ -197,27 +198,13 @@ export function useDashboardPollingEffects(props: UseDashboardPollingEffectsProp
     return () => window.clearTimeout(timer);
   }, [agentWorkerClassView, brainSkills, brainSkillsLoading, hydrated, refreshBrainSkills]);
 
-  useEffect(() => {
-    if (!hydrated || !sharedVault.enabled) return;
-    let inFlight = false;
-    const refreshOnce = () => {
-      if (inFlight) return;
-      inFlight = true;
-      void Promise.resolve(refreshNotifications()).finally(() => {
-        inFlight = false;
-      });
-    };
-    const timer = window.setTimeout(() => {
-      refreshOnce();
-    }, activeView === "notifications" ? 0 : 300);
-    const interval = window.setInterval(() => {
-      refreshOnce();
-    }, 30_000);
-    return () => {
-      window.clearTimeout(timer);
-      window.clearInterval(interval);
-    };
-  }, [activeView, hydrated, refreshNotifications, sharedVault.enabled]);
+  useVisibilityAwarePolling({
+    enabled: hydrated && sharedVault.enabled,
+    intervalMs: activeView === "notifications" ? 30_000 : 120_000,
+    hiddenIntervalMs: 5 * 60_000,
+    initialDelayMs: activeView === "notifications" ? 0 : 300,
+    task: () => refreshNotifications(),
+  });
 
   useEffect(() => {
     if (!hydrated || !sharedVault.enabled || !mirosharkRun?.simulationId || mirosharkRun.archived) return;
@@ -413,15 +400,28 @@ export function useDashboardPollingEffects(props: UseDashboardPollingEffectsProp
         kanbanRefreshInFlight = false;
       }
     }
-    refreshKanban();
-    refreshKanbanBoards();
-    const timer = window.setInterval(refreshKanban, 12_000);
-    const boardsTimer = window.setInterval(refreshKanbanBoards, 60_000);
+    const refreshVisibleKanban = () => {
+      if (document.visibilityState === "visible") void refreshKanban();
+    };
+    const refreshVisibleKanbanBoards = () => {
+      if (document.visibilityState === "visible") void refreshKanbanBoards();
+    };
+    const refreshWhenVisible = () => {
+      if (document.visibilityState !== "visible") return;
+      void refreshKanban();
+      void refreshKanbanBoards();
+    };
+
+    refreshWhenVisible();
+    const timer = window.setInterval(refreshVisibleKanban, 30_000);
+    const boardsTimer = window.setInterval(refreshVisibleKanbanBoards, 120_000);
+    document.addEventListener("visibilitychange", refreshWhenVisible);
     return () => {
       cancelled = true;
       controllers.forEach((controller) => controller.abort());
       window.clearInterval(timer);
       window.clearInterval(boardsTimer);
+      document.removeEventListener("visibilitychange", refreshWhenVisible);
     };
   }, [
     kanbanBoardSlug,

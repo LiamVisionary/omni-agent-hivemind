@@ -221,7 +221,7 @@ export function useFleetNotificationsController(props: any) {
   async function raiseHermesAuthAlert(agent: AgentProfile, task: KanbanTask, message: string) {
     const machine = agent.machineName || "Unknown machine";
     const idSource = `${agent.id || agent.agentId || agent.name}-${machine}-hermes-auth`;
-    const response = await fetch("/api/openclaw/notifications", {
+    const response = await fetch("/api/notifications", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -351,7 +351,7 @@ export function useFleetNotificationsController(props: any) {
   ]);
 
   async function markNotificationRead(id: string) {
-    const response = await fetch("/api/openclaw/notifications", {
+    const response = await fetch("/api/notifications", {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ ...notificationStorageBody(), id }),
@@ -373,7 +373,7 @@ export function useFleetNotificationsController(props: any) {
   }
 
   async function markAllNotificationsRead() {
-    const response = await fetch("/api/openclaw/notifications", {
+    const response = await fetch("/api/notifications", {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ ...notificationStorageBody(), action: "mark-all-read" }),
@@ -390,7 +390,7 @@ export function useFleetNotificationsController(props: any) {
   }
 
   async function updateNotificationSettings(settings: Partial<AgentNotificationSettings>) {
-    const response = await fetch("/api/openclaw/notifications", {
+    const response = await fetch("/api/notifications", {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ ...notificationStorageBody(), action: "settings", settings }),

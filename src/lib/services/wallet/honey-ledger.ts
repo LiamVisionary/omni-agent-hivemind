@@ -225,6 +225,54 @@ export async function exchangeHoneyForHive(agentId?: string) {
   return { ledger, events };
 }
 
+export async function returnHiveToHoney(agentId?: string) {
+  const remote = getRemoteLedgerConfig();
+  if (remote) {
+    const remoteResult = await returnRemoteHiveToHoney(remote, agentId).catch(() => null);
+    if (remoteResult) return remoteResult;
+  }
+
+  const ledger = await readHoneyLedger();
+  const agentIds = agentId ? [agentId] : [...new Set([
+    ...Object.keys(ledger.agentTokenUsage),
+    ...Object.keys(ledger.agentHiveBalances),
+  ])];
+  const events: HoneyLedgerEvent[] = [];
+  const now = new Date().toISOString();
+  const tokenPerHoney = Math.max(0, Number(ledger.tokenPerHoney) || 0);
+
+  for (const id of agentIds) {
+    const hiveBalance = Math.max(0, Number(ledger.agentHiveBalances[id] ?? 0));
+    const honeyExchanged = Math.max(0, Number(ledger.agentHoneyExchanged[id] ?? 0));
+    if (hiveBalance <= 0 || honeyExchanged <= 0 || tokenPerHoney <= 0) continue;
+
+    const honeyDelta = Math.min(honeyExchanged, Math.round((hiveBalance / tokenPerHoney) * 1_000_000) / 1_000_000);
+    const hiveDelta = Math.min(hiveBalance, Math.round(honeyDelta * tokenPerHoney * 1_000_000) / 1_000_000);
+    if (honeyDelta <= 0 || hiveDelta <= 0) continue;
+
+    ledger.agentHoneyExchanged[id] = Math.max(0, Math.round((honeyExchanged - honeyDelta) * 1_000_000) / 1_000_000);
+    ledger.agentHiveBalances[id] = Math.max(0, Math.round((hiveBalance - hiveDelta) * 1_000_000) / 1_000_000);
+    ledger.rewardPoolExchangedHive = Math.max(0, Math.round((ledger.rewardPoolExchangedHive - hiveDelta) * 1_000_000) / 1_000_000);
+    events.push({
+      id: randomUUID(),
+      agentId: id,
+      kind: "exchange",
+      source: "manual",
+      tokensUsed: 0,
+      honeyDelta,
+      hiveDelta: -hiveDelta,
+      createdAt: now,
+    });
+  }
+
+  if (events.length) {
+    ledger.events.unshift(...events);
+    ledger.updatedAt = now;
+    await writeHoneyLedger(ledger);
+  }
+  return { ledger, events };
+}
+
 function estimateTokens(text: string) {
   const trimmed = text.trim();
   if (!trimmed) return 0;
@@ -354,6 +402,23 @@ async function recordRemoteHoneyObservation(
 
 async function exchangeRemoteHoneyForHive(remote: RemoteLedgerConfig, agentId?: string) {
   const response = await fetch(`${remote.url}/exchange`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ workspaceId: await getWorkspaceId(), agentId }),
+    signal: AbortSignal.timeout(REMOTE_HONEY_TIMEOUT_MS),
+  });
+  if (!response.ok) return null;
+  const data = await response.json().catch(() => null) as {
+    ok?: boolean;
+    ledger?: Partial<HoneyLedger>;
+    events?: HoneyLedgerEvent[];
+  } | null;
+  if (!data?.ok || !data.ledger) return null;
+  return { ledger: normalizeLedger(data.ledger), events: Array.isArray(data.events) ? data.events : [] };
+}
+
+async function returnRemoteHiveToHoney(remote: RemoteLedgerConfig, agentId?: string) {
+  const response = await fetch(`${remote.url}/return-to-honey`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ workspaceId: await getWorkspaceId(), agentId }),

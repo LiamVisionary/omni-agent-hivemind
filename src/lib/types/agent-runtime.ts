@@ -203,15 +203,6 @@ export const RUNTIME_CAPABILITIES: Record<string, RuntimeCapabilities> = {
   openclaw: {
     status: true,
     chat: true,
-    skills: true,
-    schedules: true,
-    memory: true,
-    sessionSearch: true,
-    socialPosting: true,
-    videoGeneration: true,
-    notifications: true,
-    setup: true,
-    walletTools: true,
     modelSelection: true,
   },
   hermes: {

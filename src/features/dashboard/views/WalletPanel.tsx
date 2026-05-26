@@ -21,7 +21,7 @@ type WalletStats = {
 type HoneyStats = {
   totalHoney: number;
   availableHoney: number;
-  hiveBalance: number;
+  bankrHiveAwarded: number;
   hiveQuote: number;
   rewardPoolHive: number;
   rewardPoolRemainingHive: number;
@@ -72,6 +72,7 @@ type WalletPanelProps = {
   refreshWalletBalance: (agentId: string) => void | Promise<void>;
   renderAgentKey: (agent: AgentProfile, index: number) => string;
   resetWalletBurnClock: (agentId: string) => void;
+  returnAllHiveToHoney: () => void | Promise<void>;
   runWalletVaultBackupAction: (action: "refresh" | "restore") => void | Promise<void>;
   runtimeUsage: RuntimeUsageAnalytics | null | undefined;
   runtimeUsageLoading: boolean;
@@ -100,7 +101,7 @@ type WalletPanelProps = {
 };
 
 export function WalletPanel(props: WalletPanelProps) {
-  const { AGENT_PAYMENT_PROVIDER_COPY, AgentWalletCard, AgentWalletCardCompact, Button, ChevronLeft, Download, HandCoins, LoaderCircle, RUNTIME_LABELS, RefreshCcw, activeView, copyPaymentPrompt, createDefaultAgentWallet, createLocalWallet, displayAgents, enableHoneyLedger, exchangeAllHoneyForHive, exchangeHoneyForHive, formatHiveAmount, formatRelativeTime, getSurvivalSnapshot, honeyLedgerEnabled, honeyStats, initializeCoreWalletRails, moneyClawStatusByEnvName, refreshRuntimeUsage, refreshWalletBalance, renderAgentKey, resetWalletBurnClock, runWalletVaultBackupAction, runtimeUsage, runtimeUsageLoading, saveMoneyClawKey, selectedAgent, selectedHoneyReward, selectedWallet, selectedWalletSnapshot, sendWalletUsdc, setSelectedAgentId, setWalletExpanded, setWalletPanelMode, testX402Fetch, updateWallet, updateWalletAction, vaultClass, walletActionsByAgent, walletClass, walletExpanded, walletPanelMode, walletStats, walletVaultBackupBusy, walletVaultBackupMessage, walletVaultBackupStatus, walletsByAgent } = props;
+  const { AGENT_PAYMENT_PROVIDER_COPY, AgentWalletCard, AgentWalletCardCompact, Button, ChevronLeft, Download, HandCoins, LoaderCircle, RUNTIME_LABELS, RefreshCcw, activeView, copyPaymentPrompt, createDefaultAgentWallet, createLocalWallet, displayAgents, enableHoneyLedger, exchangeAllHoneyForHive, exchangeHoneyForHive, formatHiveAmount, formatRelativeTime, getSurvivalSnapshot, honeyLedgerEnabled, honeyStats, initializeCoreWalletRails, moneyClawStatusByEnvName, refreshRuntimeUsage, refreshWalletBalance, renderAgentKey, resetWalletBurnClock, returnAllHiveToHoney, runWalletVaultBackupAction, runtimeUsage, runtimeUsageLoading, saveMoneyClawKey, selectedAgent, selectedHoneyReward, selectedWallet, selectedWalletSnapshot, sendWalletUsdc, setSelectedAgentId, setWalletExpanded, setWalletPanelMode, testX402Fetch, updateWallet, updateWalletAction, vaultClass, walletActionsByAgent, walletClass, walletExpanded, walletPanelMode, walletStats, walletVaultBackupBusy, walletVaultBackupMessage, walletVaultBackupStatus, walletsByAgent } = props;
   return (<>
       {activeView === "wallet" ? (
       <section className={walletClass("walletPanel", "tabPanel")}>
@@ -273,10 +274,10 @@ export function WalletPanel(props: WalletPanelProps) {
             </div>
           )}
 
-          <aside className={walletClass("hiveRail", !honeyLedgerEnabled && "hiveRailDormant")} aria-label="Hive ledger">
+          <aside className={walletClass("hiveRail", !honeyLedgerEnabled && "hiveRailDormant")} aria-label="Bankr rewards">
             <header className={walletClass("hiveRailHeader")}>
               <div>
-                <p className="eyebrow">Hive ledger</p>
+                <p className="eyebrow">Bankr rewards</p>
                 <h3>{honeyLedgerEnabled ? "Honey rewards" : "Honey rewards off"}</h3>
               </div>
               <Image
@@ -299,12 +300,12 @@ export function WalletPanel(props: WalletPanelProps) {
                     <dd>{formatHiveAmount(honeyStats.totalHoney)}</dd>
                   </div>
                   <div>
-                    <dt>Available</dt>
+                    <dt>Ready to award</dt>
                     <dd>{formatHiveAmount(honeyStats.availableHoney)}</dd>
                   </div>
                   <div>
-                    <dt>HIVE held</dt>
-                    <dd>{formatHiveAmount(honeyStats.hiveBalance)}</dd>
+                    <dt>Bankr HIVE awarded</dt>
+                    <dd>{formatHiveAmount(honeyStats.bankrHiveAwarded)}</dd>
                   </div>
                 </dl>
 
@@ -314,7 +315,7 @@ export function WalletPanel(props: WalletPanelProps) {
                   className={walletClass("hiveRailConvert")}
                   disabled={honeyStats.availableHoney <= 0}
                   onClick={exchangeAllHoneyForHive}
-                  aria-label={`Convert ${formatHiveAmount(honeyStats.availableHoney)} Honey to ${formatHiveAmount(honeyStats.hiveQuote)} HIVE`}
+                  aria-label={`Award ${formatHiveAmount(honeyStats.hiveQuote)} Bankr HIVE from ${formatHiveAmount(honeyStats.availableHoney)} Honey`}
                 >
                   <Image
                     className={walletClass("hiveRailConvertIcon")}
@@ -327,10 +328,28 @@ export function WalletPanel(props: WalletPanelProps) {
                     unoptimized
                   />
                   <span>
-                    <span>Convert {formatHiveAmount(honeyStats.availableHoney)} Honey</span>
-                    <span>→ {formatHiveAmount(honeyStats.hiveQuote)} HIVE</span>
+                    <span>Award Bankr HIVE</span>
+                    <span>{formatHiveAmount(honeyStats.availableHoney)} Honey → {formatHiveAmount(honeyStats.hiveQuote)} HIVE</span>
                   </span>
                 </Button>
+
+                {honeyStats.bankrHiveAwarded > 0 ? (
+                  <div className={walletClass("hiveRailLegacy")}>
+                    <p>
+                      Older conversions are still in the ledger-only HIVE bucket. Move them back to Honey before claiming through Bankr.
+                    </p>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="secondary"
+                      onClick={returnAllHiveToHoney}
+                      aria-label={`Move ${formatHiveAmount(honeyStats.bankrHiveAwarded)} legacy HIVE back to Honey`}
+                    >
+                      <RefreshCcw aria-hidden="true" />
+                      Move back to Honey
+                    </Button>
+                  </div>
+                ) : null}
 
                 <details className={walletClass("hiveRailDetails")}>
                   <summary>Reward pool</summary>
@@ -339,7 +358,7 @@ export function WalletPanel(props: WalletPanelProps) {
                       <dt>Pool size</dt>
                       <dd>
                         {formatHiveAmount(honeyStats.rewardPoolHive)} HIVE
-                        <small>{formatHiveAmount(honeyStats.rewardPoolRemainingHive)} unissued</small>
+                        <small>{formatHiveAmount(honeyStats.rewardPoolRemainingHive)} available to award</small>
                       </dd>
                     </div>
                     <div>
@@ -362,7 +381,7 @@ export function WalletPanel(props: WalletPanelProps) {
             ) : (
               <>
                 <p className={walletClass("hiveRailBlurb")}>
-                  Watch supported local runtimes for real token usage, earn Honey, then convert to HIVE.
+                  Watch supported local runtimes for real token usage, earn Honey, then award Bankr HIVE.
                 </p>
                 <Button type="button" size="sm" onClick={enableHoneyLedger}>
                   <HandCoins aria-hidden="true" />

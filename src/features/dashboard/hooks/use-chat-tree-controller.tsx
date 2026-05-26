@@ -7,7 +7,7 @@
 import { useCallback, useEffect, useMemo } from "react";
 
 export function useChatTreeController(props: any) {
-  const { RUNTIME_CAPABILITIES, RUNTIME_DEFAULTS, RUNTIME_KINDS, RUNTIME_LABELS, agentWorkById, chatCustomFolders, chatDedupeKey, chatFolderDraft, chatFolderLabel, chatLeafFromStorageKey, chatMessageStorageKey, chatMessageWindow, chatPreviewDedupeKey, chatSeedMessagesForTask, chooseDirectoryForMachine, createChatLeafKey, displayAgents, findRosterChatTask, hermesRuntimeSessionIdFromTask, isChatSidebarTask, isManualAgentChatMessage, logClientTelemetry, machineGroups, messagesByAgent, parentPathFromPath, preferChatTreeItem, recordRecentDirectory, runtimeCan, runtimeSessionForChat, selectedAgent, selectedChatDirectoryPath, selectedChatLeafKey, setActiveView, setChatCustomFolders, setChatFolderDraft, setChatMessageWindow, setMessagesByAgent, setSelectedAgentId, setSelectedChatDirectoryPath, setSelectedChatLeafKey, setSelectedChatPreview, setSelectedChatRuntimeSessionId, setSetupCommandCopied, setSetupMachineKey, setupCollectorCommand, setStatus, setStatusAgentId, taskChatLeafKey, updateAgent, workPriority, workspaceLabelFromPath } = props;
+  const { RUNTIME_CAPABILITIES, RUNTIME_DEFAULTS, RUNTIME_KINDS, RUNTIME_LABELS, activeView, agentWorkById, chatCustomFolders, chatDedupeKey, chatFolderDraft, chatFolderLabel, chatLeafFromStorageKey, chatMessageStorageKey, chatMessageWindow, chatPreviewDedupeKey, chatSeedMessagesForTask, chooseDirectoryForMachine, createChatLeafKey, displayAgents, findRosterChatTask, runtimeSessionIdFromTask, isChatSidebarTask, isManualAgentChatMessage, logClientTelemetry, machineGroups, messagesByAgent, parentPathFromPath, preferChatTreeItem, recordRecentDirectory, runtimeCan, runtimeSessionForChat, selectedAgent, selectedChatDirectoryPath, selectedChatLeafKey, setActiveView, setChatCustomFolders, setChatFolderDraft, setChatMessageWindow, setMessagesByAgent, setSelectedAgentId, setSelectedChatDirectoryPath, setSelectedChatLeafKey, setSelectedChatPreview, setSelectedChatRuntimeSessionId, setSetupCommandCopied, setSetupMachineKey, setupCollectorCommand, setStatus, setStatusAgentId, taskChatLeafKey, updateAgent, workPriority, workspaceLabelFromPath } = props;
   function switchRuntime(runtime: AgentRuntime) {
     const defaults = RUNTIME_DEFAULTS[runtime];
     updateAgent({
@@ -55,7 +55,7 @@ export function useChatTreeController(props: any) {
     return firstUserMessage ? firstUserMessage.slice(0, 56) : "Previous chat";
   }, [messagesByAgent]);
 
-  const hydrateHermesSessionChat = useCallback(async (agent: AgentProfile, sessionId: string, leafKey: string) => {
+  const hydrateRuntimeSessionChat = useCallback(async (agent: AgentProfile, sessionId: string, leafKey: string) => {
     const startedAt = Date.now();
     const response = await fetch("/api/chat/agent-session", {
       method: "POST",
@@ -140,7 +140,7 @@ export function useChatTreeController(props: any) {
     }
     const { task, index: taskIndex } = match;
     const leafKey = taskChatLeafKey(agentId, task, taskIndex);
-    const runtimeSessionId = hermesRuntimeSessionIdFromTask(task);
+    const runtimeSessionId = runtimeSessionIdFromTask(task);
     startAgentChat(agentId, {
       messageLimit: runtimeSessionId ? undefined : 5,
       seedMessages: chatSeedMessagesForTask(task),
@@ -148,8 +148,8 @@ export function useChatTreeController(props: any) {
       workingDirectoryPath: task.workingDirectory,
       runtimeSessionId,
     });
-    if (agent && runtimeSessionId) void hydrateHermesSessionChat(agent, runtimeSessionId, leafKey);
-  }, [agentWorkById, displayAgents, hydrateHermesSessionChat, startAgentChat]);
+    if (agent && runtimeSessionId) void hydrateRuntimeSessionChat(agent, runtimeSessionId, leafKey);
+  }, [agentWorkById, displayAgents, hydrateRuntimeSessionChat, startAgentChat]);
 
   function openChatFolderCreator(machine: MachineGroup) {
     const chatAgents = machine.agents.filter((agent) => runtimeCan(agent, "chat"));
@@ -349,7 +349,7 @@ export function useChatTreeController(props: any) {
             rank: workPriority(task) + (task.messages?.length ? 3 : 0),
             active: selectedChatLeafKey === taskChatKey,
             onOpen: () => {
-              const runtimeSessionId = hermesRuntimeSessionIdFromTask(task);
+              const runtimeSessionId = runtimeSessionIdFromTask(task);
               startAgentChat(agent.id, {
                 messageLimit: runtimeSessionId ? undefined : 5,
                 seedMessages,
@@ -357,7 +357,7 @@ export function useChatTreeController(props: any) {
                 workingDirectoryPath: task.workingDirectory,
                 runtimeSessionId,
               });
-              if (runtimeSessionId) void hydrateHermesSessionChat(agent, runtimeSessionId, taskChatKey);
+              if (runtimeSessionId) void hydrateRuntimeSessionChat(agent, runtimeSessionId, taskChatKey);
             },
           });
         }
@@ -394,14 +394,22 @@ export function useChatTreeController(props: any) {
               deduped.set(key, preferChatTreeItem(deduped.get(key), chat));
               return deduped;
             }, new Map<string, ChatTreeItem>()).values()]
-              .sort((a, b) => Number(b.active) - Number(a.active) || (b.updatedAt ?? 0) - (a.updatedAt ?? 0) || a.title.localeCompare(b.title)),
+              .sort((a, b) => (b.updatedAt ?? 0) - (a.updatedAt ?? 0) || a.title.localeCompare(b.title)),
           }))
           .sort((a, b) => (
             a.label === "Stray chats" ? 1 : b.label === "Stray chats" ? -1 : a.label.localeCompare(b.label)
           )),
       };
     })
-  ), [agentWorkById, chatCustomFolders, chatMessageWindow, conversationTitle, hasConversation, hydrateHermesSessionChat, machineGroups, messagesByAgent, selectedAgent?.id, selectedChatDirectoryPath, selectedChatLeafKey, startAgentChat]);
+  ), [agentWorkById, chatCustomFolders, chatMessageWindow, conversationTitle, hasConversation, hydrateRuntimeSessionChat, machineGroups, messagesByAgent, selectedAgent?.id, selectedChatDirectoryPath, selectedChatLeafKey, startAgentChat]);
+
+  useEffect(() => {
+    if (activeView !== "chat" || selectedChatLeafKey) return;
+    const latestChat = chatSidebarTree
+      .flatMap((machine) => machine.folders.flatMap((folder) => folder.chats))
+      .sort((a, b) => (b.updatedAt ?? 0) - (a.updatedAt ?? 0))[0];
+    latestChat?.onOpen();
+  }, [activeView, chatSidebarTree, selectedChatLeafKey]);
 
   const selectedChatMachine = useMemo(() => (
     selectedAgent
@@ -451,5 +459,5 @@ export function useChatTreeController(props: any) {
     window.setTimeout(() => setSetupCommandCopied(false), 2500);
   }
 
-  return { switchRuntime, appendMessage, hasConversation, conversationTitle, hydrateHermesSessionChat, startAgentChat, startAgentWorkChat, openChatFolderCreator, closeChatFolderCreator, createChatFolder, chatSidebarTree, selectedChatMachine, selectedChatDirectory, chatFolderCreatorMachine, chatFolderCreatorParentOptions, openSetupModal, copySetupCommand };
+  return { switchRuntime, appendMessage, hasConversation, conversationTitle, hydrateRuntimeSessionChat, startAgentChat, startAgentWorkChat, openChatFolderCreator, closeChatFolderCreator, createChatFolder, chatSidebarTree, selectedChatMachine, selectedChatDirectory, chatFolderCreatorMachine, chatFolderCreatorParentOptions, openSetupModal, copySetupCommand };
 }

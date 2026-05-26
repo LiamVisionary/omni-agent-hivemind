@@ -12,11 +12,19 @@ export async function POST(request: NextRequest) {
     if (!telemetryUrl || !sessionId) {
       return NextResponse.json({ ok: false, error: "Expected { agent.telemetryUrl, sessionId }." }, { status: 400 });
     }
-    const url = new URL(`${telemetryUrl}/sessions`);
-    url.searchParams.set("sessionId", sessionId);
-    if (body.agent?.localDataDir?.trim()) url.searchParams.set("localDataDir", body.agent.localDataDir.trim());
-    const response = await fetch(url, { cache: "no-store", signal: AbortSignal.timeout(8_000) });
-    const data = await response.json().catch(() => null);
+    const buildUrl = (pathname: string) => {
+      const url = new URL(`${telemetryUrl}${pathname}`);
+      url.searchParams.set("sessionId", sessionId);
+      if (body.agent?.runtime?.trim()) url.searchParams.set("runtime", body.agent.runtime.trim());
+      if (body.agent?.localDataDir?.trim()) url.searchParams.set("localDataDir", body.agent.localDataDir.trim());
+      return url;
+    };
+    let response = await fetch(buildUrl("/runtime-sessions"), { cache: "no-store", signal: AbortSignal.timeout(8_000) });
+    let data = await response.json().catch(() => null);
+    if (response.status === 404 && !data?.ok) {
+      response = await fetch(buildUrl("/sessions"), { cache: "no-store", signal: AbortSignal.timeout(8_000) });
+      data = await response.json().catch(() => null);
+    }
     if (!response.ok || !data?.ok) {
       return NextResponse.json({ ok: false, error: data?.error || `Agent bridge returned ${response.status}` }, { status: response.ok ? 502 : response.status });
     }

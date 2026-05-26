@@ -18,6 +18,7 @@ const PROCESS_RECENT_WINDOW_MS = 15 * 60_000;
 const PROCESS_STALE_MS = 45 * 60_000;
 const TRACKED_PROCESS_LIMIT = 80;
 const TOP_SYSTEM_PROCESS_LIMIT = 12;
+const TELEMETRY_SCHEMA_VERSION = 2;
 
 type ProcessRow = {
   pid: number;
@@ -41,10 +42,11 @@ type ProcessHistory = {
 type RelatedProcessSets = {
   ancestors: Set<number>;
   descendants: Set<number>;
-  all: Set<number>;
+  dashboard: Set<number>;
 };
 
 type MemoryTelemetryState = {
+  schemaVersion: number;
   aggregateSamples: MemoryTelemetryAggregateSample[];
   processes: Map<string, ProcessHistory>;
 };
@@ -59,7 +61,15 @@ const execFileSafe = (file: string, args: string[], timeout = 3_000) => execFile
 });
 
 function state() {
+  if (globalTelemetry.__hivemindosMemoryTelemetry?.schemaVersion !== TELEMETRY_SCHEMA_VERSION) {
+    globalTelemetry.__hivemindosMemoryTelemetry = {
+      schemaVersion: TELEMETRY_SCHEMA_VERSION,
+      aggregateSamples: [],
+      processes: new Map(),
+    };
+  }
   globalTelemetry.__hivemindosMemoryTelemetry ??= {
+    schemaVersion: TELEMETRY_SCHEMA_VERSION,
     aggregateSamples: [],
     processes: new Map(),
   };
@@ -74,14 +84,16 @@ export async function collectMemoryTelemetry(): Promise<MemoryTelemetryPayload> 
   const cwd = process.cwd();
   const appName = basename(cwd);
 
-  const appRows = rows.filter((row) => isAppRelatedProcess(row, relatedPids, cwd, appName));
+  const appRows = rows.filter((row) => isDashboardProcess(row, relatedPids));
+  const supportRows = rows.filter((row) => !isDashboardProcess(row, relatedPids) && isSupportProcess(row, cwd, appName));
   const systemRows = rows
     .filter((row) => !appRows.some((appRow) => appRow.pid === row.pid))
+    .filter((row) => !supportRows.some((supportRow) => supportRow.pid === row.pid))
     .sort((left, right) => right.rssKb - left.rssKb)
     .slice(0, TOP_SYSTEM_PROCESS_LIMIT);
-  const trackedRows = [...appRows, ...systemRows].sort((left, right) => right.rssKb - left.rssKb).slice(0, TRACKED_PROCESS_LIMIT);
+  const trackedRows = [...appRows, ...supportRows, ...systemRows].sort((left, right) => right.rssKb - left.rssKb).slice(0, TRACKED_PROCESS_LIMIT);
 
-  const tracked = trackedRows.map((row) => updateProcessHistory(row, checkedAt, relatedPids, cwd, appName));
+  const tracked = trackedRows.map((row) => updateProcessHistory(row, checkedAt, relatedPids));
   trimProcessHistory(checkedAt, new Set(trackedRows.map((row) => processKey(row))));
 
   const currentMemory = process.memoryUsage();
@@ -175,11 +187,16 @@ function parseProcessRow(line: string): ProcessRow | null {
 function relatedProcessIds(processByPid: Map<number, ProcessRow>): RelatedProcessSets {
   const ancestors = new Set<number>();
   const descendants = new Set<number>();
+  const dashboard = new Set<number>([process.pid]);
   let cursor = process.pid;
   while (true) {
     const parent = processByPid.get(cursor)?.ppid;
     if (!parent || parent === 1 || ancestors.has(parent)) break;
     ancestors.add(parent);
+    const row = processByPid.get(parent);
+    if (row && isDashboardAncestor(row)) {
+      dashboard.add(parent);
+    }
     cursor = parent;
   }
 
@@ -190,6 +207,7 @@ function relatedProcessIds(processByPid: Map<number, ProcessRow>): RelatedProces
     for (const row of processByPid.values()) {
       if (descendants.has(row.ppid) && !descendants.has(row.pid)) {
         descendants.add(row.pid);
+        if (!isTelemetryProbe(row)) dashboard.add(row.pid);
         changed = true;
       }
     }
@@ -197,20 +215,31 @@ function relatedProcessIds(processByPid: Map<number, ProcessRow>): RelatedProces
   return {
     ancestors,
     descendants,
-    all: new Set([process.pid, ...ancestors, ...descendants]),
+    dashboard,
   };
 }
 
-function isAppRelatedProcess(row: ProcessRow, relatedPids: RelatedProcessSets, cwd: string, appName: string) {
-  if (relatedPids.all.has(row.pid)) return true;
+function isDashboardAncestor(row: ProcessRow) {
+  return /(?:^|\/)next(?:\s|$)|next dev|next\/dist\/bin\/next|scripts\/dev-server\.mjs|run-with-memory-limit\.sh|\bpnpm\s+(?:exec\s+next|dev)\b/i.test(row.command);
+}
+
+function isTelemetryProbe(row: ProcessRow) {
+  return /^ps\s+-axo\b/.test(row.command);
+}
+
+function isDashboardProcess(row: ProcessRow, relatedPids: RelatedProcessSets) {
+  return relatedPids.dashboard.has(row.pid) && !isTelemetryProbe(row);
+}
+
+function isSupportProcess(row: ProcessRow, cwd: string, appName: string) {
   const command = row.command.toLowerCase();
   const appNeedles = [
     cwd.toLowerCase(),
+    cwd.replace(process.env.HOME ?? "", "~").toLowerCase(),
     appName.toLowerCase(),
     "hivemind-os",
-    "hivemindos",
-    "next-server",
-    "next dev",
+    "hivemindos/bin/hivemind-linkd",
+    "hivemind-os/bin/hivemind-linkd",
     "miroshark",
     "openclaw",
     ".hermes",
@@ -223,8 +252,6 @@ function updateProcessHistory(
   row: ProcessRow,
   checkedAt: number,
   relatedPids: RelatedProcessSets,
-  cwd: string,
-  appName: string,
 ): MemoryTelemetryProcess {
   const key = processKey(row);
   const currentState = state();
@@ -268,15 +295,15 @@ function updateProcessHistory(
     maxRssMb: kbToMb(history.maxRssKb),
     trend: recentGrowthMb > 20 ? "growing" : recentGrowthMb < -20 ? "shrinking" : "flat",
     isCurrentProcess: row.pid === process.pid,
-    isAppRelated: isAppRelatedProcess(row, relatedPids, cwd, appName),
+    isAppRelated: isDashboardProcess(row, relatedPids),
   };
 }
 
 function processRole(row: ProcessRow, relatedPids: RelatedProcessSets): MemoryTelemetryProcessRole {
   if (row.pid === process.pid) return "current";
-  if (relatedPids.ancestors.has(row.pid)) return "ancestor";
-  if (relatedPids.descendants.has(row.pid)) return "descendant";
-  if (/miroshark|openclaw|hermes|agent-telemetry/i.test(row.command)) return "runtime";
+  if (relatedPids.dashboard.has(row.pid) && relatedPids.ancestors.has(row.pid)) return "ancestor";
+  if (relatedPids.dashboard.has(row.pid) && relatedPids.descendants.has(row.pid)) return "descendant";
+  if (/miroshark|openclaw|hermes|hivemind-linkd|agent-telemetry/i.test(row.command)) return "runtime";
   if (/hivemind-os|hivemindos|next|node|pnpm/i.test(row.command)) return "app";
   return "system";
 }
@@ -305,14 +332,14 @@ function buildSuspects(
   if (aggregate.appRssMb > 4_000) {
     suspects.push({
       severity: "critical",
-      title: "App process tree is near the 5 GB kill limit",
-      detail: `Tracked app-related processes are using ${aggregate.appRssMb.toFixed(0)} MB RSS.`,
+      title: "Dashboard process tree is near the 5 GB kill limit",
+      detail: `Tracked dashboard server processes are using ${aggregate.appRssMb.toFixed(0)} MB RSS.`,
     });
   } else if (aggregate.appRssMb > 1_500) {
     suspects.push({
       severity: "warning",
-      title: "App process tree is above the target budget",
-      detail: `Tracked app-related processes are using ${aggregate.appRssMb.toFixed(0)} MB RSS. The target budget is roughly 1.5 GB.`,
+      title: "Dashboard process tree is above the target budget",
+      detail: `Tracked dashboard server processes are using ${aggregate.appRssMb.toFixed(0)} MB RSS. The target budget is roughly 1.5 GB.`,
     });
   }
 

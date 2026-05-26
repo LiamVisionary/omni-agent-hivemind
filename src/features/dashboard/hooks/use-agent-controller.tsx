@@ -57,6 +57,14 @@ type UseAgentControllerProps = {
   setSelectedAgentId: Dispatch<SetStateAction<string>>;
 };
 
+function runtimeIntegrationTargetKey(agent?: AgentProfile | null) {
+  if (!agent) return "";
+  const telemetryUrl = agent.telemetryUrl?.trim().replace(/\/+$/, "") || "local";
+  const localDataDir = agent.localDataDir?.trim() || "";
+  const agentId = agent.agentId?.trim() || agent.id;
+  return [agent.runtime, telemetryUrl, localDataDir, agentId].join("|");
+}
+
 export function useAgentController(props: UseAgentControllerProps) {
   const { RUNTIME_LABELS, aeonEnvKeys, agentCreateDraft, agentCreateMachine, agents, beeWorkerPreset, collectorKey, createAgentProfile, defaultWorkerClassDraft, displayAgents, hermesUpdateDetail, normalizeAgentProfile, openSetupModal, roleModalAgent, runtimeCount, runtimeSessionQuery, selectedAgent, setAeonEnvSyncStatus, setAeonEnvSyncing, setAgentCreateDraft, setAgentCreateMachineKey, setAgentRenameDraft, setAgentRenameEditing, setAgentRoleModalId, setAgentRuntimeAdvancedOpen, setAgentRuntimeFolderBrowsing, setAgentRuntimeFolderEditing, setAgentRuntimeFolderStatus, setAgentSettingsPanel, setAgentWorkerClassView, setAgents, setCustomWorkerDraft, setCustomWorkerImageError, setCustomWorkerSkillSearch, setDiscoveredMachines, setHermesUpdateRequiredDetail, setRuntimeBackgroundPrompt, setRuntimeIntegrationBusy, setRuntimeIntegrationMessage, setRuntimeIntegrationStatus, setRuntimeModelDraft, setRuntimeModelSelectionsByRuntime, setRuntimeModelSetupMode, setRuntimeSessionQuery, setRuntimeSessionResults, setSelectedAgentId } = props;
   function updateAgent(patch: Partial<AgentProfile>) {
@@ -196,6 +204,7 @@ export function useAgentController(props: UseAgentControllerProps) {
 
   async function refreshRuntimeIntegrations(agent = roleModalAgent) {
     if (!agent) return;
+    const targetKey = runtimeIntegrationTargetKey(agent);
     setRuntimeIntegrationBusy("status");
     setRuntimeIntegrationMessage("");
     const response = await fetch(`/api/runtimes/${agent.runtime}/integrations`, {
@@ -209,7 +218,8 @@ export function useAgentController(props: UseAgentControllerProps) {
       setRuntimeIntegrationMessage(data?.error ?? "Could not read runtime integrations.");
       return;
     }
-    setRuntimeIntegrationStatus(data.status);
+    const status = { ...data.status, targetKey };
+    setRuntimeIntegrationStatus(status);
     if (data.status.modelSelection) {
       setRuntimeModelSelectionsByRuntime((current) => ({
         ...current,

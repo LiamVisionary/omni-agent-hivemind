@@ -411,7 +411,7 @@ function CenterStage({
       return (
         <>
           {wrap(
-            "autoposter · draft ready", "rgba(29,155,240,0.10)",
+            "publisher · draft ready", "rgba(29,155,240,0.10)",
             <XThreadView run={run} />,
             publishBadge,
           )}

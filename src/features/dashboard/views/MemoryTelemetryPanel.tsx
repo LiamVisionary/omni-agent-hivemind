@@ -53,7 +53,7 @@ export function MemoryTelemetryPanel(props: MemoryTelemetryPanelProps) {
         <div>
           <p className="eyebrow">RAM diagnostics</p>
           <h2>Memory telemetry</h2>
-          <p>Tracks RSS growth across the dashboard process tree, the current Next.js heap, and app-related child processes.</p>
+          <p>Tracks RSS growth across the dashboard server tree, the current Next.js heap, and nearby helper processes.</p>
         </div>
         <Button type="button" size="sm" variant="secondary" onClick={() => void refreshMemoryTelemetry()} disabled={memoryTelemetryLoading}>
           {memoryTelemetryLoading ? <LoaderCircle aria-hidden="true" className={vaultClass("spinIcon")} /> : <RefreshCcw aria-hidden="true" />}
@@ -64,10 +64,10 @@ export function MemoryTelemetryPanel(props: MemoryTelemetryPanelProps) {
       {memoryTelemetry ? (
         <div className="mt-4 grid gap-4">
           <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
-            <MetricCard label="App RSS" value={formatMb(memoryTelemetry.summary.appRssMb)} detail={`${growthLabel(appGrowth)} over ${memoryTelemetry.summary.sampleWindowMinutes}m`} />
+            <MetricCard label="Dashboard RSS" value={formatMb(memoryTelemetry.summary.appRssMb)} detail={`${growthLabel(appGrowth)} over ${memoryTelemetry.summary.sampleWindowMinutes}m`} />
             <MetricCard label="Next RSS" value={formatMb(memoryTelemetry.processMemory.rssMb)} detail={`PID ${memoryTelemetry.pid}`} />
             <MetricCard label="Heap used" value={formatMb(memoryTelemetry.processMemory.heapUsedMb)} detail={`${formatMb(memoryTelemetry.processMemory.heapTotalMb)} allocated`} />
-            <MetricCard label="External" value={formatMb(memoryTelemetry.processMemory.externalMb + memoryTelemetry.processMemory.arrayBuffersMb)} detail="native buffers" />
+            <MetricCard label="External" value={formatMb(memoryTelemetry.processMemory.externalMb)} detail={`${formatMb(memoryTelemetry.processMemory.arrayBuffersMb)} array buffers`} />
             <MetricCard label="Top grower" value={growthLabel(memoryTelemetry.summary.topGrowerGrowthMb)} detail={memoryTelemetry.summary.topGrowerLabel} />
           </div>
 
@@ -108,9 +108,9 @@ export function MemoryTelemetryPanel(props: MemoryTelemetryPanelProps) {
             </div>
           </section>
 
-          <ProcessTable title="App-related processes" processes={memoryTelemetry.processes} />
+          <ProcessTable title="Dashboard process tree" processes={memoryTelemetry.processes} />
           <ProcessTable title="Fastest growers" processes={memoryTelemetry.topGrowers} />
-          <ProcessTable title="Largest other system processes" processes={memoryTelemetry.topSystemProcesses} muted />
+          <ProcessTable title="Largest helper/system processes" processes={memoryTelemetry.topSystemProcesses} muted />
         </div>
       ) : (
         <div className="mt-4 rounded-md border border-dashed border-[rgba(148,163,184,0.22)] p-6 text-center text-sm text-[var(--muted)]">

@@ -78,7 +78,7 @@ export function normalizeAgentProfile(agent: AgentProfile): AgentProfile {
       ? "~/.hermes"
       : agent.localDataDir,
     runtimeKind: agent.runtimeKind ?? runtimeKindsByRuntime[agent.runtime],
-    runtimeCapabilities: { ...runtimeCapabilitiesByRuntime[agent.runtime], ...(agent.runtimeCapabilities ?? {}) },
+    runtimeCapabilities: mergeRuntimeCapabilities(agent.runtime, agent.runtimeCapabilities),
     a2aUrl: agent.runtime === "aeon" ? agent.a2aUrl ?? agent.gatewayUrl : agent.a2aUrl,
     aeonBranch: agent.runtime === "aeon" ? agent.aeonBranch ?? "main" : agent.aeonBranch,
     aeonMode: agent.runtime === "aeon" ? agent.aeonMode ?? "github" : agent.aeonMode,
@@ -97,7 +97,16 @@ export function normalizeAgentProfile(agent: AgentProfile): AgentProfile {
 
 export function runtimeCapabilities(agent?: AgentProfile | null): RuntimeCapabilities {
   if (!agent) return {};
-  return { ...runtimeCapabilitiesByRuntime[agent.runtime], ...(agent.runtimeCapabilities ?? {}) };
+  return mergeRuntimeCapabilities(agent.runtime, agent.runtimeCapabilities);
+}
+
+function mergeRuntimeCapabilities(runtime: AgentRuntime, patch?: RuntimeCapabilities): RuntimeCapabilities {
+  const base = runtimeCapabilitiesByRuntime[runtime] ?? {};
+  const merged = { ...(patch ?? {}), ...base };
+  for (const key of Object.keys(base) as Array<keyof RuntimeCapabilities>) {
+    if (base[key]) merged[key] = true;
+  }
+  return merged;
 }
 
 export function runtimeCan(agent: AgentProfile | null | undefined, capability: keyof RuntimeCapabilities) {

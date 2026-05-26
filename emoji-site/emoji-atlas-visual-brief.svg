@@ -1,0 +1,103 @@
+<svg width="1200" height="1800" viewBox="0 0 1200 1800" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="title desc">
+  <title id="title">Emoji Atlas playful one-page website visual mockup</title>
+  <desc id="desc">A warm cream, deep purple, sunny yellow, pink, and mint website mockup for Emoji Atlas with hero, explanatory sections, filtered emoji gallery, fun facts, and footer CTA.</desc>
+  <defs>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="18" stdDeviation="18" flood-color="#32104B" flood-opacity="0.12"/>
+    </filter>
+    <filter id="soft" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="10" stdDeviation="12" flood-color="#32104B" flood-opacity="0.08"/>
+    </filter>
+    <linearGradient id="heroGrad" x1="176" y1="174" x2="1036" y2="681" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#FFE66D"/>
+      <stop offset="0.52" stop-color="#FF8BC7"/>
+      <stop offset="1" stop-color="#82F5C8"/>
+    </linearGradient>
+    <style>
+      .bg{fill:#FFF4D8}.purple{fill:#32104B}.muted{fill:#6A4A78}.card{fill:#FFFDF8;filter:url(#shadow)}.smallcard{fill:#FFFFFF;filter:url(#soft)}
+      .h1{font:800 76px/1.02 system-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;letter-spacing:-2px}.h2{font:800 34px system-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif}.body{font:500 24px/1.45 system-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif}.small{font:700 18px system-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif}.tiny{font:650 15px system-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif}.emoji{font:400 66px Apple Color Emoji,Segoe UI Emoji,Noto Color Emoji,sans-serif}.emojiBig{font:400 118px Apple Color Emoji,Segoe UI Emoji,Noto Color Emoji,sans-serif}.emojiMed{font:400 48px Apple Color Emoji,Segoe UI Emoji,Noto Color Emoji,sans-serif}.emojiSm{font:400 36px Apple Color Emoji,Segoe UI Emoji,Noto Color Emoji,sans-serif}
+    </style>
+  </defs>
+
+  <rect width="1200" height="1800" class="bg"/>
+  <circle cx="1045" cy="98" r="110" fill="#FFE66D" opacity="0.55"/>
+  <circle cx="116" cy="410" r="82" fill="#82F5C8" opacity="0.5"/>
+  <circle cx="1058" cy="771" r="94" fill="#FF8BC7" opacity="0.42"/>
+  <circle cx="92" cy="1460" r="120" fill="#FFE66D" opacity="0.38"/>
+  <text x="91" y="154" class="emojiBig" opacity="0.95">✨</text>
+  <text x="970" y="251" class="emojiBig" opacity="0.95">💬</text>
+  <text x="54" y="894" class="emojiBig" opacity="0.9">😂</text>
+  <text x="996" y="1180" class="emojiBig" opacity="0.9">🌈</text>
+  <text x="908" y="1627" class="emojiBig" opacity="0.9">🚀</text>
+
+  <rect x="76" y="58" width="1048" height="82" rx="41" fill="#FFFDF8" filter="url(#soft)"/>
+  <text x="126" y="111" class="emojiSm">🗺️</text>
+  <text x="176" y="110" class="small purple">Emoji Atlas</text>
+  <rect x="850" y="78" width="102" height="42" rx="21" fill="#FFF0F7"/>
+  <text x="876" y="105" class="tiny purple">Gallery</text>
+  <rect x="966" y="78" width="112" height="42" rx="21" fill="#ECFFF7"/>
+  <text x="992" y="105" class="tiny purple">Random</text>
+
+  <rect x="86" y="186" width="1028" height="476" rx="48" fill="url(#heroGrad)" opacity="0.92"/>
+  <rect x="114" y="214" width="972" height="420" rx="40" fill="#FFFDF8" opacity="0.9"/>
+  <text x="164" y="309" class="small" fill="#9B5C00">PLAYFUL LANGUAGE GUIDE</text>
+  <text x="164" y="404" class="h1 purple">The Tiny Icons</text>
+  <text x="164" y="486" class="h1 purple">That Changed</text>
+  <text x="164" y="568" class="h1 purple">How We Talk</text>
+  <text x="730" y="362" class="emojiBig">😊</text>
+  <text x="871" y="454" class="emojiBig">❤️</text>
+  <text x="724" y="559" class="emojiBig">🔥</text>
+  <rect x="164" y="588" width="236" height="62" rx="31" fill="#32104B"/>
+  <text x="201" y="628" class="small" fill="#FFFFFF">Explore emojis</text>
+
+  <rect x="86" y="724" width="494" height="248" rx="34" class="card"/>
+  <text x="130" y="793" class="h2 purple">What are emojis?</text>
+  <text x="130" y="849" class="body muted">Tiny pictographs that add tone,</text>
+  <text x="130" y="885" class="body muted">emotion, and context to digital</text>
+  <text x="130" y="921" class="body muted">messages across cultures.</text>
+  <text x="462" y="910" class="emoji">🌍</text>
+
+  <rect x="620" y="724" width="494" height="248" rx="34" class="card"/>
+  <text x="664" y="793" class="h2 purple">Why we use them</text>
+  <text x="664" y="849" class="body muted">They make chats warmer, faster,</text>
+  <text x="664" y="885" class="body muted">more expressive, and easier to</text>
+  <text x="664" y="921" class="body muted">understand at a glance.</text>
+  <text x="992" y="910" class="emoji">💡</text>
+
+  <rect x="86" y="1032" width="1028" height="442" rx="42" class="card"/>
+  <text x="130" y="1104" class="h2 purple">Emoji Gallery</text>
+  <text x="130" y="1145" class="body muted">Filter by mood, nature, food, symbols, and ideas.</text>
+  <rect x="130" y="1184" width="76" height="42" rx="21" fill="#32104B"/><text x="153" y="1211" class="tiny" fill="#FFFFFF">All</text>
+  <rect x="220" y="1184" width="104" height="42" rx="21" fill="#FFF0B8"/><text x="245" y="1211" class="tiny purple">Mood</text>
+  <rect x="338" y="1184" width="112" height="42" rx="21" fill="#ECFFF7"/><text x="361" y="1211" class="tiny purple">Nature</text>
+  <rect x="464" y="1184" width="92" height="42" rx="21" fill="#FFE5F1"/><text x="489" y="1211" class="tiny purple">Food</text>
+  <g transform="translate(130 1260)">
+    <rect width="132" height="150" rx="28" class="smallcard"/><text x="35" y="73" class="emojiMed">😂</text><text x="34" y="117" class="tiny purple">Joy</text>
+  </g>
+  <g transform="translate(286 1260)">
+    <rect width="132" height="150" rx="28" class="smallcard"/><text x="35" y="73" class="emojiMed">🌿</text><text x="24" y="117" class="tiny purple">Nature</text>
+  </g>
+  <g transform="translate(442 1260)">
+    <rect width="132" height="150" rx="28" class="smallcard"/><text x="35" y="73" class="emojiMed">🍕</text><text x="38" y="117" class="tiny purple">Food</text>
+  </g>
+  <g transform="translate(598 1260)">
+    <rect width="132" height="150" rx="28" class="smallcard"/><text x="35" y="73" class="emojiMed">⭐</text><text x="30" y="117" class="tiny purple">Symbol</text>
+  </g>
+  <g transform="translate(754 1260)">
+    <rect width="132" height="150" rx="28" class="smallcard"/><text x="35" y="73" class="emojiMed">🎉</text><text x="31" y="117" class="tiny purple">Party</text>
+  </g>
+  <g transform="translate(910 1260)">
+    <rect width="132" height="150" rx="28" class="smallcard"/><text x="35" y="73" class="emojiMed">🤖</text><text x="39" y="117" class="tiny purple">Tech</text>
+  </g>
+
+  <rect x="86" y="1532" width="494" height="172" rx="34" fill="#ECFFF7" filter="url(#soft)"/>
+  <text x="130" y="1598" class="h2 purple">Fun facts</text>
+  <text x="130" y="1648" class="body muted">Over 3,700 emojis help people</text>
+  <text x="130" y="1684" class="body muted">share feeling without extra words.</text>
+
+  <rect x="620" y="1532" width="494" height="172" rx="34" fill="#32104B" filter="url(#soft)"/>
+  <text x="664" y="1595" class="h2" fill="#FFFFFF">Find your vibe</text>
+  <text x="664" y="1642" class="body" fill="#FCEBFF">Tap for a surprise character.</text>
+  <rect x="664" y="1664" width="238" height="54" rx="27" fill="#FFE66D"/>
+  <text x="696" y="1699" class="small purple">Random emoji ✨</text>
+</svg>

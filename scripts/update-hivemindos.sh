@@ -6,7 +6,7 @@ PORT="${PORT:-5020}"
 COLLECTOR_PORT="${AGENT_TELEMETRY_PORT:-8787}"
 SKIP_PULL="false"
 SKIP_INSTALL="false"
-SKIP_BUILD="false"
+BUILD_DASHBOARD="false"
 SKIP_COLLECTOR="false"
 SKIP_DASHBOARD="false"
 
@@ -19,13 +19,13 @@ usage() {
   cat <<'EOF'
 Usage: ./scripts/update-hivemindos.sh [options]
 
-Pulls the latest checkout, refreshes dependencies, builds the dashboard,
-restarts the telemetry collector, and restarts the dashboard dev server.
+Pulls the latest checkout, refreshes dependencies, restarts the telemetry
+collector, and restarts the dashboard dev server.
 
 Options:
   --skip-pull        Do not run git pull.
   --skip-install     Do not run pnpm install.
-  --skip-build       Do not run pnpm build.
+  --build            Run a production dashboard build before restarting.
   --skip-collector   Do not restart the telemetry collector.
   --skip-dashboard   Do not restart the dashboard dev server.
   -h, --help         Show this help.
@@ -41,7 +41,8 @@ while (( $# > 0 )); do
     --) ;;
     --skip-pull) SKIP_PULL="true" ;;
     --skip-install) SKIP_INSTALL="true" ;;
-    --skip-build) SKIP_BUILD="true" ;;
+    --build|--production-build) BUILD_DASHBOARD="true" ;;
+    --skip-build) BUILD_DASHBOARD="false" ;;
     --skip-collector) SKIP_COLLECTOR="true" ;;
     --skip-dashboard|--no-dashboard) SKIP_DASHBOARD="true" ;;
     -h|--help)
@@ -233,12 +234,12 @@ else
   ok "Dependencies installed"
 fi
 
-if [[ "$SKIP_BUILD" == "true" ]]; then
-  warn "Skipping dashboard build"
-else
+if [[ "$BUILD_DASHBOARD" == "true" ]]; then
   info "Building dashboard"
   pnpm_run build
   ok "Dashboard built"
+else
+  ok "Skipping production dashboard build; dev server will compile on demand"
 fi
 
 if [[ "$SKIP_COLLECTOR" == "true" ]]; then

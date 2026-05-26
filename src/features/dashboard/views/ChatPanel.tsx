@@ -5,14 +5,30 @@
 import { ChatFolderModal } from "@/features/dashboard/views/chat/ChatFolderModal";
 import { SkillBrowserModal } from "@/features/dashboard/views/chat/SkillBrowserModal";
 import { AgentSettingsModal } from "@/features/dashboard/views/chat/AgentSettingsModal";
-import { useState } from "react";
+import { CloseIconButton } from "@/components/ui/close-icon-button";
+import { useEffect, useState } from "react";
 
 /* eslint-disable react-hooks/immutability, react-hooks/purity */
 
 export function ChatPanel(props: any) {
-  const { Activity, AgentResponseLoader, Button, ChatMarkdown, Check, ComposerField, Copy, Folder, KanbanSquare, LoaderCircle, MessageAttachments, MessageSquare, Monitor, RUNTIME_LABELS, Sparkles, Tooltip, TooltipContent, TooltipProvider, TooltipTrigger, Upload, activeView, aeonEnvKeys, aeonEnvSyncStatus, aeonEnvSyncing, attachChatDirectory, attachChatRecentDirectory, attachmentError, attachmentMenuOpen, attachmentMenuRef, busy, chatAttachments, chatClass, chatContextMenu, chatContextMenuRef, chatDirectories, chatDisplayContent, chatFileInputRef, chatImageInputRef, chatKanbanGeneration, chatSidebarTree, checkStatus, displayAgents, expandedChatFolders, fleetClass, formatAgentEnvText, formatRelativeTime, generateKanbanTaskFromChat, handleChatFileChange, handleChatImageChange, hasStreamingChunk, lastAssistant, machineGroups, messagesEndRef, messagesScrollRef, parseAgentEnvText, recentDirectories, recentDirectoriesExpanded, recording, removeChatAttachment, removeChatDirectory, selectedAgent, selectedChatDirectory, selectedChatMachine, sendMessage, sessionNotice, setAeonEnvKeys, setAttachmentMenuOpen, setChatContextMenu, setExpandedChatFolders, setRecentDirectoriesExpanded, setText, startAgentChat, startAudioRecording, status, statusAgentId, stopAudioRecording, switchRuntime, syncAeonEnvToGitHub, text, updateAgent, updateChatAutoScroll, vaultClass, visibleMessages, voiceBands, voiceTarget, voiceTranscript } = props;
+  const { Activity, AgentResponseLoader, Button, ChatMarkdown, Check, ComposerField, Copy, Folder, KanbanSquare, LoaderCircle, MessageAttachments, MessageSquare, Monitor, RUNTIME_LABELS, Sparkles, Tooltip, TooltipContent, TooltipProvider, TooltipTrigger, Upload, activeView, aeonEnvKeys, aeonEnvSyncStatus, aeonEnvSyncing, attachChatDirectory, attachChatRecentDirectory, attachmentError, attachmentMenuOpen, attachmentMenuRef, busy, chatAttachments, chatClass, chatContextMenu, chatContextMenuRef, chatDirectories, chatDisplayContent, chatFileInputRef, chatImageInputRef, chatKanbanGeneration, chatSidebarTree, checkStatus, dismissChatKanbanGeneration, displayAgents, expandedChatFolders, fleetClass, formatAgentEnvText, formatRelativeTime, generateKanbanTaskFromChat, handleChatFileChange, handleChatImageChange, hasStreamingChunk, lastAssistant, machineGroups, messagesEndRef, messagesScrollRef, parseAgentEnvText, recentDirectories, recentDirectoriesExpanded, recording, removeChatAttachment, removeChatDirectory, selectedAgent, selectedChatDirectory, selectedChatMachine, sendMessage, sessionNotice, setAeonEnvKeys, setAttachmentMenuOpen, setChatContextMenu, setExpandedChatFolders, setRecentDirectoriesExpanded, setText, startAgentChat, startAudioRecording, status, statusAgentId, stopAudioRecording, switchRuntime, syncAeonEnvToGitHub, text, updateAgent, updateChatAutoScroll, vaultClass, visibleMessages, voiceBands, voiceTarget, voiceTranscript } = props;
   const [openKanbanTaskMenuKey, setOpenKanbanTaskMenuKey] = useState("");
   const [copiedMessageKey, setCopiedMessageKey] = useState("");
+  useEffect(() => {
+    if (chatKanbanGeneration?.phase !== "done") return undefined;
+    const key = chatKanbanGeneration.key;
+    const timer = window.setTimeout(() => {
+      dismissChatKanbanGeneration?.(key);
+      setOpenKanbanTaskMenuKey((current) => current === key ? "" : current);
+    }, 2600);
+    return () => window.clearTimeout(timer);
+  }, [chatKanbanGeneration, dismissChatKanbanGeneration]);
+
+  function dismissKanbanPopover(messageKey: string) {
+    dismissChatKanbanGeneration?.(messageKey);
+    setOpenKanbanTaskMenuKey((current) => current === messageKey ? "" : current);
+  }
+
   function copyAssistantResponse(messageKey: string, content: string) {
     void navigator.clipboard?.writeText(content).then(() => {
       setCopiedMessageKey(messageKey);
@@ -481,8 +497,18 @@ export function ChatPanel(props: any) {
                               {openKanbanTaskMenuKey === messageKey || generationForMessage ? (
                                 <div className={chatClass("generateKanbanPopover", generationForMessage && `phase-${generationForMessage.phase}`)}>
                                   <div className={chatClass("generateKanbanHeader")}>
-                                    <Sparkles aria-hidden="true" />
+                                    {generationForMessage?.phase === "done"
+                                      ? <Check className={chatClass("generateKanbanStatusIcon")} aria-hidden="true" />
+                                      : <Sparkles className={chatClass("generateKanbanStatusIcon")} aria-hidden="true" />}
                                     <span>{generationForMessage ? generationForMessage.message : "Generate and send to:"}</span>
+                                    {generationForMessage && ["done", "error"].includes(generationForMessage.phase) ? (
+                                      <CloseIconButton
+                                        className={chatClass("generateKanbanClose")}
+                                        size="sm"
+                                        aria-label="Close Kanban status"
+                                        onClick={() => dismissKanbanPopover(messageKey)}
+                                      />
+                                    ) : null}
                                   </div>
                                   {generationForMessage ? (
                                     <div className={chatClass("generateKanbanProgress")}>

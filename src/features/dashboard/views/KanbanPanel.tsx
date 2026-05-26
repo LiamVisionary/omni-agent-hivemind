@@ -11,13 +11,14 @@ const EMPTY_WORK_HISTORY: WorkHistoryPayload = { projects: [], entries: [] };
 const WORK_HISTORY_PAGE_SIZE = 10;
 
 export function KanbanPanel(props: any) {
-  const { AttachmentListMenuContent, AttachmentMenuContent, CellMenu, ChatMarkdown, Check, ChevronDown, ChevronRight, ComposerField, DEFAULT_SHARED_VAULT, Image, KANBAN_COLUMNS, KANBAN_STEER_TARGETS, MessageAttachments, MessageSquare, Paperclip, Plus, RotateCcw, Search, Settings2, activeView, addKanbanComment, attachKanbanCardDirectory, attachKanbanCardRecentDirectory, attachKanbanSteerDirectory, attachKanbanSteerRecentDirectory, attachQuickAddDirectory, attachQuickAddRecentDirectory, bulkPatchKanbanTasks, chatClass, commentDraft, createKanbanBoard, createKanbanTask, displayAgents, editAndInterruptKanbanTask, expandedKanbanCards, formatDurationShort, formatMessageTimestamp, formatRelativeTime, handleKanbanCardFileChange, handleKanbanCardImageChange, handleKanbanSteerFileChange, handleKanbanSteerImageChange, handleQuickAddFileChange, handleQuickAddImageChange, importNoteIntake, initialWorkHistory, isKanbanStaleWorkingTask, isKanbanTerminalMessage, isWorkView, kanbanAssigneeFilter, kanbanAssigneeOptions, kanbanBoard, kanbanBoardScrollRef, kanbanBoardScrollState, kanbanBoardSlug, kanbanBoards, kanbanBulkAssignee, kanbanBulkPending, kanbanCardAttachmentListOpen, kanbanCardAttachmentMenuOpen, kanbanCardFileInputRef, kanbanCardImageInputRef, kanbanCardMachineMenuOpen, kanbanCardMessage, kanbanCardRecentsExpanded, kanbanClass, kanbanEditDraft, kanbanEditPendingTaskId, kanbanError, kanbanEventLabel, kanbanIncludeArchived, kanbanInitialLoading, kanbanLoading, kanbanMachineTargets, kanbanPickupPreviewByTask, kanbanSearch, kanbanStaleAge, kanbanSteerAttachmentError, kanbanSteerAttachmentMenuOpen, kanbanSteerAttachmentMenuRef, kanbanSteerAttachments, kanbanSteerDirectories, kanbanSteerDraft, kanbanSteerFileInputRef, kanbanSteerImageInputRef, kanbanSteerTargetMenuOpen, kanbanSteerTargetMenuRef, kanbanSteerTargetStatus, kanbanSteeringTaskId, kanbanStorage, kanbanTaskBee, kanbanTaskMenuItems, kanbanTaskModal, kanbanTenantFilter, kanbanTenants, kanbanViewColumns, markKanbanTaskReviewed, moveKanbanTask, newBoardDraft, noteIntakePending, noteIntakePreview, noteIntakeStatus, openKanbanCardFilePicker, openKanbanTaskModal, patchKanbanTask, quickAddAttachmentError, quickAddAttachmentMenuOpen, quickAddAttachmentMenuRef, quickAddAttachments, quickAddDirectories, quickAddDrafts, quickAddFileInputRef, quickAddImageInputRef, quickAddMachineMenuOpen, quickAddMachineMenuRef, quickAddMachineTarget, quickAddMachineTargets, quickAddStatus, recentDirectories, recentDirectoriesExpanded, recording, removeKanbanCardAttachment, removeKanbanCardDirectory, removeKanbanSteerAttachment, removeKanbanSteerDirectory, removeQuickAddAttachment, removeQuickAddDirectory, scanNoteIntake, selectedKanbanAgent, selectedKanbanAgentMessages, selectedKanbanBulkIds, selectedKanbanComments, selectedKanbanEvents, selectedKanbanTask, selectedKanbanTaskId, selectedKanbanTaskIds, setActiveView, setCommentDraft, setExpandedKanbanCards, setKanbanAssigneeFilter, setKanbanBoardSlug, setKanbanBulkAssignee, setKanbanCardAttachmentListOpen, setKanbanCardAttachmentMenuOpen, setKanbanCardMachineMenuOpen, setKanbanCardRecentsExpanded, setKanbanEditDraft, setKanbanIncludeArchived, setKanbanLoading, setKanbanSearch, setKanbanSteerAttachmentMenuOpen, setKanbanSteerDraft, setKanbanSteerTargetMenuOpen, setKanbanSteerTargetStatus, setKanbanTaskModal, setKanbanTenantFilter, setNewBoardDraft, setQuickAddAttachmentError, setQuickAddAttachmentMenuOpen, setQuickAddDrafts, setQuickAddMachineMenuOpen, setQuickAddMachineTargets, setQuickAddStatus, setRecentDirectoriesExpanded, setSelectedKanbanTaskId, setSelectedKanbanTaskIds, sharedVault, startAudioRecording, steerSelectedKanbanTask, stopAudioRecording, updateKanbanTaskMachine, updateSharedVault, voiceBands, voiceTarget, voiceTranscript, walletClass, workBoardStats } = props;
+  const { AttachmentListMenuContent, AttachmentMenuContent, CellMenu, ChatMarkdown, Check, ChevronDown, ChevronRight, ComposerField, DEFAULT_SHARED_VAULT, ExternalLink, Eye, FolderOpen, Image, KANBAN_COLUMNS, KANBAN_STEER_TARGETS, MessageAttachments, MessageSquare, Paperclip, Plus, RotateCcw, Search, Settings2, activeView, addKanbanComment, attachKanbanCardDirectory, attachKanbanCardRecentDirectory, attachKanbanSteerDirectory, attachKanbanSteerRecentDirectory, attachQuickAddDirectory, attachQuickAddRecentDirectory, bulkPatchKanbanTasks, chatClass, commentDraft, createKanbanBoard, createKanbanTask, displayAgents, editAndInterruptKanbanTask, expandedKanbanCards, formatDurationShort, formatMessageTimestamp, formatRelativeTime, handleKanbanCardFileChange, handleKanbanCardImageChange, handleKanbanSteerFileChange, handleKanbanSteerImageChange, handleQuickAddFileChange, handleQuickAddImageChange, importNoteIntake, initialWorkHistory, isKanbanStaleWorkingTask, isKanbanTerminalMessage, isWorkView, kanbanAssigneeFilter, kanbanAssigneeOptions, kanbanBoard, kanbanBoardScrollRef, kanbanBoardScrollState, kanbanBoardSlug, kanbanBoards, kanbanBulkAssignee, kanbanBulkPending, kanbanCardAttachmentListOpen, kanbanCardAttachmentMenuOpen, kanbanCardDeliverableMenuOpen, kanbanCardFileInputRef, kanbanCardImageInputRef, kanbanCardMachineMenuOpen, kanbanCardMessage, kanbanCardRecentsExpanded, kanbanClass, kanbanEditDraft, kanbanEditPendingTaskId, kanbanError, kanbanEventLabel, kanbanIncludeArchived, kanbanInitialLoading, kanbanLoading, kanbanMachineTargets, kanbanPickupPreviewByTask, kanbanSearch, kanbanStaleAge, kanbanSteerAttachmentError, kanbanSteerAttachmentMenuOpen, kanbanSteerAttachmentMenuRef, kanbanSteerAttachments, kanbanSteerDirectories, kanbanSteerDraft, kanbanSteerFileInputRef, kanbanSteerImageInputRef, kanbanSteerTargetMenuOpen, kanbanSteerTargetMenuRef, kanbanSteerTargetStatus, kanbanSteeringTaskId, kanbanStorage, kanbanTaskBee, kanbanTaskMenuItems, kanbanTaskModal, kanbanTenantFilter, kanbanTenants, kanbanViewColumns, markKanbanTaskReviewed, moveKanbanTask, newBoardDraft, noteIntakePending, noteIntakePreview, noteIntakeStatus, openKanbanCardFilePicker, openKanbanTaskModal, patchKanbanTask, quickAddAttachmentError, quickAddAttachmentMenuOpen, quickAddAttachmentMenuRef, quickAddAttachments, quickAddDirectories, quickAddDrafts, quickAddFileInputRef, quickAddImageInputRef, quickAddMachineMenuOpen, quickAddMachineMenuRef, quickAddMachineTarget, quickAddMachineTargets, quickAddStatus, recentDirectories, recentDirectoriesExpanded, recording, removeKanbanCardAttachment, removeKanbanCardDirectory, removeKanbanSteerAttachment, removeKanbanSteerDirectory, removeQuickAddAttachment, removeQuickAddDirectory, scanNoteIntake, selectedKanbanAgent, selectedKanbanAgentMessages, selectedKanbanBulkIds, selectedKanbanComments, selectedKanbanEvents, selectedKanbanTask, selectedKanbanTaskId, selectedKanbanTaskIds, setActiveView, setCommentDraft, setExpandedKanbanCards, setKanbanAssigneeFilter, setKanbanBoardSlug, setKanbanBulkAssignee, setKanbanCardAttachmentListOpen, setKanbanCardAttachmentMenuOpen, setKanbanCardDeliverableMenuOpen, setKanbanCardMachineMenuOpen, setKanbanCardRecentsExpanded, setKanbanEditDraft, setKanbanIncludeArchived, setKanbanLoading, setKanbanSearch, setKanbanSteerAttachmentMenuOpen, setKanbanSteerDraft, setKanbanSteerTargetMenuOpen, setKanbanSteerTargetStatus, setKanbanTaskModal, setKanbanTenantFilter, setNewBoardDraft, setQuickAddAttachmentError, setQuickAddAttachmentMenuOpen, setQuickAddDrafts, setQuickAddMachineMenuOpen, setQuickAddMachineTargets, setQuickAddStatus, setRecentDirectoriesExpanded, setSelectedKanbanTaskId, setSelectedKanbanTaskIds, sharedVault, startAudioRecording, steerSelectedKanbanTask, stopAudioRecording, updateKanbanTaskMachine, updateSharedVault, voiceBands, voiceTarget, voiceTranscript, walletClass, workBoardStats } = props;
   const [workHistory, setWorkHistory] = useState<WorkHistoryPayload>(initialWorkHistory ?? EMPTY_WORK_HISTORY);
   const [workHistoryLoading, setWorkHistoryLoading] = useState(false);
   const [workHistoryLoadingMore, setWorkHistoryLoadingMore] = useState(false);
   const [workHistoryError, setWorkHistoryError] = useState("");
   const [workHistoryProject, setWorkHistoryProject] = useState("");
   const [workHistoryQuery, setWorkHistoryQuery] = useState("");
+  const [deliverableMenuPosition, setDeliverableMenuPosition] = useState<Record<string, any>>({});
   const workHistorySkipInitialFetchRef = useRef(Boolean(initialWorkHistory?.generatedAt));
   const workHistoryEntryCountRef = useRef(workHistory.entries.length);
   const sharedVaultPath = sharedVault?.vaultPath;
@@ -28,6 +29,44 @@ export function KanbanPanel(props: any) {
     [workHistory.entries],
   );
   const portalTarget = typeof document === "undefined" ? null : document.body;
+  const deliverableMenuStyle = (anchor: HTMLElement) => {
+    if (typeof window === "undefined") return undefined;
+    const rect = anchor.getBoundingClientRect();
+    const width = Math.min(340, Math.max(260, window.innerWidth - 32));
+    const left = Math.min(Math.max(16, rect.right - width), window.innerWidth - width - 16);
+    const opensBelow = rect.top < 220;
+    return {
+      bottom: "auto",
+      left,
+      position: "fixed",
+      right: "auto",
+      top: opensBelow ? rect.bottom + 8 : rect.top - 8,
+      transform: opensBelow ? "none" : "translateY(-100%)",
+      width,
+    };
+  };
+  const deliverableActionLabel = (deliverable: any) => {
+    if (deliverable.kind === "website" || deliverable.kind === "url") return "Preview";
+    if (deliverable.kind === "video") return "Preview video";
+    if (deliverable.kind === "image") return "Preview image";
+    if (deliverable.kind === "audio") return "Play audio";
+    return "Open";
+  };
+  const fileManagerLabel = () => {
+    const platform = typeof navigator === "undefined" ? "" : navigator.platform.toLowerCase();
+    if (platform.includes("mac")) return "Show in Finder";
+    if (platform.includes("win")) return "Show in Explorer";
+    return "Show in folder";
+  };
+  const openDeliverable = async (deliverable: any, action: "open" | "reveal") => {
+    const response = await fetch("/api/kanban/deliverable", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action, path: deliverable.path, url: deliverable.url }),
+    });
+    const data = await response.json().catch(() => null);
+    if (!response.ok || !data?.ok) throw new Error(data?.error || "Could not open deliverable.");
+  };
 
   useEffect(() => {
     workHistoryEntryCountRef.current = workHistory.entries.length;
@@ -416,6 +455,7 @@ export function KanbanPanel(props: any) {
                       const terminalMessage = isKanbanTerminalMessage(message);
                       const pickupPreview = kanbanPickupPreviewByTask[task.id];
                       const taskAttachmentCount = (task.attachments?.length ?? 0) + (task.linkedDirectories?.length ?? 0);
+                      const deliverables = task.status === "done" ? (task.deliverables ?? []) : [];
                       const undoInProgress = Boolean(task.undoRequestedAt && (task.status === "ready" || task.status === "working"));
                       return (
                         <article className={kanbanClass("kanbanCardShell")} key={task.id}>
@@ -607,6 +647,72 @@ export function KanbanPanel(props: any) {
                               ) : null}
                               {staleWorking ? <span className={kanbanClass("priorityPill", "stale")}>quiet {formatDurationShort(kanbanStaleAge(task))}</span> : null}
                               <span className={kanbanClass("kanbanCardActions")}>
+                                {deliverables.length ? (
+                                  <span className={kanbanClass("kanbanDeliverablePicker")} data-kanban-deliverable-menu="true">
+                                    <button
+                                      type="button"
+                                      className={kanbanClass("kanbanDeliverableBadge")}
+                                      aria-expanded={Boolean(kanbanCardDeliverableMenuOpen[task.id])}
+                                      aria-label={`Open deliverables for ${task.title}`}
+                                      onClick={(event) => {
+                                        event.stopPropagation();
+                                        const nextOpen = !kanbanCardDeliverableMenuOpen[task.id];
+                                        const menuStyle = nextOpen ? deliverableMenuStyle(event.currentTarget) : undefined;
+                                        if (menuStyle) {
+                                          setDeliverableMenuPosition((current) => ({ ...current, [task.id]: menuStyle }));
+                                        }
+                                        setKanbanCardDeliverableMenuOpen((current) => ({ ...current, [task.id]: !current[task.id] }));
+                                      }}
+                                    >
+                                      <ExternalLink aria-hidden="true" />
+                                      {deliverables.length}
+                                    </button>
+                                    {kanbanCardDeliverableMenuOpen[task.id] && portalTarget ? createPortal((
+                                      <div
+                                        className={kanbanClass("kanbanDeliverableMenu")}
+                                        data-kanban-deliverable-menu="true"
+                                        role="menu"
+                                        style={deliverableMenuPosition[task.id]}
+                                      >
+                                        <p>Deliverables</p>
+                                        {deliverables.map((deliverable) => (
+                                          <div className={kanbanClass("kanbanDeliverableItem")} key={deliverable.id}>
+                                            <span>
+                                              <strong>{deliverable.label}</strong>
+                                              <small>{deliverable.kind}{deliverable.exists === false ? " · missing" : ""}</small>
+                                            </span>
+                                            <button
+                                              type="button"
+                                              role="menuitem"
+                                              disabled={deliverable.exists === false}
+                                              onClick={(event) => {
+                                                event.stopPropagation();
+                                                void openDeliverable(deliverable, "open").catch((error) => alert(error instanceof Error ? error.message : "Could not open deliverable."));
+                                              }}
+                                            >
+                                              <Eye aria-hidden="true" />
+                                              {deliverableActionLabel(deliverable)}
+                                            </button>
+                                            {deliverable.path ? (
+                                              <button
+                                                type="button"
+                                                role="menuitem"
+                                                disabled={deliverable.exists === false}
+                                                onClick={(event) => {
+                                                  event.stopPropagation();
+                                                  void openDeliverable(deliverable, "reveal").catch((error) => alert(error instanceof Error ? error.message : "Could not reveal deliverable."));
+                                                }}
+                                              >
+                                                <FolderOpen aria-hidden="true" />
+                                                {fileManagerLabel()}
+                                              </button>
+                                            ) : null}
+                                          </div>
+                                        ))}
+                                      </div>
+                                    ), portalTarget) : null}
+                                  </span>
+                                ) : null}
                                 {task.status === "done" ? (
                                   task.reviewedAt ? (
                                     <span className={kanbanClass("kanbanReviewBadge", "reviewed")} title={`Reviewed ${formatRelativeTime(task.reviewedAt)}`}>

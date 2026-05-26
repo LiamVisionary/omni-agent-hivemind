@@ -71,9 +71,46 @@ export function useStatusChatInputController(props: any) {
   }
 
   function cleanGeneratedKanbanTitle(value: unknown, fallbackTitle: string) {
-    const title = String(value ?? "").trim();
+    const title = normalizeGeneratedKanbanTitle(String(value ?? ""));
     const placeholder = /^(short imperative task title|specific action for the next agent|task title|untitled task)$/i.test(title);
     return placeholder ? fallbackTitle || "Follow up from chat" : title || fallbackTitle || "Follow up from chat";
+  }
+
+  function normalizeGeneratedKanbanTitle(value: string) {
+    const title = value
+      .replace(/[_-]+/g, " ")
+      .replace(/([a-z])([A-Z])/g, "$1 $2")
+      .replace(/([A-Z]+)([A-Z][a-z])/g, "$1 $2")
+      .replace(/\s+/g, " ")
+      .trim();
+    if (/\s/.test(title) || !/^[A-Za-z]{16,80}$/.test(title)) return title;
+    const knownWords = [
+      "acceptance", "animation", "browser", "desktop", "dispatch", "emoji", "generate", "implement",
+      "interaction", "kanban", "mobile", "playful", "progress", "responsive", "tooltip", "website",
+      "build", "card", "chat", "copy", "create", "draft", "fix", "page", "plan", "send", "task", "test",
+      "add", "app", "ui",
+    ].sort((a, b) => b.length - a.length);
+    const words: string[] = [];
+    let remaining = title.toLowerCase();
+    while (remaining) {
+      const match = knownWords.find((word) => remaining.startsWith(word));
+      if (!match) return title;
+      words.push(match);
+      remaining = remaining.slice(match.length);
+    }
+    if (words.length < 2) return title;
+    return `${words[0].charAt(0).toUpperCase()}${words[0].slice(1)} ${words.slice(1).join(" ")}`;
+  }
+
+  function kanbanBodyWithFullSource(taskBody: string, sourceContent: string) {
+    const body = taskBody.trim();
+    const source = sourceContent.trim();
+    if (!source) return body;
+    return [
+      body,
+      "Full source task from chat:",
+      source,
+    ].filter(Boolean).join("\n\n");
   }
   async function checkStatus() {
     if (!selectedAgent) return;
@@ -817,7 +854,7 @@ export function useStatusChatInputController(props: any) {
             choices?: Array<{ delta?: { content?: string } }>;
             error?: string;
             honey?: unknown;
-            session?: { id?: string; startedAt?: number; updatedAt?: number; messageCount?: number };
+            session?: { id?: string; runtime?: string; source?: string; startedAt?: number; updatedAt?: number; messageCount?: number };
             clarify?: unknown;
             prompt?: unknown;
             event?: { type?: string };
@@ -924,8 +961,8 @@ export function useStatusChatInputController(props: any) {
       `Target lane: ${laneLabel}.`,
       "Return only valid JSON with these keys: title, body, priority, acceptanceCriteria.",
       "Every value must be derived from the conversation. Do not copy field descriptions, placeholder text, or describe the schema.",
-      "title must be a short imperative phrase for the next agent.",
-      "body must be a concrete brief with context and expected outcome.",
+      "title must be a short human-visible Kanban card title.",
+      "body must be a concrete worker brief with context and expected outcome.",
       "priority must be one of low, normal, high, urgent.",
       "acceptanceCriteria must be an array of observable outcomes.",
       "Do not include markdown fences, commentary, or extra keys.",
@@ -1007,6 +1044,7 @@ export function useStatusChatInputController(props: any) {
       }
       if (!generatedText.trim()) throw new Error("The agent did not return a task draft.");
       const taskDraft = extractGeneratedKanbanTask(generatedText, source.content.trim().split(/\s+/).slice(0, 8).join(" "));
+      const fullTaskBody = kanbanBodyWithFullSource(taskDraft.body, source.content);
       setChatKanbanGeneration({ key: source.key, status: targetStatus, phase: "creating", message: `Sending to ${laneLabel}...`, taskTitle: taskDraft.title });
       const createResponse = await fetch(`/api/kanban?board=${encodeURIComponent(kanbanBoardSlug)}`, {
         method: "POST",
@@ -1014,7 +1052,7 @@ export function useStatusChatInputController(props: any) {
         body: JSON.stringify({
           ...kanbanStorageBody(),
           title: taskDraft.title,
-          body: taskDraft.body,
+          body: fullTaskBody,
           assignee: "",
           tenant: "",
           priority: taskDraft.priority,
@@ -1050,7 +1088,15 @@ export function useStatusChatInputController(props: any) {
       window.clearTimeout(stallTimer);
     }
   }
+
+  function dismissChatKanbanGeneration(key?: string) {
+    setChatKanbanGeneration((current) => {
+      if (!current) return current;
+      if (key && current.key !== key) return current;
+      return null;
+    });
+  }
   /* eslint-enable react-hooks/purity */
 
-  return { checkStatus, checkVaultStatus, checkControlRoomStatus, runVaultTailnetSync, pairSyncthingCollector, pairSyncthingVaultSync, inspectBrainNode, startBrainPan, moveBrainPan, endBrainPan, addChatFiles, handleChatFileChange, handleChatImageChange, removeChatAttachment, attachChatDirectory, attachChatRecentDirectory, removeChatDirectory, addQuickAddFiles, handleQuickAddFileChange, handleQuickAddImageChange, removeQuickAddAttachment, attachQuickAddDirectory, attachQuickAddRecentDirectory, removeQuickAddDirectory, addKanbanSteerFiles, handleKanbanSteerFileChange, handleKanbanSteerImageChange, removeKanbanSteerAttachment, attachKanbanSteerDirectory, attachKanbanSteerRecentDirectory, removeKanbanSteerDirectory, updateVoiceTranscript, appendVoiceTranscriptToInput, cleanupVoiceCapture, startVoiceWaveform, startAudioRecording, stopAudioRecording, sendMessage, generateKanbanTaskFromChat, chatKanbanGeneration };
+  return { checkStatus, checkVaultStatus, checkControlRoomStatus, runVaultTailnetSync, pairSyncthingCollector, pairSyncthingVaultSync, inspectBrainNode, startBrainPan, moveBrainPan, endBrainPan, addChatFiles, handleChatFileChange, handleChatImageChange, removeChatAttachment, attachChatDirectory, attachChatRecentDirectory, removeChatDirectory, addQuickAddFiles, handleQuickAddFileChange, handleQuickAddImageChange, removeQuickAddAttachment, attachQuickAddDirectory, attachQuickAddRecentDirectory, removeQuickAddDirectory, addKanbanSteerFiles, handleKanbanSteerFileChange, handleKanbanSteerImageChange, removeKanbanSteerAttachment, attachKanbanSteerDirectory, attachKanbanSteerRecentDirectory, removeKanbanSteerDirectory, updateVoiceTranscript, appendVoiceTranscriptToInput, cleanupVoiceCapture, startVoiceWaveform, startAudioRecording, stopAudioRecording, sendMessage, generateKanbanTaskFromChat, dismissChatKanbanGeneration, chatKanbanGeneration };
 }

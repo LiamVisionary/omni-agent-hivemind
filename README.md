@@ -180,7 +180,7 @@ The adapter calls `POST /v1/chat/completions` for chat and `GET /v1/models` for 
 | Runtime | Current support |
 |---|---|
 | **Hermes** | Local HTTP/runtime adapter, session visibility from `~/.hermes`, chat bridge, tasks, logs, and process snapshots |
-| **OpenClaw** | Gateway adapter with WebSocket chat, skill APIs, channel setup, schedules, memory sync, and env helpers |
+| **OpenClaw** | Gateway adapter with WebSocket chat and model selection through the generic runtime bridge |
 | **Aeon** | Background-runtime adapter for `aeon.yml`, GitHub Actions-backed skills, run history, outputs, memory, and optional A2A skill calls |
 | **MiroShark** | Companion integration for simulation workflows and dashboard visibility |
 | **Generic machines** | Read-only machine snapshots through the local monitor |
@@ -323,4 +323,4 @@ See [ROADMAP.md](ROADMAP.md).
 
 ## Provenance
 
-HivemindOS packages agent-control patterns, OpenClaw integration code, HivemindOS workflow templates, MiroShark companion integration, and local-first fleet telemetry into a standalone open-source dashboard. Portions of the OpenClaw integration were adapted from an internal source app. The AI SDK route and chat UI patterns were adapted from public Next.js agent examples. Some workflow templates were inspired by `shannhk/hermes-agent-control-room`.
+HivemindOS packages agent-control patterns, runtime adapter code, HivemindOS workflow templates, MiroShark companion integration, and local-first fleet telemetry into a standalone open-source dashboard. The AI SDK route and chat UI patterns were adapted from public Next.js agent examples. Some workflow templates were inspired by `shannhk/hermes-agent-control-room`.
