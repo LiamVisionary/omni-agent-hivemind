@@ -3,6 +3,14 @@
 This file records user-visible changes before they are committed. New work should
 be added here first, then marked `Committed` or `Pushed` after the git action.
 
+## 2026-05-26 09:54 UTC - Harden Env Sync Peer Targeting
+
+- Status: Pushed
+- Areas changed: hive env helper script, local telemetry collector service, changelog
+- Summary: Reinstalled the local telemetry collector from the active checkout so this machine advertises the current collector on the tailnet, and made `hive-env-add` skip collectors that do not advertise HTTP env sync support instead of attempting secret pushes to stale collectors.
+- Verification: `python3 -m py_compile scripts/hive-env-add`; local `/health` reports appDir `/root/omni-agent-hivemind`, commit `4eb54f3`, `envHttpSync=true`, and listener `0.0.0.0:8787`; `hive-env-add --reconcile` updated 2 HTTP-env-sync peers without stale-peer errors; sanitized remote checks verified `PEXELS_API_KEY=present` on the two HTTP-env-sync peers.
+- Intended commit message: `Skip stale env sync collectors`
+
 ## 2026-05-26 17:21:06 WITA - Center Agent Settings In Viewport
 
 - Status: Uncommitted
@@ -18,6 +26,7 @@ be added here first, then marked `Committed` or `Pushed` after the git action.
 - Summary: Simplify Hivemind Link setup by hiding raw launchctl load noise, detecting stale embedded Tailscale identity/auth failures such as `node ... already exists`, automatically rotating local Link state, and retrying the sidecar startup once before asking the user to rerun setup.
 - Verification: `bash -n scripts/install-telemetry-collector.sh setup.sh uninstall.sh`
 - Intended commit message: `Auto-recover Hivemind Link setup`
+
 
 ## 2026-05-26 08:49 UTC - Harden Shared Hive Env
 

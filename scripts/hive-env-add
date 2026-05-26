@@ -543,6 +543,9 @@ def env_sync_user_from_collector(ip: str) -> str:
             data = json.loads(response.read().decode("utf-8"))
     except Exception:
         return ""
+    capabilities = data.get("capabilities")
+    if isinstance(capabilities, dict) and capabilities.get("envHttpSync") is not True:
+        return ""
     env_sync = data.get("envSync")
     if not isinstance(env_sync, dict) or env_sync.get("ready") is not True:
         return ""
