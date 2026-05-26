@@ -9,6 +9,7 @@
   display: flex;
   flex-direction: column;
   gap: 14px;
+  min-height: 178px;
   width: 100%;
   border: 1px solid rgba(148, 163, 184, 0.14);
   border-radius: 18px;
@@ -25,6 +26,12 @@
     background 0.18s ease,
     box-shadow 0.18s ease;
   overflow: hidden;
+}
+
+.card[data-setup="true"] {
+  gap: 12px;
+  justify-content: center;
+  padding: 16px;
 }
 
 .card::before {
@@ -213,6 +220,91 @@
   color: var(--accent-strong);
   opacity: 1;
   transform: translateX(2px);
+}
+
+/* ─── Inline setup flow ─────────────────────────────────────────── */
+
+.setupPrompt {
+  display: grid;
+  gap: 12px;
+  justify-items: center;
+  min-height: 42px;
+  padding: 0 4px;
+  text-align: center;
+}
+
+.setupPrompt strong {
+  color: var(--foreground);
+  font-size: 15px;
+  font-weight: 800;
+  letter-spacing: 0;
+  line-height: 1.25;
+}
+
+.setupStatusIcon {
+  width: 26px;
+  height: 26px;
+  color: var(--accent-strong);
+}
+
+.setupStatusIcon[data-state="loading"] {
+  animation: setupSpin 0.9s linear infinite;
+}
+
+.setupStatusIcon[data-state="done"] {
+  animation: setupPop 0.38s cubic-bezier(0.2, 0.9, 0.25, 1.25);
+}
+
+.confirmActions {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+}
+
+.confirmButton {
+  display: grid;
+  place-items: center;
+  width: 50px;
+  height: 50px;
+  border-radius: 999px;
+  cursor: pointer;
+  transition: transform 0.14s ease, border-color 0.14s ease, background 0.14s ease;
+}
+
+.confirmButton:hover {
+  transform: translateY(-2px);
+}
+
+.confirmButton:active {
+  transform: scale(0.96);
+}
+
+.confirmButton svg {
+  width: 24px;
+  height: 24px;
+}
+
+.confirmButton[data-tone="cancel"] {
+  border: 1px solid rgba(251, 113, 133, 0.28);
+  background: rgba(251, 113, 133, 0.10);
+  color: #fda4af;
+}
+
+.confirmButton[data-tone="confirm"] {
+  border: 1px solid rgba(94, 234, 212, 0.36);
+  background: rgba(45, 212, 191, 0.14);
+  color: var(--accent-strong);
+}
+
+@keyframes setupSpin {
+  to { transform: rotate(360deg); }
+}
+
+@keyframes setupPop {
+  0% { transform: scale(0.72); }
+  70% { transform: scale(1.08); }
+  100% { transform: scale(1); }
 }
 
 /* ─── Hive-light theme ───────────────────────────────────────────── */

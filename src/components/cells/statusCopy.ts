@@ -25,11 +25,11 @@ export type AgentLike = {
 };
 
 /**
- * Map a Tailnet machine + collector pair to the canonical status set.
+ * Map a Tailnet machine + local bridge pair to the canonical status set.
  *
- *  collector: ready                     -> healthy
- *  online but collector not installed   -> needs-setup
- *  online but collector offline/missing -> collector-offline
+ *  bridge: ready                        -> healthy
+ *  online but bridge not installed      -> needs-setup
+ *  online but bridge offline/missing    -> collector-offline
  *  not online at all                    -> offline
  *  unknown                              -> unknown
  */
@@ -55,20 +55,20 @@ export function machineStatus(machine: MachineLike): {
   if (machine.collector === "not-installed") {
     return {
       kind: "needs-setup",
-      body: "Install the read-only collector once to put this machine on the fleet.",
+      body: "Install the local agent bridge once to put this machine on the fleet.",
       nextAction: "connect",
     };
   }
   if (machine.collector === "offline" || machine.collector === "missing") {
     return {
       kind: "collector-offline",
-      body: "The collector isn't responding. Reconnect it from the machine itself.",
+      body: "The local agent bridge isn't responding. Reconnect it from the machine itself.",
       nextAction: "connect",
     };
   }
   return {
     kind: "unknown",
-    body: "Status pending — checking the collector.",
+    body: "Status pending — checking the local agent bridge.",
     nextAction: "wait",
   };
 }
@@ -112,7 +112,7 @@ export function agentStatus(agent: AgentLike): {
   if (agent.snapshotError) {
     return {
       kind: "blocked",
-      body: "The collector saw an error — open details to inspect.",
+      body: "The local agent bridge saw an error — open details to inspect.",
     };
   }
   return {

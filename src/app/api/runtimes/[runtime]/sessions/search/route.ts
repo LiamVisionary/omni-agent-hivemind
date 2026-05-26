@@ -1,12 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import type { AgentRuntime } from "@/lib/types/agent-runtime";
 import { searchRuntimeSessions } from "@/lib/services/runtime-integrations";
+import { runtimeHasAdapter } from "@/lib/services/runtime-adapters/registry";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 function validRuntime(value: string): value is AgentRuntime {
-  return value === "openclaw" || value === "hermes" || value === "aeon";
+  return runtimeHasAdapter(value);
 }
 
 export async function GET(

@@ -395,7 +395,10 @@ async function readObserverState(): Promise<ObserverState> {
 
 async function writeObserverState(state: ObserverState) {
   await mkdir(dirname(STATE_PATH), { recursive: true });
-  await writeFile(STATE_PATH, `${JSON.stringify(state, null, 2)}\n`, "utf8");
+  const content = `${JSON.stringify(state, null, 2)}\n`;
+  const current = await readFile(STATE_PATH, "utf8").catch(() => null);
+  if (current === content) return;
+  await writeFile(STATE_PATH, content, "utf8");
 }
 
 function trimObserverState(state: ObserverState) {

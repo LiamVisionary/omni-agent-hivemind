@@ -7,6 +7,32 @@ type TokenBody = {
   token?: string;
 };
 
+type HetznerErrorBody = {
+  error?: {
+    message?: string;
+  };
+};
+
+async function validateHetznerToken(token: string) {
+  const response = await fetch("https://api.hetzner.cloud/v1/locations", {
+    headers: {
+      Authorization: `Bearer ${token}`,
+      Accept: "application/json",
+      "User-Agent": "HivemindOS Hetzner validator",
+    },
+    signal: AbortSignal.timeout(10_000),
+  });
+
+  if (response.ok) return;
+
+  const body = await response.json().catch(() => null) as HetznerErrorBody | null;
+  const detail = body?.error?.message?.trim();
+  if (response.status === 401 || response.status === 403) {
+    throw new Error(detail || "Hetzner rejected this token. Check the key and try again.");
+  }
+  throw new Error(detail || `Hetzner validation failed with HTTP ${response.status}.`);
+}
+
 function runHiveEnvAdd(token: string) {
   return new Promise<void>((resolve, reject) => {
     const child = spawn(join(process.cwd(), "scripts", "hive-env-add"), [
@@ -50,12 +76,13 @@ export async function POST(request: Request) {
   }
 
   try {
+    await validateHetznerToken(token);
     await runHiveEnvAdd(token);
-    return Response.json({ ok: true, message: "Saved HCLOUD_TOKEN locally with hive-env-add." });
+    return Response.json({ ok: true, message: "Validated with Hetzner Cloud and saved HCLOUD_TOKEN locally." });
   } catch (error) {
     return Response.json({
       ok: false,
-      error: error instanceof Error ? error.message : "Could not save the Hetzner token.",
+      error: error instanceof Error ? error.message : "Could not validate and save the Hetzner token.",
     }, { status: 500 });
   }
 }

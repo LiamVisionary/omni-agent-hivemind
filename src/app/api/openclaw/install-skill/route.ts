@@ -53,7 +53,7 @@ async function downloadMonorepoSkillDirectory(skillMdUrl: string, targetDir: str
 
   async function downloadDir(apiUrl: string, localDir: string): Promise<void> {
     const res = await fetch(apiUrl, {
-      headers: { 'Accept': 'application/vnd.github.v3+json', 'User-Agent': 'withami-skill-install' },
+      headers: { 'Accept': 'application/vnd.github.v3+json', 'User-Agent': 'hivemind-os-skill-install' },
       signal: AbortSignal.timeout(15_000),
     });
     if (!res.ok) {

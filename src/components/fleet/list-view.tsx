@@ -6,7 +6,7 @@ import * as React from "react";
 import { ChevronDown, Copy, MessageSquare, Monitor, Settings2, Smartphone, Trash2, Wallet } from "lucide-react";
 import { BeeIcon } from "./bee-icon";
 import { HexTile } from "./hex-tile";
-import { fleetAgentCanChat, isFleetMachineMobile, type AgentState, type FleetAgent, type FleetMachine } from "./fleet-data";
+import { fleetAgentCanChat, isFleetMachineMobile, type AgentState, type FleetAgent, type FleetAgentChat, type FleetMachine } from "./fleet-data";
 import styles from "./fleet-tokens.module.css";
 
 interface ListViewProps {
@@ -17,6 +17,7 @@ interface ListViewProps {
   onSelectAgent: (m: FleetMachine, a: FleetAgent) => void;
   onAddAgent: (m: FleetMachine) => void;
   onOpenChat?: (m: FleetMachine, a: FleetAgent) => void;
+  onOpenTaskChat?: (m: FleetMachine, a: FleetAgent, chat?: FleetAgentChat) => void;
   onOpenWallet?: (m: FleetMachine, a: FleetAgent) => void;
   onEditSettings?: (m: FleetMachine, a: FleetAgent) => void;
   onDuplicate?: (m: FleetMachine, a: FleetAgent) => void;
@@ -42,20 +43,27 @@ const versionPill = (v: FleetMachine["versionState"]) => {
   return                          { label: "current", color: "var(--accent-strong)", bg: "rgba(45,212,191,0.10)", border: "rgba(94,234,212,0.32)" };
 };
 
+const tailnetPill = (machine: FleetMachine) => {
+  const connected = machine.uptime.toLowerCase() === "online" && machine.tailnet.toLowerCase() !== "not connected";
+  return connected
+    ? { label: "Connected", color: "var(--accent-strong)", bg: "rgba(45,212,191,0.10)", border: "rgba(94,234,212,0.32)" }
+    : { label: "Off", color: "var(--muted)", bg: "rgba(148,163,184,0.08)", border: "rgba(148,163,184,0.22)" };
+};
+
 export function ListView({
   machines,
   selected, selectedAgentId,
   onSelectMachine, onSelectAgent, onAddAgent,
-  onOpenChat, onOpenWallet, onEditSettings, onDuplicate, onRemove,
+  onOpenChat, onOpenTaskChat, onOpenWallet, onEditSettings, onDuplicate, onRemove,
 }: ListViewProps) {
   const [expandedTaskIds, setExpandedTaskIds] = React.useState<Set<string>>(() => new Set());
-  const toggleTaskPreview = (agentId: string) => {
+  const toggleTaskPreview = (previewId: string) => {
     setExpandedTaskIds((current) => {
       const next = new Set(current);
-      if (next.has(agentId)) {
-        next.delete(agentId);
+      if (next.has(previewId)) {
+        next.delete(previewId);
       } else {
-        next.add(agentId);
+        next.add(previewId);
       }
       return next;
     });
@@ -73,7 +81,15 @@ export function ListView({
     <div className="w-full h-full overflow-auto px-5 py-3">
       <div className="rounded-xl overflow-hidden bg-[rgba(16,20,29,0.78)]"
         style={{ border: "1px solid rgba(148,163,184,0.16)" }}>
-        <table className="w-full border-collapse text-xs">
+        <table className="w-full border-collapse text-xs table-fixed">
+          <colgroup>
+            <col style={{ width: "24%" }} />
+            <col style={{ width: "14%" }} />
+            <col style={{ width: "10%" }} />
+            <col style={{ width: "13%" }} />
+            <col style={{ width: "11%" }} />
+            <col style={{ width: "18%" }} />
+          </colgroup>
           <thead>
             <tr style={{ background: "rgba(15,23,42,0.6)", borderBottom: "1px solid rgba(148,163,184,0.16)" }}>
               {["Machine", "Kind · Location", "Agents", "Tailnet", "Uptime", "Build"].map((h) => (
@@ -90,8 +106,9 @@ export function ListView({
             {machines.map((m) => {
               const isMSel = selected === m.id && !selectedAgentId;
               const v = versionPill(m.versionState);
+              const tailnet = tailnetPill(m);
               return (
-                <tbody key={m.id} className="contents">
+                <React.Fragment key={m.id}>
                   <tr
                     onClick={() => onSelectMachine(m.id)}
                     className="cursor-pointer"
@@ -138,9 +155,19 @@ export function ListView({
                         {m.agents.filter((a) => a.state === "working").length} active
                       </span>
                     </td>
-                    <td className="px-4 py-2.5" style={{ fontFamily: "var(--f-mono)", fontSize: 11, color: "var(--muted)" }}>
-                      {m.tailnet}
-                      <div style={{ fontSize: 10 }}>{m.ip} · {m.ping}ms</div>
+                    <td className="px-4 py-2.5">
+                      <span
+                        className="inline-flex items-center gap-1.5 uppercase"
+                        title={`${tailnet.label}: ${m.tailnet}${m.ip !== "—" ? ` · ${m.ip}` : ""}${m.ping ? ` · ${m.ping}ms` : ""}`}
+                        style={{
+                          padding: "3px 8px", borderRadius: 4,
+                          background: tailnet.bg, border: `1px solid ${tailnet.border}`, color: tailnet.color,
+                          fontFamily: "var(--f-mono)", fontSize: 10, fontWeight: 700, letterSpacing: 0.08,
+                        }}
+                      >
+                        <span className={styles.dot} style={{ color: tailnet.color, width: 5, height: 5 }} />
+                        {tailnet.label}
+                      </span>
                     </td>
                     <td className="px-4 py-2.5" style={{ fontFamily: "var(--f-mono)", fontSize: 11, color: "var(--foreground)" }}>
                       {m.uptime}
@@ -162,8 +189,11 @@ export function ListView({
 
                   {m.agents.map((a) => {
                     const isASel = selected === m.id && selectedAgentId === a.id;
-                    const isTaskExpanded = expandedTaskIds.has(a.id);
                     const canChat = fleetAgentCanChat(a);
+                    const recentChats = (a.recentChats?.length
+                      ? a.recentChats
+                      : [{ id: "current", title: a.task, task: a.task, since: a.since }]
+                    ).slice(0, 3);
                     return (
                       <tr
                         key={a.id}
@@ -196,23 +226,73 @@ export function ListView({
                         </td>
                         <td colSpan={2} className="px-4 py-1.5">
                           <div className="grid" style={{ gap: 7 }}>
-                            <button
-                              type="button"
-                              onClick={(event) => {
-                                event.stopPropagation();
-                                toggleTaskPreview(a.id);
-                              }}
-                              className={`${styles.rosterTaskPreview} ${styles.listTaskPreview} ${isTaskExpanded ? styles.rosterTaskPreviewExpanded : ""}`}
-                              aria-expanded={isTaskExpanded}
-                              aria-label={`${isTaskExpanded ? "Collapse" : "Expand"} recent task for ${a.name}`}
-                            >
-                              <span
-                                className={`${styles.rosterTaskPreviewText} ${styles.listTaskPreviewText} ${isTaskExpanded ? "" : styles.rosterTaskPreviewTextCollapsed}`}
-                              >
-                                {a.task}
-                              </span>
-                              <ChevronDown size={13} aria-hidden="true" />
-                            </button>
+                            {recentChats.map((chat) => {
+                              const previewId = `${a.id}:${chat.id}`;
+                              const isTaskExpanded = expandedTaskIds.has(previewId);
+                              return (
+                                <div
+                                  key={previewId}
+                                  role="button"
+                                  tabIndex={0}
+                                  onClick={(event) => {
+                                    event.stopPropagation();
+                                    toggleTaskPreview(previewId);
+                                  }}
+                                  onKeyDown={(event) => {
+                                    if (event.key !== "Enter" && event.key !== " ") return;
+                                    event.preventDefault();
+                                    event.stopPropagation();
+                                    toggleTaskPreview(previewId);
+                                  }}
+                                  className={`${styles.rosterTaskPreview} ${styles.listTaskPreview} ${isTaskExpanded ? styles.rosterTaskPreviewExpanded : ""}`}
+                                  aria-expanded={isTaskExpanded}
+                                  aria-label={`${isTaskExpanded ? "Collapse" : "Expand"} recent chat for ${a.name}`}
+                                >
+                                  <span
+                                    className={`${styles.rosterTaskPreviewText} ${styles.listTaskPreviewText} ${isTaskExpanded ? "" : styles.rosterTaskPreviewTextCollapsed}`}
+                                  >
+                                    {chat.title}
+                                  </span>
+                                  {canChat && onOpenTaskChat ? (
+                                    <Tooltip>
+                                      <TooltipTrigger asChild>
+                                        <button
+                                          type="button"
+                                          aria-label={`Resume chat with ${a.name}`}
+                                          className="inline-grid place-items-center"
+                                          onClick={(event) => {
+                                            event.stopPropagation();
+                                            onOpenTaskChat(m, a, chat);
+                                          }}
+                                          style={{
+                                            color: "var(--accent-strong)",
+                                            border: 0,
+                                            background: "transparent",
+                                            cursor: "pointer",
+                                            padding: 0,
+                                          }}
+                                        >
+                                          <MessageSquare size={13} aria-hidden="true" />
+                                        </button>
+                                      </TooltipTrigger>
+                                      <TooltipContent>Resume chat</TooltipContent>
+                                    </Tooltip>
+                                  ) : null}
+                                  <span
+                                    aria-hidden="true"
+                                    style={{
+                                      color: "var(--muted)",
+                                      fontFamily: "var(--f-mono)",
+                                      fontSize: 9,
+                                      whiteSpace: "nowrap",
+                                    }}
+                                  >
+                                    {chat.since}
+                                  </span>
+                                  <ChevronDown size={13} aria-hidden="true" />
+                                </div>
+                              );
+                            })}
                             {isASel && (
                               <div className="flex items-center flex-wrap" style={{ gap: 6 }}>
                                 {canChat && (
@@ -235,10 +315,10 @@ export function ListView({
                                           color: "var(--accent-strong)",
                                         }}
                                       >
-                                        <MessageSquare size={12} /> Chat
+                                        <MessageSquare size={12} /> New Chat
                                       </button>
                                     </TooltipTrigger>
-                                    <TooltipContent>Open chat with {a.name}</TooltipContent>
+                                    <TooltipContent>Start a fresh chat with {a.name}</TooltipContent>
                                   </Tooltip>
                                 )}
 
@@ -276,7 +356,7 @@ export function ListView({
                             )}
                           </div>
                         </td>
-                        <td className="px-4 py-1.5" style={{ fontFamily: "var(--f-mono)", fontSize: 10, color: "var(--muted)" }}>{a.wallet}</td>
+                        <td className="px-4 py-1.5" aria-hidden="true" />
                         <td className="px-4 py-1.5" style={{ fontFamily: "var(--f-mono)", fontSize: 10, color: "var(--muted)" }}>{a.since}</td>
                         <td className="px-4 py-1.5">
                           <span
@@ -322,7 +402,7 @@ export function ListView({
                       </Tooltip>
                     </td>
                   </tr>
-                </tbody>
+                </React.Fragment>
               );
             })}
           </tbody>

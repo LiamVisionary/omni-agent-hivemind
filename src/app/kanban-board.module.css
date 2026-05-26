@@ -467,6 +467,46 @@
   justify-content: flex-end;
 }
 
+.kanbanCardHeader input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  flex: 0 0 auto;
+  margin: 3px auto 0 0;
+  accent-color: #5eead4;
+}
+
+.kanbanBulkBar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 10px 12px;
+  border: 1px solid rgba(94, 234, 212, 0.22);
+  border-radius: 8px;
+  background: rgba(10, 18, 28, 0.84);
+}
+
+.kanbanBulkBar strong {
+  margin-right: 4px;
+  font-size: 0.82rem;
+}
+
+.kanbanBulkBar button,
+.kanbanBulkBar select {
+  min-height: 32px;
+  border: 1px solid rgba(148, 163, 184, 0.18);
+  border-radius: 7px;
+  background: rgba(15, 23, 42, 0.84);
+  color: var(--kb-fg);
+  padding: 0 10px;
+  font-size: 0.78rem;
+}
+
+.kanbanBulkBar button:disabled,
+.kanbanBulkBar select:disabled {
+  opacity: 0.52;
+}
+
 .kanbanPickupPreview {
   display: inline-flex;
   max-width: min(100%, 210px);
@@ -479,6 +519,19 @@
   box-shadow: 0 0 22px rgba(250, 204, 21, 0.14);
   color: #fde68a;
   padding: 4px 9px 4px 5px;
+  animation: pickupPreviewEnter 0.32s cubic-bezier(0.2, 1.35, 0.36, 1) both;
+}
+
+@keyframes pickupPreviewEnter {
+  from {
+    opacity: 0;
+    transform: translateY(12px) scale(0.55) rotate(-9deg);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1) rotate(0);
+  }
 }
 
 .kanbanPickupPreview img {
@@ -1701,7 +1754,7 @@
   overflow-wrap: anywhere;
 }
 
-.directoryBrowserHeader button {
+.directoryBrowserHeader button:not([data-slot="close-icon-button"]) {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -1847,6 +1900,221 @@
   margin: 0;
 }
 
+.workHistoryShell {
+  grid-template-rows: auto minmax(0, 1fr);
+}
+
+.workHistoryList {
+  display: grid;
+  gap: 12px;
+  min-height: 0;
+  overflow: auto;
+  padding: 2px 2px 12px;
+}
+
+.workHistoryItem {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 14px;
+  align-items: stretch;
+  border: 1px solid rgba(94, 234, 212, 0.13);
+  border-radius: 6px;
+  background: linear-gradient(180deg, rgba(16, 21, 31, 0.86), rgba(10, 15, 23, 0.8));
+  box-shadow: 0 14px 40px rgba(0, 0, 0, 0.22);
+  padding: 14px;
+}
+
+.workHistoryControls {
+  grid-template-columns: 220px minmax(260px, 420px) minmax(0, 1fr);
+}
+
+.workHistoryItem > div:first-child {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+  color: inherit;
+  text-align: left;
+}
+
+.workHistoryItem strong {
+  color: var(--kb-fg);
+  font-size: 17px;
+  font-weight: 900;
+  letter-spacing: 0;
+  line-height: 1.2;
+}
+
+.workHistoryAreas {
+  color: var(--kb-muted);
+  font-size: 12px;
+  font-weight: 800;
+  line-height: 1.35;
+}
+
+.workHistoryMeta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.workHistoryMeta span,
+.workHistoryMeta time {
+  display: inline-flex;
+  align-items: center;
+  min-height: 22px;
+  border: 1px solid rgba(148, 163, 184, 0.16);
+  border-radius: 999px;
+  background: rgba(8, 13, 20, 0.64);
+  color: var(--kb-muted);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  padding: 0 8px;
+  text-transform: uppercase;
+}
+
+.workHistoryMarkdown {
+  max-width: 980px;
+  color: var(--kb-muted);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.workHistoryMarkdown p,
+.workHistoryMarkdown ul,
+.workHistoryMarkdown ol {
+  margin: 0;
+}
+
+.workHistoryMarkdown p + p,
+.workHistoryMarkdown ul + p,
+.workHistoryMarkdown ol + p {
+  margin-top: 8px;
+}
+
+.workHistoryActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-content: start;
+  justify-content: end;
+}
+
+.workHistoryActions > button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 30px;
+  border: 1px solid rgba(148, 163, 184, 0.18);
+  border-radius: 6px;
+  background: rgba(8, 13, 20, 0.62);
+  color: var(--kb-muted);
+  cursor: pointer;
+  font-size: 11px;
+  font-weight: 900;
+  padding: 0 10px;
+}
+
+.workHistoryActions > button:hover,
+.workHistoryActions > button:focus-visible {
+  border-color: rgba(94, 234, 212, 0.38);
+  color: var(--kb-cyan-2);
+  outline: 0;
+}
+
+.workHistoryLoadMore {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  justify-self: center;
+  min-height: 38px;
+  border: 1px solid rgba(94, 234, 212, 0.24);
+  border-radius: 6px;
+  background: rgba(8, 13, 20, 0.68);
+  color: var(--kb-cyan-2);
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 900;
+  padding: 0 16px;
+}
+
+.workHistoryLoadMore:hover,
+.workHistoryLoadMore:focus-visible {
+  border-color: rgba(242, 183, 5, 0.4);
+  color: var(--kb-gold);
+  outline: 0;
+}
+
+.workHistoryLoadMore:disabled {
+  cursor: wait;
+  opacity: 0.68;
+}
+
+.workHistoryEmpty,
+.workHistoryLoadingNotice,
+.workHistoryItem.loading {
+  display: grid;
+  gap: 8px;
+  align-content: center;
+  min-height: 180px;
+  border: 1px dashed rgba(148, 163, 184, 0.2);
+  border-radius: 6px;
+  background: rgba(8, 13, 20, 0.48);
+  color: var(--kb-muted);
+  padding: 18px;
+}
+
+.workHistoryLoadingNotice {
+  min-height: 104px;
+  border-color: rgba(94, 234, 212, 0.28);
+  background:
+    linear-gradient(90deg, rgba(94, 234, 212, 0.08), rgba(242, 183, 5, 0.08), rgba(94, 234, 212, 0.08)),
+    rgba(8, 13, 20, 0.58);
+  background-size: 220% 100%, auto;
+  animation: workHistoryScan 1.4s ease-in-out infinite;
+}
+
+.workHistoryEmpty strong,
+.workHistoryLoadingNotice strong {
+  color: var(--kb-fg);
+}
+
+.workHistoryEmpty p,
+.workHistoryLoadingNotice p {
+  margin: 0;
+}
+
+.workHistoryItem.loading span,
+.workHistoryItem.loading strong,
+.workHistoryItem.loading p {
+  min-height: 14px;
+  border-radius: 999px;
+  background: linear-gradient(90deg, rgba(148, 163, 184, 0.12), rgba(94, 234, 212, 0.16), rgba(148, 163, 184, 0.12));
+}
+
+.workHistoryItem.loading strong {
+  width: min(420px, 70%);
+}
+
+.workHistoryItem.loading p {
+  width: min(680px, 90%);
+}
+
+@keyframes workHistoryScan {
+  0% {
+    background-position: 0% 50%, 0 0;
+  }
+
+  50% {
+    background-position: 100% 50%, 0 0;
+  }
+
+  100% {
+    background-position: 0% 50%, 0 0;
+  }
+}
+
 @media (max-width: 1180px) {
   .workBoardHero,
   .workBoardPanel .kanbanWorkspace {
@@ -1876,6 +2144,14 @@
 
   .workBoardStats {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .workHistoryItem {
+    grid-template-columns: 1fr;
+  }
+
+  .workHistoryActions {
+    justify-content: start;
   }
 
   .workBoardStats span,
@@ -2598,7 +2874,7 @@
   letter-spacing: 0;
 }
 
-.kanbanModalHeader button {
+.kanbanModalHeader button:not([data-slot="close-icon-button"]) {
   display: inline-grid;
   width: 32px;
   height: 32px;
@@ -2610,8 +2886,8 @@
   cursor: pointer;
 }
 
-.kanbanModalHeader button:hover,
-.kanbanModalHeader button:focus-visible {
+.kanbanModalHeader button:not([data-slot="close-icon-button"]):hover,
+.kanbanModalHeader button:not([data-slot="close-icon-button"]):focus-visible {
   border-color: rgba(94, 234, 212, 0.38);
   color: var(--accent-strong);
   outline: none;
@@ -3121,6 +3397,7 @@
 }
 
 :global(:root[data-theme="hive-light"]) .workBoardPanel .kanbanCardMarkdown,
+:global(:root[data-theme="hive-light"]) .workBoardPanel .workHistoryMarkdown,
 :global(:root[data-theme="hive-light"]) .workBoardPanel .kanbanColumnHeader p,
 :global(:root[data-theme="hive-light"]) .workBoardPanel .workBoardHeroCopy span,
 :global(:root[data-theme="hive-light"]) .workBoardPanel .workBoardSyncLine,

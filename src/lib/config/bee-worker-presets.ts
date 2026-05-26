@@ -71,7 +71,7 @@ export const BEE_WORKER_PRESETS: Record<BeeWorkerClass, BeeWorkerPreset> = {
     label: "Ops",
     summary: "Deployments, environments, fleet, MCP, webhooks, and runtime health.",
     modelHint: "Use a careful model for commands that can affect infrastructure or secrets.",
-    taskProfile: "Ops bee: manage runtime setup, environment sync, deployment checks, fleet/collector issues, MCP integration, webhooks, logs, and operational runbooks with conservative safety around secrets and remote mutation.",
+    taskProfile: "Ops bee: manage runtime setup, environment sync, deployment checks, fleet/agent bridge issues, MCP integration, webhooks, logs, and operational runbooks with conservative safety around secrets and remote mutation.",
     skillSlugs: ["systematic-debugging", "github-auth", "github-pr-workflow", "webhook-subscriptions", "mcp-integration", "native-mcp"],
   },
   qa: {

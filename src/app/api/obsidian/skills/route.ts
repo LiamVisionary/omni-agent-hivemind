@@ -4,15 +4,18 @@ import {
   importGitHubBrainSkill,
   importBrainSkills,
   importRemoteBrainSkill,
+  writeBrainSkill,
   type BrainSkillProviderId,
 } from "@/lib/services/obsidian/brain-skills";
+import { remoteSkillProviders } from "@/lib/services/fleet/remote-skill-providers";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 export async function GET(request: NextRequest) {
   try {
-    const inventory = await getBrainSkillInventory(request.nextUrl.searchParams.get("vaultPath") ?? undefined);
+    const remoteProviders = await remoteSkillProviders(request);
+    const inventory = await getBrainSkillInventory(request.nextUrl.searchParams.get("vaultPath") ?? undefined, remoteProviders);
     return NextResponse.json({ ok: true, ...inventory });
   } catch (error) {
     return errorResponse(error);
@@ -22,10 +25,11 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json().catch(() => ({})) as {
-      action?: "import-github" | "import-remote";
+      action?: "import-github" | "import-remote" | "write-skill";
       vaultPath?: string;
       provider?: BrainSkillProviderId | "all";
       githubUrl?: string;
+      markdown?: string;
       skill?: {
         slug?: string;
         name?: string;
@@ -52,9 +56,17 @@ export async function POST(request: NextRequest) {
       });
       return NextResponse.json({ ok: true, ...result, imported: [body.skill], skipped: [] });
     }
+    if (body.action === "write-skill") {
+      const result = await writeBrainSkill({
+        vaultPath: body.vaultPath,
+        markdown: body.markdown ?? "",
+      });
+      return NextResponse.json({ ok: true, ...result, imported: [], skipped: [] });
+    }
     const result = await importBrainSkills({
       vaultPath: body.vaultPath,
       provider: body.provider ?? "all",
+      remoteProviders: await remoteSkillProviders(request, { includeSourceFiles: true }),
     });
     return NextResponse.json({ ok: true, ...result });
   } catch (error) {

@@ -1,8 +1,8 @@
 # OpenClaw Setup Guide
 
-> **Developer setup guide.** For the user-facing feature walkthrough see [AMICLAW_GUIDE.md](AMICLAW_GUIDE.md).
+> **Developer setup guide.** For the user-facing feature walkthrough see [HIVEMINDOS_OPENCLAW_GUIDE.md](HIVEMINDOS_OPENCLAW_GUIDE.md).
 
-OpenClaw gives Ami the ability to control your Mac — creating notes, setting reminders, managing calendar events, controlling music, and more. It runs a local gateway on your machine that Ami talks to when you ask her to do things.
+OpenClaw gives HivemindOS the ability to control your Mac — creating notes, setting reminders, managing calendar events, controlling music, and more. It runs a local gateway on your machine that HivemindOS talks to when you ask her to do things.
 
 > **Privacy note:** OpenClaw runs entirely on your device. Your gateway token never leaves your machine. Only the gateway URL (without the token) is synced to the cloud so you can use the same config across devices.
 
@@ -75,9 +75,9 @@ Keep this token — you'll need it in the next step.
 
 ---
 
-## Step 3: Connect Ami to OpenClaw
+## Step 3: Connect HivemindOS to OpenClaw
 
-1. Open the Ami app and go to **Settings** (gear icon)
+1. Open the HivemindOS app and go to **Settings** (gear icon)
 2. Scroll down to **Advanced** section
 3. Expand **OpenClaw Gateway**
 4. Fill in the fields:
@@ -94,7 +94,7 @@ Keep this token — you'll need it in the next step.
 
 | Toggle | What it does |
 |--------|--------------|
-| **Sync identity** | Pushes Ami's name and personality to the gateway so other channels (WhatsApp, Discord) use the same character |
+| **Sync identity** | Pushes HivemindOS's name and personality to the gateway so other channels (WhatsApp, Discord) use the same character |
 | **Pull memories** | Imports memories from the agent workspace into the app on character load |
 | **Push memories** | Auto-syncs app memories to the agent workspace every 10 minutes |
 
@@ -102,24 +102,24 @@ Keep this token — you'll need it in the next step.
 
 ## Step 4: Set Up the Agent Workspace
 
-OpenClaw uses a workspace folder to give the agent its personality and tool instructions. The default workspace is at `~/.openclaw/workspace-ami/`.
+OpenClaw uses a workspace folder to give the agent its personality and tool instructions. The default workspace is at `~/.openclaw/workspace-hivemind-os/`.
 
 It should contain two files:
 
 ### SOUL.md — Personality
 
-This file is auto-synced from the app when "Sync identity" is enabled. It defines who Ami is and how she responds. You can also edit it manually:
+This file is auto-synced from the app when "Sync identity" is enabled. It defines who HivemindOS is and how she responds. You can also edit it manually:
 
 ```
-~/.openclaw/workspace-ami/SOUL.md
+~/.openclaw/workspace-hivemind-os/SOUL.md
 ```
 
 ### TOOLS.md — Tool Instructions
 
-This is Ami's cheat sheet for using macOS tools. It should already be set up, but if you need to recreate it:
+This is HivemindOS's cheat sheet for using macOS tools. It should already be set up, but if you need to recreate it:
 
 ```
-~/.openclaw/workspace-ami/TOOLS.md
+~/.openclaw/workspace-hivemind-os/TOOLS.md
 ```
 
 The file contains `osascript` commands for each tool. See [Available Tools](#available-tools) below.
@@ -128,7 +128,7 @@ The file contains `osascript` commands for each tool. See [Available Tools](#ava
 
 ## Available Tools
 
-Once connected, you can ask Ami to do any of these:
+Once connected, you can ask HivemindOS to do any of these:
 
 ### Apple Notes
 > "Write me a note about grocery ideas"
@@ -251,7 +251,7 @@ curl -fsSL https://openclaw.ai/install.sh | bash
 
 ```
 ┌──────────────┐     WebSocket      ┌──────────────────┐     osascript     ┌──────────────┐
-│   Ami App    │ ──────────────────► │ OpenClaw Gateway │ ────────────────► │  macOS APIs  │
+│   HivemindOS App    │ ──────────────────► │ OpenClaw Gateway │ ────────────────► │  macOS APIs  │
 │  (browser)   │ ◄────────────────── │  (localhost)     │ ◄──────────────── │ Notes, Music │
 │              │    SSE streaming    │  Port 18789      │    tool results   │ Calendar etc │
 └──────────────┘                     └──────────────────┘                   └──────────────┘
@@ -263,8 +263,8 @@ curl -fsSL https://openclaw.ai/install.sh | bash
                                      └─────────────┘
 ```
 
-1. You send a message to Ami in the browser
+1. You send a message to HivemindOS in the browser
 2. The app detects if it's a tool request and shows a preview card immediately
 3. The message is routed through the OpenClaw gateway via WebSocket
 4. The gateway's agent reads TOOLS.md, runs the appropriate `osascript` command
-5. The agent responds with confirmation, which Ami speaks back to you
+5. The agent responds with confirmation, which HivemindOS speaks back to you

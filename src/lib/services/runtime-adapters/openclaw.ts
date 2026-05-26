@@ -17,6 +17,7 @@ function normalizeCronJob(job: Record<string, unknown>): RuntimeSchedule {
     everyMs: typeof job.everyMs === "number" ? job.everyMs : undefined,
     message: typeof job.message === "string" ? job.message : undefined,
     enabled: job.enabled !== false,
+    nextRunMs: typeof job.nextRunMs === "number" ? job.nextRunMs : undefined,
     lastRunMs: typeof job.lastRunMs === "number" ? job.lastRunMs : undefined,
     lastStatus: typeof job.lastStatus === "string" ? job.lastStatus : undefined,
     lastSummary: typeof job.lastSummary === "string" ? job.lastSummary : undefined,

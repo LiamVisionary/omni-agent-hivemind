@@ -71,6 +71,7 @@ export interface HoneyTreasuryConfig {
   agentTokenUsage: Record<string, number>;
   agentHoneyExchanged: Record<string, number>;
   agentHiveBalances: Record<string, number>;
+  balances?: HoneyLedgerBalance[];
   rewardPoolHive: number;
   rewardPoolRemainingHive: number;
   rewardPoolEmittedHive: number;
@@ -80,6 +81,16 @@ export interface HoneyTreasuryConfig {
   rewardPoolShareOfVolume: number;
   hivePerMillionTokens: number;
   hiveTokenAddress: string;
+}
+
+export interface HoneyLedgerBalance {
+  workspaceId: string;
+  agentId: string;
+  tokensUsed: number;
+  lifetimeHoney: number;
+  availableHoney: number;
+  hiveBalance: number;
+  updatedAt: string;
 }
 
 export interface HoneyAgentReward {

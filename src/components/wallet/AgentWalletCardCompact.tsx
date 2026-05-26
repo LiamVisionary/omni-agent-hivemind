@@ -1,24 +1,30 @@
 "use client";
 
-import { ChevronRight, Power } from "lucide-react";
+import { useState } from "react";
+import { Check, ChevronRight, LoaderCircle, Power } from "lucide-react";
+import { CloseIconButton } from "@/components/ui/close-icon-button";
 
 import type { AgentSurvivalSnapshot, AgentWalletConfig } from "@/lib/types/agent-wallet";
+import { getDisplayWalletBalanceUsd } from "@/lib/utils/agent-wallet";
 
 import styles from "./AgentWalletCardCompact.module.css";
 
-type Props = {
+export type AgentWalletCardCompactProps = {
   agentName: string;
   wallet: AgentWalletConfig;
   survival: AgentSurvivalSnapshot;
   onOpen: () => void;
+  onInitialize: () => Promise<void>;
 };
 
 type ChipTone = "ok" | "warn" | "danger" | "off" | "muted";
+type SetupStage = "idle" | "confirm" | "loading" | "done";
 
 function statusFor(wallet: AgentWalletConfig, survival: AgentSurvivalSnapshot): {
   tone: ChipTone;
   text: string;
 } {
+  if (!wallet.walletAddress && !wallet.vaultAddress) return { tone: "off", text: "Initialize rails" };
   if (!wallet.enabled) return { tone: "off", text: "Wallet off" };
   if (survival.tier === "critical" || survival.tier === "dead") {
     return { tone: "danger", text: "Needs funding" };
@@ -34,17 +40,71 @@ function formatMoney(value: number): string {
   return `$${Math.max(0, value).toFixed(2)}`;
 }
 
-export function AgentWalletCardCompact({ agentName, wallet, survival, onOpen }: Props) {
+export function AgentWalletCardCompact({ agentName, wallet, survival, onOpen, onInitialize }: AgentWalletCardCompactProps) {
   const tier = wallet.enabled ? survival.tier : "off";
-  const safeBalance = Math.max(0, survival.effectiveBalanceUsd);
+  const safeBalance = getDisplayWalletBalanceUsd(wallet);
   const status = statusFor(wallet, survival);
+  const [setupStage, setSetupStage] = useState<SetupStage>("idle");
+  const needsInitialization = !wallet.walletAddress && !wallet.vaultAddress;
+
+  const openOrConfirm = () => {
+    if (needsInitialization) {
+      setSetupStage("confirm");
+      return;
+    }
+    onOpen();
+  };
+
+  const initialize = async () => {
+    setSetupStage("loading");
+    const startedAt = Date.now();
+    await onInitialize();
+    const remaining = Math.max(0, 2000 - (Date.now() - startedAt));
+    if (remaining > 0) await new Promise((resolve) => window.setTimeout(resolve, remaining));
+    setSetupStage("done");
+    window.setTimeout(() => {
+      onOpen();
+      setSetupStage("idle");
+    }, 1000);
+  };
+
+  if (setupStage === "confirm") {
+    return (
+      <article className={styles.card} data-tier="off" data-setup="true" aria-label={`Create a wallet for ${agentName}`}>
+        <div className={styles.setupPrompt}>
+          <strong>Create a wallet for {agentName}?</strong>
+        </div>
+        <div className={styles.confirmActions}>
+          <CloseIconButton className={styles.confirmButton} data-tone="cancel" onClick={() => setSetupStage("idle")} aria-label="Cancel wallet creation" />
+          <button type="button" className={styles.confirmButton} data-tone="confirm" onClick={() => void initialize()} aria-label={`Create wallet for ${agentName}`}>
+            <Check aria-hidden="true" />
+          </button>
+        </div>
+      </article>
+    );
+  }
+
+  if (setupStage === "loading" || setupStage === "done") {
+    return (
+      <article className={styles.card} data-tier="off" data-setup="true" aria-live="polite" aria-label={`${agentName} wallet setup`}>
+        <div className={styles.setupPrompt}>
+          <strong>{setupStage === "done" ? "Wallet created" : `Creating wallet for ${agentName}`}</strong>
+          {setupStage === "done" ? (
+            <Check className={styles.setupStatusIcon} data-state="done" aria-hidden="true" />
+          ) : (
+            <LoaderCircle className={styles.setupStatusIcon} data-state="loading" aria-hidden="true" />
+          )}
+        </div>
+      </article>
+    );
+  }
 
   return (
     <button
       type="button"
       className={styles.card}
       data-tier={tier}
-      onClick={onOpen}
+      onClick={openOrConfirm}
       aria-label={`Open ${agentName} wallet`}
     >
       <div className={styles.head}>

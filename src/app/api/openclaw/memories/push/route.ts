@@ -93,7 +93,7 @@ function generateUserFile(memory: PushMemory): string {
   ];
   if (nicknames) lines.push(`- **Nicknames:** ${nicknames}`);
   lines.push(
-    '- **Notes:** Chats with you through Ami: AI Companion and messaging channels.',
+    '- **Notes:** Chats with you through HivemindOS and messaging channels.',
     '',
     '## Context',
   );

@@ -2,8 +2,9 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
-import { Check, Search, X } from "lucide-react";
+import { Check, Search } from "lucide-react";
 import { BeeIcon } from "@/components/fleet/bee-icon";
+import { CloseIconButton } from "@/components/ui/close-icon-button";
 import { beeWorkerPreset } from "@/lib/config/bee-worker-presets";
 import { beeWorkerClassLabel } from "@/lib/services/orchestration/bee-roles";
 import type { AgentProfile, AgentRuntime } from "@/lib/types/agent-runtime";
@@ -160,9 +161,7 @@ export function AgentSelectionModal({
               <h2 id="agent-selection-title">{title}</h2>
               <p>{description}</p>
             </div>
-            <button type="button" className={styles.iconButton} onClick={onClose} aria-label="Close agent picker">
-              <X size={18} aria-hidden="true" />
-            </button>
+            <CloseIconButton className={styles.iconButton} onClick={onClose} aria-label="Close agent picker" />
           </div>
           <label className={styles.searchBox}>
             <Search size={18} aria-hidden="true" />

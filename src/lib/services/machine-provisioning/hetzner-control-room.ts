@@ -1,13 +1,14 @@
 import { mkdir, writeFile } from "fs/promises";
 import { homedir } from "os";
 import { join } from "path";
+import type { AgentRuntime } from "@/lib/types/agent-runtime";
 
 export type MachineInitInput = {
   projectName: string;
   serverType?: string;
   serverLocation?: string;
   serverImage?: string;
-  runtimeAgent?: "hermes" | "openclaw" | "aeon";
+  runtimeAgent?: AgentRuntime;
 };
 
 export type MachineInitResult = {
@@ -92,7 +93,7 @@ function envTemplate(values: {
   sshKeyName: string;
   sshKeyFile: string;
   sshAlias: string;
-  runtimeAgent: "hermes" | "openclaw" | "aeon";
+  runtimeAgent: AgentRuntime;
 }) {
   return `# Hetzner Cloud API token.
 # Create it in Hetzner Cloud Console -> Security -> API Tokens.
@@ -321,7 +322,7 @@ case "$HIVE_AGENT_RUNTIME" in
       curl -fsSL https://hermes-agent.nousresearch.com/install.sh | bash || true
     fi
     ;;
-  openclaw|aeon)
+  openclaw|aeon|openai-compatible)
     log "$HIVE_AGENT_RUNTIME selected; HivemindOS fleet wiring and shared skill targets will be installed."
     ;;
   *)

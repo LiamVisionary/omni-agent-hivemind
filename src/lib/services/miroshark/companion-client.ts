@@ -79,7 +79,13 @@ const SETUP_LOG_PATH = "/tmp/openclaw-miroshark-setup.log";
 const BOOTSTRAP_ENV_PATH = "/tmp/openclaw-miroshark.env";
 const SCREEN_SESSION_NAME = "miroshark-5101";
 const DEFAULT_MANAGED_PORT = "5101";
+const REQUIREMENTS_CACHE_MS = 120_000;
 const execFileAsync = promisify(execFile);
+let cachedRequirements: {
+  key: string;
+  checkedAt: number;
+  requirements: MiroSharkRequirement[];
+} | null = null;
 
 // Adapted from MiroShark's documented Flask defaults and HTTP API paths.
 const MIROSHARK_ENDPOINTS = {
@@ -148,6 +154,11 @@ async function commandExists(command: string) {
 }
 
 async function getRequirements(installPath?: string): Promise<MiroSharkRequirement[]> {
+  const key = installPath ?? "";
+  const now = Date.now();
+  if (cachedRequirements && cachedRequirements.key === key && now - cachedRequirements.checkedAt < REQUIREMENTS_CACHE_MS) {
+    return cachedRequirements.requirements;
+  }
   const [git, uv, docker, screen, python311] = await Promise.all([
     commandExists("git"),
     commandExists("uv"),
@@ -155,7 +166,7 @@ async function getRequirements(installPath?: string): Promise<MiroSharkRequireme
     commandExists("screen"),
     commandExists("python3.11"),
   ]);
-  return [
+  const requirements = [
     { name: "git", ok: Boolean(git), detail: git || "Required to clone MiroShark" },
     { name: "uv", ok: Boolean(uv), detail: uv || "Required to install the Python backend" },
     { name: "docker", ok: Boolean(docker), detail: docker || "Required for the managed Neo4j container" },
@@ -167,6 +178,8 @@ async function getRequirements(installPath?: string): Promise<MiroSharkRequireme
       detail: installPath ? path.join(installPath, ".env") : "Created automatically when an API key is available",
     },
   ];
+  cachedRequirements = { key, checkedAt: now, requirements };
+  return requirements;
 }
 
 function getInstallState(): MiroSharkInstallState {

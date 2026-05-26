@@ -6,6 +6,13 @@ import type { BeeWorkerClass } from "@/lib/types/agent-runtime";
 
 export type AgentState = "working" | "ready" | "scheduled" | "setup" | "failed";
 
+export interface FleetAgentChat {
+  id: string;
+  title: string;
+  task: string;
+  since: string;
+}
+
 export interface FleetAgent {
   id: string;
   name: string;
@@ -19,6 +26,7 @@ export interface FleetAgent {
   balance: "healthy" | "low_compute" | "dead" | "off";
   task: string;
   since: string;      // formatted e.g. "2m", "5h"
+  recentChats?: FleetAgentChat[];
 }
 
 export function fleetAgentCanChat(agent: FleetAgent) {
@@ -83,6 +91,7 @@ export interface FleetAlert {
   machine: string;
   text: string;
   since: string;
+  timestamp?: number;
 }
 
 export const MACHINES: FleetMachine[] = [
@@ -103,7 +112,7 @@ export const MACHINES: FleetMachine[] = [
     lat: 40.68, lon: -73.96,
     uptime: "12d 4h",
     agents: [
-      { id: "a1", name: "Hermes-α",       runtime: "Hermes",   state: "working",   role: "Lead",       wallet: "0.42 ETH", balance: "healthy",     task: "Refactoring the swarm telemetry collector to stream over Tailscale SSH", since: "2m" },
+      { id: "a1", name: "Hermes-α",       runtime: "Hermes",   state: "working",   role: "Lead",       wallet: "0.42 ETH", balance: "healthy",     task: "Refactoring the swarm agent bridge to stream over Tailscale SSH", since: "2m" },
       { id: "a2", name: "OpenClaw-eng",   runtime: "OpenClaw", state: "ready",     role: "Engineer",   wallet: "0.08 ETH", balance: "healthy",     task: "Idle · waiting for next handoff from Hermes-α", since: "11m" },
       { id: "a3", name: "Aeon-night",     runtime: "Aeon",     state: "scheduled", role: "Background", wallet: "—",        balance: "off",         task: "Nightly skill index rebuild · 02:00 UTC", since: "5h" },
     ],
@@ -212,7 +221,7 @@ export const ALERTS: FleetAlert[] = [
 ];
 
 export const TICKER: string[] = [
-  "Hermes-α   :: writing `collector/stream.ts` lines 84–142",
+  "Hermes-α   :: writing `agent-bridge/stream.ts` lines 84–142",
   "MiroShark  :: epoch 8410 ▸ pnl Δ +0.42% (sharpe 1.81)",
   "Brain-sync :: 412 files reconciled · 3 conflicts auto-merged",
   "Hermes-res :: ranking 27 Tavily results against memory index",

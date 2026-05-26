@@ -25,6 +25,7 @@ export type HoneyLedger = HoneyTreasuryConfig & {
 
 const LEDGER_PATH = join(homedir(), ".hivemindos", "honey-ledger.json");
 const INSTALL_ID_PATH = join(homedir(), ".hivemindos", "install-id");
+const REMOTE_HONEY_TIMEOUT_MS = 8_000;
 
 export async function readHoneyLedger(): Promise<HoneyLedger> {
   const remote = getRemoteLedgerConfig();
@@ -57,12 +58,23 @@ export async function recordHoneyUsage(input: {
 
   const remote = getRemoteLedgerConfig();
   if (remote) {
-    const remoteResult = await recordRemoteHoneyUsage(remote, {
-      agentId: input.agentId,
-      model: input.model ?? "hivemindos/private-runtime",
-      source: input.source ?? "chat",
-      tokensUsed,
-    }).catch(() => null);
+    const model = input.model ?? "hivemindos/private-runtime";
+    const timestamp = new Date().toISOString();
+    const remoteResult = remote.signingSecret
+      ? await recordRemoteHoneyUsage(remote, {
+        agentId: input.agentId,
+        model,
+        source: input.source ?? "chat",
+        tokensUsed,
+      }).catch(() => null)
+      : await recordRemoteHoneyObservation(remote, {
+        eventId: randomUUID(),
+        agentId: input.agentId,
+        model,
+        source: "observed-runtime-usage",
+        tokensUsed,
+        timestamp,
+      }).catch(() => null);
     if (remoteResult) {
       return {
         ledger: remoteResult.ledger,
@@ -71,8 +83,8 @@ export async function recordHoneyUsage(input: {
           agentId: input.agentId,
           agentName: input.agentName,
           kind: "usage" as const,
-          source: input.source ?? "chat",
-          tokensUsed,
+          source: remote.signingSecret ? input.source ?? "chat" : "observed-runtime-usage",
+          tokensUsed: remote.signingSecret ? tokensUsed : remoteResult.acceptedTokens,
           honeyDelta: remoteResult.honeyDelta,
           hiveDelta: 0,
           createdAt: remoteResult.createdAt,
@@ -254,6 +266,7 @@ async function readRemoteHoneyLedger(remote: RemoteLedgerConfig): Promise<HoneyL
   const response = await fetch(`${remote.url}/ledger?workspaceId=${encodeURIComponent(workspaceId)}`, {
     headers: authHeaders(remote.readToken),
     cache: "no-store",
+    signal: AbortSignal.timeout(REMOTE_HONEY_TIMEOUT_MS),
   });
   if (!response.ok) return null;
   const data = await response.json().catch(() => null) as { ok?: boolean; ledger?: Partial<HoneyLedger> } | null;
@@ -285,6 +298,7 @@ async function recordRemoteHoneyUsage(
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(signedReceipt),
+    signal: AbortSignal.timeout(REMOTE_HONEY_TIMEOUT_MS),
   });
   if (!response.ok) return null;
   const data = await response.json().catch(() => null) as {
@@ -297,6 +311,7 @@ async function recordRemoteHoneyUsage(
     ledger,
     eventId: receipt.eventId,
     honeyDelta: Number(data.honeyDelta) || 0,
+    acceptedTokens: input.tokensUsed,
     createdAt: timestamp,
   };
 }
@@ -318,6 +333,7 @@ async function recordRemoteHoneyObservation(
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(receipt),
+    signal: AbortSignal.timeout(REMOTE_HONEY_TIMEOUT_MS),
   });
   if (!response.ok) return null;
   const data = await response.json().catch(() => null) as {
@@ -329,6 +345,7 @@ async function recordRemoteHoneyObservation(
   if (!data?.ok || !ledger) return null;
   return {
     ledger,
+    eventId: input.eventId,
     honeyDelta: Number(data.honeyDelta) || 0,
     acceptedTokens: Math.max(0, Math.round(Number(data.acceptedTokens ?? input.tokensUsed) || 0)),
     createdAt: input.timestamp,
@@ -340,6 +357,7 @@ async function exchangeRemoteHoneyForHive(remote: RemoteLedgerConfig, agentId?: 
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ workspaceId: await getWorkspaceId(), agentId }),
+    signal: AbortSignal.timeout(REMOTE_HONEY_TIMEOUT_MS),
   });
   if (!response.ok) return null;
   const data = await response.json().catch(() => null) as {
@@ -385,7 +403,7 @@ export async function getHoneyWorkspaceId() {
 
   const id = `ws_${randomUUID()}`;
   await mkdir(dirname(INSTALL_ID_PATH), { recursive: true });
-  await writeFile(INSTALL_ID_PATH, `${id}\n`, "utf8");
+  await writeIfChanged(INSTALL_ID_PATH, `${id}\n`);
   return id;
 }
 
@@ -395,7 +413,13 @@ async function getWorkspaceId() {
 
 async function writeHoneyLedger(ledger: HoneyLedger) {
   await mkdir(dirname(LEDGER_PATH), { recursive: true });
-  await writeFile(LEDGER_PATH, `${JSON.stringify(ledger, null, 2)}\n`, "utf8");
+  await writeIfChanged(LEDGER_PATH, `${JSON.stringify(ledger, null, 2)}\n`);
+}
+
+async function writeIfChanged(path: string, content: string) {
+  const current = await readFile(path, "utf8").catch(() => null);
+  if (current === content) return;
+  await writeFile(path, content, "utf8");
 }
 
 function createDefaultLedger(): HoneyLedger {
@@ -418,6 +442,7 @@ function normalizeLedger(parsed: Partial<HoneyLedger>): HoneyLedger {
     agentTokenUsage: plainNumberRecord(parsed.agentTokenUsage),
     agentHoneyExchanged: plainNumberRecord(parsed.agentHoneyExchanged),
     agentHiveBalances: plainNumberRecord(parsed.agentHiveBalances),
+    balances: normalizeBalances(parsed.balances),
     rewardPoolHive,
     rewardPoolRemainingHive: positiveNumber(parsed.rewardPoolRemainingHive, Math.max(0, rewardPoolHive - rewardPoolEmittedHive)),
     rewardPoolEmittedHive,
@@ -430,6 +455,26 @@ function normalizeLedger(parsed: Partial<HoneyLedger>): HoneyLedger {
     events: Array.isArray(parsed.events) ? parsed.events.filter(isLedgerEvent).slice(0, 500) : [],
     updatedAt: typeof parsed.updatedAt === "string" ? parsed.updatedAt : fallback.updatedAt,
   };
+}
+
+function normalizeBalances(value: unknown): HoneyTreasuryConfig["balances"] {
+  if (!Array.isArray(value)) return undefined;
+  return value
+    .map((raw) => {
+      if (!raw || typeof raw !== "object") return null;
+      const balance = raw as Partial<NonNullable<HoneyTreasuryConfig["balances"]>[number]>;
+      if (typeof balance.agentId !== "string" || !balance.agentId.trim()) return null;
+      return {
+        workspaceId: typeof balance.workspaceId === "string" ? balance.workspaceId : "",
+        agentId: balance.agentId,
+        tokensUsed: Math.max(0, Math.round(Number(balance.tokensUsed ?? 0) || 0)),
+        lifetimeHoney: positiveNumber(balance.lifetimeHoney, 0),
+        availableHoney: positiveNumber(balance.availableHoney, 0),
+        hiveBalance: positiveNumber(balance.hiveBalance, 0),
+        updatedAt: typeof balance.updatedAt === "string" ? balance.updatedAt : new Date(0).toISOString(),
+      };
+    })
+    .filter((balance): balance is NonNullable<HoneyTreasuryConfig["balances"]>[number] => Boolean(balance));
 }
 
 function positiveNumber(value: unknown, fallback: number) {

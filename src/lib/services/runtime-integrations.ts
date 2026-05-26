@@ -6,6 +6,7 @@ import { dirname, join } from "node:path";
 import { promisify } from "node:util";
 import type { AgentProfile, AgentRuntime, RuntimeCapabilities } from "@/lib/types/agent-runtime";
 import { RUNTIME_CAPABILITIES } from "@/lib/types/agent-runtime";
+import { getRuntimeAdapter } from "@/lib/services/runtime-adapters/registry";
 import { mergeRuntimeSessions, previewSessionText } from "@/lib/services/runtime-session-utils";
 import type { RuntimeModelSelection } from "./runtime-adapters/types";
 
@@ -61,15 +62,29 @@ type HermesSessionRow = {
 };
 
 export async function getRuntimeIntegrationStatus(runtime: AgentRuntime, agent?: AgentProfile): Promise<RuntimeIntegrationStatus> {
-  const capabilities = { ...RUNTIME_CAPABILITIES[runtime], ...(agent?.runtimeCapabilities ?? {}) };
+  const adapter = getRuntimeAdapter(runtime);
+  const capabilities = { ...(RUNTIME_CAPABILITIES[runtime] ?? adapter?.capabilities ?? {}), ...(agent?.runtimeCapabilities ?? {}) };
   if (runtime !== "hermes") {
+    let modelSelection: RuntimeModelSelection | undefined;
+    const diagnostics: string[] = [];
+    if (adapter?.getStatus && agent) {
+      try {
+        const status = await adapter.getStatus(agent, {});
+        if (status && typeof status === "object" && "modelSelection" in status) {
+          modelSelection = (status as { modelSelection?: RuntimeModelSelection }).modelSelection;
+        }
+      } catch (error) {
+        diagnostics.push(error instanceof Error ? error.message : `${adapter.label} status check failed.`);
+      }
+    }
     return {
       runtime,
       capabilities,
+      modelSelection,
       integrations: integrationDefaults(capabilities, {
         socialPosting: runtime === "openclaw" ? "Available through OpenClaw skills when installed." : "Not exposed by this adapter yet.",
       }),
-      diagnostics: [],
+      diagnostics,
     };
   }
 

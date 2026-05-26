@@ -4,10 +4,10 @@ node_modules/
 out/
 dist/
 bin/
-.remotion-capture/
-public/remotion/*
-!public/remotion/.gitkeep
-out/remotion/
+/remotion/
+/.remotion-capture/
+/public/remotion/
+/out/remotion/
 
 .env
 .env.*
@@ -20,6 +20,8 @@ pnpm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 coverage/
+artifacts/
+.hermes/
 
 *.db
 *.sqlite

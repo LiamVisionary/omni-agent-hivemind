@@ -29,7 +29,7 @@ export async function POST(request: NextRequest) {
       });
     }
 
-    const base = workspacePath?.trim() || join(homedir(), '.openclaw', 'workspace-ami-ault-ami');
+    const base = workspacePath?.trim() || join(homedir(), '.openclaw', 'workspace-hivemind-os');
     const skillDir = join(base, 'skills', slug);
 
     // Determine the script to run based on slug

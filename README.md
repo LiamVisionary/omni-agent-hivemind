@@ -4,8 +4,9 @@
   <p>
     <a href="https://github.com/LiamVisionary/hivemindos/stargazers"><img alt="GitHub stars" src="https://img.shields.io/github/stars/LiamVisionary/hivemindos?style=for-the-badge&amp;logo=github&amp;label=stars&amp;color=0b8bdc&amp;labelColor=555555" /></a>
     <a href="https://github.com/LiamVisionary/hivemindos/network/members"><img alt="GitHub forks" src="https://img.shields.io/github/forks/LiamVisionary/hivemindos?style=for-the-badge&amp;logo=github&amp;label=forks&amp;color=0b8bdc&amp;labelColor=555555" /></a>
-    <a href="https://bankr.bot"><img alt="Launch on Bankr" src="https://img.shields.io/badge/Launch%20on-Bankr-ff6a2a?style=for-the-badge&amp;labelColor=1f2137" /></a>
+    <a href="https://bankr.bot/launches/0xa382c83e2a3b79368f372c2eb9b6925ffaf45ba3"><img alt="Launch on Bankr" src="https://img.shields.io/badge/Launch%20on-Bankr-ff6a2a?style=for-the-badge&amp;labelColor=1f2137" /></a>
   </p>
+  <p><b>HIVE Token:</b> 0xa382c83e2a3b79368f372c2eb9b6925ffaf45b</p>
 </div>
 
 > **A virtual private network for your agents.**
@@ -17,6 +18,16 @@
 Clone it, run one setup command, and get a local-first dashboard for the agents already living on your laptop, desktop, VPS, or spare machines. No public ports required.
 
 ![HivemindOS cyber-bee agent network hero](public/readme/hivemindos-hero.png)
+
+## Screenshots
+
+| Fleet | Work Automations |
+|---|---|
+| ![Fleet dashboard showing the live agent constellation and machine roster](public/readme/screenshots/fleet-dashboard.png) | ![Work automations scheduler showing the next 24 hours and task detail panel](public/readme/screenshots/work-automations.png) |
+
+| Brain Graph | Simulation |
+|---|---|
+| ![Shared brain graph showing Obsidian notes and access history](public/readme/screenshots/brain-graph.png) | ![MiroShark simulation view showing an X thread simulation draft](public/readme/screenshots/work-simulation.png) |
 
 ## What It Does
 
@@ -131,6 +142,18 @@ OPENAI_API_KEY=hive-v1.<workspace-id>.<bankr-llm-key>
 
 Your workspace id is stored at `~/.hivemindos/install-id` after setup. The gateway forwards the request through Bankr, reads the provider-returned token usage, signs the Honey receipt server-side, and credits official Honey without requiring the dashboard chat surface.
 
+### Local OpenAI-Compatible Runtimes
+
+HivemindOS can register a generic `openai-compatible` agent runtime for local model servers that expose OpenAI-style endpoints. LM Studio works with the default base URL:
+
+```txt
+LOCAL_OPENAI_BASE_URL=http://127.0.0.1:1234
+LOCAL_OPENAI_API_KEY=
+LOCAL_OPENAI_MODEL=<loaded-model-id>
+```
+
+The adapter calls `POST /v1/chat/completions` for chat and `GET /v1/models` for model discovery. Point the same runtime at Ollama, vLLM, llama.cpp server, LocalAI, or another compatible service by changing the base URL and model.
+
 ## Features
 
 | Feature | What it does |
@@ -139,6 +162,7 @@ Your workspace id is stored at `~/.hivemindos/install-id` after setup. The gatew
 | **Tailscale agent network** | Connects agents across your machines through your private Tailscale VPN |
 | **Machine monitor** | Lightweight local service that reports agent status and runtime health to the dashboard |
 | **Runtime adapters** | Supports Hermes, OpenClaw, Aeon, MiroShark, and generic machine-backed agents through a neutral adapter layer |
+| **Local model runtimes** | Adds a generic OpenAI-compatible adapter for LM Studio, Ollama, vLLM, llama.cpp server, LocalAI, and similar `/v1/chat/completions` services |
 | **Shared Obsidian brain** | Stores memory, handoffs, shared context, Kanban state, and reusable skills in a local markdown vault |
 | **Shared env sync** | Adds keys once with `hive-env-add` and syncs them to trusted machines over Tailscale SSH |
 | **Work board** | Gives agents a shared Kanban queue for tasks, delegation, retries, stale work, and human handoff |
@@ -179,7 +203,7 @@ Plaintext secrets do not belong in the shared vault. If GPG is configured, `hive
 
 ## Shared Env
 
-Setup installs `hive-env-add` into `~/.local/bin`. GnuPG is optional; when it is installed and a recipient or public key is configured, `hive-env-add` refreshes the encrypted `hive.env.gpg` backup in the shared notes folder.
+Setup installs `hive-env-add`, `hive-env-check`, and `hive-env-run` into `~/.local/bin`. GnuPG is optional; when it is installed and a recipient or public key is configured, `hive-env-add` refreshes the encrypted `hive.env.gpg` backup in the shared notes folder.
 
 ```bash
 hive-env-add KEY=value
@@ -187,9 +211,13 @@ hive-env-add KEY
 hive-env-add --import-env
 hive-env-add --reconcile
 hive-env-add --pull-from root@ubuntu.tailnet.ts.net
+hive-env-check KEY
+hive-env-run -- command arg...
 ```
 
-By default it updates the app `.env.local` and the generic local agent env store at `~/.hivemindos/.env`. Runtime-specific compatibility writes are explicit:
+By default `hive-env-add` updates the canonical shared hive env at `~/.hivemindos/.env`. Apps, scripts, and agents should consume that shared env at runtime instead of copying secrets into project `.env` files or runtime-specific secret stores. Use `hive-env-check KEY` to verify presence without printing values, and use `hive-env-run -- <command>` to execute any command with the shared env loaded into the child process.
+
+Runtime-specific compatibility writes remain explicit for legacy/runtime-native stores:
 
 ```bash
 hive-env-add --runtime hermes ANTHROPIC_API_KEY

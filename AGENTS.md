@@ -20,6 +20,12 @@
 - Keep collectors private to Tailscale unless the user explicitly asks for another exposure model.
 - Prefer read-only fleet inspection by default. Remote mutation/update endpoints need explicit design and safety review.
 
+## Dev Server Ownership
+
+- Port `5020` is Liam's managed HivemindOS dev server. Do not kill, restart, replace, or take over the process on port `5020` unless Liam explicitly asks for that exact action.
+- If an agent needs to run a dev server for testing, use another free port such as `5021` or higher, and make it clear which URL was started.
+- Do not run commands such as `pkill node`, `kill $(lsof -ti :5020)`, or broad process cleanup that could stop Liam's managed dev server.
+
 ## Setup / Uninstall Mirror
 
 - Any install prompt, package, service, generated file, shell profile edit, agent instruction edit, shared-skill mirror, or optional third-party app added to `setup.sh` or `setup.ps1` must have a matching one-by-one removal prompt in `uninstall.sh` and `uninstall.ps1`.

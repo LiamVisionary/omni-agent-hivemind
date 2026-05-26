@@ -148,7 +148,7 @@ function generateUserFile(memory: SyncMemory | null): string {
   ];
   if (nicknames) lines.push(`- **Nicknames:** ${nicknames}`);
   lines.push(
-    '- **Notes:** Chats with you through Ami: AI Companion and messaging channels.',
+    '- **Notes:** Chats with you through HivemindOS and messaging channels.',
     '',
     '## Context',
   );
@@ -590,14 +590,14 @@ function generateWorkspaceFiles(characterName: string, systemPrompt: string, mem
       '',
       '---',
       '',
-      '_Synced from Ami: AI Companion. Edit freely \u2014 only SOUL.md and IDENTITY.md are updated on re-sync._',
+      '_Synced from HivemindOS. Edit freely \u2014 only SOUL.md and IDENTITY.md are updated on re-sync._',
     ].join('\n'),
 
     'IDENTITY.md': [
       `# IDENTITY.md - Who Am I?`,
       '',
       `- **Name:** ${characterName}`,
-      `- **Creature:** AI companion (synced from Ami: AI Companion)`,
+      `- **Creature:** AI companion (synced from HivemindOS)`,
       `- **Emoji:** \ud83d\udc95`,
     ].join('\n'),
 
@@ -937,7 +937,7 @@ async function downloadMonorepoSkillDirectory(skillMdUrl: string, targetDir: str
 
   async function downloadDir(apiUrl: string, localDir: string): Promise<void> {
     const res = await fetch(apiUrl, {
-      headers: { 'Accept': 'application/vnd.github.v3+json', 'User-Agent': 'withami-skill-sync' },
+      headers: { 'Accept': 'application/vnd.github.v3+json', 'User-Agent': 'hivemind-os-skill-sync' },
       signal: AbortSignal.timeout(15_000),
     });
     if (!res.ok) {

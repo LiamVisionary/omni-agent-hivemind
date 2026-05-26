@@ -1,12 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import type { AgentProfile, AgentRuntime } from "@/lib/types/agent-runtime";
 import { getRuntimeIntegrationStatus, runRuntimeIntegrationAction } from "@/lib/services/runtime-integrations";
+import { runtimeHasAdapter } from "@/lib/services/runtime-adapters/registry";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 function validRuntime(value: string): value is AgentRuntime {
-  return value === "openclaw" || value === "hermes" || value === "aeon";
+  return runtimeHasAdapter(value);
 }
 
 function normalizeCollectorUrl(url?: string) {
@@ -35,7 +36,7 @@ async function proxyCollectorIntegration(runtime: AgentRuntime, collectorUrl: st
   });
   const data = await response.json().catch(() => null) as Record<string, unknown> | null;
   if (!response.ok || data?.ok === false) {
-    throw new Error(typeof data?.error === "string" ? data.error : `Remote collector returned HTTP ${response.status}.`);
+    throw new Error(typeof data?.error === "string" ? data.error : `Remote agent bridge returned HTTP ${response.status}.`);
   }
   return data;
 }

@@ -19,7 +19,6 @@ HivemindOS is a local-first control room for private agent fleets. It connects a
 - Chat bridge for supported runtimes, including collector-backed Hermes chat and persisted remote session polling.
 - Agent security proxy and OpenClaw security proxy for local prompt guardrails and secret redaction.
 - Controlled agent wallet surfaces for local wallets, x402 mock paid endpoints, and spend logging.
-- Remotion showcase capture/render project and README launch visuals.
 - Public GitHub identity: `LiamVisionary/hivemindos`.
 
 ## Next

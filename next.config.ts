@@ -35,6 +35,12 @@ function detectedTailnetDevOrigins() {
 
 const nextConfig: NextConfig = {
   reactStrictMode: true,
+  webpack(config, { dev }) {
+    if (dev && process.env.NEXT_DEV_SOURCE_MAPS !== "1") {
+      config.devtool = false;
+    }
+    return config;
+  },
   allowedDevOrigins: [
     ...splitOrigins(process.env.NEXT_ALLOWED_DEV_ORIGINS),
     ...detectedTailnetDevOrigins(),

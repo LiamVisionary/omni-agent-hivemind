@@ -1,0 +1,79 @@
+#!/usr/bin/env python3
+"""Safely report whether shared HivemindOS env keys are available."""
+from __future__ import annotations
+
+import argparse
+import os
+import pathlib
+import re
+import shlex
+
+DEFAULT_ENV_FILE = pathlib.Path.home() / ".hivemindos" / ".env"
+KEY_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+
+
+def parse_env_file(path: pathlib.Path) -> dict[str, str]:
+    try:
+        data = path.read_text()
+    except FileNotFoundError:
+        return {}
+
+    parsed: dict[str, str] = {}
+    for raw_line in data.splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        if line.startswith("export "):
+            line = line[len("export ") :].strip()
+        key, value = line.split("=", 1)
+        key = key.strip()
+        if not key:
+            continue
+        try:
+            parts = shlex.split(value, posix=True)
+            value = parts[0] if parts else ""
+        except ValueError:
+            value = value.strip().strip('"').strip("'")
+        parsed[key] = value
+    return parsed
+
+
+def env_files(raw: str) -> list[pathlib.Path]:
+    if raw:
+        return [pathlib.Path(os.path.expanduser(part)).resolve() for part in raw.split(os.pathsep) if part]
+    override = os.environ.get("HIVE_ENV_FILES", "").strip()
+    if override:
+        return [pathlib.Path(os.path.expanduser(part)).resolve() for part in override.split(os.pathsep) if part]
+    return [DEFAULT_ENV_FILE]
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description="Check shared hive env keys without printing values.")
+    parser.add_argument("keys", nargs="+", help="Environment variable names to check")
+    parser.add_argument("--env-files", default="", help="os.pathsep-separated env files; defaults to ~/.hivemindos/.env")
+    parser.add_argument("--length", action="store_true", help="Also print value lengths, never values")
+    args = parser.parse_args()
+
+    values: dict[str, str] = {}
+    for env_file in env_files(args.env_files):
+        values.update(parse_env_file(env_file))
+    values.update({key: value for key, value in os.environ.items() if value})
+
+    exit_code = 0
+    for key in args.keys:
+        if not KEY_RE.match(key):
+            print(f"{key}=invalid")
+            exit_code = 2
+            continue
+        value = values.get(key, "")
+        if value:
+            suffix = f" len={len(value)}" if args.length else ""
+            print(f"{key}=present{suffix}")
+        else:
+            print(f"{key}=absent")
+            exit_code = 1 if exit_code == 0 else exit_code
+    return exit_code
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

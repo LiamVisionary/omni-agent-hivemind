@@ -5,8 +5,10 @@ import { hostname } from "os";
 import { dirname, relative, resolve, sep } from "path";
 import { promisify } from "util";
 import { resolveObsidianVaultPath } from "@/lib/services/obsidian/vault-path";
+import { DEFAULT_SHARED_VAULT } from "@/lib/types/agent-runtime";
 
-const ACCESS_LOG_PATH = "Projects/HivemindOS/Brain Access/access-log.jsonl";
+const ACCESS_LOG_PATH = `${DEFAULT_SHARED_VAULT.brainServicesFolder}/access-log.jsonl`;
+const LEGACY_ACCESS_LOG_PATH = "Projects/HivemindOS/Brain Access/access-log.jsonl";
 const OBSIDIAN_CLI = process.env.OBSIDIAN_CLI_PATH ?? "obsidian";
 const MAX_NOTE_BYTES = 524_288;
 const MAX_GRAPH_NOTES = 260;
@@ -152,7 +154,12 @@ async function readNotes(root: string): Promise<{ notes: NoteRecord[]; truncated
 
 export async function readAccessEvents(root: string): Promise<BrainAccessEvent[]> {
   const logPath = accessLogFile(root);
-  const raw = await readFile(logPath, "utf-8").catch(() => "");
+  const legacyLogPath = resolve(root, LEGACY_ACCESS_LOG_PATH);
+  assertInside(root, legacyLogPath);
+  const raw = [
+    await readFile(logPath, "utf-8").catch(() => ""),
+    legacyLogPath !== logPath ? await readFile(legacyLogPath, "utf-8").catch(() => "") : "",
+  ].filter(Boolean).join("\n");
   return raw
     .split("\n")
     .filter(Boolean)

@@ -1,19 +1,26 @@
 "use client";
 
 import { useState } from "react";
+import { createPortal } from "react-dom";
 import {
   ArrowUpRight,
+  Bot,
+  Check,
   Copy,
+  CreditCard,
+  Fuel,
   HandCoins,
   Power,
   QrCode,
   RefreshCcw,
   Send,
   SlidersHorizontal,
+  TrendingUp,
   WalletCards,
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
+import { CloseIconButton } from "@/components/ui/close-icon-button";
 import type {
   AgentPaymentProvider,
   AgentSurvivalSnapshot,
@@ -21,6 +28,7 @@ import type {
   HoneyAgentReward,
 } from "@/lib/types/agent-wallet";
 import { cn } from "@/lib/utils/cn";
+import { getDisplayWalletBalanceUsd } from "@/lib/utils/agent-wallet";
 
 import styles from "./AgentWalletCard.module.css";
 
@@ -37,8 +45,18 @@ type WalletActionState = {
 };
 
 type ProviderCopy = { label: string; summary: string; setup: string };
+type RailState = "ready" | "setup" | "blocked";
+type MoneyClawStatus = {
+  configured: boolean;
+  apiKeyEnvName: string;
+  balance?: unknown;
+  depositAddress?: unknown;
+  paymentIntents?: unknown;
+  errors?: Record<string, string>;
+};
+type MoneyClawSaveOptions = { shareWithAllAgents: boolean };
 
-type Props = {
+export type AgentWalletCardProps = {
   agentName: string;
   machineName?: string;
   wallet: AgentWalletConfig;
@@ -47,9 +65,11 @@ type Props = {
   honeyLedgerEnabled: boolean;
   providerCopy: ProviderCopy;
   providerOptions: Array<[AgentPaymentProvider, ProviderCopy]>;
+  moneyClawStatus?: MoneyClawStatus | null;
   walletAction: WalletActionState;
   onUpdateWallet: (patch: Partial<AgentWalletConfig>) => void;
   onUpdateAction: (patch: WalletActionState) => void;
+  onSaveMoneyClawKey: (apiKey: string, options: MoneyClawSaveOptions) => Promise<{ ok: boolean; error?: string }>;
   onResetRunway: () => void;
   onCopyPaymentPrompt: () => void;
   onCreateLocalWallet: () => void;
@@ -92,6 +112,22 @@ function shortenAddress(address: string): string {
   return `${address.slice(0, 6)}…${address.slice(-4)}`;
 }
 
+function railText(state: RailState) {
+  if (state === "ready") return "Ready";
+  if (state === "blocked") return "Needs attention";
+  return "Set up";
+}
+
+function moneyClawBalanceLabel(status?: MoneyClawStatus | null) {
+  const balance = status?.balance;
+  if (!balance || typeof balance !== "object") return "";
+  const record = balance as Record<string, unknown>;
+  const value = record.balance ?? record.availableBalance ?? record.amount ?? record.usdBalance;
+  if (typeof value === "number") return `$${value.toFixed(2)}`;
+  if (typeof value === "string") return value;
+  return "";
+}
+
 export function AgentWalletCard({
   agentName,
   machineName,
@@ -101,9 +137,11 @@ export function AgentWalletCard({
   honeyLedgerEnabled,
   providerCopy,
   providerOptions,
+  moneyClawStatus,
   walletAction,
   onUpdateWallet,
   onUpdateAction,
+  onSaveMoneyClawKey,
   onResetRunway,
   onCopyPaymentPrompt,
   onCreateLocalWallet,
@@ -111,14 +149,44 @@ export function AgentWalletCard({
   onSendUsdc,
   onCallX402,
   onExchangeHoney,
-}: Props) {
+}: AgentWalletCardProps) {
   const [sheet, setSheet] = useState<Sheet>(null);
+  const [moneyClawModalOpen, setMoneyClawModalOpen] = useState(false);
+  const [moneyClawKeyDraft, setMoneyClawKeyDraft] = useState("");
+  const [shareMoneyClawKey, setShareMoneyClawKey] = useState(false);
+  const [moneyClawSaveState, setMoneyClawSaveState] = useState<"idle" | "checking" | "saved">("idle");
+  const [moneyClawSaveError, setMoneyClawSaveError] = useState("");
+  const portalTarget = typeof document === "undefined" ? null : document.body;
 
   const tier = wallet.enabled ? survival.tier : "off";
-  const safeBalance = Math.max(0, survival.effectiveBalanceUsd);
+  const safeBalance = getDisplayWalletBalanceUsd(wallet);
   const isOff = !wallet.enabled;
   const isCritical = wallet.enabled && (survival.tier === "critical" || survival.tier === "dead");
   const isLow = wallet.enabled && survival.tier === "low_compute";
+  const cardRailState: RailState = moneyClawStatus?.configured ? "ready" : "setup";
+  const cryptoRailState: RailState = wallet.walletAddress || wallet.vaultAddress ? "ready" : "setup";
+  const x402RailState: RailState = cryptoRailState === "ready" ? "ready" : "setup";
+  const tradingRailState: RailState = "setup";
+  const primaryRailReady = cardRailState === "ready" && cryptoRailState === "ready";
+  const moneyClawBalance = moneyClawBalanceLabel(moneyClawStatus);
+
+  const saveMoneyClawKey = async () => {
+    const key = moneyClawKeyDraft.trim();
+    setMoneyClawSaveError("");
+    setMoneyClawSaveState("checking");
+    const result = await onSaveMoneyClawKey(key, { shareWithAllAgents: shareMoneyClawKey });
+    if (!result.ok) {
+      setMoneyClawSaveState("idle");
+      setMoneyClawSaveError(result.error || "MoneyClaw key could not be saved.");
+      return;
+    }
+    setMoneyClawSaveState("saved");
+    window.setTimeout(() => {
+      setMoneyClawModalOpen(false);
+      setMoneyClawKeyDraft("");
+      setMoneyClawSaveState("idle");
+    }, 900);
+  };
 
   const runwayChip: { tone: "ok" | "warn" | "danger" | "muted"; text: string } = isOff
     ? { tone: "muted", text: "Wallet off" }
@@ -159,10 +227,10 @@ export function AgentWalletCard({
           className={styles.powerToggle}
           data-on={wallet.enabled}
           onClick={() => onUpdateWallet({ enabled: !wallet.enabled })}
-          aria-label={wallet.enabled ? "Turn wallet off" : "Turn wallet on"}
+          aria-label={wallet.enabled ? "Disable agent spending" : "Enable agent spending"}
         >
           <Power aria-hidden="true" />
-          {wallet.enabled ? "On" : "Off"}
+          {wallet.enabled ? "Spend on" : "Spend off"}
         </button>
       </div>
 
@@ -215,11 +283,54 @@ export function AgentWalletCard({
         </button>
       </div>
 
+      <section className={styles.railStack} aria-label="Agent payment rail setup">
+        <div className={styles.railStackHeader}>
+          <div>
+            <strong>Core rails</strong>
+            <span>{primaryRailReady ? "Card and crypto are ready for bounded spending." : "Initialize once, then top up only when needed."}</span>
+          </div>
+        </div>
+        <div className={styles.railGrid}>
+          <button type="button" className={styles.railItem} data-state={cardRailState} onClick={() => setMoneyClawModalOpen(true)}>
+            <CreditCard aria-hidden="true" />
+            <div>
+              <strong>Cards</strong>
+              <span>{moneyClawStatus?.configured ? `MoneyClaw${moneyClawBalance ? ` · ${moneyClawBalance}` : ""}` : `Needs ${wallet.moneyClawEnvName}`}</span>
+            </div>
+            <small>{railText(cardRailState)}</small>
+          </button>
+          <div className={styles.railItem} data-state={cryptoRailState}>
+            <WalletCards aria-hidden="true" />
+            <div>
+              <strong>Crypto</strong>
+              <span>{wallet.walletAddress ? shortenAddress(wallet.walletAddress) : "Local USDC wallet"}</span>
+            </div>
+            <small>{railText(cryptoRailState)}</small>
+          </div>
+          <div className={styles.railItem} data-state={x402RailState}>
+            <Bot aria-hidden="true" />
+            <div>
+              <strong>x402</strong>
+              <span>{x402RailState === "ready" ? "Uses local wallet caps" : "Needs crypto wallet"}</span>
+            </div>
+            <small>{railText(x402RailState)}</small>
+          </div>
+          <div className={styles.railItem} data-state={tradingRailState}>
+            <TrendingUp aria-hidden="true" />
+            <div>
+              <strong>Trading</strong>
+              <span>Bankr key and allowlist</span>
+            </div>
+            <small>{railText(tradingRailState)}</small>
+          </div>
+        </div>
+      </section>
+
       {sheet === "send" ? (
         <div className={styles.sheet}>
           <div className={styles.sheetTitle}>
             Send {wallet.tokenSymbol || "USDC"}
-            <button type="button" onClick={() => setSheet(null)}>Close</button>
+            <CloseIconButton size="sm" onClick={() => setSheet(null)} aria-label="Close send sheet" />
           </div>
           <p className={styles.sheetHelp}>
             Hard cap per payment: {formatMoney(wallet.maxPaymentUsd)}. Type SEND_USDC to confirm if asked.
@@ -268,7 +379,7 @@ export function AgentWalletCard({
         <div className={styles.sheet}>
           <div className={styles.sheetTitle}>
             Receive {wallet.tokenSymbol || "USDC"}
-            <button type="button" onClick={() => setSheet(null)}>Close</button>
+            <CloseIconButton size="sm" onClick={() => setSheet(null)} aria-label="Close receive sheet" />
           </div>
           {wallet.walletAddress ? (
             <>
@@ -312,7 +423,7 @@ export function AgentWalletCard({
         <div className={styles.sheet}>
           <div className={styles.sheetTitle}>
             Spending limits
-            <button type="button" onClick={() => setSheet(null)}>Close</button>
+            <CloseIconButton size="sm" onClick={() => setSheet(null)} aria-label="Close spending limits" />
           </div>
           <p className={styles.sheetHelp}>The only numbers most users need to set.</p>
           <div className={styles.sheetGrid}>
@@ -374,8 +485,8 @@ export function AgentWalletCard({
         <div className={styles.banner} data-tone="off">
           <Power aria-hidden="true" />
           <div>
-            <strong>Wallet is off</strong>
-            This agent cannot spend yet. Use the Power button when you&apos;re ready.
+            <strong>Spending is off</strong>
+            The wallet is ready, but this agent cannot spend until you enable spending.
           </div>
         </div>
       ) : isCritical ? (
@@ -408,7 +519,7 @@ export function AgentWalletCard({
 
         {wallet.nativeBalance != null ? (
           <div className={styles.token}>
-            <span className={styles.tokenIcon} data-token="gas">⛽</span>
+            <span className={styles.tokenIcon} data-token="gas"><Fuel aria-hidden="true" /></span>
             <div className={styles.tokenBody}>
               <span className={styles.tokenName}>Gas</span>
               <span className={styles.tokenSub}>Native balance</span>
@@ -440,7 +551,11 @@ export function AgentWalletCard({
         </div>
 
         <div className={styles.token}>
-          <span className={styles.tokenIcon} data-token="hive">◆</span>
+          <span className={styles.tokenIcon} data-token="hive">
+            <svg viewBox="0 0 32 36" aria-hidden="true" focusable="false">
+              <polygon points="16 1.5 29.4 9.25 29.4 26.75 16 34.5 2.6 26.75 2.6 9.25" />
+            </svg>
+          </span>
           <div className={styles.tokenBody}>
             <span className={styles.tokenName}>HIVE</span>
             <span className={styles.tokenSub}>Reward token</span>
@@ -516,7 +631,16 @@ export function AgentWalletCard({
           </div>
 
           <div className={styles.sheetField}>
-            <label htmlFor="wallet-clawcard">ClawCard env name</label>
+            <label htmlFor="wallet-moneyclaw">MoneyClaw env name</label>
+            <input
+              id="wallet-moneyclaw"
+              value={wallet.moneyClawEnvName}
+              onChange={(event) => onUpdateWallet({ moneyClawEnvName: event.target.value })}
+            />
+          </div>
+
+          <div className={styles.sheetField}>
+            <label htmlFor="wallet-clawcard">ClawCard env name (legacy)</label>
             <input
               id="wallet-clawcard"
               value={wallet.clawCardEnvName}
@@ -548,6 +672,75 @@ export function AgentWalletCard({
           <p className={styles.sheetStatus} data-tone="muted">{providerCopy.setup}</p>
         </div>
       </details>
+
+      {moneyClawModalOpen && portalTarget ? createPortal((
+        <div className={styles.modalBackdrop} role="presentation" onMouseDown={() => setMoneyClawModalOpen(false)}>
+          <section
+            className={styles.moneyClawModal}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="moneyclaw-key-title"
+            onMouseDown={(event) => event.stopPropagation()}
+          >
+            <div className={styles.modalHeader}>
+              <div>
+                <p className={styles.modalEyebrow}>Cards rail</p>
+                <h3 id="moneyclaw-key-title">MoneyClaw API key</h3>
+              </div>
+              <CloseIconButton aria-label="Close MoneyClaw setup" onClick={() => setMoneyClawModalOpen(false)} />
+            </div>
+
+            <label className={styles.modalField} htmlFor="moneyclaw-key">
+              <span>{wallet.moneyClawEnvName}</span>
+              <input
+                id="moneyclaw-key"
+                type="password"
+                autoComplete="off"
+                value={moneyClawKeyDraft}
+                onChange={(event) => {
+                  setMoneyClawKeyDraft(event.target.value);
+                  setMoneyClawSaveError("");
+                  if (moneyClawSaveState === "saved") setMoneyClawSaveState("idle");
+                }}
+                placeholder="mcl_..."
+              />
+            </label>
+
+            <label className={styles.modalToggle}>
+              <input
+                type="checkbox"
+                checked={shareMoneyClawKey}
+                onChange={(event) => setShareMoneyClawKey(event.target.checked)}
+              />
+              <span>
+                <strong>{shareMoneyClawKey ? "Use for all agents" : "Use only for this agent"}</strong>
+                <small>{shareMoneyClawKey
+                  ? "Agents will share one MoneyClaw account, wallet, inbox, and balance."
+                  : "Use this when each agent has its own MoneyClaw account, wallet, inbox, and balance."}</small>
+              </span>
+            </label>
+
+            <button
+              type="button"
+              className={styles.modalSaveButton}
+              disabled={moneyClawSaveState === "checking" || !moneyClawKeyDraft.trim()}
+              onClick={() => void saveMoneyClawKey()}
+            >
+              {moneyClawSaveState === "saved" ? <Check aria-hidden="true" /> : null}
+              {moneyClawSaveState === "checking" ? "Checking..." : moneyClawSaveState === "saved" ? "Saved!" : "Check"}
+            </button>
+
+            {moneyClawSaveError ? <p className={styles.modalError}>{moneyClawSaveError}</p> : null}
+
+            <div className={styles.terminalAlternative}>
+              <strong>Alternatively, run this in Terminal</strong>
+              <code>{shareMoneyClawKey
+                ? `scripts/hive-env-add ${wallet.moneyClawEnvName}`
+                : "Per-agent MoneyClaw keys should be saved here so they stay attached to this agent's env overlay."}</code>
+            </div>
+          </section>
+        </div>
+      ), portalTarget) : null}
     </article>
   );
 }

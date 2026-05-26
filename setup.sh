@@ -936,20 +936,25 @@ install_gpg_if_missing() {
 
 install_hive_env_add() {
   local bin_dir="${HOME}/.local/bin"
-  local command_path="$bin_dir/hive-env-add"
+  local command_name command_path script_path
   mkdir -p "$bin_dir"
-  chmod +x "$ROOT/scripts/hive-env-add"
-  if [[ -L "$command_path" ]]; then
-    rm -f "$command_path"
-  fi
-  cat > "$command_path" <<EOF
+  for command_name in hive-env-add hive-env-run hive-env-check; do
+    command_path="$bin_dir/$command_name"
+    script_path="$ROOT/scripts/$command_name"
+    chmod +x "$script_path"
+    if [[ -L "$command_path" ]]; then
+      rm -f "$command_path"
+    fi
+    cat > "$command_path" <<EOF
 #!/usr/bin/env sh
 set -eu
+
+command_name="$command_name"
 
 run_helper() {
   root="\$1"
   shift
-  helper="\$root/scripts/hive-env-add"
+  helper="\$root/scripts/\$command_name"
   if [ -x "\$helper" ]; then
     HIVE_ENV_PROJECT_ROOT="\$root" exec "\$helper" "\$@"
   fi
@@ -957,25 +962,25 @@ run_helper() {
 }
 
 run_helper "$ROOT" "\$@" || true
-for root in "\$PWD" "\$HOME/hivemindos" "\$HOME/omni-agent-hivemind" "\$HOME/Documents/code/projects/my-anime-waifu-web/hivemind-os"; do
+for root in "\$PWD" "\$HOME/hivemindos" "\$HOME/omni-agent-hivemind" "\$HOME/Documents/code/projects/hivemind-os"; do
   run_helper "\$root" "\$@" || true
 done
-found="\$(find "\$HOME" -maxdepth 6 -type f -path '*/scripts/hive-env-add' 2>/dev/null | head -1 || true)"
+found="\$(find "\$HOME" -maxdepth 6 -type f -path "*/scripts/\$command_name" 2>/dev/null | head -1 || true)"
 if [ -n "\$found" ] && [ -x "\$found" ]; then
   root="\$(cd "\$(dirname "\$found")/.." && pwd)"
   HIVE_ENV_PROJECT_ROOT="\$root" exec "\$found" "\$@"
 fi
-echo "hive-env-add could not find a HivemindOS checkout. Set HIVE_ENV_PROJECT_ROOT or rerun setup.sh from the checkout." >&2
+echo "\$command_name could not find a HivemindOS checkout. Set HIVE_ENV_PROJECT_ROOT or rerun setup.sh from the checkout." >&2
 exit 127
 EOF
-  chmod +x "$command_path"
-  ok "hive-env-add installed: $command_path"
+    chmod +x "$command_path"
+    ok "$command_name installed: $command_path"
+  done
   case ":$PATH:" in
     *":$bin_dir:"*) ;;
-    *) warn "Add $bin_dir to PATH to run hive-env-add from any folder" ;;
+    *) warn "Add $bin_dir to PATH to run hive-env-add, hive-env-run, and hive-env-check from any folder" ;;
   esac
 }
-
 install_pnpm_if_missing() {
   refresh_tool_paths
   if command -v pnpm >/dev/null 2>&1; then
@@ -1373,7 +1378,10 @@ set_env_local() {
   local key="$1"
   local value="$2"
   local env_file="$ROOT/.env.local"
-  touch "$env_file"
+  [[ -f "$env_file" ]] || touch "$env_file"
+  if awk -v key="$key" -v value="$value" -F= '$1 == key && substr($0, length(key) + 2) == value { found=1 } END { exit found ? 0 : 1 }' "$env_file"; then
+    return 0
+  fi
   if grep -q "^${key}=" "$env_file"; then
     local tmp_file
     tmp_file="$(mktemp)"
@@ -1392,25 +1400,102 @@ set_env_local "HONEY_LEDGER_ISSUER_ID" "${HONEY_LEDGER_ISSUER_ID:-hivemindos}"
 set_env_local "HONEY_COMPUTE_GATEWAY_URL" "${HONEY_COMPUTE_GATEWAY_URL:-https://hivemindos-compute-gateway.hivemindos.workers.dev}"
 set_env_local "HIVE_TOKEN_ADDRESS" "${HIVE_TOKEN_ADDRESS:-}"
 set_env_local "BANKR_LLM_KEY" "${BANKR_LLM_KEY:-}"
-set_env_local "NEXT_PUBLIC_OBSIDIAN_SCHEDULED_FOLDER" "${NEXT_PUBLIC_OBSIDIAN_SCHEDULED_FOLDER:-Scheduled}"
+set_env_local "NEXT_PUBLIC_OBSIDIAN_KANBAN_FOLDER" "${NEXT_PUBLIC_OBSIDIAN_KANBAN_FOLDER:-Operations/Work Board}"
+set_env_local "NEXT_PUBLIC_OBSIDIAN_NOTIFICATIONS_FOLDER" "${NEXT_PUBLIC_OBSIDIAN_NOTIFICATIONS_FOLDER:-Operations/Agent Notifications}"
+set_env_local "NEXT_PUBLIC_OBSIDIAN_SCHEDULED_FOLDER" "${NEXT_PUBLIC_OBSIDIAN_SCHEDULED_FOLDER:-Operations/Automations}"
+set_env_local "NEXT_PUBLIC_OBSIDIAN_SYNTHESIS_FOLDER" "${NEXT_PUBLIC_OBSIDIAN_SYNTHESIS_FOLDER:-Synthesis}"
+set_env_local "NEXT_PUBLIC_OBSIDIAN_BRAIN_SERVICES_FOLDER" "${NEXT_PUBLIC_OBSIDIAN_BRAIN_SERVICES_FOLDER:-Operations/Brain Services}"
+set_env_local "NEXT_PUBLIC_GBRAIN_CLI_PATH" "${NEXT_PUBLIC_GBRAIN_CLI_PATH:-gbrain}"
+set_env_local "NEXT_PUBLIC_GBRAIN_SKILLPACK_LOCATION" "${NEXT_PUBLIC_GBRAIN_SKILLPACK_LOCATION:-Skills/GBrain}"
 
 shared_vault_path="${NEXT_PUBLIC_OBSIDIAN_VAULT_PATH:-$HOME/Documents/Obsidian/hivemindos-vault}"
 if [[ "$shared_vault_path" == "~/"* ]]; then
   shared_vault_path="$HOME/${shared_vault_path#~/}"
 fi
-scheduled_folder="${NEXT_PUBLIC_OBSIDIAN_SCHEDULED_FOLDER:-Scheduled}"
-mkdir -p "$shared_vault_path/$scheduled_folder"
+scheduled_folder="${NEXT_PUBLIC_OBSIDIAN_SCHEDULED_FOLDER:-Operations/Automations}"
+kanban_folder="${NEXT_PUBLIC_OBSIDIAN_KANBAN_FOLDER:-Operations/Work Board}"
+notifications_folder="${NEXT_PUBLIC_OBSIDIAN_NOTIFICATIONS_FOLDER:-Operations/Agent Notifications}"
+synthesis_folder="${NEXT_PUBLIC_OBSIDIAN_SYNTHESIS_FOLDER:-Synthesis}"
+brain_services_folder="${NEXT_PUBLIC_OBSIDIAN_BRAIN_SERVICES_FOLDER:-Operations/Brain Services}"
+
+mkdir -p \
+  "$shared_vault_path/Intake" \
+  "$shared_vault_path/Memory" \
+  "$shared_vault_path/Projects" \
+  "$shared_vault_path/Operations" \
+  "$shared_vault_path/Skills" \
+  "$shared_vault_path/$synthesis_folder/raw" \
+  "$shared_vault_path/$synthesis_folder/wiki/.drafts" \
+  "$shared_vault_path/$synthesis_folder/wiki/sources" \
+  "$shared_vault_path/$synthesis_folder/wiki/queries" \
+  "$shared_vault_path/$synthesis_folder/wiki/synthesis" \
+  "$shared_vault_path/$synthesis_folder/pack" \
+  "$shared_vault_path/Archive" \
+  "$shared_vault_path/$scheduled_folder" \
+  "$shared_vault_path/$kanban_folder" \
+  "$shared_vault_path/$notifications_folder" \
+  "$shared_vault_path/$brain_services_folder"
+
+if [[ ! -f "$shared_vault_path/Shared Context.md" ]]; then
+  printf "# Shared Context\n\nCurrent cross-agent context for the HivemindOS vault.\n" > "$shared_vault_path/Shared Context.md"
+fi
+
 if [[ ! -f "$shared_vault_path/$scheduled_folder/README.md" ]]; then
-  cat > "$shared_vault_path/$scheduled_folder/README.md" <<'EOF'
-# Scheduled
+  cat > "$shared_vault_path/$scheduled_folder/README.md" <<EOF
+# Automations
 
 Shared schedule definitions and run history for HivemindOS agents.
 
-- `Scheduled/<device>/<schedule>/schedule.md` stores each schedule snapshot.
-- `run0001-<agent>-<timestamp>.md` files store execution history.
+- \`<device>/<schedule>/schedule.md\` stores each schedule snapshot.
+- \`run0001-<agent>-<timestamp>.md\` files store execution history.
 - Schedules can opt into injecting past run notes for continuity, anti-repetition, and comparisons.
 EOF
 fi
+
+if [[ ! -f "$shared_vault_path/$synthesis_folder/README.md" ]]; then
+  cat > "$shared_vault_path/$synthesis_folder/README.md" <<'EOF'
+# Synthesis
+
+Synto-powered reviewed knowledge layer for raw inputs, drafts, wiki articles, source trails, queries, synthesis notes, and agent packs.
+EOF
+fi
+
+if [[ ! -f "$shared_vault_path/$brain_services_folder/README.md" ]]; then
+  cat > "$shared_vault_path/$brain_services_folder/README.md" <<'EOF'
+# Brain Services
+
+Status notes for optional HivemindOS brain services. GBrain can be connected from the dashboard without storing provider secrets in the vault.
+EOF
+fi
+
+set_env_local "NEXT_PUBLIC_HIVE_GBRAIN_SURFACE_ENABLED" "true"
+if [[ ! -f "$shared_vault_path/$brain_services_folder/GBrain.md" ]]; then
+  cat > "$shared_vault_path/$brain_services_folder/GBrain.md" <<'EOF'
+---
+type: brain-service
+service: gbrain
+enabled: false
+installMode: optional
+searchMode: balanced
+providerPolicy: balanced-cloud
+mcpMode: stdio
+---
+
+# GBrain
+
+Optional HivemindOS retrieval, graph, MCP, and dream-cycle service. Install or connect it from the dashboard when ready.
+
+No provider secrets are stored in this note.
+EOF
+fi
+
+node "$ROOT/scripts/seed-vault-foundation.mjs" \
+  --vault "$shared_vault_path" \
+  --scheduled-folder "$scheduled_folder" \
+  --synthesis-folder "$synthesis_folder" \
+  --brain-services-folder "$brain_services_folder" \
+  --kanban-folder "$kanban_folder" \
+  --notifications-folder "$notifications_folder" >/dev/null
 
 install_hive_env_add
 
@@ -1540,6 +1625,13 @@ fi
 local_url="http://localhost:$PORT"
 network_url=""
 collector_url=""
+link_control_url="${HIVE_LINK_CONTROL_URL:-}"
+
+if [[ -f "$HOME/.hivemindos/collector.env" ]]; then
+  # shellcheck disable=SC1091
+  source "$HOME/.hivemindos/collector.env" >/dev/null 2>&1 || true
+  link_control_url="${HIVE_LINK_CONTROL_URL:-$link_control_url}"
+fi
 
 if [[ -n "$tailscale_ip" ]]; then
   network_url="http://$tailscale_ip:$PORT"
@@ -1559,7 +1651,7 @@ echo "Collector:"
 if [[ -n "$collector_url" ]]; then
   echo "  $collector_url"
 elif [[ "$hivemind_link_enabled" == "true" ]]; then
-  echo "  Hivemind Link: ${HIVE_LINK_CONTROL_URL:-http://127.0.0.1:8788}/status"
+  echo "  Hivemind Link: ${link_control_url:-http://127.0.0.1:8788}/status"
 else
   echo "  http://localhost:$COLLECTOR_PORT"
 fi

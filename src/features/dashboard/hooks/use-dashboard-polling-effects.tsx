@@ -1,0 +1,440 @@
+"use client";
+
+/* eslint-disable react-hooks/immutability, react-hooks/purity */
+
+import { type Dispatch, type MutableRefObject, type SetStateAction, useEffect } from "react";
+import type { SharedVaultConfig } from "@/lib/types/agent-runtime";
+import type { AgentWorkerClassView } from "@/features/dashboard/agent-settings-types";
+import type {
+  BrainSkillInventory,
+  DashboardView,
+  HiveEnvPayload,
+  KanbanBoardSummary,
+  KanbanResponse,
+  MiroSharkArchivedRun,
+  MiroSharkRunResult,
+} from "@/features/dashboard/dashboard-types";
+import type { KanbanBoard } from "@/lib/types/kanban";
+
+type KanbanStorageInfo = NonNullable<KanbanResponse["storage"]>;
+
+type UseDashboardPollingEffectsProps = {
+  activeView: DashboardView;
+  hydrated: boolean;
+  refreshMirosharkArchive: () => void | Promise<void>;
+  refreshBrainGraph: (force?: boolean) => void | Promise<void>;
+  refreshBrainSkills: () => void | Promise<void>;
+  refreshRecentDirectories: () => void | Promise<void>;
+  refreshMirosharkRun: () => void | Promise<void>;
+  sharedVault: SharedVaultConfig;
+  brainSkills: BrainSkillInventory | null | undefined;
+  brainSkillsLoading: boolean;
+  walletPanelMode: "wallets" | "usage";
+  refreshRuntimeUsage: () => void | Promise<void>;
+  refreshWalletVaultBackupStatus: () => void | Promise<void>;
+  refreshMaintenanceReport: () => void | Promise<void>;
+  refreshRuntimeFileRoots: () => void | Promise<void>;
+  hiveEnv: HiveEnvPayload | null | undefined;
+  hiveEnvLoading: boolean;
+  refreshHiveEnv: () => void | Promise<void>;
+  agentWorkerClassView: AgentWorkerClassView;
+  refreshNotifications: (options?: { append?: boolean }) => void | Promise<void>;
+  mirosharkRun: MiroSharkRunResult | null;
+  mirosharkPosts: { count: number };
+  mirosharkRunnerStatus: string | null | undefined;
+  mirosharkArchiveSaveKeyRef: MutableRefObject<string>;
+  mirosharkScenario: string;
+  setMirosharkArchiveStatus: Dispatch<SetStateAction<string>>;
+  isMiroSharkRunTerminal: (status?: string | null) => boolean;
+  mirosharkPlatform: string;
+  setMirosharkRun: Dispatch<SetStateAction<MiroSharkRunResult | null>>;
+  kanbanBoardSlug: string;
+  kanbanIncludeArchived: boolean;
+  kanbanTenantFilter: string;
+  kanbanAssigneeFilter: string;
+  kanbanSearch: string;
+  setKanbanLoading: Dispatch<SetStateAction<boolean>>;
+  setKanbanError: Dispatch<SetStateAction<string>>;
+  setKanbanBoard: Dispatch<SetStateAction<KanbanBoard | null>>;
+  setKanbanBoards: Dispatch<SetStateAction<KanbanBoardSummary[]>>;
+  setKanbanTenants: Dispatch<SetStateAction<string[]>>;
+  setKanbanAssignees: Dispatch<SetStateAction<string[]>>;
+  setKanbanStorage: Dispatch<SetStateAction<KanbanStorageInfo | null>>;
+  setSelectedKanbanTaskId: Dispatch<SetStateAction<string>>;
+};
+
+export function useDashboardPollingEffects(props: UseDashboardPollingEffectsProps) {
+  const {
+    activeView,
+    hydrated,
+    refreshMirosharkArchive,
+    refreshBrainGraph,
+    refreshBrainSkills,
+    refreshRecentDirectories,
+    refreshMirosharkRun,
+    sharedVault,
+    brainSkills,
+    brainSkillsLoading,
+    walletPanelMode,
+    refreshRuntimeUsage,
+    refreshWalletVaultBackupStatus,
+    refreshMaintenanceReport,
+    refreshRuntimeFileRoots,
+    hiveEnv,
+    hiveEnvLoading,
+    refreshHiveEnv,
+    agentWorkerClassView,
+    refreshNotifications,
+    mirosharkRun,
+    mirosharkPosts,
+    mirosharkRunnerStatus,
+    mirosharkArchiveSaveKeyRef,
+    mirosharkScenario,
+    setMirosharkArchiveStatus,
+    isMiroSharkRunTerminal,
+    mirosharkPlatform,
+    setMirosharkRun,
+    kanbanBoardSlug,
+    kanbanIncludeArchived,
+    kanbanTenantFilter,
+    kanbanAssigneeFilter,
+    kanbanSearch,
+    setKanbanLoading,
+    setKanbanError,
+    setKanbanBoard,
+    setKanbanBoards,
+    setKanbanTenants,
+    setKanbanAssignees,
+    setKanbanStorage,
+    setSelectedKanbanTaskId,
+  } = props;
+  useEffect(() => {
+    if (!hydrated || activeView !== "swarm") return;
+    const timer = window.setTimeout(() => {
+      void refreshMirosharkArchive();
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, [activeView, hydrated, refreshMirosharkArchive]);
+
+  useEffect(() => {
+    if (!hydrated || activeView !== "vault") return;
+    const timer = window.setTimeout(() => {
+      void refreshBrainGraph();
+    }, 0);
+    const skillsTimer = window.setTimeout(() => {
+      void refreshBrainSkills();
+    }, 350);
+    return () => {
+      window.clearTimeout(timer);
+      window.clearTimeout(skillsTimer);
+    };
+  }, [activeView, hydrated, refreshBrainGraph, refreshBrainSkills]);
+
+  useEffect(() => {
+    if (!hydrated || !sharedVault.enabled) return;
+    const timer = window.setTimeout(() => {
+      void refreshRecentDirectories();
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, [hydrated, refreshRecentDirectories, sharedVault.enabled]);
+
+  useEffect(() => {
+    if (!hydrated || activeView !== "scheduler" || brainSkills || brainSkillsLoading) return;
+    const timer = window.setTimeout(() => {
+      void refreshBrainSkills();
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, [activeView, brainSkills, brainSkillsLoading, hydrated, refreshBrainSkills]);
+
+  useEffect(() => {
+    if (!hydrated || activeView !== "wallet" || walletPanelMode !== "usage") return;
+    const timer = window.setTimeout(() => {
+      void refreshRuntimeUsage();
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, [activeView, hydrated, walletPanelMode]);
+
+  useEffect(() => {
+    if (!hydrated || activeView !== "wallet") return;
+    const timer = window.setTimeout(() => {
+      void refreshWalletVaultBackupStatus();
+    }, 0);
+    return () => window.clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeView, hydrated, sharedVault.enabled, sharedVault.vaultPath]);
+
+  useEffect(() => {
+    if (!hydrated || activeView !== "maintenance") return;
+    const timer = window.setTimeout(() => {
+      void refreshMaintenanceReport();
+    }, 0);
+    return () => window.clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeView, hydrated]);
+
+  useEffect(() => {
+    if (!hydrated || activeView !== "files") return;
+    const timer = window.setTimeout(() => {
+      void refreshRuntimeFileRoots();
+    }, 0);
+    return () => window.clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeView, hydrated]);
+
+  useEffect(() => {
+    if (!hydrated || activeView !== "env" || hiveEnv || hiveEnvLoading) return;
+    const timer = window.setTimeout(() => {
+      void refreshHiveEnv();
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, [activeView, hiveEnv, hiveEnvLoading, hydrated, refreshHiveEnv]);
+
+  useEffect(() => {
+    if (!hydrated || agentWorkerClassView !== "create" || brainSkills || brainSkillsLoading) return;
+    const timer = window.setTimeout(() => {
+      void refreshBrainSkills();
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, [agentWorkerClassView, brainSkills, brainSkillsLoading, hydrated, refreshBrainSkills]);
+
+  useEffect(() => {
+    if (!hydrated || !sharedVault.enabled) return;
+    let inFlight = false;
+    const refreshOnce = () => {
+      if (inFlight) return;
+      inFlight = true;
+      void Promise.resolve(refreshNotifications()).finally(() => {
+        inFlight = false;
+      });
+    };
+    const timer = window.setTimeout(() => {
+      refreshOnce();
+    }, activeView === "notifications" ? 0 : 300);
+    const interval = window.setInterval(() => {
+      refreshOnce();
+    }, 30_000);
+    return () => {
+      window.clearTimeout(timer);
+      window.clearInterval(interval);
+    };
+  }, [activeView, hydrated, refreshNotifications, sharedVault.enabled]);
+
+  useEffect(() => {
+    if (!hydrated || !sharedVault.enabled || !mirosharkRun?.simulationId || mirosharkRun.archived) return;
+    const saveKey = [
+      mirosharkRun.simulationId,
+      mirosharkPosts.count,
+      mirosharkRunnerStatus ?? mirosharkRun.status ?? "",
+      mirosharkRun.step ?? "",
+    ].join(":");
+    if (mirosharkArchiveSaveKeyRef.current === saveKey) return;
+
+    const timer = window.setTimeout(async () => {
+      const response = await fetch("/api/miroshark/runs", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          vaultPath: sharedVault.vaultPath.trim() || undefined,
+          scenario: mirosharkScenario,
+          run: mirosharkRun,
+        }),
+      }).catch(() => null);
+      const data = await response?.json().catch(() => null) as { ok?: boolean; summary?: MiroSharkArchivedRun; error?: string } | null;
+      if (data?.ok) {
+        mirosharkArchiveSaveKeyRef.current = saveKey;
+        setMirosharkArchiveStatus(`Saved ${data.summary?.postCount ?? mirosharkPosts.count} posts to Obsidian`);
+        void refreshMirosharkArchive();
+      } else {
+        setMirosharkArchiveStatus(data?.error ?? "Could not save MiroShark run to Obsidian");
+      }
+    }, 900);
+
+    return () => window.clearTimeout(timer);
+  }, [
+    hydrated,
+    mirosharkPosts.count,
+    mirosharkRunnerStatus,
+    mirosharkRun,
+    mirosharkScenario,
+    refreshMirosharkArchive,
+    sharedVault.enabled,
+    sharedVault.vaultPath,
+  ]);
+
+  useEffect(() => {
+    if (mirosharkRun?.archived || !mirosharkRun?.jobId || mirosharkRun.status === "started" || mirosharkRun.status === "failed") return;
+    let inFlight = false;
+    const refreshOnce = () => {
+      if (inFlight) return;
+      inFlight = true;
+      void Promise.resolve(refreshMirosharkRun()).finally(() => {
+        inFlight = false;
+      });
+    };
+    const timer = window.setInterval(refreshOnce, 3_000);
+    return () => window.clearInterval(timer);
+  }, [mirosharkRun?.archived, mirosharkRun?.jobId, mirosharkRun?.status, refreshMirosharkRun]);
+
+  useEffect(() => {
+    if (mirosharkRun?.archived || mirosharkRun?.status !== "started" || !mirosharkRun.simulationId || mirosharkRun.posts) return;
+    const timer = window.setTimeout(() => {
+      void refreshMirosharkRun();
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, [mirosharkRun?.archived, mirosharkRun?.posts, mirosharkRun?.simulationId, mirosharkRun?.status, refreshMirosharkRun]);
+
+  useEffect(() => {
+    if (mirosharkRun?.archived || mirosharkRun?.status !== "started" || !mirosharkRun.simulationId) return;
+    if (isMiroSharkRunTerminal(mirosharkRunnerStatus)) return;
+
+    const simulationId = mirosharkRun.simulationId;
+    const platform = mirosharkRun.platform ?? mirosharkPlatform;
+    const graphId = mirosharkRun.graphId;
+    const projectId = mirosharkRun.projectId;
+    let inFlight = false;
+    const controllers = new Set<AbortController>();
+    const pollRun = async () => {
+      if (inFlight) return;
+      inFlight = true;
+      const controller = new AbortController();
+      controllers.add(controller);
+      const params = new URLSearchParams({ simulation_id: simulationId, platform });
+      if (graphId) params.set("graph_id", graphId);
+      if (projectId) params.set("project_id", projectId);
+      const response = await fetch(`/api/miroshark/swarm?${params.toString()}`, {
+        cache: "no-store",
+        signal: controller.signal,
+      }).catch(() => null);
+      try {
+        const data = await response?.json().catch(() => null) as MiroSharkRunResult | null;
+        if (data) {
+          setMirosharkRun((current) => ({ ...(current ?? {}), ...data }));
+        }
+      } finally {
+        controllers.delete(controller);
+        inFlight = false;
+      }
+    };
+
+    const kickoff = window.setTimeout(() => {
+      void pollRun();
+    }, 250);
+    const timer = window.setInterval(() => {
+      void pollRun();
+    }, 2_000);
+    return () => {
+      controllers.forEach((controller) => controller.abort());
+      window.clearTimeout(kickoff);
+      window.clearInterval(timer);
+    };
+  }, [
+    mirosharkPlatform,
+    mirosharkRun?.archived,
+    mirosharkRun?.platform,
+    mirosharkRun?.graphId,
+    mirosharkRun?.projectId,
+    mirosharkRun?.simulationId,
+    mirosharkRun?.status,
+    mirosharkRunnerStatus,
+  ]);
+
+  useEffect(() => {
+    if (!hydrated || activeView !== "kanban") return;
+    let cancelled = false;
+    let boardRefreshInFlight = false;
+    let kanbanRefreshInFlight = false;
+    const controllers = new Set<AbortController>();
+    async function refreshKanbanBoards() {
+      if (boardRefreshInFlight) return;
+      boardRefreshInFlight = true;
+      const controller = new AbortController();
+      controllers.add(controller);
+      const params = new URLSearchParams({ board: kanbanBoardSlug, boards_only: "true" });
+      if (sharedVault.enabled) {
+        if (sharedVault.vaultPath.trim()) params.set("vaultPath", sharedVault.vaultPath.trim());
+        if (sharedVault.kanbanFolder?.trim()) params.set("kanbanFolder", sharedVault.kanbanFolder.trim());
+      }
+      const response = await fetch(`/api/kanban?${params.toString()}`, {
+        cache: "no-store",
+        signal: controller.signal,
+      }).catch(() => null);
+      try {
+        const data = await response?.json().catch(() => null) as KanbanResponse | null;
+        if (cancelled || !data?.ok) return;
+        setKanbanBoards(data.boards ?? []);
+        setKanbanStorage(data.storage ?? null);
+      } finally {
+        controllers.delete(controller);
+        boardRefreshInFlight = false;
+      }
+    }
+    async function refreshKanban() {
+      if (kanbanRefreshInFlight) return;
+      kanbanRefreshInFlight = true;
+      const controller = new AbortController();
+      controllers.add(controller);
+      setKanbanLoading(true);
+      const params = new URLSearchParams({
+        board: kanbanBoardSlug,
+        include_archived: String(kanbanIncludeArchived),
+        include_boards: "false",
+      });
+      if (sharedVault.enabled) {
+        if (sharedVault.vaultPath.trim()) params.set("vaultPath", sharedVault.vaultPath.trim());
+        if (sharedVault.kanbanFolder?.trim()) params.set("kanbanFolder", sharedVault.kanbanFolder.trim());
+      }
+      if (kanbanTenantFilter) params.set("tenant", kanbanTenantFilter);
+      if (kanbanAssigneeFilter) params.set("assignee", kanbanAssigneeFilter);
+      if (kanbanSearch) params.set("q", kanbanSearch);
+      const response = await fetch(`/api/kanban?${params.toString()}`, {
+        cache: "no-store",
+        signal: controller.signal,
+      }).catch(() => null);
+      try {
+        const data = await response?.json().catch(() => null) as KanbanResponse | null;
+        if (cancelled) return;
+        if (!data?.ok || !data.board) {
+          setKanbanError(data?.error ?? "Kanban board is unavailable.");
+          setKanbanLoading(false);
+          return;
+        }
+        setKanbanError("");
+        setKanbanBoard(data.board);
+        if (data.boards) setKanbanBoards(data.boards);
+        setKanbanTenants(data.tenants ?? []);
+        setKanbanAssignees(data.assignees ?? []);
+        setKanbanStorage(data.storage ?? null);
+        setSelectedKanbanTaskId((current) => (
+          current && data.board?.tasks.some((task) => task.id === current) ? current : data.board?.tasks[0]?.id ?? ""
+        ));
+        setKanbanLoading(false);
+      } finally {
+        controllers.delete(controller);
+        kanbanRefreshInFlight = false;
+      }
+    }
+    refreshKanban();
+    refreshKanbanBoards();
+    const timer = window.setInterval(refreshKanban, 12_000);
+    const boardsTimer = window.setInterval(refreshKanbanBoards, 60_000);
+    return () => {
+      cancelled = true;
+      controllers.forEach((controller) => controller.abort());
+      window.clearInterval(timer);
+      window.clearInterval(boardsTimer);
+    };
+  }, [
+    kanbanBoardSlug,
+    kanbanIncludeArchived,
+    kanbanTenantFilter,
+    kanbanAssigneeFilter,
+    kanbanSearch,
+    activeView,
+    hydrated,
+    sharedVault.enabled,
+    sharedVault.kanbanFolder,
+    sharedVault.vaultPath,
+  ]);
+
+  return undefined;
+}

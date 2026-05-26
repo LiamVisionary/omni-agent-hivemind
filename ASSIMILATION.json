@@ -1,5 +1,5 @@
 {
-  "created_at": "2026-05-23T07:26:09.641977+00:00",
+  "created_at": "2026-05-25T11:21:09.005960+00:00",
   "custom_code_assessment": "balanced",
   "entries": [
     {
@@ -274,27 +274,6 @@
       "target_path": "src/lib/services/runtime-adapters/aeon.ts",
       "reuse_type": "adapted_code",
       "note": "A2A agent card skill discovery model adapted for optional local Aeon direct skill surfaces"
-    },
-    {
-      "source_repo": "duhman/volterra-web",
-      "source_path": "remotion/Root.tsx",
-      "target_path": "remotion/Root.tsx",
-      "reuse_type": "adapted_code",
-      "note": "Remotion root and composition registration shape adapted for the Hivemind showcase composition"
-    },
-    {
-      "source_repo": "duhman/volterra-web",
-      "source_path": "remotion/Composition.tsx",
-      "target_path": "remotion/Showcase.tsx",
-      "reuse_type": "adapted_code",
-      "note": "Simple full-frame composition pattern adapted to render the captured dashboard walkthrough as the video source"
-    },
-    {
-      "source_repo": "duhman/volterra-web",
-      "source_path": "scripts/capture-remotion-assets.ts",
-      "target_path": "scripts/capture-remotion-showcase.mjs",
-      "reuse_type": "adapted_code",
-      "note": "Playwright capture workflow adapted from static screenshots to a scripted browser recording of the real dashboard UI"
     },
     {
       "source_repo": "TarunGoyalDev/rewards-calculation-dashboard",
@@ -631,6 +610,230 @@
       "target_path": "cmd/hivemind-linkd/main.go",
       "reuse_type": "adapted_code",
       "note": "embedded tsnet Start/LocalClient lifecycle, auth URL status handling, and peer status shape adapted for the Link sidecar control API"
+    },
+    {
+      "source_repo": "nousresearch/hermes-agent",
+      "source_path": "hermes_cli/kanban_db.py",
+      "target_path": "src/lib/types/kanban.ts",
+      "reuse_type": "translated_code",
+      "note": "task_runs schema concepts translated into KanbanTaskRun, claim fields, heartbeat fields, and event payload/run references"
+    },
+    {
+      "source_repo": "nousresearch/hermes-agent",
+      "source_path": "hermes_cli/kanban_db.py",
+      "target_path": "src/lib/services/kanban/local-kanban-store.ts",
+      "reuse_type": "translated_code",
+      "note": "task run lifecycle, claim, heartbeat, complete/block, reclaim, and dependency promotion mechanics translated from SQLite/Python into HivemindOS JSON/TypeScript storage"
+    },
+    {
+      "source_repo": "nousresearch/hermes-agent",
+      "source_path": "tools/kanban_tools.py",
+      "target_path": "src/app/api/kanban/route.ts",
+      "reuse_type": "translated_code",
+      "note": "structured kanban worker verbs exposed as runtime-agnostic dashboard API actions"
+    },
+    {
+      "source_repo": "nousresearch/hermes-agent",
+      "source_path": "website/docs/user-guide/features/kanban.md",
+      "target_path": "src/app/page.tsx",
+      "reuse_type": "translated_code",
+      "note": "dashboard multi-select bulk actions and triage specify/decompose actions translated into the existing Work board controls"
+    },
+    {
+      "source_repo": "nousresearch/hermes-agent",
+      "source_path": "tests/hermes_cli/test_kanban_promote.py",
+      "target_path": "scripts/test-kanban-workflow.mjs",
+      "reuse_type": "test_adapted",
+      "note": "dependency promotion and bulk partial workflow coverage adapted into the existing API smoke test"
+    },
+    {
+      "source_repo": "nousresearch/hermes-agent",
+      "source_path": "tests/plugins/test_kanban_worker_runs.py",
+      "target_path": "scripts/test-kanban-workflow.mjs",
+      "reuse_type": "test_adapted",
+      "note": "task run claim/heartbeat/complete smoke coverage adapted for HivemindOS"
+    },
+    {
+      "source_repo": "elastic/llm-debug-proxy",
+      "source_path": "src/formatters.ts",
+      "target_path": "src/app/api/chat/agent-runtime/route.ts",
+      "reuse_type": "adapted_code",
+      "note": "OpenAI SSE data-line parsing and chunk content extraction adapted for local OpenAI-compatible runtime streaming"
+    },
+    {
+      "source_repo": "dandibbert/kurishiro-api-worker",
+      "source_path": "src/index.ts",
+      "target_path": "src/app/api/chat/agent-runtime/route.ts",
+      "reuse_type": "adapted_code",
+      "note": "ReadableStream text/event-stream response framing adapted for dashboard SSE forwarding"
+    },
+    {
+      "source_repo": "Loongphy/fal-openai-cf-proxy",
+      "source_path": "src/index.ts",
+      "target_path": "src/lib/services/runtime-adapters/openai-compatible.ts",
+      "reuse_type": "adapted_code",
+      "note": "/v1/models model-list response shape adapted into runtime model discovery status"
+    },
+    {
+      "source_repo": "NangoHQ/nango",
+      "source_path": "packages/node-client/lib/utils.ts",
+      "target_path": "src/lib/services/integrations/nango-client.ts",
+      "reuse_type": "adapted_code",
+      "note": "Proxy configuration validation, query parameter application, and user-agent construction adapted for HivemindOS Nango requests"
+    },
+    {
+      "source_repo": "NangoHQ/nango",
+      "source_path": "packages/node-client/lib/index.ts",
+      "target_path": "src/lib/services/integrations/nango-client.ts",
+      "reuse_type": "adapted_code",
+      "note": "Nango host normalization, bearer-header enrichment, connections listing, and proxy endpoint conventions adapted into a fetch-based local helper"
+    },
+    {
+      "source_repo": "NangoHQ/nango",
+      "source_path": "packages/server/lib/routes.ts",
+      "target_path": "src/lib/services/integrations/nango-client.ts",
+      "reuse_type": "adapted_code",
+      "note": "Unauthenticated /health route contract adapted for the integration host readiness check"
+    },
+    {
+      "source_repo": "NangoHQ/nango",
+      "source_path": ".env.example",
+      "target_path": "src/lib/services/integrations/nango-host.ts",
+      "reuse_type": "config_adapted",
+      "note": "Self-hosted SERVER_PORT and NANGO_SERVER_URL settings adapted into the remote setup script"
+    },
+    {
+      "source_repo": "garrytan/gbrain",
+      "source_path": "src/commands/init-mode-picker.ts",
+      "target_path": "src/lib/types/agent-runtime.ts",
+      "reuse_type": "adapted_code",
+      "note": "Balanced, conservative, and tokenmax search-mode semantics adapted into optional HivemindOS GBrain config defaults"
+    },
+    {
+      "source_repo": "garrytan/gbrain",
+      "source_path": "src/commands/features.ts",
+      "target_path": "src/lib/services/brain/gbrain.ts",
+      "reuse_type": "adapted_code",
+      "note": "Doctor, feature recommendation, stale embedding, link extraction, and timeline health concepts adapted into the GBrain status and action service"
+    },
+    {
+      "source_repo": "garrytan/gbrain",
+      "source_path": "src/commands/serve.ts",
+      "target_path": "src/lib/services/brain/gbrain.ts",
+      "reuse_type": "adapted_code",
+      "note": "GBrain MCP stdio/http command shape adapted into dashboard service status without starting a server automatically"
+    },
+    {
+      "source_repo": "garrytan/gbrain",
+      "source_path": "src/commands/skillpack.ts",
+      "target_path": "src/lib/services/brain/gbrain.ts",
+      "reuse_type": "adapted_code",
+      "note": "Skillpack scaffold/list workflow adapted into a namespaced shared-vault GBrain skill importer"
+    },
+    {
+      "source_repo": "garrytan/gbrain",
+      "source_path": "INSTALL_FOR_AGENTS.md",
+      "target_path": "src/app/api/brain/gbrain/install/route.ts",
+      "reuse_type": "adapted_code",
+      "note": "Agent install flow adapted into explicit dashboard-triggered install/connect/import/embed steps"
+    },
+    {
+      "source_repo": "punkpeye/mcp-proxy",
+      "source_path": "src/startHTTPServer.ts",
+      "target_path": "src/lib/services/brain/gbrain.ts",
+      "reuse_type": "adapted_code",
+      "note": "MCP transport separation concept adapted into GBrain stdio/http status metadata and non-secret configuration"
+    },
+    {
+      "source_repo": "fenastan/second-brain-starterkit",
+      "source_path": "4. Resources/Cron-Job-Schedule.md",
+      "target_path": "scripts/seed-vault-foundation.mjs",
+      "reuse_type": "adapted_code",
+      "note": "Staggered daily, weekly, and queue-style vault automation cadence adapted into disabled HivemindOS Foundation workflow templates"
+    },
+    {
+      "source_repo": "fenastan/second-brain-starterkit",
+      "source_path": "4. Resources/Skills/vault-synthesis.md",
+      "target_path": "scripts/seed-vault-foundation.mjs",
+      "reuse_type": "adapted_code",
+      "note": "Weekly cross-vault synthesis sections adapted to HivemindOS Memory, Projects, Synthesis, and Work Board outputs"
+    },
+    {
+      "source_repo": "fenastan/second-brain-starterkit",
+      "source_path": "4. Resources/Skills/inbox-auto.md",
+      "target_path": "scripts/seed-vault-foundation.mjs",
+      "reuse_type": "adapted_code",
+      "note": "Inbox processing and no-delete-before-save safety pattern adapted into Intake/Requests queue processing"
+    },
+    {
+      "source_repo": "fenastan/second-brain-starterkit",
+      "source_path": "4. Resources/Skills/vault-linker.md",
+      "target_path": "scripts/seed-vault-foundation.mjs",
+      "reuse_type": "adapted_code",
+      "note": "Changed-note linking and review-first connection discovery adapted into the HivemindOS Connection Finder template"
+    },
+    {
+      "source_repo": "wizzy15/obsidian-skill",
+      "source_path": "references/daily-tasks-templates.md",
+      "target_path": "scripts/seed-vault-foundation.mjs",
+      "reuse_type": "adapted_code",
+      "note": "Daily note, task, and template operational conventions adapted into Daily Context and Project Auto-Updater workflow prompts"
+    },
+    {
+      "source_repo": "nousresearch/hermes-agent",
+      "source_path": "hermes_cli/commands.py",
+      "target_path": "src/features/chat/chat-composer.tsx",
+      "reuse_type": "adapted_code",
+      "note": "Central COMMAND_REGISTRY names, categories, aliases, argument hints, and CLI/gateway availability adapted into the dashboard Hermes slash command picker"
+    },
+    {
+      "source_repo": "nousresearch/hermes-agent",
+      "source_path": "website/docs/reference/slash-commands.md",
+      "target_path": "src/features/chat/chat-composer.tsx",
+      "reuse_type": "adapted_code",
+      "note": "Slash command reference descriptions and dynamic skill command coverage adapted into user-facing picker copy"
+    },
+    {
+      "source_repo": "nousresearch/hermes-agent",
+      "source_path": "ui-tui/src/domain/slash.ts",
+      "target_path": "src/features/chat/chat-composer.tsx",
+      "reuse_type": "adapted_code",
+      "note": "Hermes slash-token detection behavior adapted into the dashboard composer trigger and filter flow"
+    },
+    {
+      "source_repo": "local/claw-code-mobile-private",
+      "source_path": "app/thread/[id].tsx",
+      "target_path": "src/features/chat/chat-composer.tsx",
+      "reuse_type": "adapted_code",
+      "note": "Thinking indicator cycling phrase cadence, phrase set style, per-letter bounce, and pulsing dots adapted into the web chat response loader"
+    },
+    {
+      "source_repo": "local/claw-code-mobile-private",
+      "source_path": "components/ui/ThinkingSprite.tsx",
+      "target_path": "src/features/chat/chat-composer.tsx",
+      "reuse_type": "adapted_code",
+      "note": "Compact animated thinking-sprite role adapted to use HivemindOS' existing Honey bee Lottie asset beside the chat loading label"
+    },
+    {
+      "source_repo": "amy-juan-li/example-nextjs-markdown-editor",
+      "source_path": "pages/index.tsx",
+      "target_path": "src/features/dashboard/views/chat/SkillBrowserModal.tsx",
+      "reuse_type": "adapted_code",
+      "note": "markdown editor mode state/action layout adapted into the Skill Browser modal"
+    },
+    {
+      "source_repo": "amy-juan-li/example-nextjs-markdown-editor",
+      "source_path": "components/editor.tsx",
+      "target_path": "src/features/dashboard/views/chat/SkillBrowserModal.tsx",
+      "reuse_type": "adapted_code",
+      "note": "editor input contract adapted into the modal markdown textarea"
+    },
+    {
+      "source_repo": "amy-juan-li/example-nextjs-markdown-editor",
+      "source_path": "components/use-codemirror.tsx",
+      "target_path": "src/app/fleet.module.css",
+      "reuse_type": "adapted_code",
+      "note": "markdown editor focus and scrollable editing surface adapted into local CSS without adding CodeMirror dependency"
     }
   ]
 }

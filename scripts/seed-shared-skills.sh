@@ -229,7 +229,9 @@ write_managed_block() {
     printf "%s\n" "- Vault: \`$vault_path\`"
     printf "%s\n" "- Skills index: \`$skills_folder/README.md\`"
     printf "%s\n\n" "- Skill files: \`$skills_folder/<slug>/SKILL.md\`"
-    printf "Before using a shared skill, read \`%s/README.md\` for the index, then read the relevant \`SKILL.md\`. The bundled baseline skill is \`karpathy-guidelines\`.\n" "$skills_folder"
+    printf "Before using a shared skill, read \`%s/README.md\` for the index, then read the relevant \`SKILL.md\`. The bundled baseline skill is \`karpathy-guidelines\`.\n\n" "$skills_folder"
+    printf "## Shared Hive Env\n\n"
+    printf "Shared credentials live in \`~/.hivemindos/.env\`. Use \`hive-env-check KEY\` to verify presence and \`hive-env-run -- <command>\` to run tools/apps with the shared env loaded. Do not read, print, summarize, or copy secret values; refer to credentials by variable name only. When making a project consume shared credentials, load the \`shared-hive-env\` skill and default project runtime loading to \`~/.hivemindos/.env\` without persisting secrets into project files.\n"
     printf "%s\n" "$end"
   } > "$file"
 

@@ -15,6 +15,9 @@ type UpdateBody = {
   expectedCommit?: string;
   requiredCapabilities?: {
     chat?: boolean;
+    envHttpSync?: boolean;
+    skillInventory?: boolean;
+    skillAutoSync?: boolean;
   };
 };
 
@@ -22,6 +25,9 @@ type CollectorHealth = {
   ok?: boolean;
   capabilities?: {
     chat?: boolean;
+    envHttpSync?: boolean;
+    skillInventory?: boolean;
+    skillAutoSync?: boolean;
     runtimes?: string[];
   };
   version?: {
@@ -49,8 +55,11 @@ async function fetchCollectorHealth(collectorUrl?: string): Promise<CollectorHea
 }
 
 function hasRequiredCapabilities(health: CollectorHealth | null, required?: UpdateBody["requiredCapabilities"]) {
-  if (!required?.chat) return true;
-  return health?.capabilities?.chat === true;
+  if (required?.chat && health?.capabilities?.chat !== true) return false;
+  if (required?.envHttpSync && health?.capabilities?.envHttpSync !== true) return false;
+  if (required?.skillInventory && health?.capabilities?.skillInventory !== true) return false;
+  if (required?.skillAutoSync && health?.capabilities?.skillAutoSync !== true) return false;
+  return true;
 }
 
 function hasExpectedVersion(health: CollectorHealth | null, expectedCommit?: string) {
@@ -63,7 +72,13 @@ function hasExpectedVersion(health: CollectorHealth | null, expectedCommit?: str
 }
 
 function hasVerificationTarget(body: UpdateBody) {
-  return Boolean(body.expectedCommit?.trim() || body.requiredCapabilities?.chat);
+  return Boolean(
+    body.expectedCommit?.trim()
+    || body.requiredCapabilities?.chat
+    || body.requiredCapabilities?.envHttpSync
+    || body.requiredCapabilities?.skillInventory
+    || body.requiredCapabilities?.skillAutoSync
+  );
 }
 
 async function updateBodyWithTarget(body: UpdateBody): Promise<UpdateBody> {
@@ -81,11 +96,14 @@ function verificationError(body: UpdateBody, health: CollectorHealth | null) {
   if (body.expectedCommit?.trim() && health?.version?.commit !== body.expectedCommit.trim()) {
     const current = health?.version?.shortCommit || health?.version?.commit?.slice(0, 7) || "unknown";
     const expected = health?.version?.latestShortCommit || body.expectedCommit.trim().slice(0, 7);
-    return `The update started, but this collector still reports ${current} instead of ${expected}. It may still be building, or the remote update failed.`;
+    return `The update started, but this agent bridge still reports ${current} instead of ${expected}. It may still be building, or the remote update failed.`;
   }
-  if (body.requiredCapabilities?.chat) return "The update command finished, but the collector still does not report the Hermes chat bridge.";
+  if (body.requiredCapabilities?.chat && health?.capabilities?.chat !== true) return "The update command finished, but the agent bridge still does not report the Hermes chat bridge.";
+  if (body.requiredCapabilities?.envHttpSync && health?.capabilities?.envHttpSync !== true) return "The update command finished, but the agent bridge still does not report the shared-env sync endpoint.";
+  if (body.requiredCapabilities?.skillInventory && health?.capabilities?.skillInventory !== true) return "The update command finished, but the agent bridge still does not report the skill inventory endpoint.";
+  if (body.requiredCapabilities?.skillAutoSync && health?.capabilities?.skillAutoSync !== true) return "The update command finished, but the agent bridge still does not report skill auto-sync.";
   if (!body.expectedCommit?.trim()) return "The update request did not include or expose a target commit to verify.";
-  return "The update command finished, but collector verification did not pass.";
+  return "The update command finished, but agent bridge verification did not pass.";
 }
 
 async function waitForCollectorVerification(body: UpdateBody) {
@@ -107,7 +125,7 @@ async function waitForCollectorVerification(body: UpdateBody) {
 
 async function startCollectorUpdate(collectorUrl?: string) {
   const base = collectorBase(collectorUrl);
-  if (!base) throw new Error("No collector URL was provided.");
+  if (!base) throw new Error("No agent bridge URL was provided.");
   const response = await fetch(`${base}/update`, {
     method: "POST",
     signal: AbortSignal.timeout(8_000),
@@ -115,9 +133,14 @@ async function startCollectorUpdate(collectorUrl?: string) {
   });
   const payload = await response.json().catch(() => null);
   if (!response.ok || payload?.ok === false) {
-    throw new Error(payload?.error ?? `collector update returned HTTP ${response.status}`);
+    throw new Error(payload?.error ?? `agent bridge update returned HTTP ${response.status}`);
   }
   return payload ?? { ok: true, accepted: true };
+}
+
+async function tryCollectorUpdate(body: UpdateBody) {
+  const result = await startCollectorUpdate(body.collectorUrl);
+  return { ok: true, accepted: true, method: "collector", result };
 }
 
 function shellSingleQuote(value: string) {
@@ -354,15 +377,19 @@ export async function POST(request: Request) {
   const parsedBody = await request.json().catch(() => ({})) as UpdateBody;
   const body = await updateBodyWithTarget(parsedBody);
   try {
-    const result = await (await isLocalCheckout(body.appDir) ? tryLocalShell(body) : tryTailscaleSsh(body));
+    const result = await (await isLocalCheckout(body.appDir)
+      ? tryLocalShell(body)
+      : body.collectorUrl
+        ? tryCollectorUpdate(body)
+        : tryTailscaleSsh(body));
     const verification = await waitForCollectorVerification(body);
     if (!verification.verified) {
       return Response.json({
         ok: false,
         error: verificationError(body, verification.health),
         method: result.method,
-        stdout: result.stdout,
-        stderr: result.stderr,
+        stdout: "stdout" in result ? result.stdout : undefined,
+        stderr: "stderr" in result ? result.stderr : undefined,
         health: verification.health,
         fallbackCommand: fallbackScript(body.appDir, false),
       }, { status: 502 });
@@ -376,44 +403,6 @@ export async function POST(request: Request) {
         error: rawError,
         fallbackCommand: fallbackScript(body.appDir, false),
       }, { status: 502 });
-    }
-    if (body.collectorUrl) {
-      try {
-        const collectorResult = await startCollectorUpdate(body.collectorUrl);
-        const verification = await waitForCollectorVerification(body);
-        if (verification.verified) {
-          return Response.json({
-            ok: true,
-            accepted: true,
-            method: "collector-fallback",
-            result: collectorResult,
-            verified: true,
-            health: verification.health,
-            stderr: rawError,
-          });
-        }
-        return Response.json({
-          ok: false,
-          error: combineOutput(
-            "SSH is not available for this machine, so the collector fallback started the update, but verification did not pass before the timeout.",
-            verificationError(body, verification.health),
-          ),
-          method: "collector-fallback",
-          sshError: rawError,
-          result: collectorResult,
-          health: verification.health,
-          fallbackCommand: fallbackScript(body.appDir, false),
-        }, { status: 502 });
-      } catch (collectorError) {
-        return Response.json({
-          ok: false,
-          error: combineOutput(
-            rawError,
-            `Collector fallback failed:\n${collectorError instanceof Error ? collectorError.message : String(collectorError)}`,
-          ),
-          fallbackCommand: fallbackScript(body.appDir, false),
-        }, { status: 502 });
-      }
     }
     return Response.json({
       ok: false,

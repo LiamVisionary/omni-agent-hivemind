@@ -1,7 +1,8 @@
 // src/components/fleet/footers.tsx
 "use client";
 
-import { Copy, MessageSquare, Monitor, Settings2, Smartphone, Trash2, Wallet, X } from "lucide-react";
+import { Copy, MessageSquare, Monitor, Settings2, Smartphone, Trash2, Wallet } from "lucide-react";
+import { CloseIconButton } from "@/components/ui/close-icon-button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { BeeIcon } from "./bee-icon";
 import { HexTile } from "./hex-tile";
@@ -111,18 +112,15 @@ export function AgentFooter({
     >
       <Tooltip>
         <TooltipTrigger asChild>
-          <button
+          <CloseIconButton
             onClick={onClear}
             aria-label="Back to machine"
             className="absolute grid place-items-center"
             style={{
-              top: 8, right: 8, width: 24, height: 24,
-              border: "1px solid transparent", borderRadius: 6,
+              top: 8, right: 8,
               background: "transparent", color: "var(--muted)", cursor: "pointer",
             }}
-          >
-            <X size={14} />
-          </button>
+          />
         </TooltipTrigger>
         <TooltipContent>Back to machine</TooltipContent>
       </Tooltip>

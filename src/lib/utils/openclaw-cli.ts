@@ -98,7 +98,7 @@ async function ensureWsConnection(): Promise<void> {
               scopes: ['operator.read', 'operator.write', 'operator.admin'],
               caps: [], commands: [], permissions: {},
               auth: { token: params.token },
-              locale: 'en-US', userAgent: 'ami-companion/1.0.0',
+              locale: 'en-US', userAgent: 'hivemind-os/1.0.0',
             },
           }));
         });

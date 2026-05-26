@@ -11,7 +11,7 @@ import { proxyInput, proxyOutput } from "@/lib/services/agent-security-proxy";
 import type { AgentWalletConfig } from "@/lib/types/agent-wallet";
 import { summarizeX402Policy } from "@/lib/services/wallet/x402-agent-fetch";
 import { getRuntimeAdapter } from "@/lib/services/runtime-adapters/registry";
-import { getHoneyWorkspaceId, recordHoneyUsage } from "@/lib/services/wallet/honey-ledger";
+import { recordHoneyUsage } from "@/lib/services/wallet/honey-ledger";
 import { recordTelemetryBatch } from "@/lib/services/telemetry/local-telemetry";
 import { normalizeRuntimeStreamEvent, RUNTIME_STREAM_EVENT_TYPES } from "@/lib/services/runtime-stream-events";
 
@@ -77,8 +77,14 @@ function recordRuntimeTelemetry(telemetry: RuntimeRouteTelemetry | undefined, ty
   });
 }
 
+function userFacingMachineName(profile: AgentProfile) {
+  const name = profile.machineName?.trim();
+  if (!name || /^this machine$/i.test(name)) return "This Mac";
+  return name;
+}
+
 function interactiveRuntimeLockKey(profile: AgentProfile, url: string) {
-  if (profile.runtime !== "hermes") return "";
+  if (profile.runtime !== "hermes" && profile.runtime !== "openai-compatible") return "";
   if ((profile.runtimeKind ?? "interactive") !== "interactive") return "";
   return url;
 }
@@ -181,6 +187,31 @@ function buildWalletToolContext(wallet?: AgentWalletConfig): string {
   return lines.join("\n");
 }
 
+function buildAgentProfileContext(profile: AgentProfile): string {
+  const lines = [
+    "Agent profile context:",
+    `- Name: ${profile.name || profile.id}`,
+    `- Runtime: ${profile.runtime}`,
+    profile.machineName ? `- Machine: ${profile.machineName}` : "",
+    profile.beeRole ? `- Bee role: ${profile.beeRole}` : "",
+    profile.workerClass ? `- Worker class: ${profile.workerClass}` : "",
+    profile.provider || profile.model ? `- Preferred model: ${[profile.provider, profile.model].filter(Boolean).join("/")}` : "",
+    profile.skillProfilePrompt?.trim() ? `- Role instructions: ${profile.skillProfilePrompt.trim()}` : "",
+    profile.preferredSkillSlugs?.length ? `- Preferred skills: ${profile.preferredSkillSlugs.join(", ")}` : "",
+    "- HivemindOS chat bridge: do not use terminal-only interactive clarification prompts. If a question is unavoidable, emit or return a concise question with explicit choices so the dashboard can render it, otherwise make a reasonable assumption and continue.",
+  ].filter(Boolean);
+  return lines.length > 2 ? lines.join("\n") : "";
+}
+
+function safeAgentEnv(value: unknown): Record<string, string> | undefined {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
+  const env: Record<string, string> = {};
+  for (const [key, entry] of Object.entries(value as Record<string, unknown>)) {
+    if (/^[A-Za-z_][A-Za-z0-9_]*$/.test(key) && typeof entry === "string") env[key] = entry;
+  }
+  return Object.keys(env).length ? env : undefined;
+}
+
 function extractUserText(messages: IncomingMessage[]): string {
   const lastUserMessage = [...messages].reverse().find((message) => message.role === "user");
   if (!lastUserMessage) return "";
@@ -232,6 +263,12 @@ function streamEventForPayload(payload: unknown) {
   if (record.status && typeof record.status === "object") {
     return normalizeRuntimeStreamEvent({ type: "chat.status", ...(record.status as Record<string, unknown>) });
   }
+  if (record.clarify && typeof record.clarify === "object") {
+    return normalizeRuntimeStreamEvent({ type: RUNTIME_STREAM_EVENT_TYPES.CLARIFY, ...(record.clarify as Record<string, unknown>) });
+  }
+  if (record.prompt && typeof record.prompt === "object") {
+    return normalizeRuntimeStreamEvent({ type: RUNTIME_STREAM_EVENT_TYPES.CLARIFY, ...(record.prompt as Record<string, unknown>) });
+  }
   if (record.session && typeof record.session === "object") {
     return normalizeRuntimeStreamEvent({ type: RUNTIME_STREAM_EVENT_TYPES.SESSION, ...(record.session as Record<string, unknown>) });
   }
@@ -267,6 +304,20 @@ function extractChunk(payload: unknown): string {
   );
 }
 
+function isOpenAICompatibleRuntime(profile: AgentProfile) {
+  return profile.runtime === "openai-compatible";
+}
+
+function buildOpenAICompatibleUrl(profile: AgentProfile) {
+  const base = profile.gatewayUrl.trim().replace(/\/+$/, "");
+  const suffix = profile.chatPath?.trim() || "/v1/chat/completions";
+  return `${base}${suffix.startsWith("/") ? suffix : `/${suffix}`}`;
+}
+
+function openAICompatibleModel(profile: AgentProfile) {
+  return profile.model?.trim() || process.env.LOCAL_OPENAI_MODEL?.trim() || process.env.NEXT_PUBLIC_LOCAL_OPENAI_MODEL?.trim() || "local-model";
+}
+
 async function recordChatHoney(profile: AgentProfile, inputText: string, outputText: string, enabled: boolean, source: "chat" | "kanban-chat" = "chat") {
   if (!enabled) return null;
   if (!outputText.trim()) return null;
@@ -285,7 +336,7 @@ function validateHttpRuntimeProfile(profile: AgentProfile): string | null {
   const gatewayUrl = profile.gatewayUrl?.trim();
   if (!gatewayUrl) {
     return profile.telemetryUrl
-      ? "This discovered agent is connected through the read-only telemetry collector. Add a runtime chat URL before sending messages."
+      ? "This discovered agent is connected through a local agent bridge. Add a runtime chat URL before sending messages."
       : "Missing runtime chat URL.";
   }
 
@@ -303,6 +354,9 @@ function validateHttpRuntimeProfile(profile: AgentProfile): string | null {
 
 function runtimeFetchError(profile: AgentProfile, url: string, error: unknown) {
   const reason = error instanceof Error ? error.message : "Runtime did not respond";
+  if (profile.runtime === "hermes" && profile.telemetryUrl?.trim() && /fetch failed/i.test(reason)) {
+    return `${profile.name || "This agent"} is connected through ${userFacingMachineName(profile)}, but the local agent bridge did not respond. Try again in a moment.`;
+  }
   if (error instanceof Error && error.name === "TimeoutError") {
     return `${profile.name || profile.runtime} accepted the chat connection at ${url}, but the delegated work did not produce a response before the dashboard timeout. The runtime may still be working; check the agent activity before retrying. (${reason})`;
   }
@@ -310,6 +364,15 @@ function runtimeFetchError(profile: AgentProfile, url: string, error: unknown) {
     return `${profile.name || profile.runtime} chat request was interrupted at ${url}. The runtime may still be working; check the agent activity before retrying. (${reason})`;
   }
   return `${profile.name || profile.runtime} is not reachable at ${url}. Check that the ${profile.runtime} runtime is running and that the chat URL is correct. (${reason})`;
+}
+
+function runtimeStreamErrorMessage(profile: AgentProfile, error: unknown) {
+  const reason = error instanceof Error ? error.message : "";
+  const aborted = error instanceof Error && error.name === "AbortError";
+  if (aborted || /^(terminated|aborted)$/i.test(reason)) {
+    return `Connection to ${profile.name || profile.runtime} closed before a final response arrived. The local agent bridge may have restarted or the stream was interrupted; retry the message.`;
+  }
+  return reason || "Runtime stream failed";
 }
 
 function collectorChatProfile(profile: AgentProfile): AgentProfile | null {
@@ -320,53 +383,6 @@ function collectorChatProfile(profile: AgentProfile): AgentProfile | null {
     gatewayUrl: profile.telemetryUrl,
     chatPath: "/chat",
   };
-}
-
-async function streamTrustedComputeGateway(
-  profile: AgentProfile,
-  modelMessages: IncomingMessage[],
-) {
-  const gatewayUrl = process.env.HONEY_COMPUTE_GATEWAY_URL?.trim().replace(/\/+$/, "");
-  if (!gatewayUrl) {
-    return Response.json({
-      error: "Honey rewards need the official HivemindOS compute gateway before this call can earn official Honey.",
-    }, { status: 503 });
-  }
-
-  let upstream: Response;
-  try {
-    upstream = await fetch(`${gatewayUrl}/chat`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        workspaceId: await getHoneyWorkspaceId(),
-        agentId: profile.id,
-        agentName: profile.name,
-        runtime: profile.runtime,
-        bankrLlmKey: process.env.BANKR_LLM_KEY?.trim() || process.env.BANKR_API_KEY?.trim() || "",
-        messages: modelMessages,
-      }),
-      signal: AbortSignal.timeout(RUNTIME_FETCH_TIMEOUT_MS),
-    });
-  } catch (error) {
-    return Response.json({
-      error: runtimeFetchError(profile, gatewayUrl, error),
-    }, { status: 502 });
-  }
-
-  if (!upstream.body) {
-    const data = await upstream.json().catch(() => null) as { error?: string } | null;
-    return Response.json({ error: data?.error ?? "Trusted compute gateway returned an empty response." }, { status: upstream.status || 502 });
-  }
-
-  return new Response(upstream.body, {
-    status: upstream.status,
-    headers: {
-      "Content-Type": upstream.headers.get("content-type") ?? "text/event-stream",
-      "Cache-Control": "no-cache",
-      Connection: "keep-alive",
-    },
-  });
 }
 
 async function streamHttpRuntime(
@@ -384,6 +400,9 @@ async function streamHttpRuntime(
   if (inputCheck.verdict === "block") {
     return Response.json({ error: inputCheck.reason ?? "Message blocked by security policy" }, { status: 400 });
   }
+  if (isOpenAICompatibleRuntime(profile)) {
+    return streamOpenAICompatibleRuntime(profile, messages, userText, sharedVault, workingDirectory, wallet, honeyLedgerEnabled, telemetry);
+  }
   const url = getRuntimeUrl(profile, profile.chatPath || "/chat");
   const lockKey = interactiveRuntimeLockKey(profile, url);
   if (!reserveInteractiveRuntime(lockKey)) {
@@ -396,13 +415,12 @@ async function streamHttpRuntime(
   }
   const vaultContext = buildVaultContext(sharedVault);
   const walletContext = buildWalletToolContext(wallet);
-  const context = [buildWorkingDirectoryContext(workingDirectory), vaultContext, walletContext].filter(Boolean).join("\n\n");
-  const runtimeMessages = context
+  const context = [buildAgentProfileContext(profile), buildWorkingDirectoryContext(workingDirectory), vaultContext, walletContext].filter(Boolean).join("\n\n");
+  const hermesSlashCommand = profile.runtime === "hermes" && /^\/[^\s/]*(?:\s|$)/.test(inputCheck.text.trim());
+  const runtimeMessages = context && !hermesSlashCommand
     ? [{ role: "system", content: context }, ...messages]
     : messages;
-  const runtimeMessage = context
-    ? `${context}\n\nUser message:\n${inputCheck.text}`
-    : inputCheck.text;
+  const runtimeMessage = inputCheck.text;
   const workspaceBefore = await readWorkspaceSnapshot(workingDirectory);
   let upstream: Response;
   const fetchStartedAt = Date.now();
@@ -431,10 +449,12 @@ async function streamHttpRuntime(
         ...(profile.token ? { Authorization: `Bearer ${profile.token}` } : {}),
       },
       body: JSON.stringify({
+        agent: profile,
         agentId: profile.agentId || profile.id,
         sessionKey: profile.sessionKey,
         provider: profile.provider || undefined,
         model: profile.model || undefined,
+        agentEnv: safeAgentEnv(profile.agentEnv),
         rawUserMessage: inputCheck.text,
         runtimeSessionId: runtimeSessionId || undefined,
         hermesSessionId: runtimeSessionId || undefined,
@@ -482,7 +502,7 @@ async function streamHttpRuntime(
   if (!upstream.ok) {
     const errorText = await upstream.text().catch(() => "");
     const message = upstream.status === 404 && profile.runtime === "hermes" && profile.telemetryUrl
-      ? "This machine's collector is connected but does not have the Hermes chat bridge yet. Run Update/Setup on that machine, then try again."
+      ? "This machine's local agent bridge is connected but does not have the Hermes chat bridge yet. Run Update/Setup on that machine, then try again."
       : errorText || `${profile.runtime} returned ${upstream.status}`;
     recordRuntimeTelemetry(telemetry, "agent_runtime.http.upstream_error", {
       ...telemetryPayloadForProfile(profile),
@@ -619,7 +639,7 @@ async function streamHttpRuntime(
         });
         controller.enqueue(encoder.encode("data: [DONE]\n\n"));
       } catch (error) {
-        const message = error instanceof Error ? error.message : "Runtime stream failed";
+        const message = runtimeStreamErrorMessage(profile, error);
         recordRuntimeTelemetry(telemetry, "agent_runtime.http.stream.failed", {
           ...telemetryPayloadForProfile(profile),
           url,
@@ -627,6 +647,158 @@ async function streamHttpRuntime(
           streamElapsedMs: Date.now() - fetchStartedAt,
         });
         controller.enqueue(encoder.encode(ssePayload({ error: message })));
+        controller.enqueue(encoder.encode("data: [DONE]\n\n"));
+      } finally {
+        releaseInteractiveRuntime(lockKey);
+        controller.close();
+      }
+    },
+  });
+
+  return new Response(readable, {
+    headers: {
+      "Content-Type": "text/event-stream",
+      "Cache-Control": "no-cache",
+      Connection: "keep-alive",
+    },
+  });
+}
+
+async function streamOpenAICompatibleRuntime(
+  profile: AgentProfile,
+  messages: IncomingMessage[],
+  userText: string,
+  sharedVault: SharedVaultConfig | null,
+  workingDirectory?: string,
+  wallet?: AgentWalletConfig,
+  honeyLedgerEnabled = false,
+  telemetry?: RuntimeRouteTelemetry,
+) {
+  const inputCheck = proxyInput(userText);
+  if (inputCheck.verdict === "block") {
+    return Response.json({ error: inputCheck.reason ?? "Message blocked by security policy" }, { status: 400 });
+  }
+  const url = buildOpenAICompatibleUrl(profile);
+  const lockKey = interactiveRuntimeLockKey(profile, url);
+  if (!reserveInteractiveRuntime(lockKey)) {
+    return Response.json({ error: `${profile.name || profile.runtime} is already running another interactive request at ${url}.` }, { status: 409 });
+  }
+
+  const context = [
+    buildAgentProfileContext(profile),
+    buildWorkingDirectoryContext(workingDirectory),
+    buildVaultContext(sharedVault),
+    buildWalletToolContext(wallet),
+  ].filter(Boolean).join("\n\n");
+  const modelMessages = context ? [{ role: "system", content: context }, ...messages] : messages;
+  const fetchStartedAt = Date.now();
+  let upstream: Response;
+  try {
+    recordRuntimeTelemetry(telemetry, "agent_runtime.openai_compatible.fetch.start", {
+      ...telemetryPayloadForProfile(profile),
+      url,
+      model: openAICompatibleModel(profile),
+      messageCount: modelMessages.length,
+    });
+    upstream = await fetch(url, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...(profile.token ? { Authorization: `Bearer ${profile.token}` } : {}),
+      },
+      body: JSON.stringify({
+        model: openAICompatibleModel(profile),
+        messages: modelMessages,
+        stream: true,
+      }),
+      signal: AbortSignal.timeout(RUNTIME_FETCH_TIMEOUT_MS),
+    });
+  } catch (error) {
+    releaseInteractiveRuntime(lockKey);
+    return Response.json({ error: runtimeFetchError(profile, url, error) }, { status: 502 });
+  }
+
+  if (!upstream.ok) {
+    const errorText = await upstream.text().catch(() => "");
+    releaseInteractiveRuntime(lockKey);
+    return new Response(
+      ssePayload({ error: errorText || `${profile.runtime} returned ${upstream.status}` }) + "data: [DONE]\n\n",
+      { headers: { "Content-Type": "text/event-stream", "Cache-Control": "no-cache" } },
+    );
+  }
+
+  if (!upstream.body) {
+    releaseInteractiveRuntime(lockKey);
+    return new Response(
+      ssePayload({ error: "OpenAI-compatible runtime response body is empty" }) + "data: [DONE]\n\n",
+      { headers: { "Content-Type": "text/event-stream", "Cache-Control": "no-cache" } },
+    );
+  }
+
+  const contentType = upstream.headers.get("content-type") ?? "";
+  if (!contentType.includes("text/event-stream")) {
+    const json = await upstream.json().catch(async () => ({ text: await upstream.text().catch(() => "") }));
+    const outputCheck = proxyOutput(extractChunk(json));
+    const chunk = outputCheck.text || JSON.stringify(json);
+    const event = outputCheck.verdict === "block" ? null : await recordChatHoney(profile, userText, chunk, honeyLedgerEnabled);
+    releaseInteractiveRuntime(lockKey);
+    return new Response(
+      ssePayload(outputCheck.verdict === "block"
+        ? { error: outputCheck.reason ?? "Response blocked by security policy" }
+        : { choices: [{ delta: { content: chunk } }] })
+      + (event ? ssePayload({ honey: event }) : "")
+      + "data: [DONE]\n\n",
+      { headers: { "Content-Type": "text/event-stream", "Cache-Control": "no-cache" } },
+    );
+  }
+
+  const encoder = new TextEncoder();
+  const decoder = new TextDecoder();
+  const readable = new ReadableStream({
+    async start(controller) {
+      const reader = upstream.body?.getReader();
+      let buffer = "";
+      let fullText = "";
+      try {
+        while (reader) {
+          const { value, done } = await reader.read();
+          if (done) break;
+          buffer += decoder.decode(value, { stream: true });
+          const events = buffer.split("\n\n");
+          buffer = events.pop() ?? "";
+          for (const eventText of events) {
+            const dataLine = eventText.split("\n").find((line) => line.startsWith("data:"));
+            if (!dataLine) continue;
+            const raw = dataLine.replace(/^data:\s*/, "");
+            if (raw === "[DONE]") continue;
+            try {
+              const parsed = JSON.parse(raw);
+              const outputCheck = proxyOutput(extractChunk(parsed));
+              if (outputCheck.verdict === "block") {
+                controller.enqueue(encoder.encode(ssePayload({ error: outputCheck.reason ?? "Response blocked by security policy" })));
+                continue;
+              }
+              if (outputCheck.text) fullText += outputCheck.text;
+              controller.enqueue(encoder.encode(outputCheck.text
+                ? ssePayload({ choices: [{ delta: { content: outputCheck.text } }] })
+                : ssePayload(parsed)));
+            } catch {
+              controller.enqueue(encoder.encode(ssePayload({ choices: [{ delta: { content: raw } }] })));
+              fullText += raw;
+            }
+          }
+        }
+        const event = await recordChatHoney(profile, userText, fullText, honeyLedgerEnabled);
+        if (event) controller.enqueue(encoder.encode(ssePayload({ honey: event })));
+        controller.enqueue(encoder.encode("data: [DONE]\n\n"));
+        recordRuntimeTelemetry(telemetry, "agent_runtime.openai_compatible.stream.done", {
+          ...telemetryPayloadForProfile(profile),
+          url,
+          outputLength: fullText.length,
+          elapsedMs: Date.now() - fetchStartedAt,
+        });
+      } catch (error) {
+        controller.enqueue(encoder.encode(ssePayload({ error: error instanceof Error ? error.message : "OpenAI-compatible stream failed" })));
         controller.enqueue(encoder.encode("data: [DONE]\n\n"));
       } finally {
         releaseInteractiveRuntime(lockKey);
@@ -711,27 +883,13 @@ export async function POST(request: NextRequest) {
     return Response.json({ error: promptCheck.reason ?? "Message blocked by security policy" }, { status: 400 });
   }
   const vault = activeSharedVault(profile, sharedVault);
-  const runtimeContexts = [buildWorkingDirectoryContext(workingDirectory), buildVaultContext(vault), buildWalletToolContext(wallet)].filter(Boolean).join("\n\n");
+  const runtimeContexts = [buildAgentProfileContext(profile), buildWorkingDirectoryContext(workingDirectory), buildVaultContext(vault), buildWalletToolContext(wallet)].filter(Boolean).join("\n\n");
   const textWithVaultContext = runtimeContexts
     ? `${runtimeContexts}\n\nUser message:\n${userPrompt}`
     : promptCheck.text;
-  const rewardGatewayMessages = runtimeContexts
-    ? [{ role: "system", content: runtimeContexts }, ...messages]
-    : messages;
-
-  if (honeyLedgerEnabled) {
-    await recordRouteTelemetry(request, "agent_runtime.dispatch.trusted_compute", {
-      ...telemetryPayloadForProfile(profile),
-      promptLength: userPrompt.length,
-      contextLength: runtimeContexts.length,
-      elapsedMs: Date.now() - routeStartedAt,
-    });
-    return streamTrustedComputeGateway(profile, rewardGatewayMessages);
-  }
-
   if (profile.runtime !== "openclaw") {
     const adapter = getRuntimeAdapter(profile.runtime);
-    if (!adapter.capabilities.chat) {
+    if (adapter && !adapter.capabilities.chat) {
       await recordRouteTelemetry(request, "agent_runtime.validation_failed", {
         reason: "adapter-chat-unavailable",
         adapterKind: adapter.kind,
@@ -750,7 +908,7 @@ export async function POST(request: NextRequest) {
         elapsedMs: Date.now() - routeStartedAt,
       });
       return Response.json({
-        error: `${profile.machineName || "This machine"} is connected, but its collector does not have the Hermes chat bridge installed yet. Run setup/update on that machine after these dashboard changes are available there.`,
+        error: `${userFacingMachineName(profile)} is connected, but its local agent bridge does not have the Hermes chat bridge installed yet. Run setup/update on that machine after these dashboard changes are available there.`,
       }, { status: 400 });
     }
     const effectiveProfile = collectorChatProfile(profile) ?? profile;
@@ -814,7 +972,7 @@ export async function POST(request: NextRequest) {
             token,
             text: textWithVaultContext,
             agentId: profile.agentId,
-            ...(profile.sessionKey ? { sessionKey: profile.sessionKey } : {}),
+            ...(runtimeSessionId || profile.sessionKey ? { sessionKey: runtimeSessionId || profile.sessionKey } : {}),
           },
           (chunk) => {
             fullText += chunk;

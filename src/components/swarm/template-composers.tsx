@@ -2,6 +2,7 @@
 "use client";
 
 import * as React from "react";
+import { CloseIconButton } from "@/components/ui/close-icon-button";
 import type { SwarmTemplateField, TemplateId } from "./swarm-data";
 import styles from "./swarm-tokens.module.css";
 
@@ -49,21 +50,6 @@ const inputStyle: React.CSSProperties = {
   fontSize: 12,
   outline: "none",
 };
-const iconBtn: React.CSSProperties = {
-  width: 22,
-  height: 22,
-  borderRadius: 5,
-  padding: 0,
-  cursor: "pointer",
-  border: "1px solid rgba(148,163,184,0.22)",
-  background: "transparent",
-  color: "var(--muted)",
-  fontFamily: "var(--f-mono)",
-  fontSize: 13,
-  fontWeight: 700,
-  lineHeight: 1,
-};
-
 function Lbl({ children }: { children: React.ReactNode }) {
   return <span className={styles.monoCap} style={{ color: "var(--muted)", display: "block", marginBottom: 6 }}>{children}</span>;
 }
@@ -487,7 +473,7 @@ export function ResearchSwarmComposer(props: TemplateComposerProps) {
                 placeholder="https://"
                 style={{ border: 0, background: "transparent", color: "var(--hex-active-border)", outline: 0, fontFamily: "var(--f-mono)", fontSize: 11 }}
               />
-              <button onClick={() => setSources(sources.filter((_, itemIndex) => itemIndex !== index))} style={iconBtn} aria-label="Remove source">x</button>
+              <CloseIconButton size="sm" onClick={() => setSources(sources.filter((_, itemIndex) => itemIndex !== index))} aria-label="Remove source" />
             </div>
           ))}
           <button

@@ -14,8 +14,10 @@ export const runtime = "nodejs";
 const execFileAsync = promisify(execFile);
 const MAX_FILES_PER_DIR = 20;
 const MAX_FILE_CHARS = 4_000;
+const SNAPSHOT_CACHE_MS = 2_000;
 
 type FleetTaskStatus = "active" | "completed" | "failed" | "unknown";
+const HERMES_EMPTY_TRANSCRIPT_MESSAGE = "Hermes session found. Send a message to resume it.";
 
 type FleetTask = {
   id: string;
@@ -49,6 +51,21 @@ type AgentSnapshot = {
   error?: string;
 };
 
+type SnapshotPayload = {
+  ok: true;
+  checkedAt: number;
+  snapshots: AgentSnapshot[];
+};
+
+const snapshotCache = new Map<string, { checkedAt: number; payload: SnapshotPayload }>();
+const snapshotInFlight = new Map<string, Promise<SnapshotPayload>>();
+
+function pruneSnapshotCache(now = Date.now()) {
+  for (const [key, entry] of snapshotCache) {
+    if (now - entry.checkedAt >= SNAPSHOT_CACHE_MS) snapshotCache.delete(key);
+  }
+}
+
 async function pathReadable(path?: string) {
   if (!path) return false;
   return access(path, constants.R_OK).then(() => true).catch(() => false);
@@ -80,17 +97,17 @@ async function readRemoteSnapshot(agent: AgentWithLocal): Promise<AgentSnapshot 
         ok: false,
         runtimeReachable: false,
         processRunning: false,
-        summary: `Collector responded without a snapshot: ${baseUrl}`,
-        sources: ["remote collector"],
+        summary: `Agent bridge responded without a snapshot: ${baseUrl}`,
+        sources: ["remote agent bridge"],
         tasks: [],
         checkedAt: Date.now(),
-        error: "No snapshot in collector response",
+        error: "No snapshot in agent bridge response",
       };
     }
     return {
       ...snapshot,
       agentId: agent.id,
-      sources: [...new Set(["remote collector", ...snapshot.sources])],
+      sources: [...new Set(["remote agent bridge", ...snapshot.sources])],
     };
   } catch (error) {
     return {
@@ -98,11 +115,11 @@ async function readRemoteSnapshot(agent: AgentWithLocal): Promise<AgentSnapshot 
       ok: false,
       runtimeReachable: false,
       processRunning: false,
-      summary: `Remote collector unavailable: ${baseUrl}`,
-      sources: ["remote collector"],
+      summary: `Remote agent bridge unavailable: ${baseUrl}`,
+      sources: ["remote agent bridge"],
       tasks: [],
       checkedAt: Date.now(),
-      error: error instanceof Error ? error.message : "Could not reach remote collector",
+      error: error instanceof Error ? error.message : "Could not reach remote agent bridge",
     };
   }
 }
@@ -133,6 +150,9 @@ function readableChatContent(value: unknown): string {
       }
     }
     return trimmed;
+  }
+  if (Array.isArray(value)) {
+    return value.map((item) => readableChatContent(item)).filter(Boolean).join("\n").trim();
   }
   if (!value || typeof value !== "object") return "";
   const record = value as Record<string, unknown>;
@@ -267,7 +287,7 @@ async function scanHermesStateDb(agent: AgentProfile, hermesDir: string): Promis
     limit 10;
   `], []);
 
-  const tasks = await Promise.all(sessions.map(async (session) => {
+  const tasks = await Promise.all(sessions.map(async (session): Promise<FleetTask | null> => {
     const messages = await execJson<Array<{
       role: string;
       content: string | null;
@@ -287,7 +307,7 @@ async function scanHermesStateDb(agent: AgentProfile, hermesDir: string): Promis
     const latestAssistant = readableMessages.find((message) => message.role === "assistant");
     const latestUser = readableMessages.find((message) => message.role === "user");
     const latestTool = readableMessages.find((message) => message.role === "tool");
-    const latest = latestAssistant ?? latestTool ?? messages.find((message) => message.content?.trim());
+    const latest = latestAssistant ?? latestTool ?? readableMessages[0];
     const chatMessages = readableMessages
       .filter((message) => (
         (message.role === "user" || message.role === "assistant")
@@ -298,11 +318,12 @@ async function scanHermesStateDb(agent: AgentProfile, hermesDir: string): Promis
         role: message.role as "user" | "assistant",
         content: compact(message.content, "", 8_000),
       }));
+    if (!chatMessages.length) return null;
     return {
       id: `hermes-state:${session.id}`,
       agentId: agent.id,
       title: (session.title || latestUser?.content || `Hermes ${session.source} session`).slice(0, 160),
-      lastMessage: compact(latest?.content, "Hermes session exists, but no readable message was stored."),
+      lastMessage: compact(latest?.content, HERMES_EMPTY_TRANSCRIPT_MESSAGE),
       status: statusFromSession(session.ended_at, session.end_reason),
       source: "hermes-state",
       startedAt: session.started_at * 1000,
@@ -311,7 +332,7 @@ async function scanHermesStateDb(agent: AgentProfile, hermesDir: string): Promis
     };
   }));
 
-  return tasks;
+  return tasks.filter((task): task is FleetTask => Boolean(task));
 }
 
 async function readIfExists(path: string) {
@@ -465,17 +486,23 @@ async function processMatches(agent: AgentProfile, includeGenericHermes = false)
     .slice(0, 5);
 }
 
-export async function POST(request: NextRequest) {
-  let agents: AgentWithLocal[] = [];
-  let sharedVault: SharedVaultConfig | undefined;
-  try {
-    const body = (await request.json()) as { agents?: AgentProfile[]; sharedVault?: SharedVaultConfig };
-    agents = Array.isArray(body.agents) ? body.agents as AgentWithLocal[] : [];
-    sharedVault = body.sharedVault;
-  } catch {
-    return Response.json({ ok: false, error: "Invalid JSON body" }, { status: 400 });
-  }
+function snapshotCacheKey(agents: AgentWithLocal[], sharedVault?: SharedVaultConfig) {
+  return JSON.stringify({
+    controlRoomPath: sharedVault?.controlRoomPath ?? "",
+    agents: agents.map((agent) => ({
+      id: agent.id,
+      runtime: agent.runtime,
+      gatewayUrl: agent.gatewayUrl,
+      statusPath: agent.statusPath,
+      localDataDir: agent.localDataDir,
+      telemetryUrl: agent.telemetryUrl,
+      agentId: agent.agentId,
+      name: agent.name,
+    })),
+  });
+}
 
+async function readSnapshots(agents: AgentWithLocal[], sharedVault?: SharedVaultConfig): Promise<SnapshotPayload> {
   const controlRoomPath = resolve(expandHome(sharedVault?.controlRoomPath || ""));
   const dataDirs: Record<string, string> = controlRoomPath
     ? await parseControlRoomDataDirs(controlRoomPath).catch(() => ({} as Record<string, string>))
@@ -542,5 +569,40 @@ export async function POST(request: NextRequest) {
     };
   }));
 
-  return Response.json({ ok: true, checkedAt: Date.now(), snapshots });
+  return { ok: true, checkedAt: Date.now(), snapshots };
+}
+
+export async function POST(request: NextRequest) {
+  let agents: AgentWithLocal[] = [];
+  let sharedVault: SharedVaultConfig | undefined;
+  try {
+    const body = (await request.json()) as { agents?: AgentProfile[]; sharedVault?: SharedVaultConfig };
+    agents = Array.isArray(body.agents) ? body.agents as AgentWithLocal[] : [];
+    sharedVault = body.sharedVault;
+  } catch {
+    return Response.json({ ok: false, error: "Invalid JSON body" }, { status: 400 });
+  }
+
+  const cacheKey = snapshotCacheKey(agents, sharedVault);
+  const now = Date.now();
+  pruneSnapshotCache(now);
+  const cached = snapshotCache.get(cacheKey);
+  if (cached && now - cached.checkedAt < SNAPSHOT_CACHE_MS) {
+    return Response.json(cached.payload);
+  }
+
+  let inFlight = snapshotInFlight.get(cacheKey);
+  if (!inFlight) {
+    inFlight = readSnapshots(agents, sharedVault)
+      .then((payload) => {
+        snapshotCache.set(cacheKey, { checkedAt: Date.now(), payload });
+        return payload;
+      })
+      .finally(() => {
+        snapshotInFlight.delete(cacheKey);
+      });
+    snapshotInFlight.set(cacheKey, inFlight);
+  }
+
+  return Response.json(await inFlight);
 }

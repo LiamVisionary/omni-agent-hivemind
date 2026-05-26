@@ -18,6 +18,7 @@ export type RuntimeSchedule = {
   everyMs?: number;
   message?: string;
   enabled?: boolean;
+  nextRunMs?: number;
   lastRunMs?: number;
   lastStatus?: string;
   lastSummary?: string;

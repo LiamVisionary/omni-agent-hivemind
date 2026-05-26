@@ -17,6 +17,9 @@ export async function POST(request: NextRequest) {
   }
 
   const adapter = getRuntimeAdapter(body.runtime);
+  if (!adapter) {
+    return NextResponse.json({ ok: false, error: `Unknown runtime: ${body.runtime}` }, { status: 404 });
+  }
   if (adapter.runScheduleAction) {
     const result = await adapter.runScheduleAction(body.agent, body.action, body.jobId, {
       requestUrl: request.url,
