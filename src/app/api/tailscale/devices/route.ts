@@ -1,6 +1,6 @@
 import { execFile } from "child_process";
 import { promisify } from "util";
-import { hivemindLinkControlUrl } from "@/lib/services/hivemind-link-control";
+import { hivemindLinkControlUrl, localTelemetryCollectorUrl } from "@/lib/services/hivemind-link-control";
 
 export const runtime = "nodejs";
 
@@ -40,7 +40,7 @@ type HivemindLinkStatus = {
 };
 
 function localCollectorUrl() {
-  return `http://127.0.0.1:${process.env.AGENT_TELEMETRY_PORT || "8787"}`;
+  return localTelemetryCollectorUrl();
 }
 
 function localDevice() {

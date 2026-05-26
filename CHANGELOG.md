@@ -3,6 +3,14 @@
 This file records user-visible changes before they are committed. New work should
 be added here first, then marked `Committed` or `Pushed` after the git action.
 
+## 2026-05-26 07:01:36 EDT - Read Persisted Collector Port In Fleet APIs
+
+- Status: Committed
+- Areas changed: Hivemind Link control helpers, Fleet discovery APIs, changelog
+- Summary: Make the dashboard's local Fleet discovery routes read `AGENT_TELEMETRY_PORT` from `~/.hivemindos/collector.env` when process env is missing, so `This Mac` checks the actual moved collector port instead of falling back to stale `127.0.0.1:8787` after Link setup chooses 8792/8793.
+- Verification: `npm exec --yes --package pnpm@8.6.12 -- pnpm exec tsc --noEmit --pretty false --skipLibCheck`; `git diff --check -- CHANGELOG.md src/lib/services/hivemind-link-control.ts src/app/api/fleet/discover/route.ts src/app/api/tailscale/devices/route.ts`; temporary dashboard on port 5021 returned `/api/fleet/discover` with `This Mac` collector `ready` at `http://127.0.0.1:8792`; `/api/tailscale/devices` also returned self collector URL `http://127.0.0.1:8792`.
+- Intended commit message: `Read persisted collector port in Fleet APIs`
+
 ## 2026-05-26 06:50:12 EDT - Preserve Link Mode During Updates
 
 - Status: Committed

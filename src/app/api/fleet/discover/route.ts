@@ -1,6 +1,6 @@
 import { execFile } from "child_process";
 import { promisify } from "util";
-import { hivemindLinkControlUrl } from "@/lib/services/hivemind-link-control";
+import { hivemindLinkControlUrl, localTelemetryCollectorUrl } from "@/lib/services/hivemind-link-control";
 import type { AgentProfile, AgentRuntime } from "@/lib/types/agent-runtime";
 
 export const runtime = "nodejs";
@@ -120,7 +120,7 @@ const discoveryCache = new Map<string, { checkedAt: number; payload: FleetDiscov
 const discoveryInFlight = new Map<string, Promise<FleetDiscoverPayload>>();
 
 function localCollectorUrl() {
-  return `http://127.0.0.1:${process.env.AGENT_TELEMETRY_PORT || "8787"}`;
+  return localTelemetryCollectorUrl();
 }
 
 function localDevice(): Device {
