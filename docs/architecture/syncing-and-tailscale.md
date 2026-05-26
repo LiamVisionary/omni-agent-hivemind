@@ -201,6 +201,18 @@ point is that HivemindOS does not implement a realtime file sync engine; it
 coordinates Syncthing setup and lets Syncthing own the continuous replication
 loop.
 
+## Targeted File Transfers
+
+For agent-to-agent files, images, reports, and generated artifacts, use the
+vault-backed `hive-transfer` helper. It creates explicit transfer envelopes under
+`.hivemindos-transfers/<transfer-id>/` with machine/runtime/agent targeting,
+payload hashes, and receiver acknowledgement files.
+
+The receiver discovers waiting files by polling its collector inbox or running
+`hive-transfer inbox` with its own identity. The full operator guide, CLI
+reference, HTTP API examples, and troubleshooting checklist are in [Targeted Hive
+File Transfers](../targeted-file-transfers.md).
+
 ## Tailscale SSH
 
 Some operations need command execution on a trusted peer. Those use Tailscale SSH

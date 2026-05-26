@@ -11,6 +11,14 @@ be added here first, then marked `Committed` or `Pushed` after the git action.
 - Verification: `pnpm exec tsc --noEmit --pretty false --skipLibCheck`; `git diff --check HEAD~1..HEAD`; syntax checks for collector and real-fleet E2E scripts.
 - Intended commit message: `Clarify Bankr Honey rewards`
 
+## 2026-05-26 18:08:49 UTC - Document Targeted Hive File Transfers
+
+- Status: Pushed
+- Areas changed: Targeted file transfer docs, README, sync architecture docs, changelog
+- Summary: Add a dedicated operator guide for vault-backed `hive-transfer` usage, including storage layout, manifest schema, machine/runtime/agent targeting rules, CLI examples, collector HTTP API examples, receiver polling semantics, verification steps, troubleshooting, and safety boundaries. Link the new guide from the README and the sync/Tailscale architecture doc.
+- Verification: `git diff --check -- README.md docs/architecture/syncing-and-tailscale.md docs/syncing-and-tailscale.md docs/targeted-file-transfers.md CHANGELOG.md`; manual readback of README feature table/link and new `docs/targeted-file-transfers.md` guide.
+- Intended commit message: `Document targeted hive file transfers`
+
 ## 2026-05-27 01:40 WITA - Enable Dynamic OpenClaw Model Discovery
 
 - Status: Pushed

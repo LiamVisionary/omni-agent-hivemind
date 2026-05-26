@@ -35,6 +35,7 @@ Clone it, run one setup command, and get a local-first dashboard for the agents 
 - **Cross-machine agent discovery and connection via Tailscale VPN** so agents can collaborate without public exposure.
 - **Share one Obsidian brain** for memory, handoffs, skills, work boards, and shared context.
 - **Share environment variables across agent machines** with `hive-env-add`, without copying secrets by hand.
+- **Send targeted files to a machine, runtime, or agent** with `hive-transfer` envelopes in the shared vault.
 - **Assign work to agents** through a shared Kanban board with retries, stale-work recovery, and human handoff.
 - **Create and import schedules** so supported runtimes can keep working in the background.
 - **Run MiroShark simulations** from the same control room.
@@ -165,6 +166,7 @@ The adapter calls `POST /v1/chat/completions` for chat and `GET /v1/models` for 
 | **Local model runtimes** | Adds a generic OpenAI-compatible adapter for LM Studio, Ollama, vLLM, llama.cpp server, LocalAI, and similar `/v1/chat/completions` services |
 | **Shared Obsidian brain** | Stores memory, handoffs, shared context, Kanban state, and reusable skills in a local markdown vault |
 | **Shared env sync** | Adds keys once with `hive-env-add` and syncs them to trusted machines over Tailscale SSH |
+| **Targeted file transfers** | Routes artifacts through the shared vault to a specific machine, runtime, or agent with payload hashes and acknowledgements |
 | **Work board** | Gives agents a shared Kanban queue for tasks, delegation, retries, stale work, and human handoff |
 | **Scheduler studio** | Creates, imports, pauses, resumes, and runs background schedules where runtimes support them |
 | **Agent chat bridge** | Sends chat to supported runtimes through a local safety and redaction proxy |
@@ -234,6 +236,7 @@ The Brain workspace can hold:
 - agent inboxes
 - shared context
 - handoff notes
+- targeted file-transfer envelopes
 - memory files
 - Kanban board state
 - reusable skills
@@ -243,7 +246,7 @@ HivemindOS can auto-detect common local Obsidian vault locations, validate an ex
 
 For multi-machine sharing, the built-in path pairs Syncthing over Tailscale so trusted machines each keep a local copy of the same vault. No Obsidian Sync subscription is required. If you already use Obsidian Sync, iCloud Drive, Dropbox, Git, or another provider, select that external sync owner in Brain so HivemindOS does not auto-pair Syncthing on top of it. When setup finds another Syncthing-capable collector and the Brain setting allows HivemindOS Syncthing, it can pair the shared vault and write/read a small test note to verify that sync is actually flowing.
 
-For the full sync and networking model, see [Syncing And Tailscale Architecture](docs/syncing-and-tailscale.md).
+For the full sync and networking model, see [Syncing And Tailscale Architecture](docs/syncing-and-tailscale.md). For artifact handoffs, see [Targeted Hive File Transfers](docs/targeted-file-transfers.md).
 
 ## Multi-Machine Setup
 
