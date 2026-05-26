@@ -30,6 +30,9 @@ if [[ -z "${HIVE_LINK_CONTROL:-}" && -f "$HOME/.hivemindos/collector.env" ]]; th
     LINK_CONTROL="${LINK_CONTROL#\'}"
   fi
 fi
+if [[ -z "${HIVE_LINK_ENABLED:-}" && -f "$HOME/.hivemindos/collector.env" ]] && grep -q '^HIVE_LINK_LABEL=' "$HOME/.hivemindos/collector.env" 2>/dev/null; then
+  LINK_ENABLED="true"
+fi
 LINK_CONTROL_STATUS_URL="http://$LINK_CONTROL/status"
 LINK_CONTROL_HEALTH_URL="http://$LINK_CONTROL/health"
 
@@ -507,7 +510,6 @@ choose_nearest_available_port() {
 }
 
 choose_link_local_collector_port() {
-  [[ "$LINK_ACTIVE" == "true" ]] || return
   local listener
   listener="$(port_listener_pids "$PORT")"
   if [[ -z "$listener" ]] || collector_health_is_hivemind "$PORT"; then
@@ -518,8 +520,12 @@ choose_link_local_collector_port() {
   local candidate
   candidate="$(choose_nearest_available_port "$requested_port" 200 || true)"
   if [[ -n "$candidate" ]]; then
-    echo "Port $requested_port is already used by another local service, so HivemindOS will run its private collector on the next available port: 127.0.0.1:$candidate."
-    echo "Hivemind Link will still expose this machine to the Tailnet on port $LINK_TAILNET_PORT."
+    if [[ "$LINK_ACTIVE" == "true" ]]; then
+      echo "Port $requested_port is already used by another local service, so HivemindOS will run its private collector on the next available port: 127.0.0.1:$candidate."
+      echo "Hivemind Link will still expose this machine to the Tailnet on port $LINK_TAILNET_PORT."
+    else
+      echo "Port $requested_port is already used by another local service, so HivemindOS will use the next available collector port: $candidate."
+    fi
     PORT="$candidate"
     return
   fi
@@ -722,7 +728,7 @@ wait_for_hivemind_link_auth_confirmation() {
 }
 
 collector_local_health() {
-  curl -fsS --max-time 2 "http://127.0.0.1:$PORT/health" >/dev/null 2>&1
+  collector_health_is_hivemind "$PORT"
 }
 
 wait_for_local_collector() {
@@ -876,7 +882,6 @@ fi
 TAILNET_SYNC_ENABLED="false"
 if [[ "$LINK_ACTIVE" == "true" ]]; then
   TAILNET_SYNC_ENABLED="false"
-  choose_link_local_collector_port
   choose_link_control_port
 elif [[ "$NETWORK_MANAGED_BY_SETUP" == "true" ]]; then
   TAILNET_SYNC_ENABLED="$SETUP_TAILNET_SYNC_ENABLED"
@@ -885,6 +890,7 @@ elif ensure_tailscale_connected; then
 else
   echo "Tailscale setup was not completed; multi-machine collaboration and shared memory sync are disabled for this run. Local collector features will still work." >&2
 fi
+choose_link_local_collector_port
 
 if [[ "$(uname -s)" == "Darwin" ]]; then
   if [[ "$TAILNET_SYNC_ENABLED" == "true" ]]; then

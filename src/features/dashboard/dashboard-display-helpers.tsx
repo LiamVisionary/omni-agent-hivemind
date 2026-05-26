@@ -224,6 +224,8 @@ export function mergeMachineSnapshots(previous: AgentSnapshot[] = [], incoming: 
 }
 
 export function discoveredMachineIdentity(machine: DiscoveredMachine) {
+  const machineId = machine.collector === "ready" ? machine.machineId?.trim().toLowerCase() : "";
+  if (machineId && /^hivemind-machine-[a-f0-9]{32}$/.test(machineId)) return machineId;
   return machineIdentityFromParts({
     self: machine.device.self,
     name: machine.device.name,

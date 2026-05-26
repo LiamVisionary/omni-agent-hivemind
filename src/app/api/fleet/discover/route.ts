@@ -98,6 +98,7 @@ type DiscoveredMachine = {
   device: Device;
   collector: string;
   collectorHost?: string;
+  machineId?: string;
   version?: CollectorVersion;
   capabilities?: CollectorCapabilities;
   envSync?: CollectorEnvSync;
@@ -242,6 +243,16 @@ function dedupeDevices(devices: Device[]) {
     }
   }
   return [...byIdentity.values()].filter((device) => isHivemindLinkDevice(device) || isMacDevice(device));
+}
+
+function normalizedMachineId(value?: string) {
+  const trimmed = value?.trim() ?? "";
+  return /^hivemind-machine-[a-f0-9]{32}$/i.test(trimmed) ? trimmed.toLowerCase() : "";
+}
+
+function machineIdentityKey(machine: { device: Device; collector: string; machineId?: string }) {
+  const machineId = machine.collector === "ready" ? normalizedMachineId(machine.machineId) : "";
+  return machineId || deviceIdentityKey(machine.device);
 }
 
 function linkCollectorUrl(ip: string) {
@@ -399,14 +410,17 @@ async function readDiscovery(includeSnapshots: boolean): Promise<FleetDiscoverPa
     let capabilities: CollectorCapabilities | undefined;
     let envSync: CollectorEnvSync | undefined;
     let collectorHost: string | undefined;
+    let machineId: string | undefined;
     try {
       const healthData = await fetchJson(`${device.collectorUrl}/health`) as {
         host?: string;
+        machineId?: string;
         version?: CollectorVersion;
         capabilities?: CollectorCapabilities;
         envSync?: CollectorEnvSync;
       };
       collectorHost = healthData.host;
+      machineId = healthData.machineId;
       version = healthData.version;
       capabilities = healthData.capabilities ?? { chat: false, runtimes: [] };
       envSync = healthData.envSync;
@@ -435,6 +449,7 @@ async function readDiscovery(includeSnapshots: boolean): Promise<FleetDiscoverPa
         device,
         collector: "ready",
         collectorHost,
+        machineId,
         version,
         capabilities,
         envSync,
@@ -453,6 +468,7 @@ async function readDiscovery(includeSnapshots: boolean): Promise<FleetDiscoverPa
         device,
         collector: "ready",
         collectorHost,
+        machineId,
         version,
         capabilities,
         envSync,
@@ -464,6 +480,7 @@ async function readDiscovery(includeSnapshots: boolean): Promise<FleetDiscoverPa
         device,
         collector: "ready",
         collectorHost,
+        machineId,
         version,
         capabilities,
         envSync,
@@ -515,6 +532,7 @@ export async function GET(request: Request) {
 function machineScore(machine: {
   device: Device;
   collector: string;
+  machineId?: string;
   agents: AgentProfile[];
   version?: CollectorVersion;
 }) {
@@ -525,10 +543,10 @@ function machineScore(machine: {
     + deviceFreshnessScore(machine.device);
 }
 
-function dedupeMachines<T extends { device: Device; collector: string; agents: AgentProfile[]; version?: CollectorVersion }>(machines: T[]) {
+function dedupeMachines<T extends { device: Device; collector: string; machineId?: string; agents: AgentProfile[]; version?: CollectorVersion }>(machines: T[]) {
   const byIdentity = new Map<string, T>();
   for (const machine of machines) {
-    const key = deviceIdentityKey(machine.device);
+    const key = machineIdentityKey(machine);
     const previous = byIdentity.get(key);
     if (!previous) {
       byIdentity.set(key, machine);

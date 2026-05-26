@@ -33,6 +33,7 @@ const defaultSyncPath = expandHome(
     || "~/Documents/Obsidian/hivemindos-vault",
 );
 const runLogRoot = join(homedir(), ".hivemindos", "runtime-runs");
+const machineIdPath = join(homedir(), ".hivemindos", "machine-id");
 const runtimeAgentRegistryPath = join(homedir(), ".hivemindos", "runtime-agents.json");
 const skillAutoSyncConfigPath = join(homedir(), ".hivemindos", "skill-auto-sync.json");
 const hermesProfilesDir = join(defaultHermesDir, "profiles");
@@ -57,9 +58,23 @@ let skillAutoSyncDebounce = null;
 let skillAutoSyncInFlight = false;
 const skillAutoSyncWatchers = new Map();
 const skillAutoSyncSignatures = new Map();
+let machineIdPromise = null;
 
 function expandHome(path) {
   return path?.replace(/^~(?=$|\/)/, homedir());
+}
+
+async function stableMachineId() {
+  if (machineIdPromise) return machineIdPromise;
+  machineIdPromise = (async () => {
+    const existing = (await readFile(machineIdPath, "utf8").catch(() => "")).trim();
+    if (/^hivemind-machine-[a-f0-9]{32}$/.test(existing)) return existing;
+    const generated = `hivemind-machine-${randomBytes(16).toString("hex")}`;
+    await mkdir(dirname(machineIdPath), { recursive: true, mode: 0o700 });
+    await writeFile(machineIdPath, `${generated}\n`, { mode: 0o600 });
+    return generated;
+  })();
+  return machineIdPromise;
 }
 
 function safeAgentEnv(value) {
@@ -2439,6 +2454,7 @@ createServer(async (request, response) => {
     jsonResponse(response, 200, {
       ok: true,
       host: hostname(),
+      machineId: await stableMachineId(),
       version: await appVersion(),
       envSync: {
         ready: envSync.ready,

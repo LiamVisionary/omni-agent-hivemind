@@ -438,6 +438,7 @@ export type MachineGroup = {
   collector: "ready" | "not-installed" | "offline" | "missing" | "unknown";
   agents: AgentProfile[];
   version?: AppVersion;
+  machineId?: string;
   capabilities?: AgentProfile["collectorCapabilities"];
   envSync?: {
     ready?: boolean;
@@ -498,6 +499,7 @@ export type DiscoveredMachine = {
   device: TailscaleDevice;
   collector: MachineGroup["collector"];
   collectorHost?: string;
+  machineId?: string;
   agents: AgentProfile[];
   snapshots: AgentSnapshot[];
   version?: AppVersion;

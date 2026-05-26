@@ -3,6 +3,14 @@
 This file records user-visible changes before they are committed. New work should
 be added here first, then marked `Committed` or `Pushed` after the git action.
 
+## 2026-05-26 11:07:59 EDT - Add Stable Machine IDs For Fleet Discovery
+
+- Status: Pushed
+- Areas changed: Telemetry collector health metadata, Fleet discovery dedupe, dashboard machine merge/grouping, Hivemind Link installer port/mode detection, collector URL resolution, changelog
+- Summary: Add a durable per-machine ID at `~/.hivemindos/machine-id` and expose it from collector `/health` so duplicate checkouts/Link nodes on the same physical machine can collapse safely without hiding another Mac with the same hostname. Make Fleet server/client dedupe use that machine ID when present. Harden installer reruns to preserve Link mode from `collector.env`, reject non-Hivemind services on `/health`, choose a real free collector port on macOS, and make dashboard collector URL resolution prefer the live collector registry over stale process env.
+- Verification: `bash -n scripts/install-telemetry-collector.sh`; `node --check scripts/agent-telemetry-collector.mjs`; `npm exec --yes --package pnpm@8.6.12 -- pnpm exec tsc --noEmit --pretty false --skipLibCheck`; `git diff --check -- CHANGELOG.md scripts/install-telemetry-collector.sh scripts/agent-telemetry-collector.mjs src/app/api/fleet/discover/route.ts src/features/dashboard/dashboard-display-helpers.tsx src/features/dashboard/dashboard-types.ts src/features/dashboard/hooks/use-dashboard-derived-state.tsx src/lib/services/hivemind-link-control.ts`; `./scripts/install-telemetry-collector.sh` preserved Link mode, rejected Z-Image on 8787, selected private collector port 8791, and Link stayed connected on control port 8793; live `/health` reports `machineId`; live `/api/fleet/discover` reports local `This Mac` ready at `http://127.0.0.1:8791` with machine ID.
+- Intended commit message: `Add stable machine IDs for Fleet discovery`
+
 ## 2026-05-26 08:01:41 EDT - Restore Cross-Mac Link Discovery
 
 - Status: Pushed

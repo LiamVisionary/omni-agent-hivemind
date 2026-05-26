@@ -272,6 +272,7 @@ export function useDashboardDerivedState(props: any) {
       collector: (discovered?.collector ?? "unknown") as MachineGroup["collector"],
       agents: [] as AgentProfile[],
       version: discovered?.version,
+      machineId: discovered?.machineId,
       capabilities: discovered?.capabilities,
       envSync: discovered?.envSync,
       lastSeenAt: discovered?.lastSeenAt,
@@ -306,6 +307,7 @@ export function useDashboardDerivedState(props: any) {
         collector: machine.collector,
         agents: [],
 	        version: machine.version,
+	        machineId: machine.machineId,
 	        capabilities: machine.capabilities,
 	        envSync: machine.envSync,
 	        lastSeenAt: machine.lastSeenAt,
@@ -320,7 +322,10 @@ export function useDashboardDerivedState(props: any) {
         + (machine.online ? 5 : 0)
       );
       for (const item of items) {
-        const key = machineIdentityFromParts(item);
+        const machineId = item.collector === "ready" ? item.machineId?.trim().toLowerCase() : "";
+        const key = machineId && /^hivemind-machine-[a-f0-9]{32}$/.test(machineId)
+          ? machineId
+          : machineIdentityFromParts(item);
         const previous = byIdentity.get(key);
         if (!previous) {
           byIdentity.set(key, item);

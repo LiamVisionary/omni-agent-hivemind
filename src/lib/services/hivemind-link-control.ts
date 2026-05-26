@@ -36,6 +36,6 @@ export function hivemindLinkControlUrl() {
 }
 
 export function localTelemetryCollectorUrl() {
-  const port = process.env.AGENT_TELEMETRY_PORT || collectorEnvValue("AGENT_TELEMETRY_PORT") || "8787";
+  const port = collectorEnvValue("AGENT_TELEMETRY_PORT") || process.env.AGENT_TELEMETRY_PORT || "8787";
   return `http://127.0.0.1:${port}`;
 }
