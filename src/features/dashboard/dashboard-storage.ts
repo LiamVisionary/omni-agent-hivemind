@@ -60,20 +60,6 @@ export function defaultWorkerClassDraft(): WorkerClassDraft {
   };
 }
 
-export type RemotionShowcaseFixtures = {
-  agents?: AgentProfile[];
-  sharedVault?: SharedVaultConfig;
-  tasks?: AgentTask[];
-  schedules?: AgentSchedule[];
-  wallets?: Record<string, AgentWalletConfig>;
-  honeyTreasury?: HoneyTreasuryConfig;
-};
-
-export function remotionShowcaseFixtures(): RemotionShowcaseFixtures | null {
-  if (typeof window === "undefined") return null;
-  return (window as unknown as { __HIVEMINDOS_REMOTION_FIXTURES?: RemotionShowcaseFixtures }).__HIVEMINDOS_REMOTION_FIXTURES ?? null;
-}
-
 export function seedAgents(): AgentProfile[] {
   return [];
 }
@@ -208,8 +194,6 @@ export function readStoredValue(key: string, suffix: string): string | null {
 
 export function parseStoredAgents(): AgentProfile[] {
   if (typeof window === "undefined") return seedAgents();
-  const fixtureAgents = remotionShowcaseFixtures()?.agents;
-  if (fixtureAgents?.length) return fixtureAgents.map(normalizeAgentProfile);
   const raw = readStoredValue(STORAGE_KEY, STORAGE_SUFFIXES.agents);
   if (!raw) return seedAgents();
   try {
@@ -223,8 +207,6 @@ export function parseStoredAgents(): AgentProfile[] {
 
 export function parseStoredVault(): SharedVaultConfig {
   if (typeof window === "undefined") return DEFAULT_SHARED_VAULT;
-  const fixtureVault = remotionShowcaseFixtures()?.sharedVault;
-  if (fixtureVault) return { ...DEFAULT_SHARED_VAULT, ...fixtureVault };
   const raw = readStoredValue(VAULT_STORAGE_KEY, STORAGE_SUFFIXES.vault);
   if (!raw) return DEFAULT_SHARED_VAULT;
   try {
@@ -290,8 +272,6 @@ export function parseStoredVault(): SharedVaultConfig {
 
 export function parseStoredTasks(): AgentTask[] {
   if (typeof window === "undefined") return [];
-  const fixtureTasks = remotionShowcaseFixtures()?.tasks;
-  if (fixtureTasks) return fixtureTasks;
   const raw = readStoredValue(TASK_STORAGE_KEY, STORAGE_SUFFIXES.tasks);
   if (!raw) return [];
   try {
@@ -304,8 +284,6 @@ export function parseStoredTasks(): AgentTask[] {
 
 export function parseStoredSchedules(): AgentSchedule[] {
   if (typeof window === "undefined") return [];
-  const fixtureSchedules = remotionShowcaseFixtures()?.schedules;
-  if (fixtureSchedules) return fixtureSchedules;
   const raw = readStoredValue(SCHEDULE_STORAGE_KEY, STORAGE_SUFFIXES.schedules);
   if (!raw) return [];
   try {
@@ -394,8 +372,6 @@ export function parseStoredChatMessages(): Record<string, ChatMessage[]> {
 
 export function parseStoredWallets(): Record<string, AgentWalletConfig> {
   if (typeof window === "undefined") return {};
-  const fixtureWallets = remotionShowcaseFixtures()?.wallets;
-  if (fixtureWallets) return fixtureWallets;
   const raw = readStoredValue(WALLET_STORAGE_KEY, STORAGE_SUFFIXES.wallets);
   if (!raw) return {};
   try {
@@ -412,16 +388,7 @@ export function parseStoredWallets(): Record<string, AgentWalletConfig> {
 export function parseStoredHoneyTreasury(): HoneyTreasuryConfig {
   const fallback = createDefaultHoneyTreasuryConfig();
   if (typeof window === "undefined") return fallback;
-  const fixtureTreasury = remotionShowcaseFixtures()?.honeyTreasury;
-  return fixtureTreasury
-    ? {
-      ...fallback,
-      ...fixtureTreasury,
-      agentTokenUsage: fixtureTreasury.agentTokenUsage ?? {},
-      agentHoneyExchanged: fixtureTreasury.agentHoneyExchanged ?? {},
-      agentHiveBalances: fixtureTreasury.agentHiveBalances ?? {},
-    }
-    : fallback;
+  return fallback;
 }
 
 export function parseStoredHoneyLedgerEnabled(): boolean {

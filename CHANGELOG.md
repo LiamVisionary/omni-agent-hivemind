@@ -3,6 +3,14 @@
 This file records user-visible changes before they are committed. New work should
 be added here first, then marked `Committed` or `Pushed` after the git action.
 
+## 2026-05-26 13:55:11 WITA - Remove Remotion Showcase And Simple Website
+
+- Status: Pushed
+- Areas changed: Remotion showcase files, Remotion package scripts/dependencies, Remotion ignore rules, simple website starter, changelog
+- Summary: Remove the tracked Remotion showcase/capture setup and the standalone `sites/simple-website` starter, and ignore local Remotion working/output directories.
+- Verification: `pnpm install --lockfile-only`; `pnpm typecheck`; `git diff --check -- .gitignore package.json pnpm-lock.yaml remotion public/remotion scripts/capture-remotion-showcase.mjs sites/simple-website src/features/dashboard/dashboard-storage.ts ROADMAP.md ASSIMILATION.json CHANGELOG.md`; `rg -n "remotion|Remotion|@remotion|capture-remotion|__HIVEMINDOS_REMOTION" --glob '!node_modules/**' --glob '!CHANGELOG.md' --glob '!pnpm-lock.yaml'` returned no matches.
+- Intended commit message: `Remove Remotion showcase and simple website`
+
 ## 2026-05-26 02:10:41 WITA - Hide Dashboard Context From Hermes Chat
 
 - Status: Pushed

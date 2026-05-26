@@ -276,27 +276,6 @@
       "note": "A2A agent card skill discovery model adapted for optional local Aeon direct skill surfaces"
     },
     {
-      "source_repo": "duhman/volterra-web",
-      "source_path": "remotion/Root.tsx",
-      "target_path": "remotion/Root.tsx",
-      "reuse_type": "adapted_code",
-      "note": "Remotion root and composition registration shape adapted for the Hivemind showcase composition"
-    },
-    {
-      "source_repo": "duhman/volterra-web",
-      "source_path": "remotion/Composition.tsx",
-      "target_path": "remotion/Showcase.tsx",
-      "reuse_type": "adapted_code",
-      "note": "Simple full-frame composition pattern adapted to render the captured dashboard walkthrough as the video source"
-    },
-    {
-      "source_repo": "duhman/volterra-web",
-      "source_path": "scripts/capture-remotion-assets.ts",
-      "target_path": "scripts/capture-remotion-showcase.mjs",
-      "reuse_type": "adapted_code",
-      "note": "Playwright capture workflow adapted from static screenshots to a scripted browser recording of the real dashboard UI"
-    },
-    {
       "source_repo": "TarunGoyalDev/rewards-calculation-dashboard",
       "source_path": "src/utils/rewards.js",
       "target_path": "src/lib/utils/agent-wallet.ts",
