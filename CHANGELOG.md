@@ -3,6 +3,14 @@
 This file records user-visible changes before they are committed. New work should
 be added here first, then marked `Committed` or `Pushed` after the git action.
 
+## 2026-05-26 08:49 UTC - Harden Shared Hive Env
+
+- Status: Pushed
+- Areas changed: hive env helper scripts, setup/uninstall scripts, shared skill instructions, README, changelog
+- Summary: Make `~/.hivemindos/.env` the default `hive-env-add` target, add generic `hive-env-check` and `hive-env-run` helpers so agents can verify/use shared credentials without reading values, install/uninstall all hive env helpers, and inject always-on shared hive env safety guidance into agent instruction blocks.
+- Verification: `python3 -m py_compile scripts/hive-env-add scripts/hive-env-run scripts/hive-env-check`; `bash -n setup.sh uninstall.sh scripts/seed-shared-skills.sh`; temp-home smoke verified `hive-env-add` writes only the canonical `~/.hivemindos/.env`, `hive-env-check` prints present/absent without values, and `hive-env-run` makes the key available to a child process; live smoke verified `PEXELS_API_KEY=present` and `hive-env-run` exposes it as a boolean-only child-process check; verified installed `~/.local/bin` commands point to the active checkout and shared hive env guidance is present in Hermes/Codex/Claude/Gemini/OpenClaw/Aeon instruction files.
+- Intended commit message: `Harden shared hive env helpers`
+
 ## 2026-05-26 16:37:01 WITA - Add Memory Telemetry And Long-Run Leak Guards
 
 - Status: Pushed

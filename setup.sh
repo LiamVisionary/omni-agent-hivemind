@@ -936,20 +936,25 @@ install_gpg_if_missing() {
 
 install_hive_env_add() {
   local bin_dir="${HOME}/.local/bin"
-  local command_path="$bin_dir/hive-env-add"
+  local command_name command_path script_path
   mkdir -p "$bin_dir"
-  chmod +x "$ROOT/scripts/hive-env-add"
-  if [[ -L "$command_path" ]]; then
-    rm -f "$command_path"
-  fi
-  cat > "$command_path" <<EOF
+  for command_name in hive-env-add hive-env-run hive-env-check; do
+    command_path="$bin_dir/$command_name"
+    script_path="$ROOT/scripts/$command_name"
+    chmod +x "$script_path"
+    if [[ -L "$command_path" ]]; then
+      rm -f "$command_path"
+    fi
+    cat > "$command_path" <<EOF
 #!/usr/bin/env sh
 set -eu
+
+command_name="$command_name"
 
 run_helper() {
   root="\$1"
   shift
-  helper="\$root/scripts/hive-env-add"
+  helper="\$root/scripts/\$command_name"
   if [ -x "\$helper" ]; then
     HIVE_ENV_PROJECT_ROOT="\$root" exec "\$helper" "\$@"
   fi
@@ -960,22 +965,22 @@ run_helper "$ROOT" "\$@" || true
 for root in "\$PWD" "\$HOME/hivemindos" "\$HOME/omni-agent-hivemind" "\$HOME/Documents/code/projects/hivemind-os"; do
   run_helper "\$root" "\$@" || true
 done
-found="\$(find "\$HOME" -maxdepth 6 -type f -path '*/scripts/hive-env-add' 2>/dev/null | head -1 || true)"
+found="\$(find "\$HOME" -maxdepth 6 -type f -path "*/scripts/\$command_name" 2>/dev/null | head -1 || true)"
 if [ -n "\$found" ] && [ -x "\$found" ]; then
   root="\$(cd "\$(dirname "\$found")/.." && pwd)"
   HIVE_ENV_PROJECT_ROOT="\$root" exec "\$found" "\$@"
 fi
-echo "hive-env-add could not find a HivemindOS checkout. Set HIVE_ENV_PROJECT_ROOT or rerun setup.sh from the checkout." >&2
+echo "\$command_name could not find a HivemindOS checkout. Set HIVE_ENV_PROJECT_ROOT or rerun setup.sh from the checkout." >&2
 exit 127
 EOF
-  chmod +x "$command_path"
-  ok "hive-env-add installed: $command_path"
+    chmod +x "$command_path"
+    ok "$command_name installed: $command_path"
+  done
   case ":$PATH:" in
     *":$bin_dir:"*) ;;
-    *) warn "Add $bin_dir to PATH to run hive-env-add from any folder" ;;
+    *) warn "Add $bin_dir to PATH to run hive-env-add, hive-env-run, and hive-env-check from any folder" ;;
   esac
 }
-
 install_pnpm_if_missing() {
   refresh_tool_paths
   if command -v pnpm >/dev/null 2>&1; then

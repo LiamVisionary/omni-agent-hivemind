@@ -203,7 +203,7 @@ Plaintext secrets do not belong in the shared vault. If GPG is configured, `hive
 
 ## Shared Env
 
-Setup installs `hive-env-add` into `~/.local/bin`. GnuPG is optional; when it is installed and a recipient or public key is configured, `hive-env-add` refreshes the encrypted `hive.env.gpg` backup in the shared notes folder.
+Setup installs `hive-env-add`, `hive-env-check`, and `hive-env-run` into `~/.local/bin`. GnuPG is optional; when it is installed and a recipient or public key is configured, `hive-env-add` refreshes the encrypted `hive.env.gpg` backup in the shared notes folder.
 
 ```bash
 hive-env-add KEY=value
@@ -211,9 +211,13 @@ hive-env-add KEY
 hive-env-add --import-env
 hive-env-add --reconcile
 hive-env-add --pull-from root@ubuntu.tailnet.ts.net
+hive-env-check KEY
+hive-env-run -- command arg...
 ```
 
-By default it updates the app `.env.local` and the generic local agent env store at `~/.hivemindos/.env`. Runtime-specific compatibility writes are explicit:
+By default `hive-env-add` updates the canonical shared hive env at `~/.hivemindos/.env`. Apps, scripts, and agents should consume that shared env at runtime instead of copying secrets into project `.env` files or runtime-specific secret stores. Use `hive-env-check KEY` to verify presence without printing values, and use `hive-env-run -- <command>` to execute any command with the shared env loaded into the child process.
+
+Runtime-specific compatibility writes remain explicit for legacy/runtime-native stores:
 
 ```bash
 hive-env-add --runtime hermes ANTHROPIC_API_KEY

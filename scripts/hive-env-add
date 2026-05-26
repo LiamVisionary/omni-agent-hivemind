@@ -738,22 +738,22 @@ def pull_from_peer(args: argparse.Namespace, env_file: pathlib.Path, target: str
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Add or update a HivemindOS env var in local app/runtime stores.",
+        description="Add or update a HivemindOS env var in the canonical shared hive env.",
     )
     parser.add_argument("assignment", nargs="?", help="KEY=value, or KEY to prompt for the value")
     parser.add_argument("--env-file", default="")
     parser.add_argument("--agent-env-file", default="")
-    parser.add_argument("--scope", choices=("all", "app", "agent"), default="all")
+    parser.add_argument("--scope", choices=("all", "app", "agent"), default="agent")
     parser.add_argument(
         "--runtime",
         choices=("generic", "hermes", "aeon", "openclaw"),
         default=os.environ.get("HIVE_AGENT_RUNTIME", "generic"),
-        help="Runtime target for --scope agent. Defaults to a generic hive agent env file.",
+        help="Compatibility target for --scope agent. Default generic writes the canonical shared hive env.",
     )
     parser.add_argument(
         "--import-env",
         action="store_true",
-        help="Import every valid key from the existing Hermes env source into the selected hive scope.",
+        help="Import every valid key from the existing Hermes env source into the canonical shared hive env or selected scope.",
     )
     parser.add_argument(
         "--import-stdin",
@@ -817,7 +817,7 @@ def apply_update(args: argparse.Namespace, env_file: pathlib.Path, key: str, val
         else:
             changed = update_env_file(env_file, key, value) or changed
         if not quiet:
-            print(f"updated {env_file}: {key}")
+            print(f"updated app env {env_file}: {key}")
     if args.scope in ("all", "agent"):
         if args.runtime == "openclaw":
             changed = update_openclaw_stores(key, value) or changed
@@ -845,7 +845,7 @@ def apply_update(args: argparse.Namespace, env_file: pathlib.Path, key: str, val
             else:
                 changed = update_env_file(path, key, value) or changed
             if not quiet:
-                print(f"updated generic hive agent env {path}: {key}")
+                print(f"updated canonical shared hive env {path}: {key}")
     if changed:
         touch_env_meta(touched_file, [key])
 

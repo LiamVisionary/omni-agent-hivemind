@@ -370,22 +370,24 @@ if ask "Remove .env.local from this checkout?" "no"; then
   ok "Removed .env.local"
 fi
 
-if ask "Remove hive-env-add from ~/.local/bin if it points to this checkout?" "yes"; then
-  command_path="$HOME/.local/bin/hive-env-add"
-  if [[ -L "$command_path" && "$(readlink "$command_path")" == "$ROOT/scripts/hive-env-add" ]]; then
-    rm -f "$command_path"
-    ok "Removed $command_path"
-  elif [[ -f "$command_path" ]] && cmp -s "$command_path" "$ROOT/scripts/hive-env-add"; then
-    rm -f "$command_path"
-    ok "Removed copied $command_path"
-  elif [[ -f "$command_path" ]] && grep -q "run_helper \"$ROOT\"" "$command_path" 2>/dev/null; then
-    rm -f "$command_path"
-    ok "Removed wrapper $command_path"
-  else
-    warn "Skipped $command_path because it is not managed by this checkout"
-  fi
+if ask "Remove hive env commands from ~/.local/bin if they point to this checkout?" "yes"; then
+  for command_name in hive-env-add hive-env-run hive-env-check; do
+    command_path="$HOME/.local/bin/$command_name"
+    script_path="$ROOT/scripts/$command_name"
+    if [[ -L "$command_path" && "$(readlink "$command_path")" == "$script_path" ]]; then
+      rm -f "$command_path"
+      ok "Removed $command_path"
+    elif [[ -f "$command_path" && -f "$script_path" ]] && cmp -s "$command_path" "$script_path"; then
+      rm -f "$command_path"
+      ok "Removed copied $command_path"
+    elif [[ -f "$command_path" ]] && grep -q "run_helper \"$ROOT\"" "$command_path" 2>/dev/null; then
+      rm -f "$command_path"
+      ok "Removed wrapper $command_path"
+    else
+      warn "Skipped $command_path because it is not managed by this checkout"
+    fi
+  done
 fi
-
 if ask "Remove the Homebrew shellenv line HivemindOS setup may have added to ~/.zprofile?" "no"; then
   profile_file="$HOME/.zprofile"
   if [[ -f "$profile_file" ]]; then

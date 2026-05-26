@@ -260,16 +260,18 @@ if (Ask-YesNo "Remove .env.local from this checkout?" $false) {
   Ok "Removed .env.local"
 }
 
-if (Ask-YesNo "Remove hive-env-add from ~/.local/bin if it points to this checkout?" $true) {
+if (Ask-YesNo "Remove hive env commands from ~/.local/bin if they point to this checkout?" $true) {
   $binDir = Join-Path ([Environment]::GetFolderPath("UserProfile")) ".local\bin"
-  $shimPath = Join-Path $binDir "hive-env-add.cmd"
-  if (Test-Path $shimPath) {
-    $content = Get-Content $shimPath -Raw
-    if ($content.Contains($Root) -and $content.Contains("scripts\hive-env-add")) {
-      Remove-Item $shimPath -Force
-      Ok "Removed $shimPath"
-    } else {
-      Warn "Skipped $shimPath because it is not managed by this checkout"
+  foreach ($commandName in @("hive-env-add", "hive-env-run", "hive-env-check")) {
+    $shimPath = Join-Path $binDir "$commandName.cmd"
+    if (Test-Path $shimPath) {
+      $content = Get-Content $shimPath -Raw
+      if ($content.Contains($Root) -and $content.Contains("scripts\$commandName")) {
+        Remove-Item $shimPath -Force
+        Ok "Removed $shimPath"
+      } else {
+        Warn "Skipped $shimPath because it is not managed by this checkout"
+      }
     }
   }
 }

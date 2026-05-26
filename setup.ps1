@@ -211,25 +211,27 @@ function Ensure-Gpg {
 
 function Ensure-HiveEnvAdd {
   $binDir = Join-Path ([Environment]::GetFolderPath("UserProfile")) ".local\bin"
-  $shimPath = Join-Path $binDir "hive-env-add.cmd"
-  $scriptPath = Join-Path $Root "scripts\hive-env-add"
   New-Item -ItemType Directory -Force -Path $binDir | Out-Null
   $pythonCommand = if (Test-Command py) { "py -3" } elseif (Test-Command python) { "python" } elseif (Test-Command python3) { "python3" } else { "" }
   if (-not $pythonCommand) {
-    Warn "Python is missing; hive-env-add shim installed but will need Python to run."
+    Warn "Python is missing; hive env shims installed but will need Python to run."
     $pythonCommand = "python"
   }
-  Set-Content -Path $shimPath -Value "@echo off`r`n$pythonCommand `"$scriptPath`" %*`r`n" -Encoding ASCII
-  Ok "hive-env-add installed: $shimPath"
+  foreach ($commandName in @("hive-env-add", "hive-env-run", "hive-env-check")) {
+    $shimPath = Join-Path $binDir "$commandName.cmd"
+    $scriptPath = Join-Path $Root "scripts\$commandName"
+    Set-Content -Path $shimPath -Value "@echo off`r`n$pythonCommand `"$scriptPath`" %*`r`n" -Encoding ASCII
+    Ok "$commandName installed: $shimPath"
+  }
   $userPath = [Environment]::GetEnvironmentVariable("Path", "User")
   if (($userPath -split ";") -notcontains $binDir) {
-    if (Ask-YesNo "Add $binDir to your user PATH for hive-env-add?" $true) {
+    if (Ask-YesNo "Add $binDir to your user PATH for hive env commands?" $true) {
       $nextPath = if ($userPath) { "$userPath;$binDir" } else { $binDir }
       [Environment]::SetEnvironmentVariable("Path", $nextPath, "User")
       Refresh-Path
       Ok "Added $binDir to user PATH"
     } else {
-      Warn "Add $binDir to PATH to run hive-env-add from any folder"
+      Warn "Add $binDir to PATH to run hive-env-add, hive-env-run, and hive-env-check from any folder"
     }
   } else {
     Refresh-Path
