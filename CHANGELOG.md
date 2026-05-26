@@ -3,6 +3,22 @@
 This file records user-visible changes before they are committed. New work should
 be added here first, then marked `Committed` or `Pushed` after the git action.
 
+## 2026-05-26 17:21:06 WITA - Center Agent Settings In Viewport
+
+- Status: Uncommitted
+- Areas changed: Agent settings modal, changelog
+- Summary: Portal the Agent Settings modal to `document.body`, matching the Skill Browser fix, so its fixed backdrop centers against the visible viewport instead of the scrolled dashboard page flow.
+- Verification: Pending
+- Intended commit message: `Center agent settings modal in viewport`
+
+## 2026-05-26 17:18 WITA - Auto-Recover Hivemind Link Setup
+
+- Status: Pushed
+- Areas changed: Hivemind Link setup and telemetry collector installer
+- Summary: Simplify Hivemind Link setup by hiding raw launchctl load noise, detecting stale embedded Tailscale identity/auth failures such as `node ... already exists`, automatically rotating local Link state, and retrying the sidecar startup once before asking the user to rerun setup.
+- Verification: `bash -n scripts/install-telemetry-collector.sh setup.sh uninstall.sh`
+- Intended commit message: `Auto-recover Hivemind Link setup`
+
 ## 2026-05-26 08:49 UTC - Harden Shared Hive Env
 
 - Status: Pushed

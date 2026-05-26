@@ -562,6 +562,12 @@ launchctl_bounded() {
   fi
 }
 
+launchctl_quiet() {
+  local seconds="$1"
+  shift
+  launchctl_bounded "$seconds" "$@" >/dev/null 2>&1
+}
+
 prompt_yes_no() {
   local question="$1"
   local default="${2:-yes}"
@@ -579,6 +585,87 @@ prompt_yes_no() {
   fi
 }
 
+hivemind_link_log_has_stale_identity() {
+  grep -aEqi 'Authorization failed|already exists|node nodekey:.*already exists' \
+    "$HOME/Library/Logs/hivemindos-linkd.err.log" \
+    "$HOME/Library/Logs/hivemindos-linkd.log" 2>/dev/null
+}
+
+hivemind_link_status() {
+  curl -fsS --max-time 3 "http://$LINK_CONTROL/status" 2>/dev/null || true
+}
+
+hivemind_link_connected_name() {
+  node -e 'let d="";process.stdin.on("data",c=>d+=c);process.stdin.on("end",()=>{try{const j=JSON.parse(d); if(j.ok) console.log(j.self?.DNSName || j.self?.HostName || "connected")}catch{}})' 2>/dev/null
+}
+
+hivemind_link_auth_url() {
+  node -e 'let d="";process.stdin.on("data",c=>d+=c);process.stdin.on("end",()=>{try{const j=JSON.parse(d); if(j.authUrl) console.log(j.authUrl)}catch{}})' 2>/dev/null
+}
+
+hivemind_link_backend_state() {
+  node -e 'let d="";process.stdin.on("data",c=>d+=c);process.stdin.on("end",()=>{try{const j=JSON.parse(d); if(j.backendState) console.log(j.backendState)}catch{}})' 2>/dev/null
+}
+
+wait_for_hivemind_link_status() {
+  local seconds="${1:-20}"
+  local elapsed=0
+  LINK_STATUS=""
+  while (( elapsed < seconds )); do
+    LINK_STATUS="$(hivemind_link_status)"
+    if [[ -n "$LINK_STATUS" ]] && printf "%s" "$LINK_STATUS" | node -e 'let d="";process.stdin.on("data",c=>d+=c);process.stdin.on("end",()=>{try{const j=JSON.parse(d); process.exit(j.authUrl || j.ok || j.backendState ? 0 : 1)}catch{process.exit(1)}})' 2>/dev/null; then
+      return 0
+    fi
+    if hivemind_link_log_has_stale_identity; then
+      return 2
+    fi
+    sleep 1
+    elapsed=$((elapsed + 1))
+  done
+  return 1
+}
+
+stop_hivemind_link_service() {
+  if [[ "$(uname -s)" == "Darwin" ]]; then
+    local plist="${LINK_PLIST:-$HOME/Library/LaunchAgents/com.hivemindos.linkd.plist}"
+    launchctl_quiet 5 bootout "gui/$(id -u)/com.hivemindos.linkd" || launchctl_quiet 5 unload "$plist" || true
+    pkill -x hivemind-linkd >/dev/null 2>&1 || true
+  elif command -v systemctl >/dev/null 2>&1; then
+    systemctl --user stop hivemindos-linkd.service >/dev/null 2>&1 || true
+    pkill -x hivemind-linkd >/dev/null 2>&1 || true
+  else
+    pkill -x hivemind-linkd >/dev/null 2>&1 || true
+  fi
+}
+
+reset_hivemind_link_state() {
+  local state_path="${HIVE_LINK_STATE_DIR:-$HOME/.hivemindos/link}"
+  local backup_path=""
+  stop_hivemind_link_service
+  if [[ -e "$state_path" ]]; then
+    backup_path="$state_path.bak.$(date +%Y%m%d-%H%M%S)"
+    mv "$state_path" "$backup_path"
+    echo "Hivemind Link had stale Tailscale sign-in state, so setup reset it automatically."
+  fi
+  if [[ "$(uname -s)" == "Darwin" ]]; then
+    : > "$HOME/Library/Logs/hivemindos-linkd.log" 2>/dev/null || true
+    : > "$HOME/Library/Logs/hivemindos-linkd.err.log" 2>/dev/null || true
+  fi
+}
+
+start_hivemind_link_service() {
+  if [[ "$(uname -s)" == "Darwin" ]]; then
+    launchctl_quiet 5 bootout "gui/$(id -u)/com.hivemindos.linkd" || launchctl_quiet 5 unload "$LINK_PLIST" || true
+    pkill -x hivemind-linkd >/dev/null 2>&1 || true
+    launchctl_quiet 5 bootstrap "gui/$(id -u)" "$LINK_PLIST" || launchctl_quiet 5 load "$LINK_PLIST" || true
+    launchctl_quiet 5 kickstart -k "gui/$(id -u)/com.hivemindos.linkd" || true
+  elif command -v systemctl >/dev/null 2>&1; then
+    systemctl --user daemon-reload
+    systemctl --user enable hivemindos-linkd.service >/dev/null
+    systemctl --user restart hivemindos-linkd.service
+  fi
+}
+
 wait_for_hivemind_link_auth_confirmation() {
   if [[ ! -t 0 || ! -t 1 ]]; then
     return 0
@@ -588,11 +675,14 @@ wait_for_hivemind_link_auth_confirmation() {
   echo "Checking the connection..."
   for _ in $(seq 1 12); do
     local status connected_name
-    status="$(curl -fsS --max-time 3 "http://$LINK_CONTROL/status" 2>/dev/null || true)"
-    connected_name="$(printf "%s" "$status" | node -e 'let d="";process.stdin.on("data",c=>d+=c);process.stdin.on("end",()=>{try{const j=JSON.parse(d); if(j.ok) console.log(j.self?.DNSName || j.self?.HostName || "connected")}catch{}})' 2>/dev/null || true)"
+    status="$(hivemind_link_status)"
+    connected_name="$(printf "%s" "$status" | hivemind_link_connected_name || true)"
     if [[ -n "$connected_name" ]]; then
       echo "Hivemind Link connected: $connected_name"
       return 0
+    fi
+    if hivemind_link_log_has_stale_identity; then
+      return 2
     fi
     sleep 2
   done
@@ -835,9 +925,9 @@ PLIST
 </dict>
 </plist>
 PLIST
-  launchctl_bounded 5 bootout "gui/$(id -u)/com.agent-control-room.telemetry" >/dev/null 2>&1 || launchctl_bounded 5 unload "$PLIST" >/dev/null 2>&1 || true
-  launchctl_bounded 5 bootstrap "gui/$(id -u)" "$PLIST" >/dev/null 2>&1 || launchctl_bounded 5 load "$PLIST"
-  launchctl_bounded 5 kickstart -k "gui/$(id -u)/com.agent-control-room.telemetry" >/dev/null 2>&1 || true
+  launchctl_quiet 5 bootout "gui/$(id -u)/com.agent-control-room.telemetry" || launchctl_quiet 5 unload "$PLIST" || true
+  launchctl_quiet 5 bootstrap "gui/$(id -u)" "$PLIST" || launchctl_quiet 5 load "$PLIST" || true
+  launchctl_quiet 5 kickstart -k "gui/$(id -u)/com.agent-control-room.telemetry" || true
   if [[ "$LINK_ACTIVE" == "true" ]]; then
     LINK_PLIST="$HOME/Library/LaunchAgents/com.hivemindos.linkd.plist"
     cat > "$LINK_PLIST" <<PLIST
@@ -863,11 +953,7 @@ PLIST
 </dict>
 </plist>
 PLIST
-    launchctl_bounded 5 bootout "gui/$(id -u)/com.hivemindos.linkd" >/dev/null 2>&1 || launchctl_bounded 5 unload "$LINK_PLIST" >/dev/null 2>&1 || true
-    pkill -f hivemind-linkd >/dev/null 2>&1 || true
-    pkill -f "$LINK_BIN" >/dev/null 2>&1 || true
-    launchctl_bounded 5 bootstrap "gui/$(id -u)" "$LINK_PLIST" >/dev/null 2>&1 || launchctl_bounded 5 load "$LINK_PLIST"
-    launchctl_bounded 5 kickstart -k "gui/$(id -u)/com.hivemindos.linkd" >/dev/null 2>&1 || true
+    start_hivemind_link_service
   else
     echo "HivemindOS collector installed."
     maybe_allow_node_through_macos_firewall
@@ -938,9 +1024,7 @@ Restart=always
 [Install]
 WantedBy=default.target
 SERVICE
-    systemctl --user daemon-reload
-    systemctl --user enable hivemindos-linkd.service
-    systemctl --user restart hivemindos-linkd.service
+    start_hivemind_link_service
   else
     echo "HivemindOS collector installed."
   fi
@@ -973,35 +1057,65 @@ if [[ "$NETWORK_MANAGED_BY_SETUP" != "true" && "$LINK_ACTIVE" != "true" ]] && ta
   fi
 fi
 if [[ "$LINK_ACTIVE" == "true" ]]; then
-  echo "Hivemind Link is starting..."
-  LINK_STATUS=""
-  for _ in $(seq 1 12); do
-    LINK_STATUS="$(curl -fsS --max-time 3 "http://$LINK_CONTROL/status" 2>/dev/null || true)"
-    if printf "%s" "$LINK_STATUS" | node -e 'let d="";process.stdin.on("data",c=>d+=c);process.stdin.on("end",()=>{try{const j=JSON.parse(d); process.exit(j.authUrl || j.ok || (j.backendState && j.backendState !== "NeedsLogin") ? 0 : 1)}catch{process.exit(1)}})' 2>/dev/null; then
+  echo "Starting Hivemind Link..."
+  link_start_attempt=1
+  while (( link_start_attempt <= 2 )); do
+    if wait_for_hivemind_link_status 20; then
+      link_wait_result=0
+    else
+      link_wait_result=$?
+    fi
+    LINK_AUTH_URL="$(printf "%s" "$LINK_STATUS" | hivemind_link_auth_url || true)"
+    if [[ -z "$LINK_AUTH_URL" && -f "$HOME/Library/Logs/hivemindos-linkd.err.log" ]]; then
+      LINK_AUTH_URL="$(grep -aEho 'https://login\.tailscale\.com/a/[A-Za-z0-9]+' "$HOME/Library/Logs/hivemindos-linkd.err.log" 2>/dev/null | tail -1 || true)"
+    fi
+    if [[ -z "$LINK_AUTH_URL" && -f "$HOME/Library/Logs/hivemindos-linkd.log" ]]; then
+      LINK_AUTH_URL="$(grep -aEho 'https://login\.tailscale\.com/a/[A-Za-z0-9]+' "$HOME/Library/Logs/hivemindos-linkd.log" 2>/dev/null | tail -1 || true)"
+    fi
+    LINK_CONNECTED_NAME="$(printf "%s" "$LINK_STATUS" | hivemind_link_connected_name || true)"
+    LINK_BACKEND_STATE="$(printf "%s" "$LINK_STATUS" | hivemind_link_backend_state || true)"
+
+    if [[ -n "$LINK_CONNECTED_NAME" ]]; then
+      echo "Hivemind Link connected."
       break
     fi
-    sleep 1
+
+    if (( link_wait_result == 2 )) || hivemind_link_log_has_stale_identity; then
+      if (( link_start_attempt == 1 )); then
+        reset_hivemind_link_state
+        start_hivemind_link_service
+        link_start_attempt=$((link_start_attempt + 1))
+        continue
+      fi
+      echo "Hivemind Link could not finish sign-in automatically. Rerun ./setup.sh and it will try again with fresh Link state." >&2
+      break
+    fi
+
+    if [[ -n "$LINK_AUTH_URL" ]]; then
+      echo "Hivemind Link sign-in required."
+      echo "Open this URL on any device to connect this Mac to your Tailscale account:"
+      echo "  $LINK_AUTH_URL"
+      if wait_for_hivemind_link_auth_confirmation; then
+        auth_wait_result=0
+      else
+        auth_wait_result=$?
+      fi
+      if (( auth_wait_result == 2 && link_start_attempt == 1 )); then
+        reset_hivemind_link_state
+        start_hivemind_link_service
+        link_start_attempt=$((link_start_attempt + 1))
+        continue
+      fi
+      break
+    fi
+
+    if [[ -n "$LINK_BACKEND_STATE" ]]; then
+      echo "Hivemind Link is still starting. Setup can continue; the dashboard will keep checking it."
+    else
+      echo "Hivemind Link did not answer yet. Setup can continue; rerunning ./setup.sh will repair it automatically."
+    fi
+    break
   done
-  LINK_AUTH_URL="$(printf "%s" "$LINK_STATUS" | node -e 'let d="";process.stdin.on("data",c=>d+=c);process.stdin.on("end",()=>{try{const j=JSON.parse(d); if(j.authUrl) console.log(j.authUrl)}catch{}})' 2>/dev/null || true)"
-  if [[ -z "$LINK_AUTH_URL" && -f "$HOME/Library/Logs/hivemindos-linkd.err.log" ]]; then
-    LINK_AUTH_URL="$(grep -aEho 'https://login\.tailscale\.com/a/[A-Za-z0-9]+' "$HOME/Library/Logs/hivemindos-linkd.err.log" 2>/dev/null | tail -1 || true)"
-  fi
-  if [[ -z "$LINK_AUTH_URL" && -f "$HOME/Library/Logs/hivemindos-linkd.log" ]]; then
-    LINK_AUTH_URL="$(grep -aEho 'https://login\.tailscale\.com/a/[A-Za-z0-9]+' "$HOME/Library/Logs/hivemindos-linkd.log" 2>/dev/null | tail -1 || true)"
-  fi
-  LINK_CONNECTED_NAME="$(printf "%s" "$LINK_STATUS" | node -e 'let d="";process.stdin.on("data",c=>d+=c);process.stdin.on("end",()=>{try{const j=JSON.parse(d); if(j.ok) console.log(j.self?.DNSName || j.self?.HostName || "connected")}catch{}})' 2>/dev/null || true)"
-  LINK_BACKEND_STATE="$(printf "%s" "$LINK_STATUS" | node -e 'let d="";process.stdin.on("data",c=>d+=c);process.stdin.on("end",()=>{try{const j=JSON.parse(d); if(j.backendState) console.log(j.backendState)}catch{}})' 2>/dev/null || true)"
-  if [[ -n "$LINK_AUTH_URL" ]]; then
-    echo "Sign in to Hivemind Link:"
-    echo "  $LINK_AUTH_URL"
-    wait_for_hivemind_link_auth_confirmation
-  elif [[ -n "$LINK_CONNECTED_NAME" ]]; then
-    echo "Hivemind Link connected."
-  elif [[ -n "$LINK_BACKEND_STATE" ]]; then
-    echo "Hivemind Link is still starting. You can continue; the dashboard will pick it up automatically."
-  else
-    echo "Hivemind Link is still starting. You can continue; the dashboard will pick it up automatically."
-  fi
 fi
 if wait_for_local_collector 10; then
   if [[ "$LINK_ACTIVE" != "true" ]]; then
