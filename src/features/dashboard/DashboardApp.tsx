@@ -1835,11 +1835,20 @@ export default function DashboardApp({ initialView, initialVaultPanelMode, initi
   const agentSettingsCustomWorkers = agentCreateMachine
     ? agentCreateDraft.customWorkerClasses
     : roleModalAgent?.customWorkerClasses ?? (roleModalAgent?.customWorkerClass ? [roleModalAgent.customWorkerClass] : []);
-  const { agentSettingsSelectedCustomWorkerId, agentSettingsCustomWorker, agentSettingsWorkerLabel, agentSettingsWorkerImage, agentSettingsSkillProfile, agentSettingsPreferredSkills, agentSettingsRuntime, agentSettingsProvider, agentSettingsModel, runtimeModelSelection, runtimeModelProviders, selectedRuntimeProvider, selectedRuntimeModels, selectedRuntimeModelId, selectedRuntimeModel, updateAgentRuntimeModel, agentSettingsIntegrationTarget, addHermesModelFromDraft, selectAgentWorkerClass, selectCustomWorkerClass, updateAgentSkillProfile, openCustomWorkerClassCreator, applyCustomWorkerClass, toggleCustomWorkerSkill, uploadCustomWorkerImage, filteredCustomWorkerSkills, selectedHetznerServerType, showHivemindLinkConnectedBanner } = useAgentSettingsController({ HETZNER_SERVER_TYPE_OPTIONS, agentCreateDraft, agentCreateMachine, agentSettingsCustomWorkers, agentSettingsWorkerClass, agentSettingsWorkerPreset, agents, beeRoleIconPath, beeWorkerPreset, createAgentProfile, customWorkerDraft, customWorkerProfileFromDraft, customWorkerSkillSearch, hivemindLinkBannerDismissed, hivemindLinkConnectedUntil, hivemindLinkStatus, machineInitDraft, roleModalAgent, runRuntimeIntegrationAction, runtimeCount, runtimeIntegrationStatus, runtimeModelDraft, setAgentCreateDraft, setAgentWorkerClassView, setCustomWorkerDraft, setCustomWorkerImageError, setCustomWorkerSkillSearch, setRuntimeModelDraft, sharedSkillOptions, updateAgentProfile });
+  const { agentSettingsSelectedCustomWorkerId, agentSettingsCustomWorker, agentSettingsWorkerLabel, agentSettingsWorkerImage, agentSettingsSkillProfile, agentSettingsPreferredSkills, agentSettingsRuntime, agentSettingsProvider, agentSettingsModel, runtimeModelSelection, runtimeModelProviders, selectedRuntimeProvider, selectedRuntimeModels, selectedRuntimeModelId, selectedRuntimeModel, updateAgentRuntimeModel, agentSettingsIntegrationTarget, addHermesModelFromDraft, selectAgentWorkerClass, selectCustomWorkerClass, updateAgentSkillProfile, openCustomWorkerClassCreator, applyCustomWorkerClass, toggleCustomWorkerSkill, uploadCustomWorkerImage, filteredCustomWorkerSkills, selectedHetznerServerType, showHivemindLinkConnectedBanner } = useAgentSettingsController({ HETZNER_SERVER_TYPE_OPTIONS, agentCreateDraft, agentCreateMachine, agentSettingsCustomWorkers, agentSettingsWorkerClass, agentSettingsWorkerPreset, agents, beeRoleIconPath, beeWorkerPreset, createAgentProfile, customWorkerDraft, customWorkerProfileFromDraft, customWorkerSkillSearch, hivemindLinkBannerDismissed, hivemindLinkConnectedUntil, hivemindLinkStatus, machineInitDraft, roleModalAgent, runRuntimeIntegrationAction, runtimeCount, runtimeIntegrationStatus, runtimeModelDraft, runtimeModelSelectionsByRuntime, setAgentCreateDraft, setAgentWorkerClassView, setCustomWorkerDraft, setCustomWorkerImageError, setCustomWorkerSkillSearch, setRuntimeModelDraft, sharedSkillOptions, updateAgentProfile });
   useEffect(() => {
     if (!roleModalAgent && !agentCreateMachine) return;
     let cancelled = false;
     const hintedAgents = agentCreateMachine?.agents ?? (roleModalAgent ? [roleModalAgent] : []);
+    const integrationTargetsByRuntime = new Map<AgentRuntime, AgentProfile>();
+    for (const agent of hintedAgents) {
+      if (runtimeCan(agent, "modelSelection") && !integrationTargetsByRuntime.has(agent.runtime)) {
+        integrationTargetsByRuntime.set(agent.runtime, agent);
+      }
+    }
+    if (agentSettingsIntegrationTarget && runtimeCan(agentSettingsIntegrationTarget, "modelSelection")) {
+      integrationTargetsByRuntime.set(agentSettingsIntegrationTarget.runtime, agentSettingsIntegrationTarget);
+    }
     void Promise.resolve().then(() => {
       if (cancelled) return;
       setRuntimeAvailability(hintedAgents.length
@@ -1857,10 +1866,15 @@ export default function DashboardApp({ initialView, initialVaultPanelMode, initi
         }
       })
       .catch(() => undefined);
+    for (const target of integrationTargetsByRuntime.values()) {
+      if (runtimeModelSelectionsByRuntime[target.runtime]) continue;
+      void refreshRuntimeIntegrations(target);
+    }
     return () => {
       cancelled = true;
     };
-  }, [agentCreateMachine, roleModalAgent]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [agentCreateMachine?.key, roleModalAgent?.id]);
   const showHivemindLinkSignInBanner = !hivemindLinkBannerDismissed
     && !showHivemindLinkConnectedBanner
     && Boolean(hivemindLinkStatus?.authUrl)

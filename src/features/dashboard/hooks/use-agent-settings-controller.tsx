@@ -52,6 +52,7 @@ type UseAgentSettingsControllerProps = {
   runtimeCount: (agents: AgentProfile[], runtime: AgentRuntime) => number;
   runtimeIntegrationStatus: RuntimeIntegrationStatus | null;
   runtimeModelDraft: RuntimeModelDraft;
+  runtimeModelSelectionsByRuntime: Partial<Record<AgentRuntime, NonNullable<RuntimeIntegrationStatus["modelSelection"]>>>;
   setAgentCreateDraft: Dispatch<SetStateAction<AgentCreateDraft>>;
   setAgentWorkerClassView: Dispatch<SetStateAction<AgentWorkerClassView>>;
   setCustomWorkerDraft: Dispatch<SetStateAction<WorkerClassDraft>>;
@@ -63,7 +64,7 @@ type UseAgentSettingsControllerProps = {
 };
 
 export function useAgentSettingsController(props: UseAgentSettingsControllerProps) {
-  const { HETZNER_SERVER_TYPE_OPTIONS, agentCreateDraft, agentCreateMachine, agentSettingsCustomWorkers, agentSettingsWorkerClass, agentSettingsWorkerPreset, agents, beeRoleIconPath, beeWorkerPreset, createAgentProfile, customWorkerDraft, customWorkerProfileFromDraft, customWorkerSkillSearch, hivemindLinkBannerDismissed, hivemindLinkConnectedUntil, hivemindLinkStatus, machineInitDraft, roleModalAgent, runRuntimeIntegrationAction, runtimeCount, runtimeIntegrationStatus, runtimeModelDraft, setAgentCreateDraft, setAgentWorkerClassView, setCustomWorkerDraft, setCustomWorkerImageError, setCustomWorkerSkillSearch, setRuntimeModelDraft, sharedSkillOptions, updateAgentProfile } = props;
+  const { HETZNER_SERVER_TYPE_OPTIONS, agentCreateDraft, agentCreateMachine, agentSettingsCustomWorkers, agentSettingsWorkerClass, agentSettingsWorkerPreset, agents, beeRoleIconPath, beeWorkerPreset, createAgentProfile, customWorkerDraft, customWorkerProfileFromDraft, customWorkerSkillSearch, hivemindLinkBannerDismissed, hivemindLinkConnectedUntil, hivemindLinkStatus, machineInitDraft, roleModalAgent, runRuntimeIntegrationAction, runtimeCount, runtimeIntegrationStatus, runtimeModelDraft, runtimeModelSelectionsByRuntime, setAgentCreateDraft, setAgentWorkerClassView, setCustomWorkerDraft, setCustomWorkerImageError, setCustomWorkerSkillSearch, setRuntimeModelDraft, sharedSkillOptions, updateAgentProfile } = props;
   const agentSettingsSelectedCustomWorkerId = agentCreateMachine ? agentCreateDraft.selectedCustomWorkerClassId : roleModalAgent?.selectedCustomWorkerClassId;
   const agentSettingsCustomWorker = agentSettingsCustomWorkers.find((workerClass) => workerClass.id === agentSettingsSelectedCustomWorkerId);
   const agentSettingsWorkerLabel = agentSettingsCustomWorker?.label || `${agentSettingsWorkerPreset.label} bee`;
@@ -87,10 +88,11 @@ export function useAgentSettingsController(props: UseAgentSettingsControllerProp
       machineName: agentCreateMachine.name,
     }
     : roleModalAgent;
-  const runtimeModelSelection = runtimeIntegrationStatus?.runtime === agentSettingsRuntime
+  const freshRuntimeModelSelection = runtimeIntegrationStatus?.runtime === agentSettingsRuntime
     && runtimeIntegrationStatus.targetKey === runtimeIntegrationTargetKey(agentSettingsIntegrationTarget)
     ? runtimeIntegrationStatus.modelSelection
     : undefined;
+  const runtimeModelSelection = freshRuntimeModelSelection ?? runtimeModelSelectionsByRuntime[agentSettingsRuntime];
   const runtimeModelProviders = runtimeModelSelection?.providers ?? [];
   const selectedRuntimeProvider = runtimeModelProviders.find((provider) => provider.slug === agentSettingsProvider)
     ?? runtimeModelProviders.find((provider) => provider.slug === runtimeModelSelection?.provider)
