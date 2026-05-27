@@ -456,7 +456,12 @@ export function AgentSettingsModal(props: any) {
                       </div>
                     ) : null}
                     {runtimeCanAddModels && runtimeModelSetupMode ? (
-                      <div className={fleetClass("agentRuntimeModelSetup")}>
+                      <div
+                        className={fleetClass(
+                          "agentRuntimeModelSetup",
+                          runtimeModelSetupMode === "provider" ? "agentRuntimeModelSetupProvider" : "agentRuntimeModelSetupModel",
+                        )}
+                      >
                         <div>
                           <strong>{runtimeModelSetupMode === "provider" ? "Add provider" : "Add model"}</strong>
                           <p>{runtimeModelSetupMode === "provider" ? "Use Hermes' provider setup, then refresh this list." : `Add an exact model ID to ${selectedRuntimeProvider?.name ?? "this provider"}.`}</p>

@@ -2355,15 +2355,26 @@
 
 .agentRuntimeModelSetup {
   display: grid;
-  grid-template-columns: minmax(180px, 1fr) minmax(0, 1fr) minmax(0, 1.2fr) minmax(110px, 0.6fr) auto;
-  gap: 8px;
-  align-items: end;
+  gap: 12px;
   border-top: 1px solid rgba(148, 163, 184, 0.12);
   padding-top: 10px;
 }
 
+.agentRuntimeModelSetupModel {
+  grid-template-columns: minmax(180px, 1fr) minmax(0, 1fr) minmax(0, 1.2fr) minmax(110px, 0.6fr) auto;
+  align-items: end;
+  gap: 8px;
+}
+
+.agentRuntimeModelSetupProvider {
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px 16px;
+}
+
 .agentRuntimeModelSetup > div:first-child {
   align-self: center;
+  min-width: 0;
 }
 
 .agentRuntimeModelSetup strong {
@@ -2377,6 +2388,17 @@
   color: var(--muted);
   font-size: 12px;
   line-height: 1.35;
+}
+
+.agentRuntimeModelSetupProvider > button[data-slot="button"] {
+  justify-self: end;
+  width: fit-content;
+  max-width: 100%;
+  min-width: 0;
+  height: auto;
+  min-height: 44px;
+  white-space: normal;
+  text-align: left;
 }
 
 .agentRuntimeToolsPanel {
@@ -3858,6 +3880,10 @@
   .agentRuntimeModelSetup,
   .adaptiveFilterGrid {
     grid-template-columns: 1fr;
+  }
+
+  .agentRuntimeModelSetupProvider > button[data-slot="button"] {
+    justify-self: start;
   }
 
   .agentBubbleStack {

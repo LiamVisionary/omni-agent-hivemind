@@ -3,6 +3,14 @@
 This file records user-visible changes before they are committed. New work should
 be added here first, then marked `Committed` or `Pushed` after the git action.
 
+## 2026-05-27 15:35:44 WITA - Fix Runtime Provider Setup Layout
+
+- Status: Pushed
+- Areas changed: Agent settings modal runtime provider setup layout, dashboard styling, changelog
+- Summary: Separate the Add Provider setup panel layout from the Add Model form grid so the refresh action no longer collides with the explanatory copy, and allow the refresh button label to wrap instead of escaping its button.
+- Verification: `pnpm exec eslint src/features/dashboard/views/chat/AgentSettingsModal.tsx --max-warnings=999` passed with one existing unused-prop warning; `pnpm exec tsc --noEmit --pretty false --skipLibCheck`; `git diff --check`; local dashboard loaded on the managed `5020` dev server, but this browser session had zero agents available so the populated modal state could not be opened there.
+- Intended commit message: `Fix runtime provider setup layout`
+
 ## 2026-05-27 16:02 WITA - Stabilize Runtime Model Picker
 
 - Status: Pushed
