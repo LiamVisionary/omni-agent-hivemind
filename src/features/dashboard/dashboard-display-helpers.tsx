@@ -42,6 +42,13 @@ export function tailnetPeerLooksUnreachable(machine: MachineGroup) {
     && (machine.rxBytes ?? 0) === 0;
 }
 
+function collectorHealthCommand(machine: MachineGroup) {
+  const collectorUrl = machine.collectorUrl?.replace(/\/+$/, "");
+  if (collectorUrl) return `curl --max-time 5 '${collectorUrl}/health'`;
+  const tailnetTarget = machine.dnsName || machine.ip || "<tailnet-ip>";
+  return `curl --max-time 5 http://${machine.ip || tailnetTarget}:8787/health`;
+}
+
 export function machineNetworkIssue(machine: MachineGroup, tailscaleStatus: string): FleetMachine["networkIssue"] {
   if (machine.key === "unassigned") return undefined;
   if (/^(ios|android)$/i.test(machine.os ?? "") && machine.collector !== "ready") return undefined;
@@ -115,7 +122,7 @@ export function machineNetworkIssue(machine: MachineGroup, tailscaleStatus: stri
           "sudo tailscale up",
           "",
           "# Then retry from this dashboard machine",
-          `curl --max-time 5 http://${machine.ip || tailnetTarget}:8787/health`,
+          collectorHealthCommand(machine),
         ],
       };
     }
@@ -127,7 +134,7 @@ export function machineNetworkIssue(machine: MachineGroup, tailscaleStatus: stri
       commands: [
         "# From this dashboard machine",
         `tailscale ping ${tailnetTarget}`,
-        `curl --max-time 5 http://${machine.ip || tailnetTarget}:8787/health`,
+        collectorHealthCommand(machine),
         "",
         "# On the other machine",
         "tailscale status",

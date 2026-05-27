@@ -355,6 +355,20 @@ async function fetchJson(url: string, init?: RequestInit) {
   return response.json() as Promise<Record<string, unknown>>;
 }
 
+async function fetchAgents(url: string, device: Device, capabilities?: CollectorCapabilities) {
+  try {
+    const agentData = await fetchJson(url) as { agents?: AgentProfile[] };
+    return (agentData.agents ?? []).map((agent) => ({
+      ...agent,
+      telemetryUrl: device.collectorUrl,
+      machineName: device.name,
+      collectorCapabilities: capabilities,
+    }));
+  } catch {
+    return [];
+  }
+}
+
 function hasQueenAgent(agents: AgentProfile[]) {
   return agents.some((agent) => (
     agent.beeRole === "queen"
@@ -424,13 +438,7 @@ async function readDiscovery(includeSnapshots: boolean): Promise<FleetDiscoverPa
       version = healthData.version;
       capabilities = healthData.capabilities ?? { chat: false, runtimes: [] };
       envSync = healthData.envSync;
-      const agentData = await fetchJson(`${device.collectorUrl}/agents`) as { agents?: AgentProfile[] };
-      agents = (agentData.agents ?? []).map((agent) => ({
-        ...agent,
-        telemetryUrl: device.collectorUrl,
-        machineName: device.name,
-        collectorCapabilities: capabilities,
-      }));
+      agents = await fetchAgents(`${device.collectorUrl}/agents`, device, capabilities);
     } catch {
       return {
         device,

@@ -3,6 +3,14 @@
 This file records user-visible changes before they are committed. New work should
 be added here first, then marked `Committed` or `Pushed` after the git action.
 
+## 2026-05-27 15:38:09 WITA - Stabilize Link Fleet Discovery
+
+- Status: Uncommitted
+- Areas changed: Fleet discovery API, dashboard network diagnostic copy, changelog
+- Summary: Keep Link-reached collectors marked ready when `/health` succeeds but `/agents` is slow or transiently unavailable, and show the actual Link proxy health URL in dashboard fix commands instead of a misleading raw Tailnet collector URL.
+- Verification: `pnpm exec eslint src/app/api/fleet/discover/route.ts src/features/dashboard/dashboard-display-helpers.tsx --max-warnings=999` passed with one existing unused helper warning; `pnpm exec tsc --noEmit --pretty false --skipLibCheck`; `git diff --check`.
+- Intended commit message: `Stabilize Link fleet discovery`
+
 ## 2026-05-27 15:35:44 WITA - Fix Runtime Provider Setup Layout
 
 - Status: Pushed

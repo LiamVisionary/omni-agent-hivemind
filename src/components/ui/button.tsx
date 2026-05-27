@@ -6,20 +6,20 @@ import { LoaderCircle } from "lucide-react";
 import { cn } from "@/lib/utils/cn";
 
 const buttonVariants = cva(
-  "inline-flex shrink-0 items-center justify-center gap-2 whitespace-nowrap rounded-md text-sm font-semibold transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[rgba(45,212,191,0.45)] disabled:pointer-events-none disabled:opacity-45 [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0",
+  "inline-flex shrink-0 items-center justify-center gap-1.5 rounded-sm text-center text-sm font-medium leading-[1.15] transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[rgba(45,212,191,0.38)] disabled:pointer-events-none disabled:opacity-45 [&_svg]:pointer-events-none [&_svg]:size-3.5 [&_svg]:shrink-0",
   {
     variants: {
       variant: {
-        default: "bg-[var(--accent)] text-[#06201d] hover:bg-[var(--accent-strong)]",
-        secondary: "border border-[rgba(148,163,184,0.2)] bg-[rgba(15,23,42,0.72)] text-[var(--foreground)] hover:border-[rgba(94,234,212,0.42)] hover:bg-[rgba(45,212,191,0.12)]",
-        ghost: "text-[var(--muted)] hover:bg-[rgba(148,163,184,0.1)] hover:text-[var(--foreground)]",
-        danger: "bg-[rgba(251,113,133,0.14)] text-[#fecdd3] hover:bg-[rgba(251,113,133,0.22)]",
+        default: "border border-[rgba(94,234,212,0.36)] bg-[rgba(45,212,191,0.14)] text-[var(--accent-strong)] hover:border-[rgba(94,234,212,0.58)] hover:bg-[rgba(45,212,191,0.22)] hover:text-[var(--foreground)]",
+        secondary: "border border-[rgba(148,163,184,0.18)] bg-[rgba(15,23,42,0.44)] text-[var(--text-soft)] hover:border-[rgba(94,234,212,0.36)] hover:bg-[rgba(45,212,191,0.09)] hover:text-[var(--foreground)]",
+        ghost: "border border-transparent text-[var(--muted)] hover:bg-[rgba(148,163,184,0.08)] hover:text-[var(--foreground)]",
+        danger: "border border-[rgba(251,113,133,0.28)] bg-[rgba(251,113,133,0.10)] text-[#fecdd3] hover:bg-[rgba(251,113,133,0.18)]",
       },
       size: {
-        default: "h-10 px-4",
-        sm: "h-8 px-3 text-xs",
-        lg: "h-11 px-5",
-        icon: "size-9",
+        default: "min-h-8 px-3 py-1.5",
+        sm: "min-h-7 px-2.5 py-1 text-xs",
+        lg: "min-h-9 px-3.5 py-1.5",
+        icon: "size-8 p-0",
       },
     },
     defaultVariants: {
