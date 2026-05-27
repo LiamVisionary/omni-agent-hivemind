@@ -6,7 +6,7 @@ import { LoaderCircle } from "lucide-react";
 import { cn } from "@/lib/utils/cn";
 
 const buttonVariants = cva(
-  "inline-flex shrink-0 items-center justify-center gap-1.5 rounded-sm text-center text-sm font-medium leading-[1.15] transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[rgba(45,212,191,0.38)] disabled:pointer-events-none disabled:opacity-45 [&_svg]:pointer-events-none [&_svg]:size-3.5 [&_svg]:shrink-0",
+  "inline-flex shrink-0 items-center justify-center gap-1.5 rounded-[5px] text-center text-[13px] font-medium leading-[1.15] transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[rgba(45,212,191,0.38)] disabled:pointer-events-none disabled:opacity-45 [&_svg]:pointer-events-none [&_svg]:size-3.5 [&_svg]:shrink-0",
   {
     variants: {
       variant: {
@@ -16,10 +16,10 @@ const buttonVariants = cva(
         danger: "border border-[rgba(251,113,133,0.28)] bg-[rgba(251,113,133,0.10)] text-[#fecdd3] hover:bg-[rgba(251,113,133,0.18)]",
       },
       size: {
-        default: "min-h-8 px-3 py-1.5",
-        sm: "min-h-7 px-2.5 py-1 text-xs",
-        lg: "min-h-9 px-3.5 py-1.5",
-        icon: "size-8 p-0",
+        default: "min-h-[30px] px-2.5 py-1.5",
+        sm: "min-h-7 px-2 py-1 text-xs",
+        lg: "min-h-8 px-3 py-1.5",
+        icon: "size-7 p-0",
       },
     },
     defaultVariants: {

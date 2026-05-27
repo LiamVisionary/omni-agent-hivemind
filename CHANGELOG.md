@@ -3,6 +3,14 @@
 This file records user-visible changes before they are committed. New work should
 be added here first, then marked `Committed` or `Pushed` after the git action.
 
+## 2026-05-27 15:40:21 WITA - Tighten Button Dimensions
+
+- Status: Pushed
+- Areas changed: shared button component, changelog
+- Summary: Further reduce shared button visual bulk with 13px labels, 30px default actions, 32px large actions, and 28px icon buttons.
+- Verification: `pnpm exec eslint src/components/ui/button.tsx --max-warnings=999`; `pnpm exec tsc --noEmit --pretty false --skipLibCheck`; `git diff --check`.
+- Intended commit message: `Tighten shared button dimensions`
+
 ## 2026-05-27 15:38:13 WITA - Compact Button Styling
 
 - Status: Pushed
