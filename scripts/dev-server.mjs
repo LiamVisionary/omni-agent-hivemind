@@ -4,6 +4,7 @@ import { spawn } from "node:child_process";
 const args = process.argv.slice(2);
 const nextArgs = [];
 let port = process.env.PORT || "5020";
+const rawBundler = (process.env.HIVEMINDOS_NEXT_DEV_BUNDLER || process.env.NEXT_DEV_BUNDLER || "webpack").trim().toLowerCase();
 
 for (let i = 0; i < args.length; i += 1) {
   const arg = args[i];
@@ -27,14 +28,28 @@ for (let i = 0; i < args.length; i += 1) {
   nextArgs.push(arg);
 }
 
+const hasBundlerFlag = nextArgs.some((arg) => arg === "--webpack" || arg === "--turbo" || arg === "--turbopack");
+const hasSourceMapFlag = nextArgs.includes("--disable-source-maps");
+const bundlerArgs = (() => {
+  if (hasBundlerFlag) return [];
+  if (rawBundler === "webpack") return ["--webpack"];
+  if (rawBundler === "turbo" || rawBundler === "turbopack") return ["--turbo"];
+  console.warn(`Unknown HIVEMINDOS_NEXT_DEV_BUNDLER/NEXT_DEV_BUNDLER value "${rawBundler}"; using webpack.`);
+  return ["--webpack"];
+})();
+const sourceMapArgs = process.env.NEXT_DEV_SOURCE_MAPS === "1" || hasSourceMapFlag ? [] : ["--disable-source-maps"];
+
 const command = "scripts/run-with-memory-limit.sh";
 const commandArgs = [
   "--limit-mb",
   process.env.MEMORY_LIMIT_MB || "5000",
   "--",
+  "pnpm",
+  "exec",
   "next",
   "dev",
-  "--webpack",
+  ...bundlerArgs,
+  ...sourceMapArgs,
   "-p",
   port,
   ...nextArgs,

@@ -76,7 +76,6 @@ export type AgentWalletCardProps = {
   onRefreshBalance: () => void;
   onSendUsdc: () => void;
   onCallX402: () => void;
-  onExchangeHoney: () => void;
 };
 
 type Sheet = "send" | "receive" | "limits" | null;
@@ -148,7 +147,6 @@ export function AgentWalletCard({
   onRefreshBalance,
   onSendUsdc,
   onCallX402,
-  onExchangeHoney,
 }: AgentWalletCardProps) {
   const [sheet, setSheet] = useState<Sheet>(null);
   const [moneyClawModalOpen, setMoneyClawModalOpen] = useState(false);
@@ -543,10 +541,9 @@ export function AgentWalletCard({
           <button
             type="button"
             className={cn(styles.tokenAction)}
-            disabled={!honeyLedgerEnabled || !honeyReward || honeyReward.honeyAvailable <= 0}
-            onClick={onExchangeHoney}
+            disabled
           >
-            Award HIVE
+            Claim in rail
           </button>
         </div>
 
@@ -557,8 +554,8 @@ export function AgentWalletCard({
             </svg>
           </span>
           <div className={styles.tokenBody}>
-            <span className={styles.tokenName}>Bankr HIVE</span>
-            <span className={styles.tokenSub}>Awarded reward</span>
+            <span className={styles.tokenName}>Legacy HIVE</span>
+            <span className={styles.tokenSub}>Ledger only</span>
           </div>
           <div className={styles.tokenAmount}>
             <strong>{formatNumber(honeyReward?.hiveBalance ?? 0, 2)}</strong>

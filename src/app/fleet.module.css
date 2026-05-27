@@ -2171,6 +2171,188 @@
   color: var(--accent-strong);
 }
 
+.adaptiveRuntimeModelCard {
+  position: relative;
+  border-color: rgba(34, 197, 94, 0.28);
+  background: rgba(20, 83, 45, 0.16);
+}
+
+.adaptiveModelTitle {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+}
+
+.adaptiveFreeBadge {
+  border: 1px solid rgba(134, 239, 172, 0.32);
+  border-radius: 999px;
+  background: rgba(34, 197, 94, 0.16);
+  color: #86efac;
+  font-size: 9px;
+  font-weight: 900;
+  line-height: 1;
+  padding: 3px 6px;
+  text-transform: uppercase;
+}
+
+.adaptiveTooltip {
+  position: absolute;
+  z-index: 5;
+  left: 8px;
+  bottom: calc(100% + 8px);
+  width: min(260px, 78vw);
+  border: 1px solid rgba(148, 163, 184, 0.22);
+  border-radius: 7px;
+  background: rgba(2, 6, 23, 0.96);
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.34);
+  color: var(--foreground);
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1.35;
+  opacity: 0;
+  padding: 9px 10px;
+  pointer-events: none;
+  transform: translateY(4px);
+  transition: opacity 160ms ease, transform 160ms ease;
+}
+
+.adaptiveRuntimeModelCard:hover .adaptiveTooltip,
+.adaptiveRuntimeModelCard:focus-visible .adaptiveTooltip {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.adaptiveRuntimeSettings {
+  display: grid;
+  gap: 12px;
+  border: 1px solid rgba(148, 163, 184, 0.16);
+  border-radius: 8px;
+  background: rgba(2, 6, 23, 0.22);
+  padding: 12px;
+}
+
+.adaptiveRuntimeHeader {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: start;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.adaptiveRuntimeHeader strong {
+  display: block;
+  color: var(--foreground);
+  font-size: 13px;
+}
+
+.adaptiveRuntimeHeader small,
+.adaptiveRuntimeHeader span {
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.35;
+}
+
+.adaptiveRuntimeHeader span {
+  border: 1px solid rgba(148, 163, 184, 0.16);
+  border-radius: 999px;
+  padding: 5px 8px;
+}
+
+.adaptiveFilterGrid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.1fr) minmax(140px, 0.55fr) minmax(0, 1.25fr);
+  gap: 10px;
+  align-items: start;
+}
+
+.adaptiveFilterGroup {
+  display: grid;
+  gap: 7px;
+}
+
+.adaptiveFilterGroup > span,
+.adaptiveScoreSlider > span {
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 900;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.adaptiveFilterGroup select {
+  width: 100%;
+  min-height: 34px;
+  border: 1px solid rgba(148, 163, 184, 0.18);
+  border-radius: 7px;
+  background: rgba(15, 23, 42, 0.48);
+  color: var(--foreground);
+  font-size: 12px;
+  font-weight: 800;
+  padding: 7px 9px;
+}
+
+.adaptiveChipGrid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.adaptiveChip {
+  border: 1px solid rgba(148, 163, 184, 0.16);
+  border-radius: 999px;
+  background: rgba(15, 23, 42, 0.38);
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 11px;
+  font-weight: 850;
+  padding: 6px 9px;
+}
+
+.adaptiveChip:hover {
+  border-color: rgba(94, 234, 212, 0.34);
+  color: var(--foreground);
+}
+
+.adaptiveChipActive {
+  border-color: rgba(94, 234, 212, 0.44);
+  background: rgba(45, 212, 191, 0.1);
+  color: var(--accent-strong);
+}
+
+.adaptiveScoreGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 10px;
+}
+
+.adaptiveScoreSlider {
+  display: grid;
+  gap: 7px;
+  min-width: 0;
+}
+
+.adaptiveScoreSlider span {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.adaptiveScoreSlider b {
+  color: var(--accent-strong);
+  font-size: 11px;
+}
+
+.adaptiveScoreSlider input {
+  accent-color: #5eead4;
+  width: 100%;
+}
+
+.adaptiveFallbackSelect {
+  max-width: 420px;
+}
+
 .agentRuntimeModelSetup {
   display: grid;
   grid-template-columns: minmax(180px, 1fr) minmax(0, 1fr) minmax(0, 1.2fr) minmax(110px, 0.6fr) auto;
@@ -3673,7 +3855,8 @@
   .skillBrowserSearch,
   .skillBrowserGithubForm,
   .agentRuntimeModelPanel,
-  .agentRuntimeModelSetup {
+  .agentRuntimeModelSetup,
+  .adaptiveFilterGrid {
     grid-template-columns: 1fr;
   }
 

@@ -144,7 +144,16 @@ start_dashboard() {
       pnpm_cmd=(npm exec --yes --package pnpm@8.6.12 -- pnpm)
     fi
   fi
-  nohup "$ROOT/scripts/run-with-memory-limit.sh" --limit-mb 5000 -- "${pnpm_cmd[@]}" exec next dev --webpack -p "$PORT" > "$ROOT/.next/hivemindos.log" 2>&1 &
+  local bundler="${HIVEMINDOS_NEXT_DEV_BUNDLER:-${NEXT_DEV_BUNDLER:-webpack}}"
+  local bundler_flag="--turbo"
+  if [[ "$bundler" == "webpack" ]]; then
+    bundler_flag="--webpack"
+  fi
+  local source_map_args=()
+  if [[ "${NEXT_DEV_SOURCE_MAPS:-}" != "1" ]]; then
+    source_map_args=(--disable-source-maps)
+  fi
+  nohup "$ROOT/scripts/run-with-memory-limit.sh" --limit-mb 5000 -- "${pnpm_cmd[@]}" exec next dev "$bundler_flag" "${source_map_args[@]}" -p "$PORT" > "$ROOT/.next/hivemindos.log" 2>&1 &
   sleep 2
 }
 

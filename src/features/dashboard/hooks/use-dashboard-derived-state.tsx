@@ -706,12 +706,12 @@ export function useDashboardDerivedState(props: any) {
   const honeyStats = useMemo(() => {
     const totalHoney = honeyAgentRewards.reduce((total, reward) => total + reward.honeyEarned, 0);
     const availableHoney = honeyAgentRewards.reduce((total, reward) => total + reward.honeyAvailable, 0);
-    const bankrHiveAwarded = honeyAgentRewards.reduce((total, reward) => total + reward.hiveBalance, 0);
+    const legacyHive = honeyAgentRewards.reduce((total, reward) => total + reward.hiveBalance, 0);
     const hiveQuote = Math.round(availableHoney * honeyTreasury.tokenPerHoney * 1_000_000) / 1_000_000;
     return {
       totalHoney,
       availableHoney,
-      bankrHiveAwarded,
+      legacyHive,
       hiveQuote,
       rewardPoolHive: honeyTreasury.rewardPoolHive,
       rewardPoolRemainingHive: honeyTreasury.rewardPoolRemainingHive,
@@ -870,7 +870,7 @@ export function useDashboardDerivedState(props: any) {
   const activeNavItem = navItems.find((item) => (
     item.id === activeView
     || (item.id === "kanban" && isWorkView(activeView))
-    || (item.id === "more" && (activeView === "maintenance" || activeView === "memory" || activeView === "files" || activeView === "notifications" || activeView === "env" || activeView === "integrations"))
+    || (item.id === "more" && (activeView === "maintenance" || activeView === "memory" || activeView === "files" || activeView === "notifications" || activeView === "env" || activeView === "integrations" || activeView === "my-apps"))
   ));
   const activeHeader = (() => {
     const detail = activeNavItem?.detail ?? "";
@@ -890,6 +890,7 @@ export function useDashboardDerivedState(props: any) {
       chat: { label: "Agent Chat", title: selectedAgent?.name ? `Talking with ${selectedAgent.name}` : "Choose an agent to chat with" },
       more: { label: "More", title: "Utilities and quieter surfaces" },
       env: { label: "Env", title: "Shared and agent-specific variables" },
+      "my-apps": { label: "My Apps", title: "What you are hosting on the Tailnet" },
     };
     const header = headers[activeView];
     return {

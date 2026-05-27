@@ -46,6 +46,9 @@ export function MemoryTelemetryPanel(props: MemoryTelemetryPanelProps) {
   const firstSample = samples[0];
   const appGrowth = latestSample && firstSample ? latestSample.appRssMb - firstSample.appRssMb : 0;
   const maxAppRss = Math.max(0, ...samples.map((sample) => sample.appRssMb));
+  const currentProcess = memoryTelemetry?.processes.find((processInfo) => processInfo.isCurrentProcess);
+  const nextProcessRss = currentProcess?.rssMb ?? memoryTelemetry?.processMemory.rssMb ?? 0;
+  const dashboardRss = memoryTelemetry?.summary.appRssMb ?? 0;
 
   return (
     <section className={fleetClass("taskPanel", "tabPanel")}>
@@ -64,18 +67,20 @@ export function MemoryTelemetryPanel(props: MemoryTelemetryPanelProps) {
       {memoryTelemetry ? (
         <div className="mt-4 grid gap-4">
           <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
-            <MetricCard label="Dashboard RSS" value={formatMb(memoryTelemetry.summary.appRssMb)} detail={`${growthLabel(appGrowth)} over ${memoryTelemetry.summary.sampleWindowMinutes}m`} />
-            <MetricCard label="Next RSS" value={formatMb(memoryTelemetry.processMemory.rssMb)} detail={`PID ${memoryTelemetry.pid}`} />
-            <MetricCard label="Heap used" value={formatMb(memoryTelemetry.processMemory.heapUsedMb)} detail={`${formatMb(memoryTelemetry.processMemory.heapTotalMb)} allocated`} />
-            <MetricCard label="External" value={formatMb(memoryTelemetry.processMemory.externalMb)} detail={`${formatMb(memoryTelemetry.processMemory.arrayBuffersMb)} array buffers`} />
+            <MetricCard label="Dashboard RSS" value={formatMb(memoryTelemetry.summary.appRssMb)} detail={`${growthLabel(appGrowth)} total tree`} />
+            <MetricCard label="Next RSS" value={formatMb(nextProcessRss)} detail={`${percentLabel(nextProcessRss, dashboardRss)} of dashboard RSS`} />
+            <MetricCard label="V8 heap" value={formatMb(memoryTelemetry.processMemory.heapUsedMb)} detail={`${formatMb(memoryTelemetry.processMemory.heapTotalMb)} logical allocation`} />
+            <MetricCard label="Native buffers" value={formatMb(memoryTelemetry.processMemory.externalMb)} detail={`includes ${formatMb(memoryTelemetry.processMemory.arrayBuffersMb)} array buffers`} />
             <MetricCard label="Top grower" value={growthLabel(memoryTelemetry.summary.topGrowerGrowthMb)} detail={memoryTelemetry.summary.topGrowerLabel} />
           </div>
+
+          <MemoryCompositionPanel memoryTelemetry={memoryTelemetry} nextProcessRss={nextProcessRss} />
 
           <section className="grid gap-3 rounded-md border border-[rgba(148,163,184,0.14)] bg-[rgba(10,14,21,0.55)] p-4">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div>
                 <p className="eyebrow">Timeline</p>
-                <h3 className="m-0 text-base font-bold">App RSS samples</h3>
+                <h3 className="m-0 text-base font-bold">Dashboard RSS samples</h3>
               </div>
               <small className="text-[var(--muted)]">
                 {samples.length} samples · checked {formatRelativeTime(memoryTelemetry.checkedAt)}
@@ -118,6 +123,93 @@ export function MemoryTelemetryPanel(props: MemoryTelemetryPanelProps) {
         </div>
       )}
     </section>
+  );
+}
+
+function MemoryCompositionPanel({ memoryTelemetry, nextProcessRss }: { memoryTelemetry: MemoryTelemetryPayload; nextProcessRss: number }) {
+  const dashboardRss = memoryTelemetry.summary.appRssMb;
+  const nextSliceRss = Math.min(Math.max(0, nextProcessRss), dashboardRss);
+  const wrapperRss = Math.max(0, dashboardRss - nextSliceRss);
+  const parentCount = memoryTelemetry.processes.filter((processInfo) => processInfo.role === "ancestor" || processInfo.role === "descendant").length;
+  const segments = [
+    {
+      label: "Next.js server",
+      value: nextSliceRss,
+      detail: `PID ${memoryTelemetry.pid}`,
+      color: "#5eead4",
+    },
+    {
+      label: "Other dashboard processes",
+      value: wrapperRss,
+      detail: `${parentCount} parents, wrappers, or compiler workers`,
+      color: "#facc15",
+    },
+  ].filter((segment) => segment.value > 0);
+
+  return (
+    <section className="grid gap-4 rounded-md border border-[rgba(148,163,184,0.14)] bg-[rgba(10,14,21,0.55)] p-4 lg:grid-cols-[18rem_minmax(0,1fr)] lg:items-center">
+      <div className="flex justify-center">
+        <MemoryDonut total={dashboardRss} segments={segments} />
+      </div>
+      <div className="grid gap-3">
+        <div>
+          <p className="eyebrow">Composition</p>
+          <h3 className="m-0 text-base font-bold">Dashboard RSS breakdown</h3>
+        </div>
+        <div className="grid gap-2">
+          {segments.map((segment) => (
+            <div key={segment.label} className="grid gap-1 rounded-md border border-[rgba(148,163,184,0.10)] bg-[rgba(2,6,23,0.34)] p-3 sm:grid-cols-[minmax(0,1fr)_6rem_4rem] sm:items-center">
+              <span className="flex min-w-0 items-center gap-2 text-sm font-bold">
+                <span aria-hidden="true" className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ background: segment.color }} />
+                <span className="min-w-0 break-words">{segment.label}</span>
+              </span>
+              <strong className="text-sm sm:text-right">{formatMb(segment.value)}</strong>
+              <span className="text-xs text-[var(--muted)] sm:text-right">{percentLabel(segment.value, dashboardRss)}</span>
+              <span className="text-xs text-[var(--muted)] sm:col-start-1 sm:col-end-4">{segment.detail}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function MemoryDonut({ total, segments }: { total: number; segments: Array<{ label: string; value: number; color: string }> }) {
+  const radius = 42;
+  const circumference = 2 * Math.PI * radius;
+  const arcs = segments.map((segment, index) => {
+    const previousValue = segments.slice(0, index).reduce((sum, item) => sum + item.value, 0);
+    const dash = total > 0 ? (segment.value / total) * circumference : 0;
+    const offset = total > 0 ? (previousValue / total) * circumference : 0;
+    return { ...segment, dash, offset };
+  });
+
+  return (
+    <div className="relative grid h-56 w-56 place-items-center">
+      <svg role="img" aria-label={`Dashboard RSS composition, total ${formatMb(total)}`} viewBox="0 0 120 120" className="h-full w-full -rotate-90">
+        <circle cx="60" cy="60" r={radius} fill="none" stroke="rgba(148,163,184,0.14)" strokeWidth="16" />
+        {arcs.map((segment) => (
+          <circle
+            key={segment.label}
+            cx="60"
+            cy="60"
+            r={radius}
+            fill="none"
+            stroke={segment.color}
+            strokeWidth="16"
+            strokeDasharray={`${segment.dash} ${circumference - segment.dash}`}
+            strokeDashoffset={-segment.offset}
+            strokeLinecap="butt"
+          />
+        ))}
+      </svg>
+      <div className="absolute inset-10 grid place-items-center rounded-full border border-[rgba(148,163,184,0.12)] bg-[rgba(2,6,23,0.76)] text-center">
+        <div>
+          <span className="block text-[10px] font-bold uppercase tracking-[0.08em] text-[var(--muted)]">Total</span>
+          <strong className="text-2xl">{formatMb(total)}</strong>
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -189,6 +281,11 @@ function formatMb(value: number) {
 function growthLabel(value: number) {
   const sign = value > 0 ? "+" : "";
   return `${sign}${formatMb(value)}`;
+}
+
+function percentLabel(value: number, total: number) {
+  if (!Number.isFinite(value) || !Number.isFinite(total) || total <= 0) return "0%";
+  return `${Math.round((value / total) * 100)}%`;
 }
 
 function barPercent(value: number, max: number) {

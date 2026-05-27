@@ -5,6 +5,7 @@ type Env = {
   HONEY_LEDGER_SECRET?: string;
   HONEY_LEDGER_READ_TOKEN?: string;
   HONEY_LEDGER_ADMIN_TOKEN?: string;
+  HONEY_REWARD_BANKR_API_KEY?: string;
   HIVE_TOKEN_ADDRESS?: string;
   CORS_ORIGIN?: string;
 };
@@ -50,6 +51,7 @@ const SWAP_FEE_BPS = 120;
 const CREATOR_SHARE_BPS = 5700;
 const HONEY_POOL_SHARE_BPS = 1000;
 const REWARD_POOL_SHARE_OF_VOLUME = (SWAP_FEE_BPS / 10_000) * (CREATOR_SHARE_BPS / 10_000) * (HONEY_POOL_SHARE_BPS / 10_000);
+const BANKR_API_URL = "https://api.bankr.bot";
 
 const jsonHeaders = (env: Env) => ({
   "Content-Type": "application/json; charset=utf-8",
@@ -81,6 +83,9 @@ const worker: ExportedHandler<Env> = {
       }
       if (request.method === "POST" && url.pathname === "/return-to-honey") {
         return handleReturnToHoney(request, env);
+      }
+      if (request.method === "POST" && url.pathname === "/claim-bankr-hive") {
+        return handleClaimBankrHive(request, env);
       }
       if (request.method === "POST" && url.pathname === "/pool-events") {
         return handlePoolEvent(request, env);
@@ -356,6 +361,84 @@ async function handleReturnToHoney(request: Request, env: Env) {
   return ok(env, { ok: true, ledger: toHoneyLedger(env, refreshed.results ?? [], pool), events });
 }
 
+async function handleClaimBankrHive(request: Request, env: Env) {
+  await ensureRewardPoolState(env);
+  const body = await request.json().catch(() => null) as { workspaceId?: string; agentId?: string; recipientAddress?: string } | null;
+  const workspaceId = cleanId(body?.workspaceId ?? "");
+  const agentId = cleanId(body?.agentId ?? "");
+  const recipientAddress = String(body?.recipientAddress ?? "").trim();
+  if (!workspaceId) return fail(env, "Missing workspaceId.", 400);
+  if (!/^0x[a-fA-F0-9]{40}$/.test(recipientAddress)) return fail(env, "Missing valid recipientAddress.", 400);
+  if (!env.HIVE_TOKEN_ADDRESS?.trim()) return fail(env, "HIVE_TOKEN_ADDRESS is not configured.", 500);
+  if (!env.HONEY_REWARD_BANKR_API_KEY?.trim()) return fail(env, "Honey reward treasury is not configured.", 500);
+
+  const balances = agentId
+    ? await env.DB.prepare("SELECT * FROM agent_balances WHERE workspace_id = ? AND agent_id = ?").bind(workspaceId, agentId).all<AgentBalanceRow>()
+    : await env.DB.prepare("SELECT * FROM agent_balances WHERE workspace_id = ?").bind(workspaceId).all<AgentBalanceRow>();
+
+  const claimRows = (balances.results ?? [])
+    .map((row) => ({
+      row,
+      availableHoneyMicro: Math.max(0, Math.round(Number(row.available_honey_micro ?? 0))),
+    }))
+    .filter((item) => item.availableHoneyMicro > 0);
+  const totalHoneyMicro = claimRows.reduce((total, item) => total + item.availableHoneyMicro, 0);
+  if (totalHoneyMicro <= 0) return fail(env, "No Honey is ready to claim.", 400);
+
+  const amount = fromMicro(totalHoneyMicro);
+  let txHash = "";
+  try {
+    txHash = await transferBankrHive(env, {
+      tokenAddress: env.HIVE_TOKEN_ADDRESS.trim(),
+      recipientAddress,
+      amount,
+    });
+  } catch (error) {
+    return fail(env, error instanceof Error ? error.message : "Bankr HIVE transfer failed.", 502);
+  }
+  if (!txHash) return fail(env, "Bankr HIVE transfer failed.", 502);
+
+  const events = [];
+  for (const { row, availableHoneyMicro } of claimRows) {
+    const honeyDelta = fromMicro(availableHoneyMicro);
+    const id = crypto.randomUUID();
+    await env.DB.batch([
+      env.DB.prepare(
+        `UPDATE agent_balances
+          SET available_honey = 0,
+            available_honey_micro = 0,
+            updated_at = datetime('now')
+          WHERE workspace_id = ? AND agent_id = ?`,
+      ).bind(row.workspace_id, row.agent_id),
+      env.DB.prepare(
+        `INSERT INTO exchange_events (id, workspace_id, agent_id, honey_delta, hive_delta, honey_delta_micro, hive_delta_micro)
+          VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      ).bind(id, row.workspace_id, row.agent_id, -honeyDelta, honeyDelta, -availableHoneyMicro, availableHoneyMicro),
+      env.DB.prepare(
+        `UPDATE reward_pool_state
+          SET exchanged_micro = exchanged_micro + ?, updated_at = datetime('now')
+          WHERE id = 1`,
+      ).bind(availableHoneyMicro),
+    ]);
+    events.push({ id, agentId: row.agent_id, honeyDelta: -honeyDelta, hiveDelta: honeyDelta });
+  }
+
+  const refreshed = agentId
+    ? await env.DB.prepare("SELECT * FROM agent_balances WHERE workspace_id = ? AND agent_id = ?").bind(workspaceId, agentId).all<AgentBalanceRow>()
+    : await env.DB.prepare("SELECT * FROM agent_balances WHERE workspace_id = ?").bind(workspaceId).all<AgentBalanceRow>();
+
+  const pool = await getRewardPoolState(env);
+  return ok(env, {
+    ok: true,
+    ledger: toHoneyLedger(env, refreshed.results ?? [], pool),
+    events,
+    txHash,
+    amount,
+    recipientAddress,
+    tokenAddress: env.HIVE_TOKEN_ADDRESS.trim(),
+  });
+}
+
 async function handlePoolEvent(request: Request, env: Env) {
   const auth = requireBearer(request, env.HONEY_LEDGER_ADMIN_TOKEN);
   if (auth) return fail(env, auth, 401);
@@ -531,6 +614,32 @@ function requireBearer(request: Request, token?: string) {
   if (!token) return null;
   const header = request.headers.get("Authorization") ?? "";
   return timingSafeEqual(header, `Bearer ${token}`) ? null : "Unauthorized.";
+}
+
+async function transferBankrHive(env: Env, input: { tokenAddress: string; recipientAddress: string; amount: number }) {
+  const response = await fetch(`${BANKR_API_URL}/wallet/transfer`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "X-API-Key": env.HONEY_REWARD_BANKR_API_KEY ?? "",
+    },
+    body: JSON.stringify({
+      tokenAddress: input.tokenAddress,
+      recipientAddress: input.recipientAddress,
+      amount: input.amount.toFixed(6).replace(/\.?0+$/, ""),
+      isNativeToken: false,
+    }),
+  });
+  const data = await response.json().catch(() => null) as {
+    success?: boolean;
+    txHash?: string;
+    error?: string;
+    message?: string;
+  } | null;
+  if (!response.ok || !data?.success || !data.txHash) {
+    throw new Error(data?.message || data?.error || "Bankr HIVE transfer failed.");
+  }
+  return data.txHash;
 }
 
 async function ensureRewardPoolState(env: Env) {

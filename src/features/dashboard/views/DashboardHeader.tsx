@@ -81,7 +81,7 @@ export function DashboardHeader(props: DashboardHeaderProps) {
               .map((item) => {
                 const active = item.id === activeView
                   || (item.id === "kanban" && isWorkView(activeView))
-                  || (item.id === "more" && (activeView === "maintenance" || activeView === "memory" || activeView === "files" || activeView === "notifications" || activeView === "env" || activeView === "integrations"));
+                  || (item.id === "more" && (activeView === "maintenance" || activeView === "memory" || activeView === "files" || activeView === "notifications" || activeView === "env" || activeView === "integrations" || activeView === "my-apps"));
                 return (
                   <Tooltip key={item.id}>
                     <TooltipTrigger asChild>

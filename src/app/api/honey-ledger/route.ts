@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 
 import { observeHoneyUsage } from "@/lib/services/wallet/honey-usage-observer";
-import { exchangeHoneyForHive, readHoneyLedger, returnHiveToHoney } from "@/lib/services/wallet/honey-ledger";
+import { claimHoneyToBankrHive, exchangeHoneyForHive, readHoneyLedger, returnHiveToHoney } from "@/lib/services/wallet/honey-ledger";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -63,7 +63,7 @@ export async function GET() {
 }
 
 export async function POST(request: NextRequest) {
-  const body = await request.json().catch(() => ({})) as { action?: string; agentId?: string };
+  const body = await request.json().catch(() => ({})) as { action?: string; agentId?: string; recipientAddress?: string };
   if (body.action === "observe") {
     const { result, ledger } = await observeCachedUsage();
     return NextResponse.json({ ok: result.ok, ledger, observer: result });
@@ -74,6 +74,24 @@ export async function POST(request: NextRequest) {
     cachedLedger = { checkedAt: Date.now(), ledger };
     cachedObserve = null;
     return NextResponse.json({ ok: true, ledger, events });
+  }
+  if (body.action === "claim-bankr-hive") {
+    try {
+      const claim = await claimHoneyToBankrHive({
+        agentId: body.agentId,
+        recipientAddress: body.recipientAddress,
+      });
+      honeyLedgerCacheVersion += 1;
+      cachedLedger = { checkedAt: Date.now(), ledger: claim.ledger };
+      cachedObserve = null;
+      return NextResponse.json({ ok: true, ...claim });
+    } catch (error) {
+      const status = typeof error === "object" && error && "status" in error ? Number(error.status) || 500 : 500;
+      return NextResponse.json({
+        ok: false,
+        error: error instanceof Error ? error.message : "Bankr HIVE claim failed.",
+      }, { status });
+    }
   }
   if (body.action !== "exchange") {
     return NextResponse.json({ ok: false, error: "Unsupported Honey ledger action." }, { status: 400 });

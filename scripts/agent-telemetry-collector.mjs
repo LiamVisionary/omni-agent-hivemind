@@ -53,6 +53,14 @@ const maxSkillFiles = Number(process.env.AGENT_TELEMETRY_MAX_SKILL_FILES || 160)
 const maxSkillFileBytes = Number(process.env.AGENT_TELEMETRY_MAX_SKILL_FILE_BYTES || 5 * 1024 * 1024);
 const skillAutoSyncPollMs = Number(process.env.AGENT_TELEMETRY_SKILL_AUTO_SYNC_POLL_MS || 10_000);
 const skillAutoSyncDebounceMs = Number(process.env.AGENT_TELEMETRY_SKILL_AUTO_SYNC_DEBOUNCE_MS || 2_500);
+const hostedAppProbeTimeoutMs = Number(process.env.AGENT_TELEMETRY_APP_PROBE_TIMEOUT_MS || 900);
+const hostedAppScanTimeoutMs = Number(process.env.AGENT_TELEMETRY_APP_SCAN_TIMEOUT_MS || 4_000);
+const excludedHostedAppPorts = new Set(
+  String(process.env.AGENT_TELEMETRY_APP_EXCLUDE_PORTS || `${port},22,53,631,5353,5900`)
+    .split(",")
+    .map((value) => Number(value.trim()))
+    .filter((value) => Number.isInteger(value) && value > 0),
+);
 let hermesApiProcess = null;
 let hermesApiStartPromise = null;
 let skillAutoSyncConfig = null;
@@ -231,6 +239,145 @@ function skillChecksum(value) {
 
 function sha256Hex(value) {
   return createHash("sha256").update(value).digest("hex");
+}
+
+function listenerUrlHost(host) {
+  const value = String(host || "").trim();
+  if (!value || value === "*" || value === "0.0.0.0" || value === "::" || value === "[::]") return "127.0.0.1";
+  if (value === "localhost" || value === "127.0.0.1" || value === "::1" || value === "[::1]") return "127.0.0.1";
+  return value.replace(/^\[|\]$/g, "");
+}
+
+function listenerDisplayHost(host) {
+  const value = String(host || "").trim();
+  if (!value || value === "*" || value === "0.0.0.0" || value === "::" || value === "[::]") return "all interfaces";
+  if (value === "127.0.0.1" || value === "::1" || value === "[::1]") return "localhost";
+  return value.replace(/^\[|\]$/g, "");
+}
+
+function portFromListenName(name) {
+  const value = String(name || "").trim();
+  const match = value.match(/(?::|\])(\d+)(?:\s|\(|$)/);
+  const portValue = Number(match?.[1]);
+  return Number.isInteger(portValue) && portValue > 0 && portValue <= 65535 ? portValue : 0;
+}
+
+function hostFromListenName(name) {
+  const value = String(name || "").trim().replace(/\s+\(LISTEN\).*$/, "");
+  const ipv6 = value.match(/^\[([^\]]+)\]:(\d+)$/);
+  if (ipv6) return ipv6[1];
+  const portValue = portFromListenName(value);
+  if (!portValue) return "";
+  return value.replace(new RegExp(`:${portValue}$`), "");
+}
+
+function parseLsofListeners(stdout) {
+  return String(stdout || "")
+    .split(/\r?\n/)
+    .slice(1)
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .map((line) => {
+      const parts = line.split(/\s+/);
+      const name = line.match(/\bTCP\s+(.+?)(?:\s+\(LISTEN\))?$/)?.[1] || "";
+      const portValue = portFromListenName(name);
+      if (!portValue || excludedHostedAppPorts.has(portValue)) return null;
+      return {
+        process: parts[0] || "unknown",
+        pid: parts[1] || "",
+        port: portValue,
+        host: hostFromListenName(name),
+        raw: name,
+      };
+    })
+    .filter(Boolean);
+}
+
+function parseSsListeners(stdout) {
+  return String(stdout || "")
+    .split(/\r?\n/)
+    .slice(1)
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .map((line) => {
+      const parts = line.split(/\s+/);
+      const local = parts[3] || "";
+      const portValue = portFromListenName(local);
+      if (!portValue || excludedHostedAppPorts.has(portValue)) return null;
+      const processMatch = line.match(/users:\(\("([^"]+)","?pid=(\d+)/);
+      return {
+        process: processMatch?.[1] || "unknown",
+        pid: processMatch?.[2] || "",
+        port: portValue,
+        host: hostFromListenName(local),
+        raw: local,
+      };
+    })
+    .filter(Boolean);
+}
+
+async function localTcpListeners() {
+  const lsof = await execFileAsync("lsof", ["-nP", "-iTCP", "-sTCP:LISTEN"], {
+    timeout: hostedAppScanTimeoutMs,
+    maxBuffer: 1_000_000,
+  }).then(({ stdout }) => parseLsofListeners(stdout)).catch(() => []);
+  if (lsof.length) return lsof;
+  return execFileAsync("ss", ["-H", "-ltnp"], {
+    timeout: hostedAppScanTimeoutMs,
+    maxBuffer: 1_000_000,
+  }).then(({ stdout }) => parseSsListeners(stdout)).catch(() => []);
+}
+
+function titleFromHtml(html, fallback) {
+  const match = String(html || "").match(/<title[^>]*>([\s\S]{1,180}?)<\/title>/i);
+  return (match?.[1] || fallback).replace(/\s+/g, " ").trim().slice(0, 96) || fallback;
+}
+
+async function probeHostedApp(listener, scheme) {
+  const url = `${scheme}://${listenerUrlHost(listener.host)}:${listener.port}/`;
+  const response = await fetch(url, {
+    method: "GET",
+    signal: AbortSignal.timeout(hostedAppProbeTimeoutMs),
+  });
+  const contentType = response.headers.get("content-type") || "";
+  const server = response.headers.get("server") || "";
+  const text = contentType.includes("text/html") ? await response.text().catch(() => "") : "";
+  const title = titleFromHtml(text, `${listener.process} on ${listener.port}`);
+  return {
+    ok: true,
+    id: sha256Hex(`${hostname()}:${listener.port}:${listener.process}:${listener.pid}`).slice(0, 16),
+    name: title,
+    description: contentType ? `${response.status} ${contentType}` : `HTTP ${response.status}`,
+    scheme,
+    host: listenerDisplayHost(listener.host),
+    port: listener.port,
+    path: "/",
+    localUrl: url,
+    process: listener.process,
+    pid: listener.pid,
+    server,
+  };
+}
+
+async function discoverHostedApps() {
+  const listeners = await localTcpListeners();
+  const byPort = new Map();
+  for (const listener of listeners) {
+    const current = byPort.get(listener.port);
+    const currentHost = listenerDisplayHost(current?.host);
+    const nextHost = listenerDisplayHost(listener.host);
+    if (!current || (currentHost !== "localhost" && nextHost === "localhost")) {
+      byPort.set(listener.port, listener);
+    }
+  }
+  const apps = [];
+  for (const listener of [...byPort.values()].sort((left, right) => left.port - right.port)) {
+    const app = await probeHostedApp(listener, "http")
+      .catch(() => probeHostedApp(listener, "https"))
+      .catch(() => null);
+    if (app) apps.push(app);
+  }
+  return apps;
 }
 
 function yamlScalar(value) {
@@ -3001,6 +3148,7 @@ createServer(async (request, response) => {
         runtimes,
         runtimeIntegrations: true,
         runtimeAgentCreation: true,
+        hostedApps: true,
         skillInventory: true,
         skillAutoSync: true,
         fileTransfers: true,
@@ -3008,6 +3156,20 @@ createServer(async (request, response) => {
         defaultSyncPath,
       },
     });
+    return;
+  }
+  if (pathname === "/apps" && request.method === "GET") {
+    try {
+      const apps = await discoverHostedApps();
+      jsonResponse(response, 200, { ok: true, host: hostname(), apps, checkedAt: new Date().toISOString() });
+    } catch (error) {
+      jsonResponse(response, 500, {
+        ok: false,
+        host: hostname(),
+        apps: [],
+        error: error instanceof Error ? error.message : "Could not discover hosted apps.",
+      });
+    }
     return;
   }
 	  if (pathname === "/update" && request.method === "POST") {

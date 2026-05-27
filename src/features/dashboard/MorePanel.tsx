@@ -1,11 +1,11 @@
-import { Activity, Bell, FolderOpen, KeyRound, PlugZap, ShieldCheck } from "lucide-react";
+import { Activity, AppWindow, Bell, FolderOpen, KeyRound, PlugZap, ShieldCheck } from "lucide-react";
 
 import fleetStyles from "@/app/fleet.module.css";
 import { createStyleClass } from "@/features/dashboard/style-classes";
 
 const fleetClass = createStyleClass(fleetStyles);
 
-type MorePanelTarget = "integrations" | "env" | "maintenance" | "files" | "notifications" | "memory";
+type MorePanelTarget = "integrations" | "env" | "maintenance" | "files" | "notifications" | "memory" | "my-apps";
 
 export type MorePanelProps = {
   sharedEnvCount: number;
@@ -53,6 +53,13 @@ export function MorePanel({
       body: "Run dashboard and runtime health checks.",
     },
     {
+      id: "my-apps" as const,
+      icon: <AppWindow aria-hidden="true" />,
+      eyebrow: "Tailnet apps",
+      title: "My Apps",
+      body: "Open web apps hosted across your Tailscale machines.",
+    },
+    {
       id: "memory" as const,
       icon: <Activity aria-hidden="true" />,
       eyebrow: memoryRssMb ? `${Math.round(memoryRssMb)} MB RSS` : "RAM sampler",
@@ -84,7 +91,7 @@ export function MorePanel({
           <p>Integrations, diagnostics, scoped files, and agent notifications live here so the main navigation stays focused.</p>
         </div>
       </div>
-      <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-6">
+      <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-7">
         {items.map((item) => (
           <button
             type="button"

@@ -1,4 +1,4 @@
-import { Activity, Bell, BrainCircuit, Cpu, FolderOpen, KanbanSquare, KeyRound, Layers3, MessageSquare, Network, PlugZap, Repeat2, ShieldCheck, WalletCards } from "lucide-react";
+import { Activity, AppWindow, Bell, BrainCircuit, Cpu, FolderOpen, KanbanSquare, KeyRound, Layers3, MessageSquare, Network, PlugZap, Repeat2, ShieldCheck, WalletCards } from "lucide-react";
 
 import { beeRoleIconPath } from "@/lib/config/bee-role-icons";
 import { RUNTIME_LABELS, type AgentProfile, type BeeWorkerClass } from "@/lib/types/agent-runtime";
@@ -326,6 +326,7 @@ export function viewIcon(view: DashboardView) {
   if (view === "notifications") return <Bell aria-hidden="true" />;
   if (view === "more") return <Layers3 aria-hidden="true" />;
   if (view === "env") return <KeyRound aria-hidden="true" />;
+  if (view === "my-apps") return <AppWindow aria-hidden="true" />;
   return <MessageSquare aria-hidden="true" />;
 }
 

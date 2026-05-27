@@ -3,6 +3,30 @@
 This file records user-visible changes before they are committed. New work should
 be added here first, then marked `Committed` or `Pushed` after the git action.
 
+## 2026-05-27 16:02 WITA - Stabilize Runtime Model Picker
+
+- Status: Pushed
+- Areas changed: Agent settings runtime availability, runtime integration target keys, runtime switching defaults, changelog
+- Summary: Stop generated add-agent draft IDs from invalidating Hermes model-selection responses, clear stale runtime availability while the modal refreshes, seed availability from the selected machine's configured agents so installed runtime buttons do not stay disabled, and avoid copying provider/model choices from one runtime into another when switching between Hermes and OpenClaw.
+- Verification: `pnpm exec tsc --noEmit --pretty false --skipLibCheck`; targeted eslint for `DashboardApp`, agent settings/controller files, and `AgentSettingsModal` passed with existing warnings only; `node --check scripts/agent-telemetry-collector.mjs`; live `/api/runtimes/availability` returned Hermes and OpenClaw installed; live Hermes integrations returned `openai-codex` with 9 models; live OpenClaw integrations returned its configured provider/model.
+- Intended commit message: `Stabilize runtime model picker`
+
+## 2026-05-27 15:34:00 WITA - Add Hive Update Command
+
+- Status: Uncommitted
+- Areas changed: Setup scripts, uninstall scripts, update command shim, changelog
+- Summary: Add a `hive-update` command that runs the checkout update script from PATH, install it beside the existing hive env and transfer commands during setup, and mirror removal in uninstall.
+- Verification: `bash -n setup.sh uninstall.sh scripts/update-hivemindos.sh`; `sh -n scripts/hive-update`; `./scripts/hive-update --help`; `git diff --check -- scripts/hive-update setup.sh uninstall.sh setup.ps1 uninstall.ps1 CHANGELOG.md`; PowerShell parser not run because `pwsh` is not installed on this Mac.
+- Intended commit message: `Add hive update command`
+
+## 2026-05-27 14:20:07 WITA - Add OpenRouter Adaptive Agent Model
+
+- Status: Uncommitted
+- Areas changed: Agent settings model selector, OpenRouter adaptive policy storage, OpenAI-compatible chat runtime routing, dashboard styling, assimilation manifest
+- Summary: Add an Adaptive model option with a Free badge whenever OpenRouter is the selected agent provider, show adaptive filters for input modalities, minimum context, categories, benchmark score floors, and paid fallback behavior, and resolve direct OpenAI-compatible OpenRouter adaptive chats against live free OpenRouter models.
+- Verification: `pnpm -s typecheck`; `pnpm -s exec eslint src/lib/types/agent-runtime.ts src/features/dashboard/agent-settings-types.ts src/features/dashboard/hooks/use-agent-controller.tsx src/features/dashboard/hooks/use-agent-settings-controller.tsx src/features/dashboard/views/chat/AgentSettingsModal.tsx src/app/api/chat/agent-runtime/route.ts src/app/fleet.module.css` passed with warnings only; temporary dev server on port 5022 returned `200 OK` for `/`; `python3 /Users/liam/.codex/skills/github-assimilator/scripts/verify_assimilation_manifest.py`; `git diff --check -- src/lib/types/agent-runtime.ts src/features/dashboard/agent-settings-types.ts src/features/dashboard/hooks/use-agent-controller.tsx src/features/dashboard/hooks/use-agent-settings-controller.tsx src/features/dashboard/views/chat/AgentSettingsModal.tsx src/app/api/chat/agent-runtime/route.ts src/app/fleet.module.css CHANGELOG.md ASSIMILATION.json`; full `pnpm -s lint` still fails on pre-existing `src/components/agents/AgentSelectionModal.tsx` react-hooks/set-state-in-effect errors.
+- Intended commit message: `Add OpenRouter adaptive agent model`
+
 ## 2026-05-27 15:06:00 WITA - Preserve Changelog During Updates
 
 - Status: Pushed
@@ -10,6 +34,102 @@ be added here first, then marked `Committed` or `Pushed` after the git action.
 - Summary: Add an automatic fast-forward pull helper that preserves local-only `CHANGELOG.md` sections when it is the only dirty tracked file, use it from manual and dashboard-triggered HivemindOS updates, and prefer a detached SSH rescue update when an old remote collector reports a dirty behind checkout.
 - Verification: `node --check scripts/pull-with-changelog-preserve.mjs`; `node --check scripts/agent-telemetry-collector.mjs`; `bash -n scripts/update-hivemindos.sh`; temp-repo smoke confirmed a local-only `CHANGELOG.md` section is restored after an upstream fast-forward pull and leaves only `CHANGELOG.md` dirty; temp-repo guard smoke confirmed non-section changelog edits are not auto-discarded; `pnpm exec eslint src/app/api/fleet/update/route.ts scripts/agent-telemetry-collector.mjs --max-warnings=999`; `pnpm exec tsc --noEmit --pretty false --skipLibCheck`; `git diff --check -- scripts/pull-with-changelog-preserve.mjs scripts/update-hivemindos.sh scripts/agent-telemetry-collector.mjs src/app/api/fleet/update/route.ts CHANGELOG.md`.
 - Intended commit message: `Preserve changelog entries during updates`
+
+## 2026-05-27 05:45:28 WITA - Add Tailnet My Apps View
+
+- Status: Uncommitted
+- Areas changed: More navigation, My Apps dashboard panel, fleet apps API, telemetry collector app discovery, dashboard view routing, assimilation manifest
+- Summary: Add a My Apps utility view that aggregates HTTP apps reported by ready Tailscale fleet collectors, opens local apps through localhost, and opens remote apps through each machine's Tailscale DNS name or IP.
+- Verification: `node --check scripts/agent-telemetry-collector.mjs`; `pnpm exec tsc --noEmit --pretty false --skipLibCheck`; `pnpm exec eslint src/app/api/fleet/apps/route.ts src/features/dashboard/MorePanel.tsx src/features/dashboard/views/MyAppsPanel.tsx src/features/dashboard/views/UtilityPanels.tsx src/features/dashboard/dashboard-types.ts src/features/dashboard/views/DashboardHeader.tsx src/features/dashboard/dashboard-light-helpers.tsx --max-warnings=999` passed with existing warnings; local listener parser smoke found 28 listening sockets and parsed sample ports including 5020 and 8787; temporary collector on `127.0.0.1:8789` returned `ok: true` with 15 discovered HTTP apps from `/apps`. A throwaway Next dev server on port 5024 was attempted, but Next refused because the managed 5020 dev server is already running, and it was not stopped.
+- Intended commit message: `Add Tailnet My Apps view`
+
+## 2026-05-27 04:30:51 WITA - Add Base Wallet Claim Address Connect
+
+- Status: Uncommitted
+- Areas changed: Bankr rewards UI, wallet styling, changelog
+- Summary: Add a Connect Base wallet action to the Honey rewards claim rail that uses the browser wallet to fill the Bankr receiving address, attempts to switch the wallet to Base, and keeps the manual address field as the fallback path.
+- Verification: `pnpm exec tsc --noEmit --pretty false --skipLibCheck`; `pnpm exec eslint src/features/dashboard/views/WalletPanel.tsx src/app/wallets.module.css --max-warnings=999` passed with existing warnings; `git diff --check`; local claim without a recipient still fails with `Enter a Bankr EVM receiving address before claiming HIVE.`; local claim with a syntactically valid recipient still reaches the official worker and is blocked only by Bankr treasury daily-limit pricing enforcement.
+- Intended commit message: `Add Base wallet claim address connect`
+
+## 2026-05-27 04:27:47 WITA - Remove Recipient Bankr Key Requirement
+
+- Status: Uncommitted
+- Areas changed: Honey ledger claim service, Honey ledger API, wallet controller, Bankr rewards UI, wallet styling, Honey ledger worker, changelog
+- Summary: Stop using a recipient Bankr API key to discover the claiming wallet, accept a Bankr EVM receiving address instead, validate it before submitting the claim, save that address locally in the browser for repeat claims, and return the treasury Bankr transfer error from the official worker.
+- Verification: `pnpm exec tsc --noEmit --pretty false --skipLibCheck`; `pnpm --dir workers/honey-ledger typecheck`; `pnpm exec eslint src/lib/services/wallet/honey-ledger.ts src/app/api/honey-ledger/route.ts src/features/dashboard/hooks/use-wallet-files-controller.tsx src/features/dashboard/views/WalletPanel.tsx src/app/wallets.module.css --max-warnings=999` passed with existing warnings; `pnpm --dir workers/honey-ledger run deploy`; local claim without a recipient and with an invalid recipient both fail with `Enter a Bankr EVM receiving address before claiming HIVE.`; local claim with a syntactically valid recipient reaches the official worker and is blocked by Bankr treasury security with `Could not determine the USD value of this transaction; the daily limit could not be enforced. Disable the daily limit in Security settings if you want to proceed.`; ledger readback still reports `availableHoney: 0.000411` and `hiveBalance: 0`.
+- Intended commit message: `Remove recipient Bankr key requirement`
+
+## 2026-05-27 04:22:03 WITA - Reuse Bankr CLI Key For Honey Claims
+
+- Status: Uncommitted
+- Areas changed: Honey ledger claim service, changelog
+- Summary: Let the Honey-to-Bankr-HIVE claim path reuse the local Bankr CLI API key from `~/.bankr/config.json` when `BANKR_API_KEY` is not set in the app environment, so local users do not have to duplicate their recipient Bankr key. Superseded by the receiving-address claim flow above.
+- Verification: `pnpm exec tsc --noEmit --pretty false --skipLibCheck`; `curl -sS --max-time 90 -X POST http://localhost:5021/api/honey-ledger -H 'Content-Type: application/json' -d '{"action":"claim-bankr-hive"}'` reached Bankr with the CLI key and was blocked by Bankr with `IP address not allowed for this API key`; direct worker no-Honey smoke returned `No Honey is ready to claim.`
+- Intended commit message: `Reuse Bankr CLI key for Honey claims`
+
+## 2026-05-27 04:17:49 WITA - Fix Nested CSS Import Parse Failure
+
+- Status: Uncommitted
+- Areas changed: Global CSS imports, root layout font links, changelog
+- Summary: Remove duplicate Tailwind and animation imports from `nlux-base.css`, stop importing the starter base stylesheet into the app cascade, and move Google Fonts out of CSS `@import` into document `<link>` tags so Turbopack/PostCSS never sees late `@import` rules after generated CSS.
+- Verification: `pnpm exec eslint src/app/layout.tsx src/features/dashboard/views/MemoryTelemetryPanel.tsx src/lib/services/runtime-memory-telemetry.ts --max-warnings=999`; `pnpm exec tsc --noEmit --pretty false --skipLibCheck`; `git diff --check -- scripts/dev-server.mjs scripts/update-hivemindos.sh src/app/globals.css src/app/nlux-base.css src/app/layout.tsx src/features/dashboard/views/MemoryTelemetryPanel.tsx src/lib/services/runtime-memory-telemetry.ts CHANGELOG.md`; temporary webpack dev server on port 5023 returned `200 OK` for `/?view=memory` without the CSS import parse error.
+- Intended commit message: `Fix nested CSS import parse failure`
+
+## 2026-05-27 04:14:38 WITA - Lower Next Dev Memory Pressure
+
+- Status: Uncommitted
+- Areas changed: Dev server launcher, update restart path, changelog
+- Summary: Keep dashboard dev startup on webpack because Turbopack spawned enough compiler workers to push total RSS toward the 5 GB guard at startup, but disable dev source maps unless `NEXT_DEV_SOURCE_MAPS=1` is set. `HIVEMINDOS_NEXT_DEV_BUNDLER=turbo` or `NEXT_DEV_BUNDLER=turbo` remains available for local debugging experiments, while the default avoids the immediate multi-process RSS spike.
+- Verification: `node --check scripts/dev-server.mjs`; `bash -n scripts/update-hivemindos.sh`; `node scripts/dev-server.mjs --help`; temporary `next dev --webpack --disable-source-maps -p 5023` returned `200 OK` for `/?view=memory` and reported about 1.66 GB dashboard RSS after initial compile instead of the Turbopack worker tree's near-5 GB startup total.
+- Intended commit message: `Lower Next dev memory pressure`
+
+## 2026-05-27 04:04:03 WITA - Clarify Memory Telemetry Composition
+
+- Status: Uncommitted
+- Areas changed: Memory telemetry panel composition chart, metric labels, suspect detection, changelog
+- Summary: Add a dashboard RSS donut chart that separates the Next.js server slice from other dashboard processes such as parents, wrappers, or compiler workers; make the Next RSS card show its percentage of the dashboard total, rename the timeline to Dashboard RSS samples, label heap/external memory as V8 logical heap and native buffers, keep ArrayBuffer memory from being double-counted, and surface a suspect when V8 logical heap greatly exceeds resident RSS.
+- Verification: `pnpm exec eslint src/features/dashboard/views/MemoryTelemetryPanel.tsx src/lib/services/runtime-memory-telemetry.ts src/lib/types/memory-telemetry.ts --max-warnings=999`; `pnpm exec tsc --noEmit --pretty false --skipLibCheck`; `git diff --check -- src/features/dashboard/views/MemoryTelemetryPanel.tsx src/lib/services/runtime-memory-telemetry.ts CHANGELOG.md`.
+- Intended commit message: `Clarify memory telemetry composition`
+
+## 2026-05-27 03:38:12 WITA - Move Bankr Claim Treasury To Official Worker
+
+- Status: Uncommitted
+- Areas changed: Honey ledger worker, Honey ledger client service, worker config, Honey ledger docs, architecture docs, changelog
+- Summary: Move Honey-to-Bankr-HIVE settlement into the official Cloudflare Honey ledger worker so clones only submit a recipient Bankr EVM address, while the funded `HONEY_REWARD_BANKR_API_KEY` treasury secret stays in Worker secrets; the worker transfers HIVE, then spends Honey only after Bankr returns a transaction hash.
+- Verification: `pnpm --dir workers/honey-ledger typecheck`; `pnpm exec eslint src/lib/services/wallet/honey-ledger.ts src/app/api/honey-ledger/route.ts src/features/dashboard/hooks/use-wallet-files-controller.tsx src/features/dashboard/views/WalletPanel.tsx src/components/wallet/AgentWalletCard.tsx src/features/dashboard/DashboardApp.tsx src/features/dashboard/hooks/use-dashboard-derived-state.tsx --max-warnings=999` passed with existing warnings; `pnpm exec tsc --noEmit --pretty false --skipLibCheck`; `pnpm --dir workers/honey-ledger run deploy`; direct worker no-Honey smoke returned `No Honey is ready to claim.`, proving the deployed worker has the treasury secret configured and reaches balance validation; local dashboard claim was blocked by an unrelated dev CSS compile error in `src/app/globals.css`; local Bankr CLI key exists but Bankr rejected it with `IP address not allowed for this API key`.
+- Intended commit message: `Move Bankr claim treasury to official worker`
+
+## 2026-05-27 03:29:52 WITA - Configure HIVE Token Address
+
+- Status: Uncommitted
+- Areas changed: Local app environment, changelog
+- Summary: Set the local HIVE ERC20 token address used by Honey-to-Bankr-HIVE claims.
+- Verification: `./scripts/hive-env-add --scope app --no-backup --no-tailnet-sync HIVE_TOKEN_ADDRESS=0xA382c83e2a3B79368f372c2EB9b6925ffAf45bA3`; `curl -sS --max-time 20 -X POST http://127.0.0.1:5020/api/honey-ledger -H 'Content-Type: application/json' -d '{"action":"claim-bankr-hive"}'` now advances past token-address validation and fails on the missing `BANKR_API_KEY`, leaving Honey untouched.
+- Intended commit message: `Configure HIVE token address`
+
+## 2026-05-27 03:27:47 WITA - Wire Honey Claims To Bankr Transfers
+
+- Status: Uncommitted
+- Areas changed: Honey ledger service, Honey ledger API, wallet controller, wallet rewards panel, wallet styling, per-agent wallet card, changelog
+- Summary: Add a real Honey-to-Bankr-HIVE claim path that resolves the user's Bankr EVM wallet, sends HIVE from the configured Bankr reward treasury through `/wallet/transfer`, and only spends Honey in the ledger after Bankr returns a transaction hash; missing Bankr keys or HIVE token address now fail the claim without touching Honey.
+- Verification: `node -e 'for (const k of ["BANKR_API_KEY","HONEY_REWARD_BANKR_API_KEY","BANKR_REWARD_TREASURY_API_KEY","HIVE_TOKEN_ADDRESS"]) console.log(`${k}=${process.env[k]?"present":"missing"}`)'` confirmed the current shell is missing the required claim env; `curl -sS --max-time 20 -X POST http://127.0.0.1:5020/api/honey-ledger -H 'Content-Type: application/json' -d '{"action":"claim-bankr-hive"}'` failed with `Set HIVE_TOKEN_ADDRESS before claiming Bankr HIVE.`; `curl -fsS --max-time 20 http://127.0.0.1:5020/api/honey-ledger` still reports `availableHoney: 0.000411` and `hiveBalance: 0`; `pnpm exec eslint src/lib/services/wallet/honey-ledger.ts src/app/api/honey-ledger/route.ts src/features/dashboard/hooks/use-wallet-files-controller.tsx src/features/dashboard/views/WalletPanel.tsx src/components/wallet/AgentWalletCard.tsx src/features/dashboard/DashboardApp.tsx src/features/dashboard/hooks/use-dashboard-derived-state.tsx --max-warnings=999` passed with existing warnings; `pnpm exec tsc --noEmit --pretty false --skipLibCheck`.
+- Intended commit message: `Wire Honey claims to Bankr transfers`
+
+## 2026-05-27 02:05:15 WITA - Stop Fake Bankr HIVE Awards
+
+- Status: Uncommitted
+- Areas changed: Wallet Honey rewards panel, per-agent wallet holdings, wallet controller wiring, Honey derived stats, wallet styling, changelog
+- Summary: Remove the fake instant Bankr award action from Honey rewards, show the old HIVE bucket as legacy non-Bankr state only, disable claim controls until real Bankr settlement is wired, and neutralize the oversized teal payout button styling.
+- Verification: `curl -fsS --max-time 20 -X POST http://127.0.0.1:5020/api/honey-ledger -H 'Content-Type: application/json' -d '{"action":"return-to-honey"}'`; `curl -fsS --max-time 20 http://127.0.0.1:5020/api/honey-ledger` reports `availableHoney: 0.000411` and `hiveBalance: 0`; `pnpm exec eslint src/app/wallets.module.css src/components/wallet/AgentWalletCard.tsx src/features/dashboard/DashboardApp.tsx src/features/dashboard/hooks/use-dashboard-derived-state.tsx src/features/dashboard/hooks/use-wallet-files-controller.tsx src/features/dashboard/views/WalletPanel.tsx src/lib/services/wallet/honey-ledger.ts --max-warnings=999` passed with existing warnings; `pnpm exec tsc --noEmit --pretty false --skipLibCheck`; Playwright wallet smoke confirmed the fake `Award Bankr HIVE` text is gone and only the expected dev HMR WebSocket warning appeared.
+- Intended commit message: `Stop fake Bankr HIVE awards`
+
+## 2026-05-27 01:56:43 WITA - Reconcile Returned Honey Balances
+
+- Status: Uncommitted
+- Areas changed: Honey ledger normalization, changelog
+- Summary: Reconcile per-agent Honey balance rows from the authoritative exchange and HIVE balance maps so a return-to-Honey action immediately shows restored Honey even when the remote worker response includes stale legacy balance fields.
+- Verification: `pnpm exec eslint src/lib/services/wallet/honey-ledger.ts src/app/api/honey-ledger/route.ts src/features/dashboard/views/WalletPanel.tsx src/features/dashboard/hooks/use-wallet-files-controller.tsx src/features/dashboard/hooks/use-dashboard-derived-state.tsx src/components/wallet/AgentWalletCard.tsx --max-warnings=999`; `pnpm --dir workers/honey-ledger typecheck`; `pnpm exec tsc --noEmit --pretty false --skipLibCheck`; `pnpm --dir workers/honey-ledger run deploy`; `curl -fsS --max-time 20 -X POST http://127.0.0.1:5020/api/honey-ledger -H 'Content-Type: application/json' -d '{"action":"return-to-honey"}'`; `curl -fsS --max-time 20 http://127.0.0.1:5020/api/honey-ledger` now reports `availableHoney: 0.000411` and `hiveBalance: 0` for `hermes-1779349579715`.
+- Intended commit message: `Reconcile returned Honey balances`
 
 ## 2026-05-27 01:58 WITA - Clarify Bankr Honey Rewards
 

@@ -1,10 +1,11 @@
-import type { AgentRuntime, BeeWorkerClass, CustomWorkerClassProfile } from "@/lib/types/agent-runtime";
+import type { AdaptiveOpenRouterConfig, AgentRuntime, BeeWorkerClass, CustomWorkerClassProfile } from "@/lib/types/agent-runtime";
 
 export type AgentCreateDraft = {
   name: string;
   runtime: AgentRuntime;
   provider?: string;
   model?: string;
+  adaptiveOpenRouter?: AdaptiveOpenRouterConfig;
   workerClass: BeeWorkerClass;
   customWorkerClass?: CustomWorkerClassProfile;
   customWorkerClasses: CustomWorkerClassProfile[];

@@ -8,27 +8,80 @@ import { CloseIconButton } from "@/components/ui/close-icon-button";
 export function AgentSettingsModal(props: any) {
   const { BEE_WORKER_PRESET_LIST, BrainCircuit, Button, Check, ChevronRight, Copy, Cpu, Eye, FolderOpen, HERMES_UPDATE_INTEGRATION_KEYS, Image, KanbanSquare, LoaderCircle, MessageSquare, Pencil, PlugZap, Plus, RUNTIME_LABELS, RefreshCcw, Repeat2, Search, Send, Settings2, ShieldCheck, Sparkles, Upload, addHermesModelFromDraft, agentCreateDraft, agentCreateMachine, agentRenameDraft, agentRenameEditing, agentRuntimeAdvancedOpen, agentRuntimeFolderBrowsing, agentRuntimeFolderEditing, agentRuntimeFolderStatus, agentSettingsCustomWorker, agentSettingsCustomWorkers, agentSettingsDescription, agentSettingsIntegrationTarget, agentSettingsPanel, agentSettingsPreferredSkills, agentSettingsProvider, agentSettingsRuntime, agentSettingsSelectedCustomWorkerId, agentSettingsSkillProfile, agentSettingsTitle, agentSettingsWorkerClass, agentSettingsWorkerImage, agentSettingsWorkerLabel, agentSettingsWorkerPreset, agentWorkerClassView, applyCustomWorkerClass, beeRoleIconPath, browseAgentRuntimeFolder, closeAgentSettingsModal, createAgentFromModal, customWorkerDraft, customWorkerImageError, customWorkerImageInputRef, customWorkerSkillSearch, filteredCustomWorkerSkills, fleetClass, hermesUpdateRequired, openCustomWorkerClassCreator, providerIconPath, providerIconRenderMode, refreshRuntimeIntegrations, roleModalAgent, runRuntimeIntegrationAction, runtimeAvailability, runtimeBackgroundPrompt, runtimeCapabilities, runtimeIconFallback, runtimeIconPath, runtimeIconRenderMode, runtimeIntegrationBusy, runtimeIntegrationMessage, runtimeIntegrationStatus, runtimeModelDraft, runtimeModelProviders, runtimeModelSelection, runtimeModelSetupMode, runtimeSessionQuery, runtimeSessionResults, runtimeSetupDefinition, runtimeSetupKey, runtimeUpdateConfirmKey, searchRuntimeSessionsForAgent, selectAgentWorkerClass, selectCustomWorkerClass, selectedRuntimeModelId, selectedRuntimeModels, selectedRuntimeProvider, setAgentCreateDraft, setAgentRenameDraft, setAgentRenameEditing, setAgentRuntimeAdvancedOpen, setAgentRuntimeFolderEditing, setAgentRuntimeFolderStatus, setAgentSettingsPanel, setAgentWorkerClassView, setCustomWorkerDraft, setCustomWorkerSkillSearch, setRuntimeBackgroundPrompt, setRuntimeModelDraft, setRuntimeModelSetupMode, setRuntimeSessionQuery, setRuntimeSetupKey, setRuntimeUpdateConfirmKey, sharedVault, startAgentChat, toggleCustomWorkerSkill, updateAgentProfile, updateAgentRuntimeModel, updateAgentSkillProfile, uploadCustomWorkerImage, workerCapabilityBadges } = props;
   const portalTarget = typeof document === "undefined" ? null : document.body;
+  const adaptiveModalities = [
+    { id: "text", label: "Text" },
+    { id: "image", label: "Image" },
+    { id: "file", label: "File" },
+    { id: "audio", label: "Audio" },
+    { id: "video", label: "Video" },
+  ];
+  const adaptiveCategories = [
+    { id: "general", label: "General" },
+    { id: "coding", label: "Coding" },
+    { id: "writing", label: "Writing" },
+    { id: "vision", label: "Vision" },
+    { id: "image", label: "Image" },
+    { id: "research", label: "Research" },
+    { id: "tool-use", label: "Tools" },
+  ];
+  const defaultAdaptiveOpenRouter = {
+    inputModalities: ["text"],
+    minContextLength: 32000,
+    categories: ["general"],
+    minScores: {},
+    fallbackModel: "",
+  };
+  const adaptiveOpenRouter = {
+    ...defaultAdaptiveOpenRouter,
+    ...(agentCreateMachine ? agentCreateDraft.adaptiveOpenRouter : roleModalAgent?.adaptiveOpenRouter),
+  };
+  const openRouterSelected = (selectedRuntimeProvider?.slug || agentSettingsProvider) === "openrouter";
+  const adaptiveSelected = openRouterSelected && selectedRuntimeModelId === "adaptive";
+  const adaptiveScoreCategories = adaptiveCategories.filter((category) => (
+    adaptiveOpenRouter.categories.includes(category.id)
+    || (category.id === "vision" && adaptiveOpenRouter.inputModalities.includes("image"))
+    || (category.id === "image" && adaptiveOpenRouter.inputModalities.includes("image"))
+  ));
+  const updateAdaptiveOpenRouter = (patch: Record<string, unknown>) => {
+    const next = { ...adaptiveOpenRouter, ...patch };
+    if (agentCreateMachine) setAgentCreateDraft((current) => ({ ...current, adaptiveOpenRouter: next }));
+    else if (roleModalAgent) updateAgentProfile(roleModalAgent.id, { adaptiveOpenRouter: next });
+  };
+  const toggleAdaptiveListValue = (key: "inputModalities" | "categories", value: string) => {
+    const current = adaptiveOpenRouter[key] ?? [];
+    const next = current.includes(value)
+      ? current.filter((item: string) => item !== value)
+      : [...current, value];
+    updateAdaptiveOpenRouter({ [key]: next.length ? next : key === "inputModalities" ? ["text"] : ["general"] });
+  };
+  const updateAdaptiveScore = (category: string, value: number) => {
+    updateAdaptiveOpenRouter({
+      minScores: {
+        ...adaptiveOpenRouter.minScores,
+        [category]: value,
+      },
+    });
+  };
 
   const updateSettingsRuntime = (runtime: AgentRuntime) => {
     if (runtimeAvailability?.[runtime]?.installed === false) return;
+    const sameRuntime = runtime === agentSettingsRuntime;
     const currentProvider = agentCreateMachine ? agentCreateDraft.provider : roleModalAgent?.provider;
     const currentModel = agentCreateMachine ? agentCreateDraft.model : roleModalAgent?.model;
     const runtimeProvider = runtimeModelProviders.find((provider) => provider.slug === currentProvider);
-    const runtimeDefaultProvider = runtimeModelSelection?.provider || runtimeModelProviders[0]?.slug || "";
-    const runtimeDefaultModel = runtimeModelSelection?.model || runtimeModelProviders[0]?.models[0]?.id || "";
     const provider = runtime === "hermes"
-      ? currentProvider || "openai-codex"
+      ? sameRuntime ? currentProvider || "openai-codex" : "openai-codex"
       : runtime === "openclaw"
-        ? runtime === agentSettingsRuntime && runtimeProvider ? currentProvider : runtimeDefaultProvider
+        ? sameRuntime && runtimeProvider ? currentProvider : ""
         : runtime === "openai-compatible"
-          ? currentProvider || "lm-studio"
+          ? sameRuntime ? currentProvider || "lm-studio" : "lm-studio"
           : "";
     const model = runtime === "hermes"
-      ? currentModel || ""
+      ? sameRuntime ? currentModel || "" : ""
       : runtime === "openclaw"
-        ? runtime === agentSettingsRuntime && runtimeProvider ? currentModel || runtimeProvider.models[0]?.id || "" : runtimeDefaultModel
+        ? sameRuntime && runtimeProvider ? currentModel || runtimeProvider.models[0]?.id || "" : ""
         : runtime === "openai-compatible"
-          ? currentModel || ""
+          ? sameRuntime ? currentModel || "" : ""
           : "";
     if (agentCreateMachine) {
       setAgentCreateDraft((current) => ({
@@ -259,6 +312,26 @@ export function AgentSettingsModal(props: any) {
                         <span>Model</span>
                       </div>
                       <div className={fleetClass("agentRuntimeModelCards")}>
+                        {openRouterSelected ? (
+                          <button
+                            type="button"
+                            className={adaptiveSelected ? fleetClass("agentRuntimeModelCard", "adaptiveRuntimeModelCard", "selectedRuntimeCard") : fleetClass("agentRuntimeModelCard", "adaptiveRuntimeModelCard")}
+                            aria-pressed={adaptiveSelected}
+                            onClick={() => {
+                              updateAdaptiveOpenRouter({});
+                              updateAgentRuntimeModel("openrouter", "adaptive");
+                            }}
+                          >
+                            <span className={fleetClass("adaptiveModelTitle")}>
+                              <strong>Adaptive</strong>
+                              <span className={fleetClass("adaptiveFreeBadge")}>Free</span>
+                            </span>
+                            <small>Best matching promo/free model</small>
+                            <span className={fleetClass("adaptiveTooltip")} role="tooltip">
+                              Leverages promo models on OpenRouter to power your agent 100% free, with a fallback on a paid agent of your choice
+                            </span>
+                          </button>
+                        ) : null}
                         {selectedRuntimeModels.map((model) => {
                           const selected = model.id === selectedRuntimeModelId;
                           return (
@@ -292,6 +365,96 @@ export function AgentSettingsModal(props: any) {
                         ) : null}
                       </div>
                     </div>
+                    {adaptiveSelected ? (
+                      <div className={fleetClass("adaptiveRuntimeSettings")}>
+                        <div className={fleetClass("adaptiveRuntimeHeader")}>
+                          <div>
+                            <strong>Adaptive filters</strong>
+                            <small>Live OpenRouter metadata filters run first; benchmark floors apply when a score index is available.</small>
+                          </div>
+                          <span>{adaptiveOpenRouter.inputModalities.join(" + ")} · {Math.round(adaptiveOpenRouter.minContextLength / 1000)}k+</span>
+                        </div>
+                        <div className={fleetClass("adaptiveFilterGrid")}>
+                          <div className={fleetClass("adaptiveFilterGroup")}>
+                            <span>Input modalities</span>
+                            <div className={fleetClass("adaptiveChipGrid")}>
+                              {adaptiveModalities.map((option) => (
+                                <button
+                                  key={option.id}
+                                  type="button"
+                                  className={adaptiveOpenRouter.inputModalities.includes(option.id) ? fleetClass("adaptiveChip", "adaptiveChipActive") : fleetClass("adaptiveChip")}
+                                  aria-pressed={adaptiveOpenRouter.inputModalities.includes(option.id)}
+                                  onClick={() => toggleAdaptiveListValue("inputModalities", option.id)}
+                                >
+                                  {option.label}
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+                          <label className={fleetClass("adaptiveFilterGroup")}>
+                            <span>Context length</span>
+                            <select
+                              value={String(adaptiveOpenRouter.minContextLength)}
+                              onChange={(event) => updateAdaptiveOpenRouter({ minContextLength: Number(event.target.value) })}
+                            >
+                              <option value="8000">8k+</option>
+                              <option value="32000">32k+</option>
+                              <option value="128000">128k+</option>
+                              <option value="200000">200k+</option>
+                              <option value="1000000">1M+</option>
+                            </select>
+                          </label>
+                          <div className={fleetClass("adaptiveFilterGroup")}>
+                            <span>Categories</span>
+                            <div className={fleetClass("adaptiveChipGrid")}>
+                              {adaptiveCategories.map((option) => (
+                                <button
+                                  key={option.id}
+                                  type="button"
+                                  className={adaptiveOpenRouter.categories.includes(option.id) ? fleetClass("adaptiveChip", "adaptiveChipActive") : fleetClass("adaptiveChip")}
+                                  aria-pressed={adaptiveOpenRouter.categories.includes(option.id)}
+                                  onClick={() => toggleAdaptiveListValue("categories", option.id)}
+                                >
+                                  {option.label}
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+                        </div>
+                        <div className={fleetClass("adaptiveScoreGrid")}>
+                          {adaptiveScoreCategories.map((category) => (
+                            <label className={fleetClass("adaptiveScoreSlider")} key={category.id}>
+                              <span>
+                                {category.label} score
+                                <b>{adaptiveOpenRouter.minScores?.[category.id] ?? 0}+</b>
+                              </span>
+                              <input
+                                type="range"
+                                min="0"
+                                max="100"
+                                step="5"
+                                value={adaptiveOpenRouter.minScores?.[category.id] ?? 0}
+                                onChange={(event) => updateAdaptiveScore(category.id, Number(event.target.value))}
+                              />
+                            </label>
+                          ))}
+                        </div>
+                        <label className={fleetClass("adaptiveFilterGroup", "adaptiveFallbackSelect")}>
+                          <span>Paid fallback</span>
+                          <select
+                            value={adaptiveOpenRouter.fallbackModel}
+                            onChange={(event) => updateAdaptiveOpenRouter({ fallbackModel: event.target.value })}
+                          >
+                            <option value="">Ask before paid fallback</option>
+                            {selectedRuntimeModels
+                              .filter((model) => model.id !== "adaptive")
+                              .map((model) => (
+                                <option value={model.id} key={model.id}>{model.name || model.id}</option>
+                              ))}
+                          </select>
+                        </label>
+                      </div>
+                    ) : null}
                     {runtimeCanAddModels && runtimeModelSetupMode ? (
                       <div className={fleetClass("agentRuntimeModelSetup")}>
                         <div>

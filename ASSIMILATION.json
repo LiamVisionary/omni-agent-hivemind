@@ -834,6 +834,48 @@
       "target_path": "src/app/fleet.module.css",
       "reuse_type": "adapted_code",
       "note": "markdown editor focus and scrollable editing surface adapted into local CSS without adding CodeMirror dependency"
+    },
+    {
+      "source_repo": "adinhodovic/compass",
+      "source_path": "internal/compass/model.go",
+      "target_path": "src/app/api/fleet/apps/route.ts",
+      "reuse_type": "adapted_code",
+      "note": "service card model concepts adapted into the hosted app payload with URL, source machine, tags/process metadata, and open link fields"
+    },
+    {
+      "source_repo": "adinhodovic/compass",
+      "source_path": "internal/source/tailscale/tailscale.go",
+      "target_path": "src/app/api/fleet/apps/route.ts",
+      "reuse_type": "adapted_code",
+      "note": "Tailscale device URL construction strategy adapted so local apps open through localhost and remote apps use MagicDNS or Tailnet IP hosts"
+    },
+    {
+      "source_repo": "adinhodovic/compass",
+      "source_path": "internal/registry/registry.go",
+      "target_path": "scripts/agent-telemetry-collector.mjs",
+      "reuse_type": "adapted_code",
+      "note": "multi-source service aggregation and normalized snapshot concepts adapted into collector-side listener probing and dashboard fleet app aggregation"
+    },
+    {
+      "source_repo": "openstatusHQ/data-table-filters",
+      "source_path": "packages/registry/public/r/data-table.json::src/components/data-table/data-table-filter-controls.tsx",
+      "target_path": "src/features/dashboard/views/chat/AgentSettingsModal.tsx",
+      "reuse_type": "adapted_code",
+      "note": "pluggable faceted filter group structure adapted into the OpenRouter Adaptive settings panel"
+    },
+    {
+      "source_repo": "openstatusHQ/data-table-filters",
+      "source_path": "packages/registry/public/r/data-table.json::src/components/data-table/data-table-filter-slider.tsx",
+      "target_path": "src/features/dashboard/views/chat/AgentSettingsModal.tsx",
+      "reuse_type": "adapted_code",
+      "note": "numeric slider filter semantics adapted into minimum benchmark score controls"
+    },
+    {
+      "source_repo": "openstatusHQ/data-table-filters",
+      "source_path": "packages/registry/public/r/data-table.json::src/components/data-table/data-table-filter-controls.tsx",
+      "target_path": "src/app/fleet.module.css",
+      "reuse_type": "style_adapted",
+      "note": "compact filter-control grouping and active chip treatment adapted to the dashboard CSS module"
     }
   ]
 }

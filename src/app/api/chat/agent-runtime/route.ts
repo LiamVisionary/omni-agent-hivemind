@@ -318,6 +318,85 @@ function openAICompatibleModel(profile: AgentProfile) {
   return profile.model?.trim() || process.env.LOCAL_OPENAI_MODEL?.trim() || process.env.NEXT_PUBLIC_LOCAL_OPENAI_MODEL?.trim() || "local-model";
 }
 
+function isAdaptiveOpenRouterProfile(profile: AgentProfile) {
+  return profile.provider?.trim().toLowerCase() === "openrouter" && profile.model?.trim().toLowerCase() === "adaptive";
+}
+
+type OpenRouterModelRecord = {
+  id?: string;
+  name?: string;
+  description?: string;
+  created?: number;
+  context_length?: number;
+  architecture?: {
+    input_modalities?: string[];
+    output_modalities?: string[];
+  };
+  pricing?: Record<string, string | number | null | undefined>;
+  supported_parameters?: string[];
+};
+
+function zeroPriced(value: unknown) {
+  if (value === undefined || value === null || value === "") return true;
+  const numeric = Number(value);
+  return Number.isFinite(numeric) && numeric === 0;
+}
+
+function isFreeOpenRouterModel(model: OpenRouterModelRecord) {
+  if (model.id?.endsWith(":free")) return true;
+  const pricing = model.pricing ?? {};
+  return ["prompt", "completion", "request", "image", "web_search", "internal_reasoning"].every((key) => zeroPriced(pricing[key]));
+}
+
+function modelMatchesAdaptiveCategory(model: OpenRouterModelRecord, categories: string[]) {
+  if (!categories.length || categories.includes("general")) return true;
+  const haystack = `${model.id ?? ""} ${model.name ?? ""} ${model.description ?? ""} ${(model.supported_parameters ?? []).join(" ")}`.toLowerCase();
+  return categories.some((category) => {
+    if (category === "coding") return /code|coding|coder|programming|developer|devstral|deepseek|qwen|kimi|agent|tools?/.test(haystack);
+    if (category === "writing") return /write|writing|creative|story|copy|editor|chat|instruct/.test(haystack);
+    if (category === "vision") return /vision|visual|image|vlm|multimodal/.test(haystack) || model.architecture?.input_modalities?.includes("image");
+    if (category === "image") return model.architecture?.output_modalities?.includes("image") || /image|diffusion|flux|stable/.test(haystack);
+    if (category === "research") return /research|search|reason|r1|thinking|analysis/.test(haystack);
+    if (category === "tool-use") return (model.supported_parameters ?? []).includes("tools") || /tool|function/.test(haystack);
+    return true;
+  });
+}
+
+async function resolveAdaptiveOpenRouterModel(profile: AgentProfile) {
+  const policy = profile.adaptiveOpenRouter ?? {
+    inputModalities: ["text"],
+    minContextLength: 32000,
+    categories: ["general"],
+    minScores: {},
+    fallbackModel: "",
+  };
+  const response = await fetch("https://openrouter.ai/api/v1/models?output_modalities=all", {
+    headers: { Accept: "application/json" },
+    cache: "no-store",
+    signal: AbortSignal.timeout(12_000),
+  }).catch(() => null);
+  if (!response?.ok) return policy.fallbackModel?.trim() || "openrouter/free";
+  const payload = await response.json().catch(() => null) as { data?: OpenRouterModelRecord[] } | null;
+  const requiredModalities = policy.inputModalities?.length ? policy.inputModalities : ["text"];
+  const categories = policy.categories?.length ? policy.categories : ["general"];
+  const minContext = Number(policy.minContextLength) || 0;
+  const candidates = (payload?.data ?? [])
+    .filter((model) => model.id)
+    .filter(isFreeOpenRouterModel)
+    .filter((model) => requiredModalities.every((modality) => model.architecture?.input_modalities?.includes(modality)))
+    .filter((model) => (model.context_length ?? 0) >= minContext)
+    .filter((model) => modelMatchesAdaptiveCategory(model, categories))
+    .sort((left, right) => {
+      const rightTools = right.supported_parameters?.includes("tools") ? 1 : 0;
+      const leftTools = left.supported_parameters?.includes("tools") ? 1 : 0;
+      return rightTools - leftTools
+        || (right.context_length ?? 0) - (left.context_length ?? 0)
+        || (right.created ?? 0) - (left.created ?? 0)
+        || (left.name ?? left.id ?? "").localeCompare(right.name ?? right.id ?? "");
+    });
+  return candidates[0]?.id ?? policy.fallbackModel?.trim() ?? "openrouter/free";
+}
+
 async function recordChatHoney(profile: AgentProfile, inputText: string, outputText: string, enabled: boolean, source: "chat" | "kanban-chat" = "chat") {
   if (!enabled) return null;
   if (!outputText.trim()) return null;
@@ -711,13 +790,17 @@ async function streamOpenAICompatibleRuntime(
     buildWalletToolContext(wallet),
   ].filter(Boolean).join("\n\n");
   const modelMessages = context ? [{ role: "system", content: context }, ...messages] : messages;
+  const model = isAdaptiveOpenRouterProfile(profile)
+    ? await resolveAdaptiveOpenRouterModel(profile)
+    : openAICompatibleModel(profile);
   const fetchStartedAt = Date.now();
   let upstream: Response;
   try {
     recordRuntimeTelemetry(telemetry, "agent_runtime.openai_compatible.fetch.start", {
       ...telemetryPayloadForProfile(profile),
       url,
-      model: openAICompatibleModel(profile),
+      model,
+      adaptiveOpenRouter: isAdaptiveOpenRouterProfile(profile),
       messageCount: modelMessages.length,
     });
     upstream = await fetch(url, {
@@ -727,7 +810,7 @@ async function streamOpenAICompatibleRuntime(
         ...(profile.token ? { Authorization: `Bearer ${profile.token}` } : {}),
       },
       body: JSON.stringify({
-        model: openAICompatibleModel(profile),
+        model,
         messages: modelMessages,
         stream: true,
       }),

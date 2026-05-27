@@ -42,6 +42,7 @@ Copy the returned `database_id` into `wrangler.toml`, then run:
 pnpm d1:migrate:remote
 pnpm wrangler secret put HONEY_LEDGER_SECRET
 pnpm wrangler secret put HONEY_LEDGER_ADMIN_TOKEN
+pnpm wrangler secret put HONEY_REWARD_BANKR_API_KEY
 pnpm deploy
 ```
 
@@ -78,5 +79,7 @@ HONEY_LEDGER_SIGNING_SECRET="<same value as HONEY_LEDGER_SECRET>"
 Never commit private values. Editing frontend Honey values does not affect conversion, because `/exchange` converts only the Honey balance stored in the official Cloudflare D1 ledger.
 
 Only the operator uses `HONEY_LEDGER_ADMIN_TOKEN`, and only to add reward-pool funding events. Clone users do not need it.
+
+Only the official worker should hold `HONEY_REWARD_BANKR_API_KEY`. It must be a funded Bankr treasury API key with Wallet API write access. Open-source clones claim Honey by sending their recipient Bankr wallet address to the official worker; they never receive or store the treasury key.
 
 Forks that point `HONEY_LEDGER_REMOTE_URL` at a different backend are using a different economy. Their Honey is not official HivemindOS Honey unless it is stored in the official ledger.

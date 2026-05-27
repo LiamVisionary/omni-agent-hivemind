@@ -25,7 +25,7 @@ function runtimeIntegrationTargetKey(agent?: AgentProfile | null) {
   if (!agent) return "";
   const telemetryUrl = agent.telemetryUrl?.trim().replace(/\/+$/, "") || "local";
   const localDataDir = agent.localDataDir?.trim() || "";
-  const agentId = agent.agentId?.trim() || agent.id;
+  const agentId = agent.agentId?.trim() || "";
   return [agent.runtime, telemetryUrl, localDataDir, agentId].join("|");
 }
 
@@ -82,6 +82,7 @@ export function useAgentSettingsController(props: UseAgentSettingsControllerProp
       ...createAgentProfile(agentCreateDraft.runtime, runtimeCount(agents, agentCreateDraft.runtime) + 1),
       provider: agentCreateDraft.provider,
       model: agentCreateDraft.model,
+      adaptiveOpenRouter: agentCreateDraft.adaptiveOpenRouter,
       telemetryUrl: agentCreateMachine.collectorUrl,
       machineName: agentCreateMachine.name,
     }

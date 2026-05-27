@@ -217,11 +217,13 @@ function Ensure-HiveEnvAdd {
     Warn "Python is missing; hive env shims installed but will need Python to run."
     $pythonCommand = "python"
   }
-  foreach ($commandName in @("hive-env-add", "hive-env-run", "hive-env-check", "hive-transfer")) {
+  foreach ($commandName in @("hive-env-add", "hive-env-run", "hive-env-check", "hive-transfer", "hive-update")) {
     $shimPath = Join-Path $binDir "$commandName.cmd"
     $scriptPath = Join-Path $Root "scripts\$commandName"
     if ($commandName -eq "hive-transfer") {
       Set-Content -Path $shimPath -Value "@echo off`r`nnode `"$scriptPath.mjs`" %*`r`n" -Encoding ASCII
+    } elseif ($commandName -eq "hive-update") {
+      Set-Content -Path $shimPath -Value "@echo off`r`nbash `"$scriptPath`" %*`r`n" -Encoding ASCII
     } else {
       Set-Content -Path $shimPath -Value "@echo off`r`n$pythonCommand `"$scriptPath`" %*`r`n" -Encoding ASCII
     }
@@ -235,7 +237,7 @@ function Ensure-HiveEnvAdd {
       Refresh-Path
       Ok "Added $binDir to user PATH"
     } else {
-      Warn "Add $binDir to PATH to run hive-env-add, hive-env-run, hive-env-check, and hive-transfer from any folder"
+      Warn "Add $binDir to PATH to run hive-env-add, hive-env-run, hive-env-check, hive-transfer, and hive-update from any folder"
     }
   } else {
     Refresh-Path

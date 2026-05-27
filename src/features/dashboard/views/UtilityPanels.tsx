@@ -10,6 +10,7 @@ import type { AgentEnvCardProps, EnvValueRowProps } from "@/features/env/env-com
 import type { MorePanelProps } from "@/features/dashboard/MorePanel";
 import type { NotificationGroup, NotificationsPanelProps } from "@/features/notifications/NotificationsPanel";
 import { MemoryTelemetryPanel } from "@/features/dashboard/views/MemoryTelemetryPanel";
+import { MyAppsPanel } from "@/features/dashboard/views/MyAppsPanel";
 import type {
   DashboardView,
   HiveEnvBackupStatus,
@@ -168,6 +169,12 @@ export function UtilityPanels(props: UtilityPanelsProps) {
           }}
         />
       ) : null}
+
+      <MyAppsPanel
+        activeView={activeView}
+        fleetClass={fleetClass}
+        formatRelativeTime={formatRelativeTime}
+      />
 
       {activeView === "env" ? (
       <section className={fleetClass("taskPanel", "tabPanel")}>

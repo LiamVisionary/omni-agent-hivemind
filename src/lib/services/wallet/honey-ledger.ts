@@ -26,6 +26,25 @@ export type HoneyLedger = HoneyTreasuryConfig & {
 const LEDGER_PATH = join(homedir(), ".hivemindos", "honey-ledger.json");
 const INSTALL_ID_PATH = join(homedir(), ".hivemindos", "install-id");
 const REMOTE_HONEY_TIMEOUT_MS = 8_000;
+const BANKR_API_URL = "https://api.bankr.bot";
+
+export type BankrHoneyClaim = {
+  ledger: HoneyLedger;
+  txHash: string;
+  recipientAddress: string;
+  amount: number;
+  tokenAddress: string;
+  events: HoneyLedgerEvent[];
+};
+
+class HoneyClaimError extends Error {
+  status: number;
+
+  constructor(message: string, status = 400) {
+    super(message);
+    this.status = status;
+  }
+}
 
 export async function readHoneyLedger(): Promise<HoneyLedger> {
   const remote = getRemoteLedgerConfig();
@@ -273,10 +292,106 @@ export async function returnHiveToHoney(agentId?: string) {
   return { ledger, events };
 }
 
+export async function claimHoneyToBankrHive(input: { agentId?: string; recipientAddress?: string } = {}): Promise<BankrHoneyClaim> {
+  const ledger = await readHoneyLedger();
+  const amount = claimableHiveAmount(ledger, input.agentId);
+  if (amount <= 0) throw new HoneyClaimError("No Honey is ready to claim.", 400);
+
+  const recipientAddress = normalizeEvmAddress(
+    input.recipientAddress || process.env.HONEY_BANKR_RECIPIENT_ADDRESS || process.env.BANKR_RECIPIENT_ADDRESS,
+  );
+  if (!recipientAddress) throw new HoneyClaimError("Enter a Bankr EVM receiving address before claiming HIVE.", 400);
+
+  const remote = getRemoteLedgerConfig();
+  if (remote) return claimRemoteHoneyToBankrHive(remote, { agentId: input.agentId, recipientAddress });
+
+  const tokenAddress = (process.env.HIVE_TOKEN_ADDRESS?.trim() || ledger.hiveTokenAddress?.trim() || "");
+  if (!tokenAddress) throw new HoneyClaimError("Set HIVE_TOKEN_ADDRESS before claiming Bankr HIVE.", 500);
+
+  const treasuryApiKey = process.env.HONEY_REWARD_BANKR_API_KEY?.trim() || process.env.BANKR_REWARD_TREASURY_API_KEY?.trim() || "";
+  if (!treasuryApiKey) throw new HoneyClaimError("Set HONEY_REWARD_BANKR_API_KEY to the funded reward treasury Bankr key.", 500);
+
+  const txHash = await transferBankrHive({
+    apiKey: treasuryApiKey,
+    tokenAddress,
+    recipientAddress,
+    amount,
+  });
+
+  const exchanged = await exchangeHoneyForHive(input.agentId);
+  return {
+    ledger: exchanged.ledger,
+    events: exchanged.events,
+    txHash,
+    recipientAddress,
+    amount,
+    tokenAddress,
+  };
+}
+
 function estimateTokens(text: string) {
   const trimmed = text.trim();
   if (!trimmed) return 0;
   return Math.max(1, Math.ceil(trimmed.length / 4));
+}
+
+function claimableHiveAmount(ledger: HoneyLedger, agentId?: string) {
+  const tokenPerHoney = Math.max(0, Number(ledger.tokenPerHoney) || 0);
+  if (tokenPerHoney <= 0) return 0;
+  const balances = ledger.balances?.filter((balance) => !agentId || balance.agentId === agentId);
+  if (balances?.length) {
+    return roundHive(balances.reduce((total, balance) => total + Math.max(0, Number(balance.availableHoney) || 0), 0) * tokenPerHoney);
+  }
+
+  const agentIds = agentId ? [agentId] : Object.keys(ledger.agentTokenUsage);
+  return roundHive(agentIds.reduce((total, id) => {
+    const honeyEarned = calculateHoneyForTokens(ledger.agentTokenUsage[id] ?? 0, ledger.honeyPerThousandTokens);
+    const honeyExchanged = Math.min(honeyEarned, Math.max(0, ledger.agentHoneyExchanged[id] ?? 0));
+    const honeyAvailable = Math.max(0, Math.round((honeyEarned - honeyExchanged) * 1_000_000) / 1_000_000);
+    return total + honeyAvailable * tokenPerHoney;
+  }, 0));
+}
+
+function roundHive(value: number) {
+  return Math.max(0, Math.round(value * 1_000_000) / 1_000_000);
+}
+
+function normalizeEvmAddress(address: unknown) {
+  if (typeof address !== "string") return "";
+  const trimmed = address.trim();
+  return /^0x[a-fA-F0-9]{40}$/.test(trimmed) ? trimmed : "";
+}
+
+async function transferBankrHive(input: {
+  apiKey: string;
+  tokenAddress: string;
+  recipientAddress: string;
+  amount: number;
+}) {
+  const response = await fetch(`${BANKR_API_URL}/wallet/transfer`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "X-API-Key": input.apiKey,
+    },
+    body: JSON.stringify({
+      tokenAddress: input.tokenAddress,
+      recipientAddress: input.recipientAddress,
+      amount: input.amount.toFixed(6).replace(/\.?0+$/, ""),
+      isNativeToken: false,
+    }),
+    signal: AbortSignal.timeout(REMOTE_HONEY_TIMEOUT_MS),
+  });
+  const data = await response.json().catch(() => null) as {
+    success?: boolean;
+    txHash?: string;
+    error?: string;
+    message?: string;
+  } | null;
+  if (!response.ok || !data?.success || !data.txHash) {
+    throw new HoneyClaimError(data?.message || data?.error || "Bankr HIVE transfer failed.", response.status || 502);
+  }
+  return data.txHash;
 }
 
 type RemoteLedgerConfig = {
@@ -434,6 +549,43 @@ async function returnRemoteHiveToHoney(remote: RemoteLedgerConfig, agentId?: str
   return { ledger: normalizeLedger(data.ledger), events: Array.isArray(data.events) ? data.events : [] };
 }
 
+async function claimRemoteHoneyToBankrHive(
+  remote: RemoteLedgerConfig,
+  input: { agentId?: string; recipientAddress: string },
+): Promise<BankrHoneyClaim> {
+  const response = await fetch(`${remote.url}/claim-bankr-hive`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      workspaceId: await getWorkspaceId(),
+      agentId: input.agentId,
+      recipientAddress: input.recipientAddress,
+    }),
+    signal: AbortSignal.timeout(REMOTE_HONEY_TIMEOUT_MS),
+  });
+  const data = await response.json().catch(() => null) as {
+    ok?: boolean;
+    ledger?: Partial<HoneyLedger>;
+    events?: HoneyLedgerEvent[];
+    txHash?: string;
+    amount?: number;
+    recipientAddress?: string;
+    tokenAddress?: string;
+    error?: string;
+  } | null;
+  if (!response.ok || !data?.ok || !data.ledger || !data.txHash) {
+    throw new HoneyClaimError(data?.error || "Official Bankr HIVE claim failed.", response.status || 502);
+  }
+  return {
+    ledger: normalizeLedger(data.ledger),
+    events: Array.isArray(data.events) ? data.events : [],
+    txHash: data.txHash,
+    amount: Number(data.amount ?? 0) || 0,
+    recipientAddress: data.recipientAddress ?? input.recipientAddress,
+    tokenAddress: data.tokenAddress ?? "",
+  };
+}
+
 function signReceipt(receipt: Omit<RemoteUsageReceipt, "signature">, secret: string) {
   return createHmac("sha256", secret).update(canonicalReceipt(receipt)).digest("hex");
 }
@@ -499,15 +651,18 @@ function normalizeLedger(parsed: Partial<HoneyLedger>): HoneyLedger {
   const fallback = createDefaultLedger();
   const rewardPoolHive = positiveNumber(parsed.rewardPoolHive, fallback.rewardPoolHive);
   const rewardPoolEmittedHive = positiveNumber(parsed.rewardPoolEmittedHive, fallback.rewardPoolEmittedHive);
+  const agentTokenUsage = plainNumberRecord(parsed.agentTokenUsage);
+  const agentHoneyExchanged = plainNumberRecord(parsed.agentHoneyExchanged);
+  const agentHiveBalances = plainNumberRecord(parsed.agentHiveBalances);
   return {
     ...fallback,
     ...parsed,
     honeyPerThousandTokens: positiveNumber(parsed.honeyPerThousandTokens, fallback.honeyPerThousandTokens),
     tokenPerHoney: positiveNumber(parsed.tokenPerHoney, fallback.tokenPerHoney),
-    agentTokenUsage: plainNumberRecord(parsed.agentTokenUsage),
-    agentHoneyExchanged: plainNumberRecord(parsed.agentHoneyExchanged),
-    agentHiveBalances: plainNumberRecord(parsed.agentHiveBalances),
-    balances: normalizeBalances(parsed.balances),
+    agentTokenUsage,
+    agentHoneyExchanged,
+    agentHiveBalances,
+    balances: normalizeBalances(parsed.balances, agentHoneyExchanged, agentHiveBalances),
     rewardPoolHive,
     rewardPoolRemainingHive: positiveNumber(parsed.rewardPoolRemainingHive, Math.max(0, rewardPoolHive - rewardPoolEmittedHive)),
     rewardPoolEmittedHive,
@@ -522,20 +677,29 @@ function normalizeLedger(parsed: Partial<HoneyLedger>): HoneyLedger {
   };
 }
 
-function normalizeBalances(value: unknown): HoneyTreasuryConfig["balances"] {
+function normalizeBalances(
+  value: unknown,
+  agentHoneyExchanged: Record<string, number> = {},
+  agentHiveBalances: Record<string, number> = {},
+): HoneyTreasuryConfig["balances"] {
   if (!Array.isArray(value)) return undefined;
   return value
     .map((raw) => {
       if (!raw || typeof raw !== "object") return null;
       const balance = raw as Partial<NonNullable<HoneyTreasuryConfig["balances"]>[number]>;
       if (typeof balance.agentId !== "string" || !balance.agentId.trim()) return null;
+      const lifetimeHoney = positiveNumber(balance.lifetimeHoney, 0);
+      const exchanged = agentHoneyExchanged[balance.agentId];
+      const hiveBalance = agentHiveBalances[balance.agentId];
       return {
         workspaceId: typeof balance.workspaceId === "string" ? balance.workspaceId : "",
         agentId: balance.agentId,
         tokensUsed: Math.max(0, Math.round(Number(balance.tokensUsed ?? 0) || 0)),
-        lifetimeHoney: positiveNumber(balance.lifetimeHoney, 0),
-        availableHoney: positiveNumber(balance.availableHoney, 0),
-        hiveBalance: positiveNumber(balance.hiveBalance, 0),
+        lifetimeHoney,
+        availableHoney: exchanged == null
+          ? positiveNumber(balance.availableHoney, 0)
+          : Math.max(0, Math.round((lifetimeHoney - exchanged) * 1_000_000) / 1_000_000),
+        hiveBalance: hiveBalance == null ? positiveNumber(balance.hiveBalance, 0) : hiveBalance,
         updatedAt: typeof balance.updatedAt === "string" ? balance.updatedAt : new Date(0).toISOString(),
       };
     })

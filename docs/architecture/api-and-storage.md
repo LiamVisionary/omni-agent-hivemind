@@ -167,6 +167,7 @@ Routes:
 | `POST /observations` | Lower-trust local usage observations |
 | `POST /exchange` | Honey to HIVE exchange |
 | `POST /return-to-honey` | Move legacy ledger-only HIVE back to Honey |
+| `POST /claim-bankr-hive` | Official Honey claim that sends HIVE from the worker-held Bankr treasury, then spends Honey after a tx hash |
 | `POST /pool-events` | Admin reward-pool funding events |
 
 ### Compute Gateway

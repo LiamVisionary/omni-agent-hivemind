@@ -61,7 +61,7 @@ function runtimeIntegrationTargetKey(agent?: AgentProfile | null) {
   if (!agent) return "";
   const telemetryUrl = agent.telemetryUrl?.trim().replace(/\/+$/, "") || "local";
   const localDataDir = agent.localDataDir?.trim() || "";
-  const agentId = agent.agentId?.trim() || agent.id;
+  const agentId = agent.agentId?.trim() || "";
   return [agent.runtime, telemetryUrl, localDataDir, agentId].join("|");
 }
 
@@ -277,6 +277,7 @@ export function useAgentController(props: UseAgentControllerProps) {
       agentId: runtime === "openclaw" ? "main" : "",
       provider: agentCreateDraft.provider,
       model: agentCreateDraft.model,
+      adaptiveOpenRouter: agentCreateDraft.adaptiveOpenRouter,
       localDataDir: "",
       beeRole: "worker",
       workerClass: agentCreateDraft.workerClass,

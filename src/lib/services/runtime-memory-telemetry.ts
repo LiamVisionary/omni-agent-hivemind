@@ -361,6 +361,14 @@ function buildSuspects(
       pid: current.pid,
     });
   }
+  if (current && aggregate.heapUsedMb - current.rssMb > 750) {
+    suspects.push({
+      severity: aggregate.heapUsedMb > 1_500 ? "warning" : "info",
+      title: "V8 heap is much larger than resident RSS",
+      detail: `V8 reports ${aggregate.heapUsedMb.toFixed(1)} MB of JS heap used while the OS reports ${current.rssMb.toFixed(1)} MB RSS for the Next process. That usually means a large logical JS heap, dev compiler cache, or memory that has been paged/compressed rather than currently resident RAM.`,
+      pid: current.pid,
+    });
+  }
 
   if (suspects.length === 0) {
     suspects.push({

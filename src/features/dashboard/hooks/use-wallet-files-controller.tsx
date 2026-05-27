@@ -325,26 +325,6 @@ export function useWalletFilesController(props: any) {
     await listRuntimeFiles(runtimeFileRootKey, runtimeFilePath);
   }
 
-  async function exchangeHoneyForHive(agentId: string) {
-    if (!honeyLedgerEnabled) return;
-    await fetch("/api/honey-ledger", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ action: "exchange", agentId }),
-    }).catch(() => null);
-    await refreshHoneyLedger();
-  }
-
-  async function exchangeAllHoneyForHive() {
-    if (!honeyLedgerEnabled) return;
-    await fetch("/api/honey-ledger", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ action: "exchange" }),
-    }).catch(() => null);
-    await refreshHoneyLedger();
-  }
-
   async function returnAllHiveToHoney() {
     if (!honeyLedgerEnabled) return;
     await fetch("/api/honey-ledger", {
@@ -353,6 +333,41 @@ export function useWalletFilesController(props: any) {
       body: JSON.stringify({ action: "return-to-honey" }),
     }).catch(() => null);
     await refreshHoneyLedger();
+  }
+
+  async function claimAllHoneyToBankrHive(recipientAddress?: string) {
+    if (!honeyLedgerEnabled) return { ok: false, error: "Honey rewards are off." };
+    const response = await fetch("/api/honey-ledger", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "claim-bankr-hive", recipientAddress }),
+    }).catch(() => null);
+    const data = await response?.json().catch(() => null) as {
+      ok?: boolean;
+      ledger?: HoneyTreasuryConfig;
+      txHash?: string;
+      amount?: number;
+      recipientAddress?: string;
+      error?: string;
+    } | null;
+    if (data?.ledger) {
+      setHoneyTreasury({
+        ...createDefaultHoneyTreasuryConfig(),
+        ...data.ledger,
+        agentTokenUsage: data.ledger.agentTokenUsage ?? {},
+        agentHoneyExchanged: data.ledger.agentHoneyExchanged ?? {},
+        agentHiveBalances: data.ledger.agentHiveBalances ?? {},
+      });
+    }
+    if (!response?.ok || !data?.ok) {
+      return { ok: false, error: data?.error ?? "Bankr HIVE claim failed." };
+    }
+    return {
+      ok: true,
+      txHash: data.txHash ?? "",
+      amount: Number(data.amount ?? 0) || 0,
+      recipientAddress: data.recipientAddress ?? "",
+    };
   }
 
   async function enableHoneyLedger() {
@@ -565,5 +580,5 @@ export function useWalletFilesController(props: any) {
     });
   }
 
-  return { updateSharedVault, updateWallet, resetWalletBurnClock, copyPaymentPrompt, refreshMoneyClawStatus, saveMoneyClawKey, initializeCoreWalletRails, refreshHoneyLedger, observeHoneyUsage, refreshRuntimeUsage, refreshWalletVaultBackupStatus, runWalletVaultBackupAction, refreshMaintenanceReport, runMaintenanceAction, runtimeFileRequest, refreshRuntimeFileRoots, listRuntimeFiles, openRuntimeFile, saveRuntimeFile, exchangeHoneyForHive, exchangeAllHoneyForHive, returnAllHiveToHoney, enableHoneyLedger, updateWalletAction, createLocalWallet, refreshWalletBalance, sendWalletUsdc, testX402Fetch, addAgentToMachine, requestDuplicateAgent, duplicateAgent, deleteAgent };
+  return { updateSharedVault, updateWallet, resetWalletBurnClock, copyPaymentPrompt, refreshMoneyClawStatus, saveMoneyClawKey, initializeCoreWalletRails, refreshHoneyLedger, observeHoneyUsage, refreshRuntimeUsage, refreshWalletVaultBackupStatus, runWalletVaultBackupAction, refreshMaintenanceReport, runMaintenanceAction, runtimeFileRequest, refreshRuntimeFileRoots, listRuntimeFiles, openRuntimeFile, saveRuntimeFile, returnAllHiveToHoney, claimAllHoneyToBankrHive, enableHoneyLedger, updateWalletAction, createLocalWallet, refreshWalletBalance, sendWalletUsdc, testX402Fetch, addAgentToMachine, requestDuplicateAgent, duplicateAgent, deleteAgent };
 }

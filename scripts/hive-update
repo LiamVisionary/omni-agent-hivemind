@@ -1,0 +1,7 @@
+#!/usr/bin/env sh
+set -eu
+
+script_dir="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
+root="$(CDPATH= cd -- "$script_dir/.." && pwd)"
+
+exec "$root/scripts/update-hivemindos.sh" "$@"

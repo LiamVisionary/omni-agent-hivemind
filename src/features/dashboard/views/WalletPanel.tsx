@@ -2,6 +2,7 @@
 
 /* eslint-disable react-hooks/immutability, react-hooks/purity */
 
+import { useState } from "react";
 import type { ComponentType, Dispatch, ElementType, SetStateAction } from "react";
 import Image from "next/image";
 import type { AgentWalletCardProps } from "@/components/wallet/AgentWalletCard";
@@ -21,7 +22,7 @@ type WalletStats = {
 type HoneyStats = {
   totalHoney: number;
   availableHoney: number;
-  bankrHiveAwarded: number;
+  legacyHive: number;
   hiveQuote: number;
   rewardPoolHive: number;
   rewardPoolRemainingHive: number;
@@ -42,6 +43,14 @@ type IconComponent = ElementType<{
   width?: number;
 }>;
 
+type EthereumProvider = {
+  request: (input: { method: string; params?: unknown[] }) => Promise<unknown>;
+};
+
+type WalletWindow = Window & {
+  ethereum?: EthereumProvider;
+};
+
 type WalletPanelProps = {
   AGENT_PAYMENT_PROVIDER_COPY: PaymentProviderCopy;
   AgentWalletCard: ComponentType<AgentWalletCardProps>;
@@ -58,9 +67,8 @@ type WalletPanelProps = {
   createDefaultAgentWallet: (agentId: string) => AgentWalletConfig;
   createLocalWallet: (agentId: string, network: string) => void | Promise<void>;
   displayAgents: AgentProfile[];
+  claimAllHoneyToBankrHive: (recipientAddress?: string) => Promise<{ ok: boolean; error?: string; txHash?: string; amount?: number; recipientAddress?: string }>;
   enableHoneyLedger: () => void;
-  exchangeAllHoneyForHive: () => void;
-  exchangeHoneyForHive: (agentId: string) => void;
   formatHiveAmount: (amount: number) => string;
   formatRelativeTime: (timestamp: number) => string;
   getSurvivalSnapshot: (wallet: AgentWalletConfig) => AgentSurvivalSnapshot;
@@ -101,7 +109,76 @@ type WalletPanelProps = {
 };
 
 export function WalletPanel(props: WalletPanelProps) {
-  const { AGENT_PAYMENT_PROVIDER_COPY, AgentWalletCard, AgentWalletCardCompact, Button, ChevronLeft, Download, HandCoins, LoaderCircle, RUNTIME_LABELS, RefreshCcw, activeView, copyPaymentPrompt, createDefaultAgentWallet, createLocalWallet, displayAgents, enableHoneyLedger, exchangeAllHoneyForHive, exchangeHoneyForHive, formatHiveAmount, formatRelativeTime, getSurvivalSnapshot, honeyLedgerEnabled, honeyStats, initializeCoreWalletRails, moneyClawStatusByEnvName, refreshRuntimeUsage, refreshWalletBalance, renderAgentKey, resetWalletBurnClock, returnAllHiveToHoney, runWalletVaultBackupAction, runtimeUsage, runtimeUsageLoading, saveMoneyClawKey, selectedAgent, selectedHoneyReward, selectedWallet, selectedWalletSnapshot, sendWalletUsdc, setSelectedAgentId, setWalletExpanded, setWalletPanelMode, testX402Fetch, updateWallet, updateWalletAction, vaultClass, walletActionsByAgent, walletClass, walletExpanded, walletPanelMode, walletStats, walletVaultBackupBusy, walletVaultBackupMessage, walletVaultBackupStatus, walletsByAgent } = props;
+  const { AGENT_PAYMENT_PROVIDER_COPY, AgentWalletCard, AgentWalletCardCompact, Button, ChevronLeft, Download, HandCoins, LoaderCircle, RUNTIME_LABELS, RefreshCcw, activeView, claimAllHoneyToBankrHive, copyPaymentPrompt, createDefaultAgentWallet, createLocalWallet, displayAgents, enableHoneyLedger, formatHiveAmount, formatRelativeTime, getSurvivalSnapshot, honeyLedgerEnabled, honeyStats, initializeCoreWalletRails, moneyClawStatusByEnvName, refreshRuntimeUsage, refreshWalletBalance, renderAgentKey, resetWalletBurnClock, returnAllHiveToHoney, runWalletVaultBackupAction, runtimeUsage, runtimeUsageLoading, saveMoneyClawKey, selectedAgent, selectedHoneyReward, selectedWallet, selectedWalletSnapshot, sendWalletUsdc, setSelectedAgentId, setWalletExpanded, setWalletPanelMode, testX402Fetch, updateWallet, updateWalletAction, vaultClass, walletActionsByAgent, walletClass, walletExpanded, walletPanelMode, walletStats, walletVaultBackupBusy, walletVaultBackupMessage, walletVaultBackupStatus, walletsByAgent } = props;
+  const [bankrClaimBusy, setBankrClaimBusy] = useState(false);
+  const [bankrConnectBusy, setBankrConnectBusy] = useState(false);
+  const [bankrClaimStatus, setBankrClaimStatus] = useState("");
+  const [bankrRecipientAddress, setBankrRecipientAddress] = useState(() => {
+    if (typeof window === "undefined") return "";
+    return window.localStorage.getItem("hivemindos.bankrRecipientAddress") ?? "";
+  });
+  const bankrRecipientReady = /^0x[a-fA-F0-9]{40}$/.test(bankrRecipientAddress.trim());
+
+  async function connectBaseWallet() {
+    const provider = (window as WalletWindow).ethereum;
+    if (!provider) {
+      setBankrClaimStatus("No browser wallet found. Paste your Bankr receiving address instead.");
+      return;
+    }
+
+    setBankrConnectBusy(true);
+    setBankrClaimStatus("");
+    try {
+      const accounts = await provider.request({ method: "eth_requestAccounts" }) as string[];
+      const address = accounts.find((account) => /^0x[a-fA-F0-9]{40}$/.test(account));
+      if (!address) {
+        setBankrClaimStatus("Wallet connected, but no EVM address was returned.");
+        return;
+      }
+
+      await provider.request({ method: "wallet_switchEthereumChain", params: [{ chainId: "0x2105" }] }).catch(async (error: unknown) => {
+        const code = typeof error === "object" && error && "code" in error ? Number(error.code) : 0;
+        if (code !== 4902) return;
+        await provider.request({
+          method: "wallet_addEthereumChain",
+          params: [{
+            chainId: "0x2105",
+            chainName: "Base",
+            nativeCurrency: { name: "Ether", symbol: "ETH", decimals: 18 },
+            rpcUrls: ["https://mainnet.base.org"],
+            blockExplorerUrls: ["https://basescan.org"],
+          }],
+        });
+      });
+
+      setBankrRecipientAddress(address);
+      window.localStorage.setItem("hivemindos.bankrRecipientAddress", address);
+      setBankrClaimStatus("Base wallet connected. Ready to claim Bankr HIVE.");
+    } catch (error) {
+      setBankrClaimStatus(error instanceof Error ? error.message : "Could not connect wallet.");
+    } finally {
+      setBankrConnectBusy(false);
+    }
+  }
+
+  async function claimBankrHive() {
+    const recipientAddress = bankrRecipientAddress.trim();
+    if (!bankrRecipientReady) {
+      setBankrClaimStatus("Enter a valid Bankr EVM receiving address first.");
+      return;
+    }
+    setBankrClaimBusy(true);
+    setBankrClaimStatus("Sending Bankr HIVE transaction...");
+    window.localStorage.setItem("hivemindos.bankrRecipientAddress", recipientAddress);
+    const result = await claimAllHoneyToBankrHive(recipientAddress);
+    setBankrClaimBusy(false);
+    if (!result.ok) {
+      setBankrClaimStatus(result.error ?? "Bankr HIVE claim failed.");
+      return;
+    }
+    const hash = result.txHash ? ` Tx ${result.txHash.slice(0, 10)}...${result.txHash.slice(-6)}.` : "";
+    setBankrClaimStatus(`Sent ${formatHiveAmount(result.amount ?? 0)} HIVE to Bankr.${hash}`);
+  }
   return (<>
       {activeView === "wallet" ? (
       <section className={walletClass("walletPanel", "tabPanel")}>
@@ -238,7 +315,6 @@ export function WalletPanel(props: WalletPanelProps) {
                 onRefreshBalance={() => refreshWalletBalance(selectedAgent.id)}
                 onSendUsdc={() => sendWalletUsdc(selectedAgent.id)}
                 onCallX402={() => testX402Fetch(selectedAgent.id)}
-                onExchangeHoney={() => exchangeHoneyForHive(selectedAgent.id)}
               />
             </div>
               );
@@ -300,22 +376,51 @@ export function WalletPanel(props: WalletPanelProps) {
                     <dd>{formatHiveAmount(honeyStats.totalHoney)}</dd>
                   </div>
                   <div>
-                    <dt>Ready to award</dt>
+                    <dt>Ready to claim</dt>
                     <dd>{formatHiveAmount(honeyStats.availableHoney)}</dd>
                   </div>
                   <div>
-                    <dt>Bankr HIVE awarded</dt>
-                    <dd>{formatHiveAmount(honeyStats.bankrHiveAwarded)}</dd>
+                    <dt>Legacy HIVE</dt>
+                    <dd>{formatHiveAmount(honeyStats.legacyHive)}</dd>
                   </div>
                 </dl>
+
+                <div className={walletClass("hiveRailRecipient")}>
+                  <div className={walletClass("hiveRailRecipientHeader")}>
+                    <label htmlFor="bankr-hive-recipient">Bankr receiving address</label>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="secondary"
+                      onClick={() => void connectBaseWallet()}
+                      disabled={bankrConnectBusy || bankrClaimBusy}
+                    >
+                      <HandCoins aria-hidden="true" />
+                      {bankrConnectBusy ? "Connecting..." : "Connect Base wallet"}
+                    </Button>
+                  </div>
+                  <input
+                    id="bankr-hive-recipient"
+                    type="text"
+                    inputMode="text"
+                    spellCheck={false}
+                    value={bankrRecipientAddress}
+                    onChange={(event) => {
+                      setBankrRecipientAddress(event.target.value);
+                      setBankrClaimStatus("");
+                    }}
+                    placeholder="0x..."
+                    aria-invalid={bankrRecipientAddress.trim().length > 0 && !bankrRecipientReady}
+                  />
+                </div>
 
                 <Button
                   type="button"
                   size="sm"
                   className={walletClass("hiveRailConvert")}
-                  disabled={honeyStats.availableHoney <= 0}
-                  onClick={exchangeAllHoneyForHive}
-                  aria-label={`Award ${formatHiveAmount(honeyStats.hiveQuote)} Bankr HIVE from ${formatHiveAmount(honeyStats.availableHoney)} Honey`}
+                  disabled={bankrClaimBusy || honeyStats.availableHoney <= 0 || !bankrRecipientReady}
+                  onClick={() => void claimBankrHive()}
+                  aria-label={`Claim ${formatHiveAmount(honeyStats.hiveQuote)} HIVE to your Bankr wallet`}
                 >
                   <Image
                     className={walletClass("hiveRailConvertIcon")}
@@ -328,22 +433,24 @@ export function WalletPanel(props: WalletPanelProps) {
                     unoptimized
                   />
                   <span>
-                    <span>Award Bankr HIVE</span>
-                    <span>{formatHiveAmount(honeyStats.availableHoney)} Honey → {formatHiveAmount(honeyStats.hiveQuote)} HIVE</span>
+                    <span>{bankrClaimBusy ? "Claiming Bankr HIVE..." : "Claim Bankr HIVE"}</span>
+                    <span>{formatHiveAmount(honeyStats.availableHoney)} Honey → {formatHiveAmount(honeyStats.hiveQuote)} HIVE on Base</span>
                   </span>
                 </Button>
 
-                {honeyStats.bankrHiveAwarded > 0 ? (
+                {bankrClaimStatus ? <p className={walletClass("hiveRailClaimStatus")}>{bankrClaimStatus}</p> : null}
+
+                {honeyStats.legacyHive > 0 ? (
                   <div className={walletClass("hiveRailLegacy")}>
                     <p>
-                      Older conversions are still in the ledger-only HIVE bucket. Move them back to Honey before claiming through Bankr.
+                      This is not Bankr HIVE. It is an old ledger-only conversion. Move it back to Honey.
                     </p>
                     <Button
                       type="button"
                       size="sm"
                       variant="secondary"
                       onClick={returnAllHiveToHoney}
-                      aria-label={`Move ${formatHiveAmount(honeyStats.bankrHiveAwarded)} legacy HIVE back to Honey`}
+                      aria-label={`Move ${formatHiveAmount(honeyStats.legacyHive)} legacy HIVE back to Honey`}
                     >
                       <RefreshCcw aria-hidden="true" />
                       Move back to Honey
@@ -381,7 +488,7 @@ export function WalletPanel(props: WalletPanelProps) {
             ) : (
               <>
                 <p className={walletClass("hiveRailBlurb")}>
-                  Watch supported local runtimes for real token usage, earn Honey, then award Bankr HIVE.
+                  Watch supported local runtimes for real token usage, earn Honey, then claim Bankr HIVE once payout settlement is wired.
                 </p>
                 <Button type="button" size="sm" onClick={enableHoneyLedger}>
                   <HandCoins aria-hidden="true" />

@@ -26,6 +26,16 @@ export interface RuntimeCapabilities {
 export type BeeAgentRole = "queen" | "worker" | "observer" | "human";
 export type BeeWorkerClass = "general" | "planner" | "code" | "vision" | "writer" | "research" | "artist" | "ops" | "qa";
 
+export type AdaptiveOpenRouterCategory = "general" | "coding" | "writing" | "vision" | "image" | "research" | "tool-use";
+
+export interface AdaptiveOpenRouterConfig {
+  inputModalities: string[];
+  minContextLength: number;
+  categories: AdaptiveOpenRouterCategory[];
+  minScores: Partial<Record<AdaptiveOpenRouterCategory, number>>;
+  fallbackModel: string;
+}
+
 export interface CustomWorkerClassProfile {
   id: string;
   label: string;
@@ -42,6 +52,7 @@ export interface AgentProfile {
   token?: string;
   provider?: string;
   model?: string;
+  adaptiveOpenRouter?: AdaptiveOpenRouterConfig;
   agentId?: string;
   sessionKey?: string;
   chatPath?: string;
