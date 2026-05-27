@@ -345,7 +345,15 @@ function absoluteAppUrl(baseUrl, path) {
 function collectorAssetUrl(filePath) {
   const safePath = resolve(filePath);
   const id = sha256Hex(safePath).slice(0, 24);
-  hostedAppAssetUrls.set(id, safePath);
+  hostedAppAssetUrls.set(id, { type: "file", path: safePath });
+  return `http://127.0.0.1:${port}/app-assets/${id}`;
+}
+
+function collectorRemoteAssetUrl(url) {
+  const value = String(url || "").trim();
+  if (!value) return "";
+  const id = sha256Hex(value).slice(0, 24);
+  hostedAppAssetUrls.set(id, { type: "url", url: value });
   return `http://127.0.0.1:${port}/app-assets/${id}`;
 }
 
@@ -494,9 +502,9 @@ async function iconFromManifest(baseUrl, html) {
 
 async function discoverHostedAppIcon(baseUrl, html) {
   const manifestIcon = await iconFromManifest(baseUrl, html);
-  if (await isImageUrl(manifestIcon)) return manifestIcon;
+  if (await isImageUrl(manifestIcon)) return collectorRemoteAssetUrl(manifestIcon);
   const htmlIcon = iconFromHtml(html, baseUrl);
-  if (await isImageUrl(htmlIcon)) return htmlIcon;
+  if (await isImageUrl(htmlIcon)) return collectorRemoteAssetUrl(htmlIcon);
   const candidates = [
     "/apple-touch-icon.png",
     "/favicon.png",
@@ -506,7 +514,7 @@ async function discoverHostedAppIcon(baseUrl, html) {
     "/assets/images/icon.png",
   ].map((path) => absoluteAppUrl(baseUrl, path));
   for (const candidate of candidates) {
-    if (await isImageUrl(candidate)) return candidate;
+    if (await isImageUrl(candidate)) return collectorRemoteAssetUrl(candidate);
   }
   return "";
 }
@@ -3342,15 +3350,29 @@ createServer(async (request, response) => {
   }
   if (pathname.startsWith("/app-assets/") && request.method === "GET") {
     const id = pathname.split("/").pop() || "";
-    const filePath = hostedAppAssetUrls.get(id);
-    if (!filePath) {
+    const asset = hostedAppAssetUrls.get(id);
+    if (!asset) {
       jsonResponse(response, 404, { ok: false, error: "Unknown app asset." });
       return;
     }
     try {
-      const bytes = await readFile(filePath);
+      if (asset.type === "url") {
+        const assetResponse = await fetch(asset.url, {
+          signal: AbortSignal.timeout(hostedAppProbeTimeoutMs),
+        });
+        if (!assetResponse.ok) throw new Error(`Asset returned ${assetResponse.status}.`);
+        const contentType = assetResponse.headers.get("content-type") || "application/octet-stream";
+        const bytes = Buffer.from(await assetResponse.arrayBuffer());
+        response.writeHead(200, {
+          "content-type": contentType,
+          "cache-control": "private, max-age=300",
+        });
+        response.end(bytes);
+        return;
+      }
+      const bytes = await readFile(asset.path);
       response.writeHead(200, {
-        "content-type": contentTypeForPath(filePath),
+        "content-type": contentTypeForPath(asset.path),
         "cache-control": "private, max-age=300",
       });
       response.end(bytes);

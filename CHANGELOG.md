@@ -3,6 +3,14 @@
 This file records user-visible changes before they are committed. New work should
 be added here first, then marked `Committed` or `Pushed` after the git action.
 
+## 2026-05-27 17:29:47 WITA - Proxy My Apps Remote Icons
+
+- Status: Pushed
+- Areas changed: Telemetry collector hosted app icon assets, changelog
+- Summary: Proxy app-served favicons and logo URLs through the hosting collector's `/app-assets/...` endpoint so peer-discovered apps like ComfyUI and OpenClaw Control do not leak unusable `127.0.0.1` icon URLs into the dashboard.
+- Verification: Collector E2E with a fake ComfyUI-style SVG favicon confirmed `/apps` returns a collector `/app-assets/...` icon URL and fetching it returns `image/svg+xml`; `node --check scripts/agent-telemetry-collector.mjs`; `pnpm exec eslint scripts/agent-telemetry-collector.mjs --max-warnings=999`; `git diff --check -- scripts/agent-telemetry-collector.mjs CHANGELOG.md`.
+- Intended commit message: `Proxy My Apps remote icons`
+
 ## 2026-05-27 16:21:17 WITA - Simplify My Apps Launcher
 
 - Status: Pushed
