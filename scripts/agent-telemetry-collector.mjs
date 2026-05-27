@@ -7,6 +7,8 @@ import { constants, watch } from "node:fs";
 import { connect } from "node:net";
 import { homedir, hostname, userInfo } from "node:os";
 import { basename, delimiter, dirname, extname, join, relative, resolve, sep } from "node:path";
+import { Readable } from "node:stream";
+import { pipeline } from "node:stream/promises";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 
@@ -3462,7 +3464,11 @@ const telemetryServer = createServer(async (request, response) => {
       });
       responseHeaders["cache-control"] = responseHeaders["cache-control"] || "no-store";
       response.writeHead(appResponse.status, responseHeaders);
-      response.end(Buffer.from(await appResponse.arrayBuffer()));
+      if (appResponse.body) {
+        await pipeline(Readable.fromWeb(appResponse.body), response);
+      } else {
+        response.end(Buffer.from(await appResponse.arrayBuffer()));
+      }
     } catch (error) {
       jsonResponse(response, 502, {
         ok: false,
