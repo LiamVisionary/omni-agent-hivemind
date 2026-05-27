@@ -5,10 +5,10 @@ be added here first, then marked `Committed` or `Pushed` after the git action.
 
 ## 2026-05-28 01:10:37 WITA - Proxy ComfyUI Mobile Through Link
 
-- Status: Uncommitted
+- Status: Pushed
 - Areas changed: Hivemind Link peer proxy, telemetry collector hosted app proxy, changelog
 - Summary: Rewrite root-relative HTML asset paths for peer-hosted apps, remember the app-proxy target for root-relative API calls, and tunnel hosted-app WebSocket upgrades so ComfyUI Mobile can open through Z-Image Studio instead of freezing on its loading screen.
-- Verification: `go test ./cmd/hivemind-linkd`; `node --check scripts/agent-telemetry-collector.mjs`; `pnpm exec eslint scripts/agent-telemetry-collector.mjs --max-warnings=999`; rebuilt and restarted the local Hivemind Link and telemetry collector; Playwright against the real Z-Image app-proxy path showed ComfyUI Mobile booting past the loading card with `/mobile/` assets, `/comfy/api/object_info`, `/comfy/api/queue`, and `/api/loras` returning successfully.
+- Verification: `go test ./cmd/hivemind-linkd`; `node --check scripts/agent-telemetry-collector.mjs`; `pnpm exec eslint scripts/agent-telemetry-collector.mjs --max-warnings=999`; rebuilt and restarted the local Hivemind Link and telemetry collector; updated the stale `local-2` collector via `/update`; raw WebSocket upgrade checks now return `101 Switching Protocols` through both `100.84.93.114:8787/app-proxy/8788/ws` and the Link `/peer/.../app-proxy/8788/ws` route; Playwright against the real Z-Image app-proxy path showed ComfyUI Mobile booting past the loading card with `/mobile/` assets, `/comfy/api/object_info`, `/comfy/api/queue`, and `/api/loras` returning successfully.
 - Intended commit message: `Proxy ComfyUI Mobile through Link`
 
 ## 2026-05-27 19:38:33 WITA - Proxy My Apps Webviews
