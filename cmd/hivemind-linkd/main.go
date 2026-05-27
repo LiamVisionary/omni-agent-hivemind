@@ -162,6 +162,7 @@ func servePeerProxy(ts *tsnet.Server) http.HandlerFunc {
 				out.URL.Path = outPath
 				out.Host = hostPort
 				out.RequestURI = ""
+				out.Header.Del("Accept-Encoding")
 			},
 			ModifyResponse: func(res *http.Response) error {
 				if appProxyPrefix == "" {
@@ -270,6 +271,7 @@ func servePeerRefererFallback(ts *tsnet.Server) http.HandlerFunc {
 				out.URL.RawQuery = r.URL.RawQuery
 				out.Host = hostPort
 				out.RequestURI = ""
+				out.Header.Del("Accept-Encoding")
 			},
 			ModifyResponse: func(res *http.Response) error {
 				return rewritePeerHTMLResponse(res, hostPort, appProxyPrefix)
