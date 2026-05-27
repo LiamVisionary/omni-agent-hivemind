@@ -5,10 +5,10 @@ be added here first, then marked `Committed` or `Pushed` after the git action.
 
 ## 2026-05-27 15:38:13 WITA - Compact Button Styling
 
-- Status: Uncommitted
+- Status: Pushed
 - Areas changed: shared button component, fleet runtime setup styles, fleet roster add-agent affordance, changelog
 - Summary: Make app buttons more compact and minimalist by reducing default button height/padding, replacing heavy filled primary styling with a subtler bordered accent treatment, and letting longer action labels wrap cleanly.
-- Verification: Pending
+- Verification: `pnpm exec eslint src/features/dashboard/views/chat/AgentSettingsModal.tsx --max-warnings=999` passed with one existing unused-prop warning; `pnpm exec tsc --noEmit --pretty false --skipLibCheck`; `git diff --check`.
 - Intended commit message: `Compact shared button styling`
 
 ## 2026-05-27 15:39:05 WITA - Refine Runtime Setup Button Spacing
