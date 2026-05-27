@@ -117,6 +117,10 @@ const LOCAL_APP_ICONS: Array<[RegExp, string]> = [
   [/openclaw/i, "/icons/runtimes/openclaw.svg"],
 ];
 
+const APP_ICON_FALLBACKS: Array<[RegExp, string]> = [
+  [/comfyui/i, "https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons/svg/comfyui.svg"],
+];
+
 function normalizeBaseUrl(value?: string) {
   return value?.trim().replace(/\/+$/, "") || "";
 }
@@ -211,6 +215,13 @@ async function discoverDirectAppIcon(openUrl: string) {
   return "";
 }
 
+async function firstReachableIcon(urls: Array<string | undefined>) {
+  for (const url of urls) {
+    if (url && await isImageUrl(url)) return url;
+  }
+  return "";
+}
+
 function appName(app: CollectorApp, port: number) {
   return cleanAppName(app.name?.trim() || app.process?.trim() || `App ${port}`);
 }
@@ -261,6 +272,8 @@ function appInitials(name: string) {
 function brandFallbackIconUrl(name: string) {
   const localMatch = LOCAL_APP_ICONS.find(([pattern]) => pattern.test(name));
   if (localMatch) return localMatch[1];
+  const appMatch = APP_ICON_FALLBACKS.find(([pattern]) => pattern.test(name));
+  if (appMatch) return appMatch[1];
   const value = name;
   const match = BRAND_ICON_SLUGS.find(([pattern]) => pattern.test(value));
   return match ? `https://cdn.simpleicons.org/${match[1]}/ffffff` : "";
@@ -304,7 +317,10 @@ async function toHostedApp(app: CollectorApp, machine: FleetMachine): Promise<Ho
   if (!isInteractiveApp(name, app)) return null;
   const kind = appKind(name);
   const local = isLocalMachine(machine);
-  const iconUrl = rewriteServiceAssetUrl(app.iconUrl, machine) || await discoverDirectAppIcon(openUrl) || brandFallbackIconUrl(name) || undefined;
+  const iconUrl = await firstReachableIcon([
+    rewriteServiceAssetUrl(app.iconUrl, machine),
+    await discoverDirectAppIcon(openUrl),
+  ]) || brandFallbackIconUrl(name) || undefined;
   return {
     id: `${local ? "local" : machineOpenHost(machine)}:${port}:${app.id || name}`,
     name,

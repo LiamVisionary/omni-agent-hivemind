@@ -3,6 +3,14 @@
 This file records user-visible changes before they are committed. New work should
 be added here first, then marked `Committed` or `Pushed` after the git action.
 
+## 2026-05-27 18:34:24 WITA - Validate My Apps Icon URLs
+
+- Status: Uncommitted
+- Areas changed: My Apps fleet API, changelog
+- Summary: Validate discovered icon URLs before returning them to the launcher, discard dead local proxy URLs such as `localhost:8791`, and fall back to known app icons like ComfyUI or local HivemindOS/OpenClaw assets instead of showing initials.
+- Verification: `pnpm exec eslint src/app/api/fleet/apps/route.ts --max-warnings=999`; `git diff --check -- src/app/api/fleet/apps/route.ts CHANGELOG.md`; live `http://localhost:5020/api/fleet/apps` returns ComfyUI with `https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons/svg/comfyui.svg` and OpenClaw Control with `/icons/runtimes/openclaw.svg`, while Z-Image Studio remains without an icon.
+- Intended commit message: `Validate My Apps icon URLs`
+
 ## 2026-05-27 18:13:12 WITA - Prefer Hosted App Collectors
 
 - Status: Uncommitted
