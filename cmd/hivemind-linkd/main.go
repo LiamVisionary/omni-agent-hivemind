@@ -148,6 +148,10 @@ func servePeerProxy(ts *tsnet.Server) http.HandlerFunc {
 		if len(parts) == 2 {
 			outPath += parts[1]
 		}
+		appProxyPrefix := ""
+		if appProxyMatch := regexp.MustCompile(`^(/app-proxy/\d+)(?:/.*)?$`).FindStringSubmatch(outPath); len(appProxyMatch) == 2 {
+			appProxyPrefix = appProxyMatch[1]
+		}
 		proxy := &httputil.ReverseProxy{
 			Director: func(out *http.Request) {
 				out.URL.Scheme = "http"
@@ -155,6 +159,12 @@ func servePeerProxy(ts *tsnet.Server) http.HandlerFunc {
 				out.URL.Path = outPath
 				out.Host = hostPort
 				out.RequestURI = ""
+			},
+			ModifyResponse: func(res *http.Response) error {
+				if appProxyPrefix == "" {
+					return nil
+				}
+				return rewritePeerHTMLResponse(res, hostPort, appProxyPrefix)
 			},
 			Transport: transport,
 			ErrorHandler: func(w http.ResponseWriter, _ *http.Request, err error) {
@@ -266,22 +276,7 @@ func servePeerRefererFallback(ts *tsnet.Server) http.HandlerFunc {
 				out.RequestURI = ""
 			},
 			ModifyResponse: func(res *http.Response) error {
-				contentType := strings.ToLower(res.Header.Get("content-type"))
-				if !strings.Contains(contentType, "text/html") {
-					return nil
-				}
-				body, err := io.ReadAll(res.Body)
-				if err != nil {
-					return err
-				}
-				if err := res.Body.Close(); err != nil {
-					return err
-				}
-				rewritten := rewritePeerRootHTML(string(body), hostPort, appProxyPrefix)
-				res.Body = io.NopCloser(strings.NewReader(rewritten))
-				res.ContentLength = int64(len(rewritten))
-				res.Header.Set("Content-Length", fmt.Sprintf("%d", len(rewritten)))
-				return nil
+				return rewritePeerHTMLResponse(res, hostPort, appProxyPrefix)
 			},
 			Transport: transport,
 			ErrorHandler: func(w http.ResponseWriter, _ *http.Request, err error) {
@@ -290,6 +285,25 @@ func servePeerRefererFallback(ts *tsnet.Server) http.HandlerFunc {
 		}
 		proxy.ServeHTTP(w, r)
 	}
+}
+
+func rewritePeerHTMLResponse(res *http.Response, hostPort string, appProxyPrefix string) error {
+	contentType := strings.ToLower(res.Header.Get("content-type"))
+	if !strings.Contains(contentType, "text/html") {
+		return nil
+	}
+	body, err := io.ReadAll(res.Body)
+	if err != nil {
+		return err
+	}
+	if err := res.Body.Close(); err != nil {
+		return err
+	}
+	rewritten := rewritePeerRootHTML(string(body), hostPort, appProxyPrefix)
+	res.Body = io.NopCloser(strings.NewReader(rewritten))
+	res.ContentLength = int64(len(rewritten))
+	res.Header.Set("Content-Length", fmt.Sprintf("%d", len(rewritten)))
+	return nil
 }
 
 func rewritePeerRootHTML(html string, hostPort string, appProxyPrefix string) string {
