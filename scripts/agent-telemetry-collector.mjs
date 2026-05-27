@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { createServer } from "node:http";
+import { createServer, request as httpRequest } from "node:http";
 import { execFile, spawn } from "node:child_process";
 import { constants as cryptoConstants, createHash, generateKeyPairSync, privateDecrypt, publicEncrypt, randomBytes } from "node:crypto";
 import { access, mkdir, readdir, readFile, readlink, rm, stat, writeFile } from "node:fs/promises";
@@ -7,8 +7,6 @@ import { constants, watch } from "node:fs";
 import { connect } from "node:net";
 import { homedir, hostname, userInfo } from "node:os";
 import { basename, delimiter, dirname, extname, join, relative, resolve, sep } from "node:path";
-import { Readable } from "node:stream";
-import { pipeline } from "node:stream/promises";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 
@@ -3360,6 +3358,36 @@ function proxyAppWebSocket(request, socket, head) {
   socket.on("error", closeBoth);
 }
 
+async function proxyAppHttp(request, response, targetUrl) {
+  const target = new URL(targetUrl);
+  const headers = {};
+  for (const [key, value] of Object.entries(request.headers)) {
+    if (!value || ["host", "connection", "content-length"].includes(key.toLowerCase())) continue;
+    headers[key] = Array.isArray(value) ? value.join(", ") : value;
+  }
+  headers.host = target.host;
+  headers.connection = "close";
+  const body = ["GET", "HEAD"].includes(request.method || "GET") ? undefined : await readBody(request);
+
+  await new Promise((resolve, reject) => {
+    const upstream = httpRequest(target, { method: request.method, headers }, (appResponse) => {
+      const responseHeaders = {};
+      for (const [key, value] of Object.entries(appResponse.headers)) {
+        if (["connection", "content-encoding", "content-length", "transfer-encoding"].includes(key.toLowerCase())) continue;
+        responseHeaders[key] = Array.isArray(value) ? value.join(", ") : value;
+      }
+      responseHeaders["cache-control"] = responseHeaders["cache-control"] || "no-store";
+      response.writeHead(appResponse.statusCode || 502, responseHeaders);
+      appResponse.pipe(response);
+      appResponse.on("end", resolve);
+      appResponse.on("error", reject);
+    });
+    upstream.on("error", reject);
+    if (body !== undefined) upstream.write(body);
+    upstream.end();
+  });
+}
+
 const telemetryServer = createServer(async (request, response) => {
   const requestUrl = new URL(request.url || "/", "http://127.0.0.1");
   const pathname = requestUrl.pathname;
@@ -3444,31 +3472,7 @@ const telemetryServer = createServer(async (request, response) => {
       return;
     }
     try {
-      const headers = new Headers();
-      for (const [key, value] of Object.entries(request.headers)) {
-        if (!value || ["host", "connection", "content-length"].includes(key.toLowerCase())) continue;
-        headers.set(key, Array.isArray(value) ? value.join(", ") : value);
-      }
-      const body = ["GET", "HEAD"].includes(request.method) ? undefined : await readBody(request);
-      const appResponse = await fetch(targetUrl, {
-        method: request.method,
-        headers,
-        body,
-        redirect: "manual",
-        signal: AbortSignal.timeout(30_000),
-      });
-      const responseHeaders = {};
-      appResponse.headers.forEach((value, key) => {
-        if (["connection", "content-encoding", "content-length", "transfer-encoding"].includes(key.toLowerCase())) return;
-        responseHeaders[key] = value;
-      });
-      responseHeaders["cache-control"] = responseHeaders["cache-control"] || "no-store";
-      response.writeHead(appResponse.status, responseHeaders);
-      if (appResponse.body) {
-        await pipeline(Readable.fromWeb(appResponse.body), response);
-      } else {
-        response.end(Buffer.from(await appResponse.arrayBuffer()));
-      }
+      await proxyAppHttp(request, response, targetUrl);
     } catch (error) {
       jsonResponse(response, 502, {
         ok: false,
