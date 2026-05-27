@@ -4,6 +4,7 @@ import { execFile, spawn } from "node:child_process";
 import { constants as cryptoConstants, createHash, generateKeyPairSync, privateDecrypt, publicEncrypt, randomBytes } from "node:crypto";
 import { access, mkdir, readdir, readFile, readlink, rm, stat, writeFile } from "node:fs/promises";
 import { constants, watch } from "node:fs";
+import { connect } from "node:net";
 import { homedir, hostname, userInfo } from "node:os";
 import { basename, delimiter, dirname, extname, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -3320,7 +3321,44 @@ function proxiedAppTarget(pathname, search) {
   return `http://127.0.0.1:${targetPort}${targetPath}${search || ""}`;
 }
 
-createServer(async (request, response) => {
+function proxyAppWebSocket(request, socket, head) {
+  const requestUrl = new URL(request.url || "/", "http://127.0.0.1");
+  const targetUrl = proxiedAppTarget(requestUrl.pathname, requestUrl.search);
+  if (!targetUrl) {
+    socket.write("HTTP/1.1 400 Bad Request\r\nConnection: close\r\n\r\nInvalid app proxy target.");
+    socket.destroy();
+    return;
+  }
+  const target = new URL(targetUrl);
+  const upstream = connect(Number(target.port), target.hostname);
+  const closeBoth = () => {
+    socket.destroy();
+    upstream.destroy();
+  };
+  upstream.on("connect", () => {
+    const requestPath = `${target.pathname}${target.search}`;
+    const lines = [`${request.method || "GET"} ${requestPath} HTTP/${request.httpVersion || "1.1"}`];
+    for (let index = 0; index < request.rawHeaders.length; index += 2) {
+      const key = request.rawHeaders[index];
+      const value = request.rawHeaders[index + 1];
+      if (!key || key.toLowerCase() === "host") continue;
+      lines.push(`${key}: ${value}`);
+    }
+    lines.push(`Host: ${target.host}`);
+    upstream.write(`${lines.join("\r\n")}\r\n\r\n`);
+    if (head?.length) upstream.write(head);
+    socket.pipe(upstream).pipe(socket);
+  });
+  upstream.on("error", () => {
+    if (!socket.destroyed) {
+      socket.write("HTTP/1.1 502 Bad Gateway\r\nConnection: close\r\n\r\nCould not proxy hosted app websocket.");
+    }
+    closeBoth();
+  });
+  socket.on("error", closeBoth);
+}
+
+const telemetryServer = createServer(async (request, response) => {
   const requestUrl = new URL(request.url || "/", "http://127.0.0.1");
   const pathname = requestUrl.pathname;
   response.setHeader("access-control-allow-origin", "*");
@@ -3828,7 +3866,19 @@ createServer(async (request, response) => {
   const agents = body.agent ? [body.agent] : body.agents || await localAgents();
   const snapshots = await Promise.all(agents.map((agent) => snapshotFor(agent)));
   jsonResponse(response, 200, { ok: true, snapshot: snapshots[0], snapshots });
-}).listen(port, host, () => {
+});
+
+telemetryServer.on("upgrade", (request, socket, head) => {
+  const requestUrl = new URL(request.url || "/", "http://127.0.0.1");
+  if (requestUrl.pathname.startsWith("/app-proxy/")) {
+    proxyAppWebSocket(request, socket, head);
+    return;
+  }
+  socket.write("HTTP/1.1 404 Not Found\r\nConnection: close\r\n\r\n");
+  socket.destroy();
+});
+
+telemetryServer.listen(port, host, () => {
   console.log(`agent telemetry collector listening on ${host}:${port}`);
   void initializeSkillAutoSync();
 });

@@ -2,10 +2,12 @@ package main
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
+	"io"
 	"log"
 	"net"
 	"net/http"
@@ -22,6 +24,8 @@ import (
 	"tailscale.com/client/local"
 	"tailscale.com/tsnet"
 )
+
+const appProxyContextCookie = "hivemind_link_app_proxy"
 
 type config struct {
 	hostname   string
@@ -161,6 +165,154 @@ func servePeerProxy(ts *tsnet.Server) http.HandlerFunc {
 	}
 }
 
+func appProxyRefererTarget(r *http.Request) (string, string, bool) {
+	referer := strings.TrimSpace(r.Referer())
+	if referer == "" {
+		return "", "", false
+	}
+	refererURL, err := url.Parse(referer)
+	if err != nil {
+		return "", "", false
+	}
+	rest := strings.TrimPrefix(refererURL.Path, "/peer/")
+	if rest == refererURL.Path {
+		return "", "", false
+	}
+	parts := strings.SplitN(rest, "/", 2)
+	hostPort, err := url.PathUnescape(parts[0])
+	if err != nil || hostPort == "" {
+		return "", "", false
+	}
+	if _, _, err := net.SplitHostPort(hostPort); err != nil {
+		return "", "", false
+	}
+	if len(parts) != 2 {
+		return "", "", false
+	}
+	peerPath := "/" + parts[1]
+	appProxyMatch := regexp.MustCompile(`^(/app-proxy/\d+)(?:/.*)?$`).FindStringSubmatch(peerPath)
+	if len(appProxyMatch) != 2 {
+		return "", "", false
+	}
+	return hostPort, appProxyMatch[1], true
+}
+
+func validateAppProxyTarget(hostPort string, appProxyPrefix string) bool {
+	if _, _, err := net.SplitHostPort(hostPort); err != nil {
+		return false
+	}
+	return regexp.MustCompile(`^/app-proxy/\d+$`).MatchString(appProxyPrefix)
+}
+
+func encodeAppProxyContext(hostPort string, appProxyPrefix string) string {
+	return base64.RawURLEncoding.EncodeToString([]byte(hostPort + "|" + appProxyPrefix))
+}
+
+func appProxyCookieTarget(r *http.Request) (string, string, bool) {
+	cookie, err := r.Cookie(appProxyContextCookie)
+	if err != nil || strings.TrimSpace(cookie.Value) == "" {
+		return "", "", false
+	}
+	decoded, err := base64.RawURLEncoding.DecodeString(cookie.Value)
+	if err != nil {
+		return "", "", false
+	}
+	parts := strings.SplitN(string(decoded), "|", 2)
+	if len(parts) != 2 || !validateAppProxyTarget(parts[0], parts[1]) {
+		return "", "", false
+	}
+	return parts[0], parts[1], true
+}
+
+func appProxyFallbackTarget(r *http.Request) (string, string, bool, bool) {
+	if hostPort, appProxyPrefix, ok := appProxyRefererTarget(r); ok {
+		return hostPort, appProxyPrefix, true, true
+	}
+	if hostPort, appProxyPrefix, ok := appProxyCookieTarget(r); ok {
+		return hostPort, appProxyPrefix, true, false
+	}
+	return "", "", false, false
+}
+
+func servePeerRefererFallback(ts *tsnet.Server) http.HandlerFunc {
+	transport := &http.Transport{
+		DialContext: func(ctx context.Context, network string, addr string) (net.Conn, error) {
+			return ts.Dial(ctx, network, addr)
+		},
+	}
+	return func(w http.ResponseWriter, r *http.Request) {
+		hostPort, appProxyPrefix, ok, fromReferer := appProxyFallbackTarget(r)
+		if !ok {
+			http.NotFound(w, r)
+			return
+		}
+		if fromReferer {
+			http.SetCookie(w, &http.Cookie{
+				Name:     appProxyContextCookie,
+				Value:    encodeAppProxyContext(hostPort, appProxyPrefix),
+				Path:     "/",
+				MaxAge:   300,
+				HttpOnly: true,
+				SameSite: http.SameSiteLaxMode,
+			})
+		}
+		proxy := &httputil.ReverseProxy{
+			Director: func(out *http.Request) {
+				out.URL.Scheme = "http"
+				out.URL.Host = hostPort
+				out.URL.Path = appProxyPrefix + r.URL.Path
+				out.URL.RawQuery = r.URL.RawQuery
+				out.Host = hostPort
+				out.RequestURI = ""
+			},
+			ModifyResponse: func(res *http.Response) error {
+				contentType := strings.ToLower(res.Header.Get("content-type"))
+				if !strings.Contains(contentType, "text/html") {
+					return nil
+				}
+				body, err := io.ReadAll(res.Body)
+				if err != nil {
+					return err
+				}
+				if err := res.Body.Close(); err != nil {
+					return err
+				}
+				rewritten := rewritePeerRootHTML(string(body), hostPort, appProxyPrefix)
+				res.Body = io.NopCloser(strings.NewReader(rewritten))
+				res.ContentLength = int64(len(rewritten))
+				res.Header.Set("Content-Length", fmt.Sprintf("%d", len(rewritten)))
+				return nil
+			},
+			Transport: transport,
+			ErrorHandler: func(w http.ResponseWriter, _ *http.Request, err error) {
+				http.Error(w, fmt.Sprintf("hivemind-linkd peer proxy error: %v", err), http.StatusBadGateway)
+			},
+		}
+		proxy.ServeHTTP(w, r)
+	}
+}
+
+func rewritePeerRootHTML(html string, hostPort string, appProxyPrefix string) string {
+	prefix := "/peer/" + url.PathEscape(hostPort) + appProxyPrefix
+	replacements := []struct {
+		old string
+		new string
+	}{
+		{`src="/`, `src="` + prefix + `/`},
+		{`href="/`, `href="` + prefix + `/`},
+		{`action="/`, `action="` + prefix + `/`},
+		{`poster="/`, `poster="` + prefix + `/`},
+		{`src='/`, `src='` + prefix + `/`},
+		{`href='/`, `href='` + prefix + `/`},
+		{`action='/`, `action='` + prefix + `/`},
+		{`poster='/`, `poster='` + prefix + `/`},
+	}
+	for _, replacement := range replacements {
+		html = strings.ReplaceAll(html, replacement.old, replacement.new)
+	}
+	return html
+}
+
 func serveControl(ctx context.Context, addr string, lc *local.Client, ts *tsnet.Server) (*http.Server, error) {
 	ln, err := net.Listen("tcp", addr)
 	if err != nil {
@@ -175,6 +327,7 @@ func serveControl(ctx context.Context, addr string, lc *local.Client, ts *tsnet.
 		_ = json.NewEncoder(w).Encode(statusPayload(ctx, lc))
 	})
 	mux.HandleFunc("/peer/", servePeerProxy(ts))
+	mux.HandleFunc("/", servePeerRefererFallback(ts))
 	server := &http.Server{Addr: addr, Handler: mux, ReadHeaderTimeout: 5 * time.Second}
 	go func() {
 		if err := server.Serve(ln); err != nil && err != http.ErrServerClosed {
