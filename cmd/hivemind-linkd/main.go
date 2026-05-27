@@ -152,6 +152,9 @@ func servePeerProxy(ts *tsnet.Server) http.HandlerFunc {
 		if appProxyMatch := regexp.MustCompile(`^(/app-proxy/\d+)(?:/.*)?$`).FindStringSubmatch(outPath); len(appProxyMatch) == 2 {
 			appProxyPrefix = appProxyMatch[1]
 		}
+		if appProxyPrefix != "" {
+			setAppProxyContextCookie(w, hostPort, appProxyPrefix)
+		}
 		proxy := &httputil.ReverseProxy{
 			Director: func(out *http.Request) {
 				out.URL.Scheme = "http"
@@ -257,14 +260,7 @@ func servePeerRefererFallback(ts *tsnet.Server) http.HandlerFunc {
 			return
 		}
 		if fromReferer {
-			http.SetCookie(w, &http.Cookie{
-				Name:     appProxyContextCookie,
-				Value:    encodeAppProxyContext(hostPort, appProxyPrefix),
-				Path:     "/",
-				MaxAge:   300,
-				HttpOnly: true,
-				SameSite: http.SameSiteLaxMode,
-			})
+			setAppProxyContextCookie(w, hostPort, appProxyPrefix)
 		}
 		proxy := &httputil.ReverseProxy{
 			Director: func(out *http.Request) {
@@ -285,6 +281,17 @@ func servePeerRefererFallback(ts *tsnet.Server) http.HandlerFunc {
 		}
 		proxy.ServeHTTP(w, r)
 	}
+}
+
+func setAppProxyContextCookie(w http.ResponseWriter, hostPort string, appProxyPrefix string) {
+	http.SetCookie(w, &http.Cookie{
+		Name:     appProxyContextCookie,
+		Value:    encodeAppProxyContext(hostPort, appProxyPrefix),
+		Path:     "/",
+		MaxAge:   300,
+		HttpOnly: true,
+		SameSite: http.SameSiteLaxMode,
+	})
 }
 
 func rewritePeerHTMLResponse(res *http.Response, hostPort string, appProxyPrefix string) error {
