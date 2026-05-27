@@ -75,6 +75,7 @@ type CollectorVersion = {
 type CollectorCapabilities = {
   chat?: boolean;
   envHttpSync?: boolean;
+  hostedApps?: boolean;
   runtimeAgentCreation?: boolean;
   skillInventory?: boolean;
   skillAutoSync?: boolean;
@@ -543,15 +544,17 @@ function machineScore(machine: {
   machineId?: string;
   agents: AgentProfile[];
   version?: CollectorVersion;
+  capabilities?: CollectorCapabilities;
 }) {
   return (machine.device.self ? 10_000 : 0)
+    + (machine.capabilities?.hostedApps ? 20_000 : 0)
     + (machine.collector === "ready" ? 1_000 : 0)
     + (machine.version?.appDir?.replace(/\/+$/, "").endsWith("/hivemindos") ? 100 : 0)
     + (machine.agents.length * 10)
     + deviceFreshnessScore(machine.device);
 }
 
-function dedupeMachines<T extends { device: Device; collector: string; machineId?: string; agents: AgentProfile[]; version?: CollectorVersion }>(machines: T[]) {
+function dedupeMachines<T extends { device: Device; collector: string; machineId?: string; agents: AgentProfile[]; version?: CollectorVersion; capabilities?: CollectorCapabilities }>(machines: T[]) {
   const byIdentity = new Map<string, T>();
   for (const machine of machines) {
     const key = machineIdentityKey(machine);

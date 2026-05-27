@@ -3,6 +3,14 @@
 This file records user-visible changes before they are committed. New work should
 be added here first, then marked `Committed` or `Pushed` after the git action.
 
+## 2026-05-27 18:13:12 WITA - Prefer Hosted App Collectors
+
+- Status: Uncommitted
+- Areas changed: Fleet discovery machine dedupe, changelog
+- Summary: Prefer collectors that advertise hosted app discovery when deduplicating self/link records for the same physical machine, so My Apps does not collapse onto a self collector that lacks `/apps` and show an empty launcher.
+- Verification: `pnpm exec eslint src/app/api/fleet/discover/route.ts --max-warnings=999` passed with one existing `isMobileDevice` warning; `git diff --check -- src/app/api/fleet/discover/route.ts CHANGELOG.md`; live `http://localhost:5020/api/fleet/discover?includeSnapshots=0` now keeps hosted-app-capable link collectors, and live `http://localhost:5020/api/fleet/apps` returns 5 apps including ComfyUI, Z-Image Studio, OpenClaw Control, and Claw Code Mobile.
+- Intended commit message: `Prefer hosted app collectors`
+
 ## 2026-05-27 17:29:47 WITA - Proxy My Apps Remote Icons
 
 - Status: Pushed
