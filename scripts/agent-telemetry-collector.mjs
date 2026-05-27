@@ -3373,13 +3373,29 @@ async function proxyAppHttp(request, response, targetUrl) {
     const upstream = httpRequest(target, { method: request.method, headers }, (appResponse) => {
       const responseHeaders = {};
       for (const [key, value] of Object.entries(appResponse.headers)) {
-        if (["connection", "content-encoding", "content-length", "transfer-encoding"].includes(key.toLowerCase())) continue;
+        if (["connection", "content-encoding", "transfer-encoding"].includes(key.toLowerCase())) continue;
         responseHeaders[key] = Array.isArray(value) ? value.join(", ") : value;
       }
       responseHeaders["cache-control"] = responseHeaders["cache-control"] || "no-store";
       response.writeHead(appResponse.statusCode || 502, responseHeaders);
-      appResponse.pipe(response);
-      appResponse.on("end", resolve);
+      const contentLength = Number(appResponse.headers["content-length"] || 0);
+      let received = 0;
+      let settled = false;
+      const finish = () => {
+        if (settled) return;
+        settled = true;
+        if (!response.writableEnded) response.end();
+        resolve();
+      };
+      appResponse.on("data", (chunk) => {
+        received += chunk.length;
+        response.write(chunk);
+        if (contentLength > 0 && received >= contentLength) {
+          upstream.destroy();
+          finish();
+        }
+      });
+      appResponse.on("end", finish);
       appResponse.on("error", reject);
     });
     upstream.on("error", reject);
