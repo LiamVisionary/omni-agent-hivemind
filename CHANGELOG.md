@@ -3,6 +3,7 @@
 This file records user-visible changes before they are committed. New work should
 be added here first, then marked `Committed` or `Pushed` after the git action.
 
+
 ## 2026-05-27 01:58 WITA - Clarify Bankr Honey Rewards
 
 - Status: Pushed
@@ -34,6 +35,14 @@ be added here first, then marked `Committed` or `Pushed` after the git action.
 - Summary: Add a vault-backed `hive-transfer` helper that creates targeted transfer envelopes under `.hivemindos-transfers`, copies payloads with media type/size/SHA-256 metadata, filters inboxes by machine/runtime/agent, and records receiver acknowledgements. Expose the same inbox/create/ack semantics through collector `/transfers` endpoints and advertise `fileTransfers` in `/health`. Install the helper beside the shared hive env commands, document receiver polling/ack flow, and request a Syncthing restart after folder configure so peer sharing changes take effect.
 - Verification: `npm run test:hive-transfer`; `node --check scripts/hive-transfer.mjs`; `node --check scripts/agent-telemetry-collector.mjs`; `bash -n setup.sh uninstall.sh scripts/hive-transfer`; `git diff --check -- docs/syncing-and-tailscale.md package.json scripts/agent-telemetry-collector.mjs scripts/hive-transfer scripts/hive-transfer.mjs scripts/test-hive-transfer.mjs setup.ps1 setup.sh uninstall.ps1 uninstall.sh`; `npm run typecheck -- --pretty false --skipLibCheck`; local CLI+HTTP smoke created a transfer for `hivemind-machine-08bf834423b5883edc65c753262afae2`/`hermes`/`receiver-test`, confirmed wrong-agent filtering, confirmed `/transfers` visibility, acknowledged through `/transfers/ack`, and confirmed the inbox cleared. Mac collector is reachable but still running the old build until the Mac checkout's dirty working tree is reconciled; direct Mac-side Syncthing repair added the Ubuntu device to the Mac `hivemindos-vault` folder and restarted Syncthing, after which Mac→Ubuntu note sync succeeded and a real `hive-transfer` envelope/payload created on Ubuntu replicated to the Mac with target `host=Liams-MacBook-Pro.local`, `runtime=hermes`, `agentId=mac-receiver-test`.
 - Intended commit message: `Add targeted hive file transfers`
+## 2026-05-26 12:26:03 EDT - Bundle Tailnet Generation Skills
+
+- Status: Pushed
+- Areas changed: bundled shared skills, shared-skill seeding scripts, Tailnet generation docs, changelog
+- Summary: Add bundled HivemindOS shared-skill templates for Tailnet/local generation authoring, ComfyUI image generation, and local/Tailnet TTS generation. Make setup seed every bundled app skill into the shared Skills shelf instead of only karpathy-guidelines, while keeping karpathy-guidelines as the runtime baseline skill copied into agent skill folders. Document the localtts endpoint contract, including voice discovery via `/v1/voices` and `/voices`, cloned voice profile registration via `POST /v1/voices`, model discovery, health, OpenAI-style speech generation, JSON compatibility endpoints, and optional API docs.
+- Verification: `bash -n scripts/seed-shared-skills.sh setup.sh uninstall.sh`; PowerShell parser skipped because `pwsh` is not installed on this Mac; bundled skill frontmatter checked for the three new generation skills; temp-vault seed smoke test confirmed `karpathy-guidelines`, `tailscale-generation-skill-authoring`, `comfyui-image-generation`, and `localtts` are copied and indexed; `git diff --check -- CHANGELOG.md scripts/seed-shared-skills.sh setup.ps1 skills/tailscale-generation-skill-authoring/SKILL.md skills/comfyui-image-generation/SKILL.md skills/localtts/SKILL.md docs/tailnet-generation-skills.md`
+- Intended commit message: `Bundle Tailnet generation skills`
+
 
 ## 2026-05-26 11:07:59 EDT - Add Stable Machine IDs For Fleet Discovery
 

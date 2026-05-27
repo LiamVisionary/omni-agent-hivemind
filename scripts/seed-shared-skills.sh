@@ -48,8 +48,9 @@ fi
 skills_folder="$vault_path/Skills"
 mkdir -p "$skills_folder"
 
-source_dir="$ROOT/skills/karpathy-guidelines"
-target_dir="$skills_folder/karpathy-guidelines"
+baseline_skill_slug="karpathy-guidelines"
+baseline_source_dir="$ROOT/skills/$baseline_skill_slug"
+baseline_target_dir="$skills_folder/$baseline_skill_slug"
 
 agent_ids=(codex claude hermes gemini openclaw aeon)
 
@@ -191,11 +192,18 @@ import_agent_skills() {
 
 write_source_metadata() {
   local dir="$1"
+  local slug="${2:-$(basename "$dir")}"
+  local source_path="${3:-$ROOT/skills/$slug}"
+  local source_url="https://github.com/LiamVisionary/hivemindos/tree/main/skills/$slug"
+  if [[ "$slug" == "karpathy-guidelines" ]]; then
+    source_url="https://github.com/multica-ai/andrej-karpathy-skills/tree/main/skills/karpathy-guidelines"
+  fi
   cat > "$dir/.hivemind-skill-source.json" <<JSON
 {
   "provider": "bundled",
-  "providerLabel": "Bundled skills",
-  "sourceUrl": "https://github.com/multica-ai/andrej-karpathy-skills/tree/main/skills/karpathy-guidelines",
+  "providerLabel": "HivemindOS bundled skills",
+  "sourcePath": "$source_path",
+  "sourceUrl": "$source_url",
   "importedAt": "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 }
 JSON
@@ -340,14 +348,35 @@ NODE
   ok "Synced shared skill shelf to Aeon"
 }
 
-if [[ -f "$source_dir/SKILL.md" && ! -f "$target_dir/SKILL.md" ]]; then
-  mkdir -p "$target_dir"
-  copy_skill_dir "$source_dir" "$target_dir"
-  write_source_metadata "$target_dir"
-  ok "Seeded shared skill: karpathy-guidelines"
-else
-  ok "Shared skill folder ready: $skills_folder"
-fi
+seed_bundled_skills() {
+  local seeded=0
+  local refreshed=0
+  while IFS= read -r bundled_skill_md; do
+    local bundled_dir slug destination
+    bundled_dir="$(dirname "$bundled_skill_md")"
+    slug="$(basename "$bundled_dir")"
+    destination="$skills_folder/$slug"
+    if [[ -f "$destination/SKILL.md" ]]; then
+      refreshed=$((refreshed + 1))
+      # Keep user edits intact, but refresh source metadata so the shelf records
+      # that this skill is available from the HivemindOS app bundle.
+      write_source_metadata "$destination" "$slug" "$bundled_dir"
+      continue
+    fi
+    mkdir -p "$destination"
+    copy_skill_dir "$bundled_dir" "$destination"
+    write_source_metadata "$destination" "$slug" "$bundled_dir"
+    seeded=$((seeded + 1))
+  done < <(find "$ROOT/skills" -mindepth 2 -maxdepth 2 -name SKILL.md -type f 2>/dev/null | sort)
+
+  if (( seeded > 0 )); then
+    ok "Seeded $seeded bundled HivemindOS shared skill(s)"
+  else
+    ok "Bundled HivemindOS shared skills already present"
+  fi
+}
+
+seed_bundled_skills
 
 for agent in "${agent_ids[@]}"; do
   if list_includes_agent "$import_sources" "$agent"; then
@@ -363,7 +392,7 @@ for agent in "${agent_ids[@]}"; do
   if ! list_includes_agent "$share_targets" "$agent"; then
     continue
   fi
-  copy_skill_dir "$target_dir" "$HOME/.$agent/skills/karpathy-guidelines"
+  copy_skill_dir "$baseline_target_dir" "$HOME/.$agent/skills/$baseline_skill_slug"
   if [[ "$agent" == "aeon" ]]; then
     sync_shared_skills_to_aeon
   fi

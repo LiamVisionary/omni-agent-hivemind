@@ -348,6 +348,59 @@ foreach ($folder in @(
 if (-not (Test-Path (Join-Path $vaultPath "Shared Context.md"))) {
   Set-Content -Path (Join-Path $vaultPath "Shared Context.md") -Value "# Shared Context`n`nCurrent cross-agent context for the HivemindOS vault."
 }
+
+function Seed-BundledSharedSkills {
+  param([string]$VaultPath)
+  $skillsFolder = Join-Path $VaultPath "Skills"
+  New-Item -ItemType Directory -Force -Path $skillsFolder | Out-Null
+  $bundledSkillFiles = Get-ChildItem -Path (Join-Path $Root "skills") -Recurse -Filter "SKILL.md" -File -ErrorAction SilentlyContinue |
+    Where-Object { $_.Directory.Parent.FullName -eq (Join-Path $Root "skills") }
+  $seeded = 0
+  foreach ($skillFile in $bundledSkillFiles) {
+    $slug = $skillFile.Directory.Name
+    $destination = Join-Path $skillsFolder $slug
+    if (-not (Test-Path (Join-Path $destination "SKILL.md"))) {
+      New-Item -ItemType Directory -Force -Path $destination | Out-Null
+      Copy-Item -Path (Join-Path $skillFile.Directory.FullName "*") -Destination $destination -Recurse -Force
+      $seeded += 1
+    }
+    $sourceUrl = if ($slug -eq "karpathy-guidelines") {
+      "https://github.com/multica-ai/andrej-karpathy-skills/tree/main/skills/karpathy-guidelines"
+    } else {
+      "https://github.com/LiamVisionary/hivemindos/tree/main/skills/$slug"
+    }
+    $metadata = @{
+      provider = "bundled"
+      providerLabel = "HivemindOS bundled skills"
+      sourcePath = $skillFile.Directory.FullName
+      sourceUrl = $sourceUrl
+      importedAt = (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ")
+    } | ConvertTo-Json -Depth 3
+    Set-Content -Path (Join-Path $destination ".hivemind-skill-source.json") -Value $metadata
+  }
+
+  $readme = New-Object System.Collections.Generic.List[string]
+  $readme.Add("# Skills")
+  $readme.Add("")
+  $readme.Add("Operational know-how distilled into self-contained recipes. Each subfolder is a single skill: a ``SKILL.md`` with frontmatter plus optional helper files.")
+  $readme.Add("")
+  $readme.Add("Agents should read this index before using shared skills, then read the relevant ``<slug>/SKILL.md`` file.")
+  $readme.Add("")
+  $readme.Add("## Index")
+  $readme.Add("")
+  Get-ChildItem -Path $skillsFolder -Directory | Sort-Object Name | ForEach-Object {
+    $skillMd = Join-Path $_.FullName "SKILL.md"
+    if (-not (Test-Path $skillMd)) { return }
+    $content = Get-Content $skillMd -Raw
+    $description = "Shared agent skill."
+    if ($content -match '(?m)^description:\s*[\''\"]?(.+?)[\''\"]?\s*$') { $description = $Matches[1] }
+    $readme.Add("- [[$($_.Name)/SKILL]] - $description")
+  }
+  Set-Content -Path (Join-Path $skillsFolder "README.md") -Value $readme
+  if ($seeded -gt 0) { Ok "Seeded $seeded bundled HivemindOS shared skill(s)" } else { Ok "Bundled HivemindOS shared skills already present" }
+}
+
+Seed-BundledSharedSkills -VaultPath $vaultPath
 if (-not (Test-Path (Join-Path $vaultPath "$scheduledFolder/README.md"))) {
   Set-Content -Path (Join-Path $vaultPath "$scheduledFolder/README.md") -Value "# Automations`n`nShared schedule definitions and run history for HivemindOS agents.`n`n- ``<device>/<schedule>/schedule.md`` stores each schedule snapshot.`n- ``run0001-<agent>-<timestamp>.md`` files store execution history."
 }
