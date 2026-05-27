@@ -366,6 +366,13 @@ function contentTypeForPath(filePath) {
   return "image/png";
 }
 
+function appProxyUrl(listener, path = "/") {
+  const portValue = Number(listener?.port);
+  if (!Number.isInteger(portValue) || portValue < 1 || portValue > 65535) return "";
+  const normalizedPath = String(path || "/").startsWith("/") ? String(path || "/") : `/${path}`;
+  return `http://127.0.0.1:${port}/app-proxy/${portValue}${normalizedPath}`;
+}
+
 async function fileExists(filePath) {
   return access(filePath, constants.R_OK).then(() => true).catch(() => false);
 }
@@ -543,6 +550,7 @@ async function probeHostedApp(listener, scheme) {
     port: listener.port,
     path: "/",
     localUrl: url,
+    proxyUrl: appProxyUrl(listener),
     process: listener.process,
     pid: listener.pid,
     server,
@@ -3304,6 +3312,14 @@ function readBody(request) {
   });
 }
 
+function proxiedAppTarget(pathname, search) {
+  const match = pathname.match(/^\/app-proxy\/(\d+)(\/.*)?$/);
+  const targetPort = Number(match?.[1]);
+  if (!Number.isInteger(targetPort) || targetPort < 1 || targetPort > 65535) return "";
+  const targetPath = match?.[2] || "/";
+  return `http://127.0.0.1:${targetPort}${targetPath}${search || ""}`;
+}
+
 createServer(async (request, response) => {
   const requestUrl = new URL(request.url || "/", "http://127.0.0.1");
   const pathname = requestUrl.pathname;
@@ -3378,6 +3394,42 @@ createServer(async (request, response) => {
       response.end(bytes);
     } catch {
       jsonResponse(response, 404, { ok: false, error: "App asset is no longer available." });
+    }
+    return;
+  }
+  if (pathname.startsWith("/app-proxy/") && request.method) {
+    const targetUrl = proxiedAppTarget(pathname, requestUrl.search);
+    if (!targetUrl) {
+      jsonResponse(response, 400, { ok: false, error: "Invalid app proxy target." });
+      return;
+    }
+    try {
+      const headers = new Headers();
+      for (const [key, value] of Object.entries(request.headers)) {
+        if (!value || ["host", "connection", "content-length"].includes(key.toLowerCase())) continue;
+        headers.set(key, Array.isArray(value) ? value.join(", ") : value);
+      }
+      const body = ["GET", "HEAD"].includes(request.method) ? undefined : await readBody(request);
+      const appResponse = await fetch(targetUrl, {
+        method: request.method,
+        headers,
+        body,
+        redirect: "manual",
+        signal: AbortSignal.timeout(30_000),
+      });
+      const responseHeaders = {};
+      appResponse.headers.forEach((value, key) => {
+        if (["connection", "content-encoding", "content-length", "transfer-encoding"].includes(key.toLowerCase())) return;
+        responseHeaders[key] = value;
+      });
+      responseHeaders["cache-control"] = responseHeaders["cache-control"] || "no-store";
+      response.writeHead(appResponse.status, responseHeaders);
+      response.end(Buffer.from(await appResponse.arrayBuffer()));
+    } catch (error) {
+      jsonResponse(response, 502, {
+        ok: false,
+        error: error instanceof Error ? error.message : "Could not proxy hosted app.",
+      });
     }
     return;
   }

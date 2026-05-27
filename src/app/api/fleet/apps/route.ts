@@ -31,6 +31,7 @@ type CollectorApp = {
   port?: number;
   path?: string;
   localUrl?: string;
+  proxyUrl?: string;
   process?: string;
   pid?: string;
   server?: string;
@@ -140,8 +141,7 @@ function machineOpenHost(machine: FleetMachine) {
 }
 
 function isLocalMachine(machine: FleetMachine) {
-  const name = machine.device?.name || machine.device?.dnsName || "";
-  return Boolean(machine.device?.self || /(^|-)local-\d*(\.|$)/i.test(name) || /(^|-)local(\.|$)/i.test(name));
+  return Boolean(machine.device?.self);
 }
 
 function serviceUrl(app: CollectorApp, machine: FleetMachine) {
@@ -158,6 +158,19 @@ function rewriteServiceAssetUrl(rawUrl: string | undefined, machine: FleetMachin
     const url = new URL(rawUrl);
     url.hostname = machineOpenHost(machine);
     return url.toString();
+  } catch {
+    return "";
+  }
+}
+
+function rewriteCollectorUrl(rawUrl: string | undefined, collectorUrl: string) {
+  if (!rawUrl || !collectorUrl) return "";
+  try {
+    const raw = new URL(rawUrl);
+    const collector = new URL(collectorUrl);
+    raw.protocol = collector.protocol;
+    raw.host = collector.host;
+    return raw.toString();
   } catch {
     return "";
   }
@@ -310,9 +323,9 @@ function appDescription(kind: AppKind, machineName: string) {
   return `App on ${machineName}`;
 }
 
-async function toHostedApp(app: CollectorApp, machine: FleetMachine): Promise<HostedApp | null> {
+async function toHostedApp(app: CollectorApp, machine: FleetMachine, collectorUrl: string): Promise<HostedApp | null> {
   const port = Number(app.port);
-  const openUrl = serviceUrl(app, machine);
+  const openUrl = rewriteCollectorUrl(app.proxyUrl, collectorUrl) || serviceUrl(app, machine);
   if (!openUrl || !Number.isInteger(port)) return null;
   const machineName = normalizeMachineName(machine.device?.name || machine.collectorHost || machine.device?.ip || "Unknown machine");
   const name = appName(app, port);
@@ -320,7 +333,7 @@ async function toHostedApp(app: CollectorApp, machine: FleetMachine): Promise<Ho
   const kind = appKind(name);
   const local = isLocalMachine(machine);
   const iconUrl = await firstReachableIcon([
-    rewriteServiceAssetUrl(app.iconUrl, machine),
+    rewriteCollectorUrl(app.iconUrl, collectorUrl) || rewriteServiceAssetUrl(app.iconUrl, machine),
     await discoverDirectAppIcon(openUrl),
   ]) || brandFallbackIconUrl(name) || undefined;
   return {
@@ -376,7 +389,7 @@ async function readApps(request: NextRequest): Promise<AppsPayload> {
     }
     try {
       const payload = await fetchJson<{ apps?: CollectorApp[] }>(`${collectorUrl}/apps`);
-      const apps = await Promise.all((payload.apps ?? []).map((app) => toHostedApp(app, machine)));
+      const apps = await Promise.all((payload.apps ?? []).map((app) => toHostedApp(app, machine, collectorUrl)));
       return {
         name,
         collector: machine.collector,

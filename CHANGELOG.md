@@ -3,6 +3,14 @@
 This file records user-visible changes before they are committed. New work should
 be added here first, then marked `Committed` or `Pushed` after the git action.
 
+## 2026-05-27 19:38:33 WITA - Proxy My Apps Webviews
+
+- Status: Pushed
+- Areas changed: Telemetry collector hosted app proxy, My Apps fleet API, changelog
+- Summary: Add a collector `/app-proxy/<port>/...` reverse proxy for hosted apps bound to their machine's loopback interface, return that proxy URL from collector app discovery, and use it as the My Apps open/embed URL instead of incorrectly rewriting peer-local apps to dashboard `localhost`.
+- Verification: Collector E2E confirmed `/apps` includes `proxyUrl` and `/app-proxy/<port>/` returns the local app HTML; `node --check scripts/agent-telemetry-collector.mjs`; `pnpm exec eslint src/app/api/fleet/apps/route.ts scripts/agent-telemetry-collector.mjs --max-warnings=999`.
+- Intended commit message: `Proxy My Apps webviews`
+
 ## 2026-05-27 19:27:43 WITA - Preserve Collector Asset Icons
 
 - Status: Uncommitted
