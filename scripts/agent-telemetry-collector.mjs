@@ -2,10 +2,10 @@
 import { createServer } from "node:http";
 import { execFile, spawn } from "node:child_process";
 import { constants as cryptoConstants, createHash, generateKeyPairSync, privateDecrypt, publicEncrypt, randomBytes } from "node:crypto";
-import { access, mkdir, readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
+import { access, mkdir, readdir, readFile, readlink, rm, stat, writeFile } from "node:fs/promises";
 import { constants, watch } from "node:fs";
 import { homedir, hostname, userInfo } from "node:os";
-import { basename, delimiter, dirname, join, relative, resolve, sep } from "node:path";
+import { basename, delimiter, dirname, extname, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 
@@ -70,6 +70,7 @@ let skillAutoSyncInFlight = false;
 const skillAutoSyncWatchers = new Map();
 const skillAutoSyncSignatures = new Map();
 let machineIdPromise = null;
+const hostedAppAssetUrls = new Map();
 
 function expandHome(path) {
   return path?.replace(/^~(?=$|\/)/, homedir());
@@ -333,6 +334,183 @@ function titleFromHtml(html, fallback) {
   return (match?.[1] || fallback).replace(/\s+/g, " ").trim().slice(0, 96) || fallback;
 }
 
+function absoluteAppUrl(baseUrl, path) {
+  try {
+    return new URL(path, baseUrl).toString();
+  } catch {
+    return "";
+  }
+}
+
+function collectorAssetUrl(filePath) {
+  const safePath = resolve(filePath);
+  const id = sha256Hex(safePath).slice(0, 24);
+  hostedAppAssetUrls.set(id, safePath);
+  return `http://127.0.0.1:${port}/app-assets/${id}`;
+}
+
+function contentTypeForPath(filePath) {
+  const extension = extname(filePath).toLowerCase();
+  if (extension === ".svg") return "image/svg+xml";
+  if (extension === ".webp") return "image/webp";
+  if (extension === ".jpg" || extension === ".jpeg") return "image/jpeg";
+  if (extension === ".ico") return "image/x-icon";
+  return "image/png";
+}
+
+async function fileExists(filePath) {
+  return access(filePath, constants.R_OK).then(() => true).catch(() => false);
+}
+
+async function processCwd(pid) {
+  const value = String(pid || "").trim();
+  if (!/^\d+$/.test(value)) return "";
+  const procCwd = await readlink(`/proc/${value}/cwd`).catch(() => "");
+  if (procCwd) return procCwd;
+  return execFileAsync("lsof", ["-a", "-p", value, "-d", "cwd", "-Fn"], {
+    timeout: hostedAppProbeTimeoutMs,
+    maxBuffer: 50_000,
+  }).then(({ stdout }) => String(stdout || "").split(/\r?\n/).find((line) => line.startsWith("n"))?.slice(1) || "").catch(() => "");
+}
+
+async function projectSearchRoots(startDir) {
+  let current = resolve(startDir || ".");
+  const home = homedir();
+  const roots = [];
+  for (let depth = 0; depth < 8; depth += 1) {
+    roots.push(current);
+    const parent = dirname(current);
+    if (parent === current || (current === home && !process.env.AGENT_TELEMETRY_APP_SCAN_OUTSIDE_HOME)) break;
+    current = parent;
+  }
+  const withAppJson = [];
+  const withPackageJson = [];
+  for (const root of roots) {
+    if (await fileExists(join(root, "app.json"))) withAppJson.push(root);
+    else if (await fileExists(join(root, "package.json"))) withPackageJson.push(root);
+  }
+  return [...withAppJson, ...withPackageJson];
+}
+
+async function readJsonFile(filePath) {
+  try {
+    return JSON.parse(await readFile(filePath, "utf8"));
+  } catch {
+    return null;
+  }
+}
+
+function configuredExpoIconPaths(appJson) {
+  const expo = appJson?.expo || appJson;
+  return [
+    expo?.icon,
+    expo?.ios?.icon,
+    expo?.web?.favicon,
+    expo?.splash?.image,
+    expo?.android?.adaptiveIcon?.foregroundImage,
+  ].filter((value) => typeof value === "string" && value.trim());
+}
+
+async function iconFromProjectFolder(listener) {
+  const cwd = await processCwd(listener.pid);
+  for (const root of await projectSearchRoots(cwd)) {
+    const appJson = await readJsonFile(join(root, "app.json"));
+    const candidates = [
+      ...configuredExpoIconPaths(appJson),
+      "assets/images/icon.png",
+      "assets/images/favicon.png",
+      "assets/icons/icon.png",
+      "public/icon.png",
+      "public/favicon.png",
+      "public/favicon.ico",
+    ];
+    for (const candidate of candidates) {
+      const fullPath = resolve(root, candidate);
+      if (!fullPath.startsWith(`${root}${sep}`) && fullPath !== root) continue;
+      if (await fileExists(fullPath)) return collectorAssetUrl(fullPath);
+    }
+  }
+  return "";
+}
+
+function linkTagAttributes(tag) {
+  const attrs = {};
+  for (const match of String(tag || "").matchAll(/\b([A-Za-z_:][-A-Za-z0-9_:.]*)\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'=<>`]+))/g)) {
+    attrs[match[1].toLowerCase()] = match[2] ?? match[3] ?? match[4] ?? "";
+  }
+  return attrs;
+}
+
+async function isImageUrl(url) {
+  if (!url) return false;
+  try {
+    let response = await fetch(url, {
+      method: "HEAD",
+      signal: AbortSignal.timeout(hostedAppProbeTimeoutMs),
+    });
+    if (response.status === 405 || response.status === 501) {
+      response = await fetch(url, {
+        headers: { range: "bytes=0-512" },
+        signal: AbortSignal.timeout(hostedAppProbeTimeoutMs),
+      });
+    }
+    const contentType = response.headers.get("content-type") || "";
+    return response.ok && (
+      contentType.startsWith("image/")
+      || ((contentType === "" || contentType === "application/octet-stream") && /\.(?:ico|png|svg|webp|jpg|jpeg)(?:\?|$)/i.test(url))
+    );
+  } catch {
+    return false;
+  }
+}
+
+function iconFromHtml(html, baseUrl) {
+  const links = [...String(html || "").matchAll(/<link\b[^>]*>/gi)]
+    .map((match) => linkTagAttributes(match[0]));
+  const preferred = links.find((attrs) => /\b(?:apple-touch-icon|mask-icon|icon)\b/i.test(attrs.rel || ""));
+  const href = preferred?.href;
+  return href ? absoluteAppUrl(baseUrl, href) : "";
+}
+
+async function iconFromManifest(baseUrl, html) {
+  const manifestHref = [...String(html || "").matchAll(/<link\b[^>]*>/gi)]
+    .map((match) => linkTagAttributes(match[0]))
+    .find((attrs) => /\bmanifest\b/i.test(attrs.rel || ""))
+    ?.href;
+  if (!manifestHref) return "";
+  try {
+    const manifestUrl = absoluteAppUrl(baseUrl, manifestHref);
+    const response = await fetch(manifestUrl, { signal: AbortSignal.timeout(hostedAppProbeTimeoutMs) });
+    if (!response.ok) return "";
+    const manifest = await response.json();
+    const icons = Array.isArray(manifest?.icons) ? manifest.icons : [];
+    const icon = icons.find((item) => typeof item?.src === "string" && /512|192|180|128|64/.test(String(item.sizes || "")))
+      || icons.find((item) => typeof item?.src === "string");
+    return icon?.src ? absoluteAppUrl(manifestUrl, icon.src) : "";
+  } catch {
+    return "";
+  }
+}
+
+async function discoverHostedAppIcon(baseUrl, html) {
+  const manifestIcon = await iconFromManifest(baseUrl, html);
+  if (await isImageUrl(manifestIcon)) return manifestIcon;
+  const htmlIcon = iconFromHtml(html, baseUrl);
+  if (await isImageUrl(htmlIcon)) return htmlIcon;
+  const candidates = [
+    "/apple-touch-icon.png",
+    "/favicon.png",
+    "/favicon.ico",
+    "/icon.png",
+    "/assets/images/favicon.png",
+    "/assets/images/icon.png",
+  ].map((path) => absoluteAppUrl(baseUrl, path));
+  for (const candidate of candidates) {
+    if (await isImageUrl(candidate)) return candidate;
+  }
+  return "";
+}
+
 async function probeHostedApp(listener, scheme) {
   const url = `${scheme}://${listenerUrlHost(listener.host)}:${listener.port}/`;
   const response = await fetch(url, {
@@ -343,11 +521,15 @@ async function probeHostedApp(listener, scheme) {
   const server = response.headers.get("server") || "";
   const text = contentType.includes("text/html") ? await response.text().catch(() => "") : "";
   const title = titleFromHtml(text, `${listener.process} on ${listener.port}`);
+  const iconUrl = await discoverHostedAppIcon(url, text) || await iconFromProjectFolder(listener);
   return {
     ok: true,
     id: sha256Hex(`${hostname()}:${listener.port}:${listener.process}:${listener.pid}`).slice(0, 16),
     name: title,
     description: contentType ? `${response.status} ${contentType}` : `HTTP ${response.status}`,
+    statusCode: response.status,
+    contentType,
+    iconUrl,
     scheme,
     host: listenerDisplayHost(listener.host),
     port: listener.port,
@@ -3156,6 +3338,25 @@ createServer(async (request, response) => {
         defaultSyncPath,
       },
     });
+    return;
+  }
+  if (pathname.startsWith("/app-assets/") && request.method === "GET") {
+    const id = pathname.split("/").pop() || "";
+    const filePath = hostedAppAssetUrls.get(id);
+    if (!filePath) {
+      jsonResponse(response, 404, { ok: false, error: "Unknown app asset." });
+      return;
+    }
+    try {
+      const bytes = await readFile(filePath);
+      response.writeHead(200, {
+        "content-type": contentTypeForPath(filePath),
+        "cache-control": "private, max-age=300",
+      });
+      response.end(bytes);
+    } catch {
+      jsonResponse(response, 404, { ok: false, error: "App asset is no longer available." });
+    }
     return;
   }
   if (pathname === "/apps" && request.method === "GET") {

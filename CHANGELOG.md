@@ -3,6 +3,14 @@
 This file records user-visible changes before they are committed. New work should
 be added here first, then marked `Committed` or `Pushed` after the git action.
 
+## 2026-05-27 16:21:17 WITA - Simplify My Apps Launcher
+
+- Status: Pushed
+- Areas changed: My Apps fleet API, telemetry collector app metadata, My Apps dashboard view, assimilation log, changelog
+- Summary: Filter non-interactive Tailnet services out of My Apps, hide technical socket/process details, collapse duplicate app entries, render the page as an iOS-style app launcher, prefer each app's own favicon/manifest/logo, dynamically serve project-folder icons from the collector on the hosting machine, directly probe the app origin when older collectors omit icon metadata, fall back to Simple Icons for known common brands, never use runtime process names like Node or Python as app logos, and replace the launcher with a focused selected-app view that can open or embed the app.
+- Verification: `pnpm exec eslint src/app/api/fleet/apps/route.ts src/features/dashboard/views/MyAppsPanel.tsx scripts/agent-telemetry-collector.mjs --max-warnings=999`; `pnpm exec eslint src/app/api/fleet/apps/route.ts src/features/dashboard/views/MyAppsPanel.tsx --max-warnings=999`; `node --check scripts/agent-telemetry-collector.mjs`; `git diff --check -- src/app/api/fleet/apps/route.ts src/features/dashboard/views/MyAppsPanel.tsx scripts/agent-telemetry-collector.mjs CHANGELOG.md`; temporary collector on `127.0.0.1:8789` returned app icon URLs from favicons/manifests; collector E2E with a nested `backend/` app and parent `app.json` returned `/app-assets/...` and fetched `image/png`; real Ubuntu collector `/apps` was tested and currently omits `iconUrl` because it is still on commit `57fa1ed`; real `http://ubuntu-8gb-hel1-2.tail629894.ts.net:8081/favicon.ico` returns `200 image/x-icon` for the dashboard direct-probe fallback; fallback smoke maps HivemindOS to `/hivemindos-logo.png`, OpenClaw to `/icons/runtimes/openclaw.svg`, and leaves ClawCode Mobile/ComfyUI/Z-Image to app favicon, hosting-machine project icon, or initials instead of Python/Node/manual bundled assets. Earlier live `http://localhost:5020/api/fleet/apps` returned 5 visible apps and filtered out Syncthing, nginx, Cloudflare, Tailscale, JSON-only APIs, 404s, and duplicates; local Mac apps opened through `localhost`. Repo-wide `pnpm exec tsc --noEmit --pretty false --skipLibCheck` is currently blocked by unrelated untracked `src/components/fleet/data/ne_110m_coastline.ts`.
+- Intended commit message: `Simplify My Apps launcher`
+
 ## 2026-05-27 15:40:21 WITA - Tighten Button Dimensions
 
 - Status: Pushed
