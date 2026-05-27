@@ -3,12 +3,28 @@
 This file records user-visible changes before they are committed. New work should
 be added here first, then marked `Committed` or `Pushed` after the git action.
 
-## 2026-05-27 15:38:09 WITA - Stabilize Link Fleet Discovery
+## 2026-05-27 15:38:13 WITA - Compact Button Styling
 
 - Status: Uncommitted
+- Areas changed: shared button component, fleet runtime setup styles, fleet roster add-agent affordance, changelog
+- Summary: Make app buttons more compact and minimalist by reducing default button height/padding, replacing heavy filled primary styling with a subtler bordered accent treatment, and letting longer action labels wrap cleanly.
+- Verification: Pending
+- Intended commit message: `Compact shared button styling`
+
+## 2026-05-27 15:39:05 WITA - Refine Runtime Setup Button Spacing
+
+- Status: Pushed
+- Areas changed: Agent settings runtime setup action styling, changelog
+- Summary: Keep runtime setup action buttons compact while still allowing long labels to wrap inside the button instead of escaping or crowding adjacent copy.
+- Verification: `pnpm exec eslint src/features/dashboard/views/chat/AgentSettingsModal.tsx --max-warnings=999` passed with one existing unused-prop warning; `pnpm exec tsc --noEmit --pretty false --skipLibCheck`; `git diff --check`.
+- Intended commit message: `Refine runtime setup button spacing`
+
+## 2026-05-27 15:38:09 WITA - Stabilize Link Fleet Discovery
+
+- Status: Pushed
 - Areas changed: Fleet discovery API, dashboard network diagnostic copy, changelog
 - Summary: Keep Link-reached collectors marked ready when `/health` succeeds but `/agents` is slow or transiently unavailable, and show the actual Link proxy health URL in dashboard fix commands instead of a misleading raw Tailnet collector URL.
-- Verification: `pnpm exec eslint src/app/api/fleet/discover/route.ts src/features/dashboard/dashboard-display-helpers.tsx --max-warnings=999` passed with one existing unused helper warning; `pnpm exec tsc --noEmit --pretty false --skipLibCheck`; `git diff --check`.
+- Verification: `pnpm exec eslint src/app/api/fleet/discover/route.ts src/features/dashboard/dashboard-display-helpers.tsx --max-warnings=999` passed with one existing unused helper warning; `pnpm exec tsc --noEmit --pretty false --skipLibCheck`; `git diff --check -- src/app/api/fleet/discover/route.ts src/features/dashboard/dashboard-display-helpers.tsx CHANGELOG.md`; live `http://127.0.0.1:5020/api/fleet/discover` reported `source: hivemind-link` and Ubuntu `collector: ready` with 7 agents through `http://127.0.0.1:8788/peer/100.96.125.3%3A8787`.
 - Intended commit message: `Stabilize Link fleet discovery`
 
 ## 2026-05-27 15:35:44 WITA - Fix Runtime Provider Setup Layout

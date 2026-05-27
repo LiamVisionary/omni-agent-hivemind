@@ -2396,9 +2396,9 @@
   max-width: 100%;
   min-width: 0;
   height: auto;
-  min-height: 44px;
+  min-height: 32px;
   white-space: normal;
-  text-align: left;
+  text-align: center;
 }
 
 .agentRuntimeToolsPanel {
@@ -2625,6 +2625,13 @@
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
+  align-items: center;
+}
+
+.agentRuntimeSetupActions > button[data-slot="button"] {
+  width: fit-content;
+  max-width: 100%;
+  white-space: normal;
 }
 
 .agentRuntimeCapabilityCard p {

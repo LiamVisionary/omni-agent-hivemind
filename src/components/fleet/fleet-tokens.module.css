@@ -99,16 +99,15 @@
 }
 
 .rosterAddAgentRow:hover {
-  border-color: rgba(94, 234, 212, 0.74) !important;
-  background: rgba(45, 212, 191, 0.14) !important;
+  border-color: rgba(94, 234, 212, 0.58) !important;
+  background: rgba(45, 212, 191, 0.10) !important;
   color: var(--foreground) !important;
   transform: translateY(-1px);
-  filter: drop-shadow(0 0 12px rgba(45, 212, 191, 0.18));
 }
 
 .rosterAddAgentRow:hover > span:first-child {
-  border-color: rgba(94, 234, 212, 0.82) !important;
-  background: rgba(45, 212, 191, 0.22) !important;
+  border-color: rgba(94, 234, 212, 0.66) !important;
+  background: rgba(45, 212, 191, 0.16) !important;
 }
 
 .rosterMachineRow {
