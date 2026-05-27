@@ -220,7 +220,7 @@ if [[ "$SKIP_PULL" == "true" ]]; then
   warn "Skipping git pull"
 else
   info "Pulling latest git changes"
-  git pull --ff-only
+  node "$ROOT/scripts/pull-with-changelog-preserve.mjs"
   ok "Git checkout is current"
 fi
 

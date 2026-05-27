@@ -3,6 +3,13 @@
 This file records user-visible changes before they are committed. New work should
 be added here first, then marked `Committed` or `Pushed` after the git action.
 
+## 2026-05-27 15:06:00 WITA - Preserve Changelog During Updates
+
+- Status: Pushed
+- Areas changed: Update scripts, fleet update API, telemetry collector update path, changelog
+- Summary: Add an automatic fast-forward pull helper that preserves local-only `CHANGELOG.md` sections when it is the only dirty tracked file, use it from manual and dashboard-triggered HivemindOS updates, and prefer a detached SSH rescue update when an old remote collector reports a dirty behind checkout.
+- Verification: `node --check scripts/pull-with-changelog-preserve.mjs`; `node --check scripts/agent-telemetry-collector.mjs`; `bash -n scripts/update-hivemindos.sh`; temp-repo smoke confirmed a local-only `CHANGELOG.md` section is restored after an upstream fast-forward pull and leaves only `CHANGELOG.md` dirty; temp-repo guard smoke confirmed non-section changelog edits are not auto-discarded; `pnpm exec eslint src/app/api/fleet/update/route.ts scripts/agent-telemetry-collector.mjs --max-warnings=999`; `pnpm exec tsc --noEmit --pretty false --skipLibCheck`; `git diff --check -- scripts/pull-with-changelog-preserve.mjs scripts/update-hivemindos.sh scripts/agent-telemetry-collector.mjs src/app/api/fleet/update/route.ts CHANGELOG.md`.
+- Intended commit message: `Preserve changelog entries during updates`
 
 ## 2026-05-27 01:58 WITA - Clarify Bankr Honey Rewards
 

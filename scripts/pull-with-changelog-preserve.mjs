@@ -1,0 +1,98 @@
+#!/usr/bin/env node
+import { execFileSync } from "node:child_process";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
+
+const changelogPath = "CHANGELOG.md";
+
+function git(args, options = {}) {
+  return execFileSync("git", args, {
+    encoding: "utf8",
+    stdio: options.stdio ?? ["ignore", "pipe", "pipe"],
+  });
+}
+
+function dirtyTrackedPaths() {
+  return git(["status", "--porcelain", "--untracked-files=no"])
+    .split(/\r?\n/)
+    .filter(Boolean)
+    .map((line) => line.slice(3).replace(/^"|"$/g, ""));
+}
+
+function changelogSections(markdown) {
+  const lines = markdown.split(/\r?\n/);
+  const sections = [];
+  let start = lines.findIndex((line) => line.startsWith("## "));
+  while (start >= 0 && start < lines.length) {
+    let end = start + 1;
+    while (end < lines.length && !lines[end].startsWith("## ")) end += 1;
+    const text = lines.slice(start, end).join("\n").trim();
+    if (text) {
+      sections.push({
+        heading: lines[start].trim(),
+        text,
+      });
+    }
+    start = end < lines.length ? end : -1;
+  }
+  return sections;
+}
+
+function insertionIndex(markdown) {
+  const match = markdown.match(/^## /m);
+  return match?.index ?? markdown.length;
+}
+
+function insertSections(markdown, sections) {
+  if (!sections.length) return markdown;
+  const index = insertionIndex(markdown);
+  const prefix = markdown.slice(0, index).replace(/\s*$/, "\n\n");
+  const suffix = markdown.slice(index).replace(/^\s*/, "");
+  return `${prefix}${sections.map((section) => section.text).join("\n\n")}\n\n${suffix}`;
+}
+
+function preserveChangelogPull() {
+  const paths = dirtyTrackedPaths();
+  if (paths.length === 0) {
+    git(["pull", "--ff-only"], { stdio: "inherit" });
+    return;
+  }
+  if (paths.some((path) => path !== changelogPath)) {
+    git(["pull", "--ff-only"], { stdio: "inherit" });
+    return;
+  }
+  if (!existsSync(changelogPath)) {
+    git(["pull", "--ff-only"], { stdio: "inherit" });
+    return;
+  }
+
+  const base = git(["show", `HEAD:${changelogPath}`]);
+  const local = readFileSync(changelogPath, "utf8");
+  const baseSections = new Set(changelogSections(base).map((section) => section.text));
+  const localOnlySections = changelogSections(local).filter((section) => !baseSections.has(section.text));
+  if (!localOnlySections.length) {
+    git(["pull", "--ff-only"], { stdio: "inherit" });
+    return;
+  }
+
+  git(["checkout", "--", changelogPath], { stdio: "inherit" });
+  try {
+    git(["pull", "--ff-only"], { stdio: "inherit" });
+  } catch (error) {
+    writeFileSync(changelogPath, local, "utf8");
+    throw error;
+  }
+
+  const pulled = readFileSync(changelogPath, "utf8");
+  const pulledSections = changelogSections(pulled);
+  const pulledTexts = new Set(pulledSections.map((section) => section.text));
+  const pulledHeadings = new Set(pulledSections.map((section) => section.heading));
+  const missingSections = localOnlySections.filter((section) => (
+    !pulledTexts.has(section.text) && !pulledHeadings.has(section.heading)
+  ));
+  if (!missingSections.length) return;
+
+  writeFileSync(changelogPath, insertSections(pulled, missingSections), "utf8");
+  console.log(`Preserved ${missingSections.length} local CHANGELOG.md section${missingSections.length === 1 ? "" : "s"} after pulling latest changes.`);
+}
+
+preserveChangelogPull();

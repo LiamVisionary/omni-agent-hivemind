@@ -13,6 +13,7 @@ type UpdateBody = {
   appDir?: string;
   updateCommand?: string;
   expectedCommit?: string;
+  preferRemoteShell?: boolean;
   requiredCapabilities?: {
     chat?: boolean;
     envHttpSync?: boolean;
@@ -82,10 +83,15 @@ function hasVerificationTarget(body: UpdateBody) {
 }
 
 async function updateBodyWithTarget(body: UpdateBody): Promise<UpdateBody> {
-  if (body.expectedCommit?.trim()) return body;
   const health = await fetchCollectorHealth(body.collectorUrl);
   const commit = health?.version?.commit?.trim();
   const latestCommit = health?.version?.latestCommit?.trim();
+  const expectedCommit = body.expectedCommit?.trim() || (commit && latestCommit && commit !== latestCommit ? latestCommit : undefined);
+  const preferRemoteShell = Boolean(body.preferRemoteShell || (health?.version?.dirty && expectedCommit && commit !== expectedCommit));
+  if (expectedCommit || preferRemoteShell) {
+    return { ...body, expectedCommit, preferRemoteShell };
+  }
+  if (body.expectedCommit?.trim()) return body;
   if (commit && latestCommit && commit !== latestCommit) {
     return { ...body, expectedCommit: latestCommit };
   }
@@ -155,11 +161,61 @@ function installScriptForCheckout() {
   ].join("\n");
 }
 
+function changelogPreservingPullScript() {
+  return [
+    "if [ -f scripts/pull-with-changelog-preserve.mjs ]; then",
+    "  node scripts/pull-with-changelog-preserve.mjs",
+    "else",
+    "  node <<'HIVE_CHANGELOG_PULL'",
+    "const { execFileSync } = require('child_process');",
+    "const { existsSync, readFileSync, writeFileSync } = require('fs');",
+    "const file = 'CHANGELOG.md';",
+    "function git(args, stdio) { return execFileSync('git', args, { encoding: 'utf8', stdio: stdio || ['ignore', 'pipe', 'pipe'] }); }",
+    "function sections(markdown) {",
+    "  const lines = String(markdown || '').split(/\\r?\\n/);",
+    "  const out = [];",
+    "  for (let start = lines.findIndex((line) => line.startsWith('## ')); start >= 0 && start < lines.length;) {",
+    "    let end = start + 1;",
+    "    while (end < lines.length && !lines[end].startsWith('## ')) end += 1;",
+    "    const text = lines.slice(start, end).join('\\n').trim();",
+    "    if (text) out.push({ heading: lines[start].trim(), text });",
+    "    start = end < lines.length ? end : -1;",
+    "  }",
+    "  return out;",
+    "}",
+    "const dirty = git(['status', '--porcelain', '--untracked-files=no']).split(/\\r?\\n/).filter(Boolean).map((line) => line.slice(3).replace(/^\"|\"$/g, ''));",
+    "if (!dirty.length || dirty.some((path) => path !== file) || !existsSync(file)) { git(['pull', '--ff-only'], 'inherit'); process.exit(0); }",
+    "const base = git(['show', `HEAD:${file}`]);",
+    "const local = readFileSync(file, 'utf8');",
+    "const baseTexts = new Set(sections(base).map((section) => section.text));",
+    "const localOnly = sections(local).filter((section) => !baseTexts.has(section.text));",
+    "if (!localOnly.length) { git(['pull', '--ff-only'], 'inherit'); process.exit(0); }",
+    "git(['checkout', '--', file], 'inherit');",
+    "try { git(['pull', '--ff-only'], 'inherit'); } catch (error) { writeFileSync(file, local, 'utf8'); throw error; }",
+    "const pulled = readFileSync(file, 'utf8');",
+    "const pulledSections = sections(pulled);",
+    "const pulledTexts = new Set(pulledSections.map((section) => section.text));",
+    "const pulledHeadings = new Set(pulledSections.map((section) => section.heading));",
+    "const missing = localOnly.filter((section) => !pulledTexts.has(section.text) && !pulledHeadings.has(section.heading));",
+    "if (missing.length) {",
+    "  const match = pulled.match(/^## /m);",
+    "  const index = match ? match.index : pulled.length;",
+    "  const next = pulled.slice(0, index).replace(/\\s*$/, '\\n\\n') + missing.map((section) => section.text).join('\\n\\n') + '\\n\\n' + pulled.slice(index).replace(/^\\s*/, '');",
+    "  writeFileSync(file, next, 'utf8');",
+    "  console.log(`Preserved ${missing.length} local CHANGELOG.md section${missing.length === 1 ? '' : 's'} after pulling latest changes.`);",
+    "}",
+    "HIVE_CHANGELOG_PULL",
+    "fi",
+  ].join("\n");
+}
+
 function remoteUpdateScript() {
   return [
     "repo_url=$(git remote get-url origin)",
     "branch=$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo main)",
-    "if ! git pull --ff-only; then",
+    "if ! (",
+    changelogPreservingPullScript(),
+    "); then",
     "  status=$(git status --porcelain)",
     "  if [ -z \"$status\" ]; then",
     "    echo 'git pull failed on a clean checkout; not recloning.' >&2",
@@ -189,7 +245,7 @@ function remoteUpdateScript() {
 
 function localUpdateScript() {
   return [
-    "git pull --ff-only",
+    changelogPreservingPullScript(),
     installScriptForCheckout(),
   ].join("\n");
 }
@@ -344,6 +400,40 @@ async function tryTailscaleSsh(body: UpdateBody) {
   return { ok: true, accepted: true, method: "remote-shell", target, stdout, stderr, command: script };
 }
 
+async function tryDetachedTailscaleSsh(body: UpdateBody) {
+  const target = body.dnsName || body.name || body.ip;
+  if (!target) throw new Error("No Tailscale target was provided.");
+  const updateScript = [
+    "set -euo pipefail",
+    body.appDir?.trim()
+      ? `cd ${shellSingleQuote(body.appDir.trim())}`
+      : "for d in \"$HOME/hivemindos\" \"$HOME/openclaw-next\" /root/hivemindos /opt/hivemindos; do if [ -d \"$d/.git\" ]; then cd \"$d\"; break; fi; done",
+    "[ -d .git ] || { echo 'Could not find hivemindos checkout'; exit 2; }",
+    "mkdir -p .next",
+    "{",
+    "  echo \"--- update $(date -u +%Y-%m-%dT%H:%M:%SZ) ---\"",
+    changelogPreservingPullScript(),
+    "  if command -v corepack >/dev/null 2>&1; then corepack prepare pnpm@8.6.12 --activate; hash -r 2>/dev/null || true; fi",
+    "  CI=true NODE_OPTIONS=\"${NODE_OPTIONS:+$NODE_OPTIONS }--no-deprecation\" pnpm install --frozen-lockfile",
+    "  pnpm build",
+    "  ./setup.sh",
+    "  AGENT_TELEMETRY_PORT=\"${AGENT_TELEMETRY_PORT:-8787}\" ./scripts/install-telemetry-collector.sh",
+    "} >> .next/agent-update.log 2>&1 &",
+    "echo 'Detached HivemindOS update started.'",
+  ].join("\n");
+  const { stdout, stderr } = await runRemoteShell(target, updateScript);
+  return { ok: true, accepted: true, method: "remote-shell-detached", target, stdout, stderr, command: updateScript };
+}
+
+async function tryPreferredRemoteUpdate(body: UpdateBody) {
+  try {
+    return await tryDetachedTailscaleSsh(body);
+  } catch {
+    if (body.collectorUrl) return tryCollectorUpdate(body);
+    return tryTailscaleSsh(body);
+  }
+}
+
 async function isLocalCheckout(appDir?: string) {
   if (!appDir?.trim()) return false;
   try {
@@ -379,6 +469,8 @@ export async function POST(request: Request) {
   try {
     const result = await (await isLocalCheckout(body.appDir)
       ? tryLocalShell(body)
+      : body.preferRemoteShell
+        ? tryPreferredRemoteUpdate(body)
       : body.collectorUrl
         ? tryCollectorUpdate(body)
         : tryTailscaleSsh(body));
