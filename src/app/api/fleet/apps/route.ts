@@ -175,8 +175,10 @@ function appOriginUrl(openUrl: string) {
 async function isImageUrl(url: string) {
   if (!url) return false;
   try {
+    const isCollectorAsset = /\/app-assets\//.test(url);
     let response = await fetch(url, {
-      method: "HEAD",
+      method: isCollectorAsset ? "GET" : "HEAD",
+      headers: isCollectorAsset ? { range: "bytes=0-512" } : undefined,
       cache: "no-store",
       signal: AbortSignal.timeout(ICON_PROBE_TIMEOUT_MS),
     });

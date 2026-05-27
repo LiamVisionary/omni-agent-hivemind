@@ -3,6 +3,14 @@
 This file records user-visible changes before they are committed. New work should
 be added here first, then marked `Committed` or `Pushed` after the git action.
 
+## 2026-05-27 19:27:43 WITA - Preserve Collector Asset Icons
+
+- Status: Uncommitted
+- Areas changed: My Apps fleet API, changelog
+- Summary: Validate collector `/app-assets/...` icon URLs with ranged GET requests instead of HEAD so valid collector-served app icons like ClawCode Mobile's PNG are not discarded as unreachable.
+- Verification: `pnpm exec eslint src/app/api/fleet/apps/route.ts --max-warnings=999`; `git diff --check -- src/app/api/fleet/apps/route.ts CHANGELOG.md`; live `http://localhost:5020/api/fleet/apps` returns Claw Code Mobile with `http://hivemindos-ubuntu-8gb-hel1-2.tail629894.ts.net:8787/app-assets/3cbd034c95a4b48e194681f0` while keeping ComfyUI and OpenClaw Control icons.
+- Intended commit message: `Preserve collector asset icons`
+
 ## 2026-05-27 18:34:24 WITA - Validate My Apps Icon URLs
 
 - Status: Uncommitted
