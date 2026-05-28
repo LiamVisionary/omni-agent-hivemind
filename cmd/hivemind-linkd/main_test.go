@@ -52,18 +52,49 @@ func TestAppProxyCookieTarget(t *testing.T) {
 }
 
 func TestRewritePeerRootHTML(t *testing.T) {
-	html := `<script type="module" src="/mobile/assets/index.js"></script><link rel="stylesheet" href='/mobile/assets/index.css'>`
+	html := `<script type="module" src="/mobile/assets/index.js"></script><link rel="stylesheet" href='/mobile/assets/index.css'><script src="/_next/static/chunks/app.js" async=""></script><script>self.__next_f.push([1,":HL[\"/_next/static/chunks/app.css\",\"style\"]"])</script>`
 	rewritten := rewritePeerRootHTML(html, "100.84.93.114:8787", "/app-proxy/8788")
 
 	if rewritten == html {
 		t.Fatal("expected root asset paths to be rewritten")
 	}
-	wantScript := `src="/peer/100.84.93.114:8787/app-proxy/8788/mobile/assets/index.js"`
+	wantScript := `src="/peer/100.84.93.114%3A8787/app-proxy/8788/mobile/assets/index.js"`
 	if !strings.Contains(rewritten, wantScript) {
 		t.Fatalf("rewritten HTML missing %q:\n%s", wantScript, rewritten)
 	}
-	wantStyle := `href='/peer/100.84.93.114:8787/app-proxy/8788/mobile/assets/index.css'`
+	wantStyle := `href='/peer/100.84.93.114%3A8787/app-proxy/8788/mobile/assets/index.css'`
 	if !strings.Contains(rewritten, wantStyle) {
 		t.Fatalf("rewritten HTML missing %q:\n%s", wantStyle, rewritten)
+	}
+	wantFlight := `\"/peer/100.84.93.114%3A8787/app-proxy/8788/_next/static/chunks/app.css`
+	if !strings.Contains(rewritten, wantFlight) {
+		t.Fatalf("rewritten HTML missing %q:\n%s", wantFlight, rewritten)
+	}
+	if strings.Contains(rewritten, `/_next/static/chunks/app.js" async=""`) {
+		t.Fatalf("rewritten HTML should remove async from Next chunk scripts:\n%s", rewritten)
+	}
+}
+
+func TestAppProxyRedirectPath(t *testing.T) {
+	request := httptest.NewRequest("GET", "http://127.0.0.1:8788/peer/100.84.93.114%3A8787/app-proxy/8788/?tab=workbench", nil)
+	request.Header.Set("Accept", "text/html")
+
+	if !shouldRedirectAppProxyHTML(request, "/app-proxy/8788/", "/app-proxy/8788") {
+		t.Fatal("expected app-proxy HTML route to redirect to the app path")
+	}
+	if got := appProxyRedirectPath(request, "/app-proxy/8788/", "/app-proxy/8788"); got != "/?tab=workbench" {
+		t.Fatalf("redirect path = %q, want %q", got, "/?tab=workbench")
+	}
+	if got := appProxyRedirectPath(request, "/app-proxy/8788/mobile/", "/app-proxy/8788"); got != "/mobile/?tab=workbench" {
+		t.Fatalf("mobile redirect path = %q, want %q", got, "/mobile/?tab=workbench")
+	}
+}
+
+func TestAppProxyRedirectRejectsStaticAssets(t *testing.T) {
+	request := httptest.NewRequest("GET", "http://127.0.0.1:8788/peer/100.84.93.114%3A8787/app-proxy/8788/_next/static/chunks/app.js", nil)
+	request.Header.Set("Accept", "application/javascript")
+
+	if shouldRedirectAppProxyHTML(request, "/app-proxy/8788/_next/static/chunks/app.js", "/app-proxy/8788") {
+		t.Fatal("expected static app-proxy asset to stay proxied")
 	}
 }

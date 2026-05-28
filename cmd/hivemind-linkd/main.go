@@ -154,6 +154,10 @@ func servePeerProxy(ts *tsnet.Server) http.HandlerFunc {
 		}
 		if appProxyPrefix != "" {
 			setAppProxyContextCookie(w, hostPort, appProxyPrefix)
+			if shouldRedirectAppProxyHTML(r, outPath, appProxyPrefix) {
+				http.Redirect(w, r, appProxyRedirectPath(r, outPath, appProxyPrefix), http.StatusTemporaryRedirect)
+				return
+			}
 		}
 		proxy := &httputil.ReverseProxy{
 			Director: func(out *http.Request) {
@@ -273,9 +277,6 @@ func servePeerRefererFallback(ts *tsnet.Server) http.HandlerFunc {
 				out.RequestURI = ""
 				out.Header.Del("Accept-Encoding")
 			},
-			ModifyResponse: func(res *http.Response) error {
-				return rewritePeerHTMLResponse(res, hostPort, appProxyPrefix)
-			},
 			Transport: transport,
 			ErrorHandler: func(w http.ResponseWriter, _ *http.Request, err error) {
 				http.Error(w, fmt.Sprintf("hivemind-linkd peer proxy error: %v", err), http.StatusBadGateway)
@@ -294,6 +295,29 @@ func setAppProxyContextCookie(w http.ResponseWriter, hostPort string, appProxyPr
 		HttpOnly: true,
 		SameSite: http.SameSiteLaxMode,
 	})
+}
+
+func shouldRedirectAppProxyHTML(r *http.Request, outPath string, appProxyPrefix string) bool {
+	if r.Method != http.MethodGet || appProxyPrefix == "" || !strings.HasPrefix(outPath, appProxyPrefix) {
+		return false
+	}
+	accept := strings.ToLower(r.Header.Get("accept"))
+	if accept != "" && !strings.Contains(accept, "text/html") {
+		return false
+	}
+	appPath := strings.TrimPrefix(outPath, appProxyPrefix)
+	return appPath == "" || appPath == "/" || strings.HasSuffix(appPath, "/")
+}
+
+func appProxyRedirectPath(r *http.Request, outPath string, appProxyPrefix string) string {
+	appPath := strings.TrimPrefix(outPath, appProxyPrefix)
+	if appPath == "" {
+		appPath = "/"
+	}
+	if r.URL.RawQuery != "" {
+		appPath += "?" + r.URL.RawQuery
+	}
+	return appPath
 }
 
 func rewritePeerHTMLResponse(res *http.Response, hostPort string, appProxyPrefix string) error {
@@ -316,7 +340,7 @@ func rewritePeerHTMLResponse(res *http.Response, hostPort string, appProxyPrefix
 }
 
 func rewritePeerRootHTML(html string, hostPort string, appProxyPrefix string) string {
-	prefix := "/peer/" + url.PathEscape(hostPort) + appProxyPrefix
+	prefix := "/peer/" + escapePeerPathSegment(hostPort) + appProxyPrefix
 	replacements := []struct {
 		old string
 		new string
@@ -329,11 +353,18 @@ func rewritePeerRootHTML(html string, hostPort string, appProxyPrefix string) st
 		{`href='/`, `href='` + prefix + `/`},
 		{`action='/`, `action='` + prefix + `/`},
 		{`poster='/`, `poster='` + prefix + `/`},
+		{`\"/_next/`, `\"` + prefix + `/_next/`},
+		{`\"/favicon`, `\"` + prefix + `/favicon`},
 	}
 	for _, replacement := range replacements {
 		html = strings.ReplaceAll(html, replacement.old, replacement.new)
 	}
+	html = regexp.MustCompile(`(<script src=["'][^"']*/_next/static/chunks/[^"']+["']) async=""`).ReplaceAllString(html, "$1")
 	return html
+}
+
+func escapePeerPathSegment(value string) string {
+	return strings.ReplaceAll(url.PathEscape(value), ":", "%3A")
 }
 
 func serveControl(ctx context.Context, addr string, lc *local.Client, ts *tsnet.Server) (*http.Server, error) {
