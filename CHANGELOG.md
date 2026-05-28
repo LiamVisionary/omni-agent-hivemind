@@ -5,7 +5,7 @@ be added here first, then marked `Committed` or `Pushed` after the git action.
 
 ## 2026-05-29 01:19:11 WITA - Speed Up Chat History Loading
 
-- Status: Uncommitted
+- Status: Pushed
 - Areas changed: Dashboard chat view loading, chat sidebar history indexing, machine group fallback, changelog
 - Summary: Load the chat panel with the main dashboard bundle, pre-index stored chat transcripts by agent so the sidebar no longer scans every saved chat for every machine/agent while rendering, and keep saved agents available in a fallback chat machine group before Tailnet discovery attaches them to live machines.
 - Verification: `pnpm exec eslint src/features/dashboard/DashboardApp.tsx src/features/dashboard/hooks/use-chat-tree-controller.tsx src/features/dashboard/hooks/use-dashboard-derived-state.tsx --max-warnings=999` passed with existing warnings; `pnpm exec tsc --noEmit --pretty false --skipLibCheck`; `git diff --check -- src/features/dashboard/DashboardApp.tsx src/features/dashboard/hooks/use-chat-tree-controller.tsx src/features/dashboard/hooks/use-dashboard-derived-state.tsx CHANGELOG.md`; Browser check on `http://127.0.0.1:5020/?view=chat` rendered the chat view without a Next error template or console errors.
