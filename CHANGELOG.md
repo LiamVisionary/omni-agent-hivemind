@@ -5,7 +5,7 @@ be added here first, then marked `Committed` or `Pushed` after the git action.
 
 ## 2026-05-28 13:27:09 WITA - Show Adaptive Concrete Model In Context
 
-- Status: Uncommitted
+- Status: Pushed
 - Areas changed: Adaptive OpenRouter runtime context, changelog, assimilation log
 - Summary: Build the OpenAI-compatible system context per Adaptive OpenRouter candidate after the concrete model is selected, so agents asked which model they are using report the actual OpenRouter model for that request instead of the `openrouter/adaptive` routing configuration.
 - Verification: `pnpm exec eslint src/app/api/chat/agent-runtime/route.ts --max-warnings=999`; `pnpm exec tsc --noEmit --pretty false --skipLibCheck`; live AdaptiveAgent smoke through `http://127.0.0.1:5020/api/chat/agent-runtime` answered `nvidia/nemotron-3-super-120b-a12b:free` when asked for the concrete model id, while OpenRouter stream metadata reported `nvidia/nemotron-3-super-120b-a12b-20230311:free`.
@@ -13,7 +13,7 @@ be added here first, then marked `Committed` or `Pushed` after the git action.
 
 ## 2026-05-28 13:23:52 WITA - Retry Adaptive Fetch Failures
 
-- Status: Uncommitted
+- Status: Pushed
 - Areas changed: Adaptive OpenRouter fetch retry handling, chat runtime error wording, changelog, assimilation log
 - Summary: Treat transient fetch/network failures from individual Adaptive OpenRouter candidates like retryable capacity failures, so Adaptive keeps trying remaining free models instead of surfacing a misleading runtime-not-reachable message for `https://openrouter.ai/api/v1/chat/completions`.
 - Verification: `pnpm exec eslint src/app/api/chat/agent-runtime/route.ts src/features/dashboard/hooks/runtime-stream-errors.ts --max-warnings=999`; `pnpm exec tsc --noEmit --pretty false --skipLibCheck`; `curl 'https://openrouter.ai/api/v1/models?output_modalities=all'` returned `200`; live AdaptiveAgent smoke through `http://127.0.0.1:5020/api/chat/agent-runtime` returned `ok` from `nvidia/nemotron-3-super-120b-a12b-20230311:free`.
@@ -21,7 +21,7 @@ be added here first, then marked `Committed` or `Pushed` after the git action.
 
 ## 2026-05-28 13:16:44 WITA - Retry Adaptive OpenRouter Rate Limits
 
-- Status: Uncommitted
+- Status: Pushed
 - Areas changed: Adaptive OpenRouter model routing, OpenAI-compatible stream dispatch, chat runtime error wording, assimilation log
 - Summary: Make Adaptive OpenRouter keep a ranked list of free model candidates and retry the next candidate when a free/promo model returns a retryable upstream error such as `429`, appending the configured paid fallback model after free candidates when present. Chat errors now explain provider rate limiting instead of showing `Provider returned error (429)`.
 - Verification: `pnpm exec eslint src/app/api/chat/agent-runtime/route.ts src/features/dashboard/hooks/runtime-stream-errors.ts --max-warnings=999`; `pnpm exec tsc --noEmit --pretty false --skipLibCheck`; live AdaptiveAgent smoke through `http://127.0.0.1:5020/api/chat/agent-runtime` returned `ok` from `nvidia/nemotron-3-super-120b-a12b-20230311:free` after the previously selected `google/gemma-4-26b-a4b-it:free` path had been producing `429`; `git diff --check -- src/app/api/chat/agent-runtime/route.ts src/features/dashboard/hooks/runtime-stream-errors.ts CHANGELOG.md ASSIMILATION_LOG.md ASSIMILATION_LOG.jsonl`.
@@ -29,7 +29,7 @@ be added here first, then marked `Committed` or `Pushed` after the git action.
 
 ## 2026-05-28 12:31:52 WITA - Add Chat Directory Picker Feedback
 
-- Status: Uncommitted
+- Status: Pushed
 - Areas changed: Chat composer working-directory control, chat composer styling, assimilation log
 - Summary: Add immediate `Opening...` feedback and temporary disabling to the chat working-directory control so the native/remote directory picker round trip no longer feels like a dead click.
 - Verification: `pnpm exec eslint src/features/chat/chat-composer.tsx --max-warnings=999`; `pnpm exec tsc --noEmit --pretty false --skipLibCheck`; `git diff --check -- src/features/chat/chat-composer.tsx src/app/chat.module.css CHANGELOG.md ASSIMILATION_LOG.md ASSIMILATION_LOG.jsonl`.
@@ -37,7 +37,7 @@ be added here first, then marked `Committed` or `Pushed` after the git action.
 
 ## 2026-05-28 12:07:08 WITA - Move Chat Directory Control To Composer
 
-- Status: Uncommitted
+- Status: Pushed
 - Areas changed: Chat composer UI, live chat header, chat tree working-directory logic, dashboard wiring, chat styling, assimilation log
 - Summary: Remove the project folder picker from the live chat header and add a compact working-directory control beside the Plan/Act composer control. The new control opens upward, reuses the existing local/remote machine directory picker, updates the active chat working directory, and asks whether to move the current conversation into the selected project folder or create that project in chat history when needed.
 - Verification: `pnpm exec eslint src/features/chat/chat-composer.tsx src/features/dashboard/views/ChatPanel.tsx src/features/dashboard/hooks/use-chat-tree-controller.tsx src/features/dashboard/DashboardApp.tsx --max-warnings=999` passed with existing warnings only; `pnpm exec tsc --noEmit --pretty false --skipLibCheck`; `git diff --check -- src/features/chat/chat-composer.tsx src/features/dashboard/views/ChatPanel.tsx src/features/dashboard/hooks/use-chat-tree-controller.tsx src/features/dashboard/DashboardApp.tsx src/app/chat.module.css CHANGELOG.md ASSIMILATION_LOG.md ASSIMILATION_LOG.jsonl`.
@@ -45,7 +45,7 @@ be added here first, then marked `Committed` or `Pushed` after the git action.
 
 ## 2026-05-28 11:27:40 WITA - Show Chat Runtime Metadata
 
-- Status: Uncommitted
+- Status: Pushed
 - Areas changed: Chat header UI, chat module styling, assimilation log
 - Summary: Add compact runtime, provider, and model metadata chips under the live conversation agent name so the active agent configuration is visible during chat.
 - Verification: `pnpm exec eslint src/features/dashboard/views/ChatPanel.tsx --max-warnings=999`; `pnpm exec tsc --noEmit --pretty false --skipLibCheck`; `git diff --check -- src/features/dashboard/views/ChatPanel.tsx src/app/chat.module.css CHANGELOG.md ASSIMILATION_LOG.md ASSIMILATION_LOG.jsonl`; Playwright reached the managed `http://127.0.0.1:5020/?view=chat` app, but the fresh browser profile had no hydrated local agent/chat state and stayed on the fleet discovery loading surface, so visual QA of Liam's populated chat state was not available from the headless profile.
@@ -53,7 +53,7 @@ be added here first, then marked `Committed` or `Pushed` after the git action.
 
 ## 2026-05-28 11:16:14 WITA - Surface Chat Runtime Errors
 
-- Status: Uncommitted
+- Status: Pushed
 - Areas changed: Dashboard chat stream parsing, Kanban runtime dispatch, scheduler dispatch, MiroShark runtime analysis, changelog, assimilation log
 - Summary: Centralize runtime SSE and HTTP error extraction so provider-shaped errors like OpenRouter `{"error":{"message":"User not found.","code":401}}`, including JSON-string-wrapped variants, render as explicit user-visible errors instead of falling through to generic no-text behavior. Provider auth failures now render as actionable credential guidance instead of raw API wording, and empty assistant streams produce an actionable chat error when no runtime error was reported.
 - Verification: `pnpm exec eslint src/features/dashboard/hooks/runtime-stream-errors.ts src/features/dashboard/hooks/use-status-chat-input-controller.tsx src/features/dashboard/hooks/use-kanban-dispatch-controller.tsx src/features/dashboard/hooks/use-scheduler-controller.tsx src/features/dashboard/hooks/use-kanban-task-controller.tsx src/features/dashboard/hooks/use-miroshark-brain-controller.tsx --max-warnings=999`; `pnpm exec eslint src/features/dashboard/hooks/runtime-stream-errors.ts src/features/dashboard/hooks/use-status-chat-input-controller.tsx --max-warnings=999`; `pnpm exec tsc --noEmit --pretty false --skipLibCheck`; runtime error normalization smoke confirmed object errors, JSON-string-wrapped provider errors, plain string errors, event-level errors, malformed SSE payloads, and OpenRouter-style `401 User not found` provider auth failures render user-facing messages; `rg "JSON\\.parse\\(payload\\)|parsed\\.error" src/features/dashboard/hooks` confirmed the audited dashboard runtime stream consumers now route through the shared parser.
@@ -61,7 +61,7 @@ be added here first, then marked `Committed` or `Pushed` after the git action.
 
 ## 2026-05-28 02:08:59 WITA - Add AdaptiveAgent E2E Coverage
 
-- Status: Uncommitted
+- Status: Pushed
 - Areas changed: Real fleet E2E test harness, package scripts, changelog, assimilation log
 - Summary: Add a dedicated real-fleet AdaptiveAgent E2E suite that locates Liam's local Hermes `AdaptiveAgent`, sends dashboard chat requests through the actual agent bridge, verifies adaptive OpenRouter model resolution appears in telemetry, rejects empty streams, and checks collector-side upstream errors are surfaced instead of silently completing.
 - Verification: `node --check scripts/e2e-real-fleet.mjs`; `pnpm exec eslint scripts/e2e-real-fleet.mjs --max-warnings=999`; `pnpm exec tsc --noEmit --pretty false --skipLibCheck`; live `HIVE_E2E_REAL_FLEET=1 HIVE_E2E_ADAPTIVE_AGENT_CASES=auto HIVE_E2E_TIMEOUT_MS=120000 HIVE_E2E_ADAPTIVE_AGENT_CHAT_TIMEOUT_MS=120000 pnpm run test:e2e:adaptive-agent` reproduced the regression against Liam's real `AdaptiveAgent`, failing with `collector-error-forwarding: Collector swallowed invalid-model upstream failure instead of streaming an error` and `dashboard-auto: AdaptiveAgent auto returned an empty SSE stream`; artifact: `artifacts/e2e-real-fleet/hive-e2e-20260527181201-a5ffa3/summary.json`.
@@ -69,7 +69,7 @@ be added here first, then marked `Committed` or `Pushed` after the git action.
 
 ## 2026-05-28 01:56:46 WITA - Resolve Adaptive Hermes Dispatch
 
-- Status: Uncommitted
+- Status: Pushed
 - Areas changed: Agent runtime OpenRouter Adaptive dispatch, Hermes telemetry collector stream error forwarding, changelog, assimilation log
 - Summary: Resolve `openrouter/adaptive` to a concrete free OpenRouter model, send OpenRouter-backed Hermes agents through direct OpenRouter-compatible streaming instead of the Hermes bridge, include the resolved model in route telemetry, and make collector bridge paths emit an explicit error when Hermes API finishes with no text.
 - Verification: `pnpm exec eslint src/app/api/chat/agent-runtime/route.ts --max-warnings=999`; `pnpm exec eslint scripts/agent-telemetry-collector.mjs --max-warnings=999`; `node --check scripts/agent-telemetry-collector.mjs`; `pnpm exec eslint src/app/api/chat/agent-runtime/route.ts scripts/e2e-real-fleet.mjs --max-warnings=999`; `pnpm exec tsc --noEmit --pretty false --skipLibCheck`; restarted the telemetry collector; live AdaptiveAgent E2E now surfaces OpenRouter `401 User not found` from the configured key instead of an empty dashboard stream; direct collector invalid-model smoke now streams `Hermes API finished without returning any text. Check the active provider, model, and credentials.`
@@ -77,7 +77,7 @@ be added here first, then marked `Committed` or `Pushed` after the git action.
 
 ## 2026-05-28 01:40:13 WITA - Simplify OpenRouter Adaptive Selection
 
-- Status: Uncommitted
+- Status: Pushed
 - Areas changed: Agent settings Adaptive model UI, OpenRouter adaptive runtime selection, agent profile types, dashboard styling, assimilation log
 - Summary: Remove Adaptive's manual modality, context length, category, and benchmark score controls. Adaptive now appears as a free OpenRouter model choice with a collapsed Advanced section for optional agent-type override and paid fallback model, while runtime selection still automatically ranks live free OpenRouter models by inferred use case by default.
 - Verification: `pnpm exec eslint src/features/dashboard/views/chat/AgentSettingsModal.tsx src/app/api/chat/agent-runtime/route.ts src/features/dashboard/agent-settings-types.ts src/lib/types/agent-runtime.ts src/features/dashboard/hooks/use-agent-settings-controller.tsx src/features/dashboard/hooks/use-agent-controller.tsx src/features/dashboard/DashboardApp.tsx --max-warnings=999` passed with existing warnings only; `pnpm exec tsc --noEmit --pretty false --skipLibCheck`; `git diff --check -- src/lib/types/agent-runtime.ts src/features/dashboard/agent-settings-types.ts src/features/dashboard/DashboardApp.tsx src/features/dashboard/hooks/use-agent-settings-controller.tsx src/features/dashboard/hooks/use-agent-controller.tsx src/features/dashboard/views/chat/AgentSettingsModal.tsx src/app/api/chat/agent-runtime/route.ts src/app/fleet.module.css CHANGELOG.md ASSIMILATION_LOG.md ASSIMILATION_LOG.jsonl`.
@@ -85,7 +85,7 @@ be added here first, then marked `Committed` or `Pushed` after the git action.
 
 ## 2026-05-28 01:35:18 WITA - Soften Runtime Model Card Typography
 
-- Status: Uncommitted
+- Status: Pushed
 - Areas changed: Agent settings runtime model picker rendering and styling, changelog
 - Summary: Split slash-delimited runtime model IDs into a small muted provider row and a more prominent model-name row, so cards like `anthropic/claude-opus-4.7` scan as provider metadata plus model choice instead of one heavy wrapped string.
 - Verification: `pnpm exec eslint src/features/dashboard/views/chat/AgentSettingsModal.tsx --max-warnings=999` passed with one pre-existing unused prop warning; `git diff --check -- src/features/dashboard/views/chat/AgentSettingsModal.tsx src/app/fleet.module.css CHANGELOG.md`; Browser QA on the managed `http://localhost:5020` app opened the add-agent modal, selected OpenRouter, and confirmed `anthropic` renders as the muted provider row at `9.5px`/`700` while `claude-opus-4.7` renders as the model row at `12.5px`/`720`. Full `pnpm exec tsc --noEmit --pretty false --skipLibCheck` is currently blocked by unrelated existing errors in `src/app/api/chat/agent-runtime/route.ts`.
@@ -93,7 +93,7 @@ be added here first, then marked `Committed` or `Pushed` after the git action.
 
 ## 2026-05-28 01:29:34 WITA - Make Agent Skills Removable
 
-- Status: Uncommitted
+- Status: Pushed
 - Areas changed: Agent settings modal skill chips, Skill Browser agent-class action, agent preferred skill state, Skill Browser styling, changelog
 - Summary: Turn already-added agent class skill chips into minus-icon remove buttons, and make the Skill Browser's agent-class action toggle to a red `Remove` button for skills that are already attached so additions can be undone from either surface.
 - Verification: `pnpm exec eslint src/features/dashboard/views/chat/AgentSettingsModal.tsx src/features/dashboard/views/chat/SkillBrowserModal.tsx src/features/dashboard/hooks/use-agent-settings-controller.tsx src/features/dashboard/DashboardApp.tsx --max-warnings=999` passed with existing warnings only; `pnpm exec tsc --noEmit --pretty false --skipLibCheck`; `git diff --check -- src/features/dashboard/views/chat/AgentSettingsModal.tsx src/features/dashboard/views/chat/SkillBrowserModal.tsx src/features/dashboard/hooks/use-agent-settings-controller.tsx src/features/dashboard/DashboardApp.tsx src/app/fleet.module.css CHANGELOG.md`.
@@ -101,7 +101,7 @@ be added here first, then marked `Committed` or `Pushed` after the git action.
 
 ## 2026-05-28 01:29:42 WITA - Add Guided Provider Setup
 
-- Status: Uncommitted
+- Status: Pushed
 - Areas changed: Agent settings modal provider setup, Hermes runtime integration actions, shared hive env loading, fleet modal styling, changelog
 - Summary: Replace the Add Provider refresh stub with a reusable `GuidedProviderSetup` view inside the add-agent/add-model modal. The guide loads Hermes provider setup options, detects credential readiness from the shared hive env without exposing secrets, adds the selected provider/model directly to Hermes config without switching Hermes' active default provider, refreshes model options, and returns to the add-agent view when complete or canceled.
 - Verification: `pnpm exec eslint src/features/dashboard/views/chat/GuidedProviderSetup.tsx src/features/dashboard/views/chat/AgentSettingsModal.tsx src/lib/services/runtime-integrations.ts --max-warnings=999` passed with one pre-existing unused prop warning in `AgentSettingsModal.tsx`; `pnpm exec tsc --noEmit --pretty false --skipLibCheck`; `node --check scripts/agent-telemetry-collector.mjs`; live `http://localhost:5020/api/runtimes/hermes/integrations` smoke loaded provider setup options, confirmed OpenRouter credential readiness from the shared hive env, added OpenRouter with `anthropic/claude-opus-4.7`, restored and preserved Hermes' active `openai-codex` / `gpt-5.5` default, and refreshed Hermes model selection with both OpenAI Codex and OpenRouter visible; Browser QA on the managed `http://localhost:5020` app opened Add agent, clicked Add provider, confirmed the old refresh copy was gone, completed the guided OpenRouter setup, and confirmed the guide closed back to the add-agent view with refreshed OpenRouter/model options.
@@ -109,7 +109,7 @@ be added here first, then marked `Committed` or `Pushed` after the git action.
 
 ## 2026-05-28 01:17:48 WITA - Add Agent Class Skill Picker
 
-- Status: Uncommitted
+- Status: Pushed
 - Areas changed: Agent settings modal, shared Skill Browser selection mode, agent preferred skill state, Skill Browser styling, changelog
 - Summary: Add a dotted `Add Skill` badge beside the seeded shared-brain skill chips in the agent class detail panel. Opening it reuses the shared Skill Browser in agent-class mode, filters to skills already in the shared brain, and lets users add those slugs to the agent class preferred skills while marking already-added skills.
 - Verification: `pnpm exec eslint src/features/dashboard/views/chat/AgentSettingsModal.tsx src/features/dashboard/views/chat/SkillBrowserModal.tsx src/features/dashboard/hooks/use-agent-settings-controller.tsx src/features/dashboard/DashboardApp.tsx --max-warnings=999` passed with existing warnings only; `pnpm exec tsc --noEmit --pretty false --skipLibCheck`; `git diff --check -- src/features/dashboard/views/chat/AgentSettingsModal.tsx src/features/dashboard/views/chat/SkillBrowserModal.tsx src/features/dashboard/hooks/use-agent-settings-controller.tsx src/features/dashboard/DashboardApp.tsx src/app/fleet.module.css CHANGELOG.md`; Playwright smoke loaded the managed `http://127.0.0.1:5020/?view=agents` server successfully, but no add-agent affordance was present in that live state to click through.
@@ -125,7 +125,7 @@ be added here first, then marked `Committed` or `Pushed` after the git action.
 
 ## 2026-05-28 01:10 WITA - Avoid Nango Host Port Collisions
 
-- Status: Uncommitted
+- Status: Pushed
 - Areas changed: Nango setup service, telemetry collector Nango setup endpoint, changelog
 - Summary: Make one-click Nango setup avoid common host port conflicts by mapping Nango Postgres to host port `15432`, remapping Redis to host port `16379`, and running `docker compose down --remove-orphans` before retrying after a partial compose failure.
 - Verification: `node --check scripts/agent-telemetry-collector.mjs`; `pnpm exec eslint src/lib/services/integrations/nango-host.ts --max-warnings=0`; `pnpm exec tsc --noEmit --pretty false --skipLibCheck`; `git diff --check -- scripts/agent-telemetry-collector.mjs src/lib/services/integrations/nango-host.ts CHANGELOG.md`.
@@ -133,7 +133,7 @@ be added here first, then marked `Committed` or `Pushed` after the git action.
 
 ## 2026-05-28 01:02:01 WITA - Add Mobile Chat History Drawer
 
-- Status: Uncommitted
+- Status: Pushed
 - Areas changed: Chat mobile layout, route menu mobile layout, changelog
 - Summary: Make the mobile Chat route full-screen by default, add a top-left chat-history FAB that slides the chat panel right while the history drawer slides in from the left, add a drawer close button, close the drawer after selecting chat entries or starting chats, and move the global route menu to a top-right full-screen overlay so it does not collide with the chat drawer.
 - Verification: `pnpm exec eslint src/features/dashboard/views/ChatPanel.tsx src/features/dashboard/views/DashboardHeader.tsx --max-warnings=999`; `git diff --check -- src/features/dashboard/views/ChatPanel.tsx src/app/chat.module.css src/features/dashboard/views/DashboardHeader.tsx src/app/globals.css CHANGELOG.md`; mobile Playwright at `390x844` against throwaway `http://localhost:5022/?view=chat` showed the chat history drawer open at `328px` wide, the chat surface shifted right, the history close control visible in the drawer, the route FAB on the top-right, document width equal to viewport width, and no hydration errors.
@@ -141,7 +141,7 @@ be added here first, then marked `Committed` or `Pushed` after the git action.
 
 ## 2026-05-28 00:58:36 WITA - Explain Dev Heap Pressure
 
-- Status: Uncommitted
+- Status: Pushed
 - Areas changed: Next dev server memory cap, dev memory guard thresholds, memory telemetry API/types, Memory diagnostics panel, changelog
 - Summary: Raise the default Next dev V8 old-space cap from 1536 MB to 3072 MB, align the dev memory guard thresholds with the larger heap budget, stop forcing manual GC by default when heap pressure is already high, persist memory pressure and telemetry samples to local JSONL files, coalesce/cache repeated recent-directory vault scans, and add V8 heap-space/context diagnostics so retained old-space, large-object space, code space, heap-limit percentage, native contexts, and detached contexts are visible in telemetry and promoted into suspects.
 - Verification: `node --check scripts/dev-server.mjs`; `pnpm exec eslint scripts/dev-server.mjs src/app/api/memory-telemetry/route.ts src/lib/services/dev-memory-guard.ts src/lib/services/runtime-memory-telemetry.ts src/lib/services/obsidian/recent-directories.ts src/lib/types/memory-telemetry.ts src/features/dashboard/views/MemoryTelemetryPanel.tsx --max-warnings=999`; `pnpm exec tsc --noEmit --pretty false --skipLibCheck`; `git diff --check -- scripts/dev-server.mjs src/app/api/memory-telemetry/route.ts src/lib/services/dev-memory-guard.ts src/lib/services/runtime-memory-telemetry.ts src/lib/services/obsidian/recent-directories.ts src/lib/types/memory-telemetry.ts src/features/dashboard/views/MemoryTelemetryPanel.tsx CHANGELOG.md`; after webpack rejected both `node:fs` and plain `fs` in the instrumentation import trace, `src/lib/services/dev-memory-guard.ts` was changed to avoid static Node built-in imports entirely and load diagnostics APIs only at runtime; `pnpm exec eslint src/lib/services/dev-memory-guard.ts src/instrumentation.ts --max-warnings=999`; `pnpm exec tsc --noEmit --pretty false --skipLibCheck`; `pnpm exec next build --webpack` did not reproduce the original scheme error before it was stopped after a long compile to avoid adding more memory pressure.
@@ -149,7 +149,7 @@ be added here first, then marked `Committed` or `Pushed` after the git action.
 
 ## 2026-05-28 00:50:32 WITA - Keep My Apps Fullscreen In Place
 
-- Status: Uncommitted
+- Status: Pushed
 - Areas changed: My Apps selected app view, Z-Image launch URL handling, changelog
 - Summary: Change the Live app fullscreen control from an external new-tab link into an in-place iframe expansion with an exit control and Escape handling, and pass Z-Image Studio its current Link origin as the backend API base so local LoRAs load through the app-proxy path instead of falling back to the wrong local collector port.
 - Verification: `pnpm exec eslint src/features/dashboard/views/MyAppsPanel.tsx --max-warnings=999`; Playwright against `http://localhost:5020/?view=my-apps` confirmed Z-Image iframe `src` includes `?api=http%3A%2F%2F127.0.0.1%3A8788`, fullscreen keeps one iframe and expands it to the viewport with an Exit control; direct Playwright against that Z-Image URL confirmed Local LoRAs render entries including `Disney_IZT_ATK_V1_000000750.safetensors` and history loads through `200` API calls.
@@ -157,7 +157,7 @@ be added here first, then marked `Committed` or `Pushed` after the git action.
 
 ## 2026-05-28 00:45:30 WITA - Put Mobile Drawer Close Top Right
 
-- Status: Uncommitted
+- Status: Pushed
 - Areas changed: Dashboard mobile drawer CSS, changelog
 - Summary: Move the mobile drawer close affordance to a real button in the drawer header's top-right, keep the closed-state menu FAB fixed at the top-left of the viewport, and remove the native `<details open>` state that caused the hydration mismatch overlay.
 - Verification: `pnpm exec eslint src/features/dashboard/views/DashboardHeader.tsx --max-warnings=999`; `git diff --check -- src/features/dashboard/views/DashboardHeader.tsx src/app/globals.css CHANGELOG.md`; code inspection confirmed the drawer shell is now a React-controlled `div` with no native `open` attribute, the drawer/overlay use `hidden` from React state, and the close button is rendered inside `.mobileRouteDrawerHeader`. Browser verification was attempted on a throwaway `5021` server after `5020` was unavailable, but that server returned empty responses and was stopped.
@@ -165,7 +165,7 @@ be added here first, then marked `Committed` or `Pushed` after the git action.
 
 ## 2026-05-28 00:26:42 WITA - Fix Link-Proxied App Assets
 
-- Status: Uncommitted
+- Status: Pushed
 - Areas changed: Hivemind Link peer proxy, My Apps embedded webviews, changelog
 - Summary: Teach Hivemind Link to route root-relative app asset/API requests back through the referring `/peer/.../app-proxy/<port>/` path, so Next.js apps like Z-Image Studio can load their `/_next/...` bundles instead of freezing on the server-rendered unlock loader.
 - Verification: `go test ./cmd/hivemind-linkd`; `pnpm exec eslint src/features/dashboard/views/MyAppsPanel.tsx --max-warnings=999`; `git diff --check -- cmd/hivemind-linkd/main.go cmd/hivemind-linkd/main_test.go src/features/dashboard/views/MyAppsPanel.tsx CHANGELOG.md`; rebuilt `bin/hivemind-linkd` and restarted `com.hivemindos.linkd.agent`; `curl` with a `/peer/.../app-proxy/8788/` referer now returns `200 application/javascript` for a root `/_next/...` chunk; Playwright against the real Z-Image app-proxy URL now advances from `Checking unlock…` to the locked-password screen with no console, page, request, or HTTP errors.
@@ -173,7 +173,7 @@ be added here first, then marked `Committed` or `Pushed` after the git action.
 
 ## 2026-05-27 23:48:30 WITA - Restore ClawCode Mobile Icon
 
-- Status: Uncommitted
+- Status: Pushed
 - Areas changed: My Apps icon proxy, My Apps fleet API, changelog
 - Summary: Preserve Hivemind Link peer prefixes when rewriting collector app URLs, serve collector app icons through a same-origin dashboard proxy so they load from iPhone/Tailscale Serve, keep the real Claw Code Mobile app on port `8081`, and carry over the branded gateway icon instead of Expo's generic cube favicon.
 - Verification: `pnpm exec eslint src/app/api/fleet/apps/route.ts src/app/api/fleet/app-icon/route.ts --max-warnings=999`; `pnpm typecheck`; live `/api/fleet/apps` returns Claw Code Mobile on port `8081` with the branded gateway asset behind a same-origin `/api/fleet/app-icon?...` URL; the proxied icon endpoint returns `200 image/png`; mobile Playwright render finds Claw Code Mobile's image loaded with natural size `1024x1024`.
@@ -181,7 +181,7 @@ be added here first, then marked `Committed` or `Pushed` after the git action.
 
 ## 2026-05-27 23:35:53 WITA - Add Mobile Route Drawer
 
-- Status: Uncommitted
+- Status: Pushed
 - Areas changed: Dashboard header, dashboard global mobile CSS, changelog
 - Summary: Replace the phone masthead with a floating menu button and native-style left route drawer so the app content can use the full viewport while desktop keeps the existing masthead layout.
 - Verification: `pnpm exec eslint src/features/dashboard/views/DashboardHeader.tsx --max-warnings=999`; `git diff --check -- src/features/dashboard/views/DashboardHeader.tsx src/app/globals.css CHANGELOG.md`; mobile Playwright at `390x844` against `http://127.0.0.1:5020` showed `commandMain` starts at `0px`, the masthead is hidden, document width equals viewport width, the native drawer opens with 10 routes and backdrop, the same control closes it, the menu trigger is a fixed `54px` top-left FAB that stays pinned during scroll, and desktop `1440x900` still shows the `92px` masthead with the mobile shell hidden.
@@ -189,7 +189,7 @@ be added here first, then marked `Committed` or `Pushed` after the git action.
 
 ## 2026-05-27 23:16:00 WITA - Keep Online Link Peers In Fleet
 
-- Status: Uncommitted
+- Status: Pushed
 - Areas changed: Fleet discovery, Tailscale devices API, changelog
 - Summary: Stop treating online Hivemind Link peers with the same physical Mac base name as stale self duplicates, so `local-2` remains visible while the dashboard's own Link node is `local-1`.
 - Verification: `pnpm exec eslint src/app/api/fleet/discover/route.ts src/app/api/tailscale/devices/route.ts --max-warnings=999` passed with existing unused `isMobileDevice` warnings; `pnpm exec tsc --noEmit --pretty false --skipLibCheck`; `git diff --check -- src/app/api/fleet/discover/route.ts src/app/api/tailscale/devices/route.ts CHANGELOG.md`; live Link status showed `hivemindos-liams-macbook-pro-local-2` online at `100.84.93.114` with a reachable collector, while current `5020` discovery omitted it before this fix; temporary Next server verification was skipped because the managed `5020` dev server already owns the Next dev lock for this checkout.
@@ -197,7 +197,7 @@ be added here first, then marked `Committed` or `Pushed` after the git action.
 
 ## 2026-05-27 23:07:14 WITA - Fit Brain Tabs On Mobile
 
-- Status: Uncommitted
+- Status: Pushed
 - Areas changed: Wallet/Vault segmented control CSS, changelog
 - Summary: Make the Brain view's Vault segmented control switch to a full-width two-column layout on phone screens so all four tabs remain visible without horizontal clipping.
 - Verification: Mobile Playwright smoke at `390x844` against `http://localhost:5020/?view=vault` shows the tablist contained from `37px` to `353px`, all four labels visible in a two-by-two grid, and document/body scroll width equal to the `390px` viewport.
@@ -205,7 +205,7 @@ be added here first, then marked `Committed` or `Pushed` after the git action.
 
 ## 2026-05-27 22:47:57 WITA - Fix Mobile Dashboard Header
 
-- Status: Uncommitted
+- Status: Pushed
 - Areas changed: Dashboard global header CSS, changelog
 - Summary: Let the dashboard masthead grow to its real height on mobile, remove the inherited oversized logo-button minimum height, and account for iOS safe-area inset so the header is fully visible above the Fleet dispatch content.
 - Verification: Mobile Playwright smoke at `390x844` against `http://localhost:5020/?view=agents` shows the header at `163px` tall, the brand/sync/tabs all inside the header, and the Fleet `Hivemind Dispatch · Fleet` masthead starting below it at `213px`.
@@ -213,7 +213,7 @@ be added here first, then marked `Committed` or `Pushed` after the git action.
 
 ## 2026-05-27 19:55:15 WITA - Stabilize Fleet Roster Dedupe
 
-- Status: Uncommitted
+- Status: Pushed
 - Areas changed: Fleet discovery, dashboard fleet identity merge, changelog
 - Summary: Collapse Hivemind Link `local-1`/`local-2` self duplicates, stop preserving missing setup-target machines just because they look like Macs, and give remote collector health checks enough time through the Link peer proxy so live Ubuntu machines do not get mislabeled as bridge setup targets.
 - Verification: `pnpm typecheck`; live `http://localhost:5020/api/fleet/discover?includeSnapshots=0` returns only `This Mac` and `hivemindos-ubuntu-8gb-hel1-2`, both with `collector: "ready"`; Browser verification on `http://localhost:5020` shows the Fleet roster with only `This Mac` and `ubuntu-8gb-hel1-2` and no Tailscale/agent bridge warnings.
@@ -229,7 +229,7 @@ be added here first, then marked `Committed` or `Pushed` after the git action.
 
 ## 2026-05-27 19:27:43 WITA - Preserve Collector Asset Icons
 
-- Status: Uncommitted
+- Status: Pushed
 - Areas changed: My Apps fleet API, changelog
 - Summary: Validate collector `/app-assets/...` icon URLs with ranged GET requests instead of HEAD so valid collector-served app icons like ClawCode Mobile's PNG are not discarded as unreachable.
 - Verification: `pnpm exec eslint src/app/api/fleet/apps/route.ts --max-warnings=999`; `git diff --check -- src/app/api/fleet/apps/route.ts CHANGELOG.md`; live `http://localhost:5020/api/fleet/apps` returns Claw Code Mobile with `http://hivemindos-ubuntu-8gb-hel1-2.tail629894.ts.net:8787/app-assets/3cbd034c95a4b48e194681f0` while keeping ComfyUI and OpenClaw Control icons.
@@ -237,7 +237,7 @@ be added here first, then marked `Committed` or `Pushed` after the git action.
 
 ## 2026-05-27 19:01 WITA - Fix Fleet Dispatch Column Overflow
 
-- Status: Uncommitted
+- Status: Pushed
 - Areas changed: Fleet dispatch rail, fleet card wrapping, changelog
 - Summary: Keep the Fleet dispatch rail from creating horizontal scroll and allow dispatch messages, story metadata, long task text, and tomorrow brief copy to wrap inside the right column.
 - Verification: `pnpm exec eslint src/components/fleet/FleetView.tsx --max-warnings=999`; `pnpm exec tsc --noEmit --pretty false --skipLibCheck`; `git diff --check -- src/components/fleet/FleetView.tsx src/components/fleet/fleet-tokens.module.css CHANGELOG.md`; Playwright checked `http://127.0.0.1:5020/?view=agents` at 518px width with document scroll width equal to viewport width and no Fleet root horizontal overflow while discovery was loading.
@@ -245,7 +245,7 @@ be added here first, then marked `Committed` or `Pushed` after the git action.
 
 ## 2026-05-27 18:34:24 WITA - Validate My Apps Icon URLs
 
-- Status: Uncommitted
+- Status: Pushed
 - Areas changed: My Apps fleet API, changelog
 - Summary: Validate discovered icon URLs before returning them to the launcher, discard dead local proxy URLs such as `localhost:8791`, and fall back to known app icons like ComfyUI or local HivemindOS/OpenClaw assets instead of showing initials.
 - Verification: `pnpm exec eslint src/app/api/fleet/apps/route.ts --max-warnings=999`; `git diff --check -- src/app/api/fleet/apps/route.ts CHANGELOG.md`; live `http://localhost:5020/api/fleet/apps` returns ComfyUI with `https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons/svg/comfyui.svg` and OpenClaw Control with `/icons/runtimes/openclaw.svg`, while Z-Image Studio remains without an icon.
@@ -253,7 +253,7 @@ be added here first, then marked `Committed` or `Pushed` after the git action.
 
 ## 2026-05-27 18:22:11 WITA - Add Fleet Loading State
 
-- Status: Uncommitted
+- Status: Pushed
 - Areas changed: Fleet dashboard view, fleet lazy-loading fallback, fleet discovery state, changelog
 - Summary: Track initial fleet discovery loading, render real Fleet fallbacks while both the outer Agents panel and inner FleetView chunks mount, show structured roster/constellation/dispatch placeholders when no machines have loaded yet, and keep a visible scan overlay during refreshes with cached fleet data.
 - Verification: `pnpm exec eslint src/components/fleet/FleetView.tsx src/features/dashboard/views/AgentsPanel.tsx src/features/dashboard/DashboardApp.tsx --max-warnings=999` passed with existing warnings in `DashboardApp.tsx` and one existing unused eslint-disable warning in `AgentsPanel.tsx`; `pnpm exec tsc --noEmit --pretty false --skipLibCheck`; `git diff --check -- src/components/fleet/FleetView.tsx src/features/dashboard/views/AgentsPanel.tsx src/features/dashboard/DashboardApp.tsx CHANGELOG.md`.
@@ -261,7 +261,7 @@ be added here first, then marked `Committed` or `Pushed` after the git action.
 
 ## 2026-05-27 18:13:12 WITA - Prefer Hosted App Collectors
 
-- Status: Uncommitted
+- Status: Pushed
 - Areas changed: Fleet discovery machine dedupe, changelog
 - Summary: Prefer collectors that advertise hosted app discovery when deduplicating self/link records for the same physical machine, so My Apps does not collapse onto a self collector that lacks `/apps` and show an empty launcher.
 - Verification: `pnpm exec eslint src/app/api/fleet/discover/route.ts --max-warnings=999` passed with one existing `isMobileDevice` warning; `git diff --check -- src/app/api/fleet/discover/route.ts CHANGELOG.md`; live `http://localhost:5020/api/fleet/discover?includeSnapshots=0` now keeps hosted-app-capable link collectors, and live `http://localhost:5020/api/fleet/apps` returns 5 apps including ComfyUI, Z-Image Studio, OpenClaw Control, and Claw Code Mobile.
@@ -269,7 +269,7 @@ be added here first, then marked `Committed` or `Pushed` after the git action.
 
 ## 2026-05-27 18:11:18 WITA - Add My Apps Loading State
 
-- Status: Uncommitted
+- Status: Pushed
 - Areas changed: My Apps dashboard view, dashboard route initialization, changelog
 - Summary: Replace the blank initial My Apps scan area with a centered Tailnet scanning animation and launcher-icon skeleton grid while the app list is loading, and allow direct `?view=my-apps` loads to open the launcher.
 - Verification: `pnpm exec eslint src/app/page.tsx src/features/dashboard/views/MyAppsPanel.tsx --max-warnings=999`; `pnpm exec tsc --noEmit --pretty false --skipLibCheck`; `git diff --check -- src/app/page.tsx src/features/dashboard/views/MyAppsPanel.tsx CHANGELOG.md`. Browser verification against Liam's managed `5020` dev server was attempted, but the current server session rendered only the dashboard shell for utility views; a separate test server on `5021` was not started because Next detected the managed dev lock on `5020`.
@@ -285,7 +285,7 @@ be added here first, then marked `Committed` or `Pushed` after the git action.
 
 ## 2026-05-27 17:18:00 WITA - Wait For Collector Restart On Update
 
-- Status: Uncommitted
+- Status: Pushed
 - Areas changed: Telemetry collector health, fleet update verification, changelog
 - Summary: Include collector process start time in `/health` and require dashboard-triggered updates to verify against a post-update collector process before showing `Updated!`.
 - Verification: `node --check scripts/agent-telemetry-collector.mjs`; `pnpm exec eslint src/app/api/fleet/update/route.ts scripts/agent-telemetry-collector.mjs --max-warnings=999`; `pnpm exec tsc --noEmit --pretty false --skipLibCheck`; `git diff --check -- scripts/agent-telemetry-collector.mjs src/app/api/fleet/update/route.ts CHANGELOG.md`.
@@ -293,7 +293,7 @@ be added here first, then marked `Committed` or `Pushed` after the git action.
 
 ## 2026-05-27 17:06:59 WITA - Open Fleet Priority Headline Details
 
-- Status: Uncommitted
+- Status: Pushed
 - Areas changed: Fleet priority headline, fleet alert detail modal, fleet snapshot errors, changelog
 - Summary: Make the priority headline alert card clickable and keyboard accessible, keep the dismiss button from also opening the card, wrap long diagnostics inside the headline card, show the full alert/error text in a compact centered modal, and turn remote bridge `fetch failed` snapshots into endpoint-specific diagnostics.
 - Verification: `pnpm exec eslint src/components/fleet/FleetView.tsx src/app/api/fleet/snapshot/route.ts --max-warnings=999`; `pnpm exec tsc --noEmit --pretty false --skipLibCheck`; `git diff --check -- src/components/fleet/FleetView.tsx src/components/fleet/fleet-tokens.module.css src/app/api/fleet/snapshot/route.ts CHANGELOG.md`; Browser smoke on `http://localhost:5020/?view=agents` confirmed the Fleet view renders, though the live priority headline was clear at verification time so no active alert was available to click; screenshot review caught a long endpoint URL escaping the headline card, now fixed with explicit long-word wrapping.
@@ -301,7 +301,7 @@ be added here first, then marked `Committed` or `Pushed` after the git action.
 
 ## 2026-05-27 16:51:09 WITA - Render Chat History Markdown
 
-- Status: Uncommitted
+- Status: Pushed
 - Areas changed: Chat markdown renderer, chat sidebar history rows, changelog
 - Summary: Render inline markdown in compact chat history row titles and previews so bold, emphasis, and code snippets no longer appear as raw markdown syntax in the sidebar.
 - Verification: `pnpm exec eslint src/features/dashboard/ChatMarkdown.tsx src/features/dashboard/views/ChatPanel.tsx --max-warnings=999` passed with one existing unused eslint-disable warning in `ChatPanel.tsx`; `pnpm exec tsc --noEmit --pretty false --skipLibCheck`; `git diff --check -- src/features/dashboard/ChatMarkdown.tsx src/features/dashboard/views/ChatPanel.tsx CHANGELOG.md`; inline React render smoke confirmed `**maps-agency**` and `` `pnpm` `` render as `<strong>` and `<code>` in compact text, with markdown links reduced to plain text inside buttons.
@@ -309,7 +309,7 @@ be added here first, then marked `Committed` or `Pushed` after the git action.
 
 ## 2026-05-27 16:47:06 WITA - Bound Dev Server Memory Growth
 
-- Status: Uncommitted
+- Status: Pushed
 - Areas changed: Dev server launcher, update script, Next instrumentation, memory telemetry API/types/UI, changelog
 - Summary: Launch the local Next dev server with `--expose-gc`, cap V8 old-space at 1536 MB by default, install a development-only memory guard that collects garbage when RSS/heap/native buffers cross budget thresholds, collect once before memory telemetry samples so stale dev compiler buffers do not linger for hours, and show whether cleanup is active in the memory panel.
 - Verification: `node --check scripts/dev-server.mjs`; `bash -n scripts/update-hivemindos.sh`; `pnpm exec tsc --noEmit --pretty false --skipLibCheck`; `pnpm exec eslint src/lib/services/dev-memory-guard.ts src/instrumentation.ts src/app/api/memory-telemetry/route.ts src/lib/services/runtime-memory-telemetry.ts src/features/dashboard/views/MemoryTelemetryPanel.tsx scripts/dev-server.mjs --max-warnings=999`; `git diff --check -- scripts/dev-server.mjs scripts/update-hivemindos.sh src/lib/services/dev-memory-guard.ts src/instrumentation.ts src/app/api/memory-telemetry/route.ts src/lib/services/runtime-memory-telemetry.ts src/lib/types/memory-telemetry.ts src/features/dashboard/views/MemoryTelemetryPanel.tsx CHANGELOG.md`; clean throwaway dev server on port 5024 rendered `/` and `/?view=memory`, browser-smoked agents/kanban/scheduler/swarm/wallet/vault/chat/more/memory/integrations, and stayed around 1.26 GB dashboard RSS after all views; after repeated app/version, miroshark/status, fleet/discover, and fleet/snapshot checks, telemetry reported about 545 MB dashboard RSS and 422 MB Next RSS after cleanup.
@@ -317,7 +317,7 @@ be added here first, then marked `Committed` or `Pushed` after the git action.
 
 ## 2026-05-27 16:39:25 WITA - Add Chat Plan Act Mode
 
-- Status: Uncommitted
+- Status: Pushed
 - Areas changed: Chat composer UI, chat send controller, agent runtime chat route, chat styling, changelog
 - Summary: Add a subtle Plan/Act selector beside the chat input attachment button using the custom tooltip component, submit the selected mode with chat messages, inject runtime-neutral operating-mode context for every chat runtime, and forward the raw mode fields to generic HTTP runtimes that can consume them.
 - Verification: `pnpm exec eslint src/features/chat/chat-composer.tsx src/features/dashboard/views/ChatPanel.tsx src/features/dashboard/hooks/use-status-chat-input-controller.tsx src/app/api/chat/agent-runtime/route.ts --max-warnings=999` passed with existing warnings only; `pnpm exec tsc --noEmit --pretty false --skipLibCheck`; `git diff --check -- src/features/chat/chat-composer.tsx src/features/dashboard/views/ChatPanel.tsx src/features/dashboard/hooks/use-status-chat-input-controller.tsx src/app/api/chat/agent-runtime/route.ts src/app/chat.module.css CHANGELOG.md ASSIMILATION_LOG.md ASSIMILATION_LOG.jsonl`; Playwright against the existing managed `http://localhost:5020/?view=chat` confirmed no tooltip runtime error, found the mode button, opened the selector, selected Plan, and verified the selector sits 8px to the right of the attachment button; `python3 /Users/liam/.codex/skills/github-assimilator/scripts/verify_assimilation_manifest.py`.
@@ -333,7 +333,7 @@ be added here first, then marked `Committed` or `Pushed` after the git action.
 
 ## 2026-05-27 15:53:14 WITA - Hide Stale Fleet Update Actions
 
-- Status: Uncommitted
+- Status: Pushed
 - Areas changed: Fleet update button state derivation, changelog
 - Summary: Stop old update success/failure status from keeping a machine's Update button visible after fresh Fleet discovery shows the machine is already synced and all required bridge capabilities are present.
 - Verification: `pnpm exec eslint src/features/dashboard/hooks/use-dashboard-derived-state.tsx --max-warnings=999` passed with existing warnings only; `pnpm exec tsc --noEmit --pretty false --skipLibCheck`; `git diff --check -- src/features/dashboard/hooks/use-dashboard-derived-state.tsx CHANGELOG.md`; live `/api/fleet/discover` reports `hivemindos-liams-macbook-pro-local-2` at `57fa1ed -> 57fa1ed`, dirty false, with chat/env/skill capabilities present.
@@ -341,7 +341,7 @@ be added here first, then marked `Committed` or `Pushed` after the git action.
 
 ## 2026-05-27 15:48:07 WITA - Center Fleet Map Geography
 
-- Status: Uncommitted
+- Status: Pushed
 - Areas changed: Fleet map projection, fleet map view, changelog
 - Summary: Center the map viewport around projected fleet machines and arcs, fit the projection to the current fleet with a compressed scale so pins sit closer together, keep bee route animation synced to current fleet data, and render local Natural Earth 1:110m coastline traces so Asia/Pacific machines do not appear in blank atlas space.
 - Verification: `pnpm exec eslint src/components/fleet/map-view.tsx src/components/fleet/FleetView.tsx --max-warnings=999`; `pnpm exec tsc --noEmit --pretty false --skipLibCheck`; `git diff --check -- src/components/fleet/map-view.tsx src/components/fleet/data/ne_110m_coastline.ts CHANGELOG.md`; live `/api/fleet/discover?includeSnapshots=0` returned 3 ready machines for the current fleet.
@@ -349,7 +349,7 @@ be added here first, then marked `Committed` or `Pushed` after the git action.
 
 ## 2026-05-27 15:46:58 WITA - Drop Stale Fleet Duplicate Warnings
 
-- Status: Uncommitted
+- Status: Pushed
 - Areas changed: Dashboard fleet discovery merge logic, changelog
 - Summary: Remove preserved non-ready physical machine records when fresh discovery reports a ready HivemindOS Link node for the same host, so stale setup-target warnings clear automatically without a hard refresh or manual localStorage cleanup.
 - Verification: `pnpm exec eslint src/features/dashboard/dashboard-display-helpers.tsx --max-warnings=999`; `pnpm exec tsc --noEmit --pretty false --skipLibCheck`; `git diff --check -- src/features/dashboard/dashboard-display-helpers.tsx CHANGELOG.md`; live `/api/fleet/discover` still reports Ubuntu ready through the Link proxy.
@@ -405,7 +405,7 @@ be added here first, then marked `Committed` or `Pushed` after the git action.
 
 ## 2026-05-27 15:34:00 WITA - Add Hive Update Command
 
-- Status: Uncommitted
+- Status: Pushed
 - Areas changed: Setup scripts, uninstall scripts, update command shim, changelog
 - Summary: Add a `hive-update` command that runs the checkout update script from PATH, install it beside the existing hive env and transfer commands during setup, and mirror removal in uninstall.
 - Verification: `bash -n setup.sh uninstall.sh scripts/update-hivemindos.sh`; `sh -n scripts/hive-update`; `./scripts/hive-update --help`; `git diff --check -- scripts/hive-update setup.sh uninstall.sh setup.ps1 uninstall.ps1 CHANGELOG.md`; PowerShell parser not run because `pwsh` is not installed on this Mac.
@@ -413,7 +413,7 @@ be added here first, then marked `Committed` or `Pushed` after the git action.
 
 ## 2026-05-27 14:20:07 WITA - Add OpenRouter Adaptive Agent Model
 
-- Status: Uncommitted
+- Status: Pushed
 - Areas changed: Agent settings model selector, OpenRouter adaptive policy storage, OpenAI-compatible chat runtime routing, dashboard styling, assimilation manifest
 - Summary: Add an Adaptive model option with a Free badge whenever OpenRouter is the selected agent provider, show adaptive filters for input modalities, minimum context, categories, benchmark score floors, and paid fallback behavior, and resolve direct OpenAI-compatible OpenRouter adaptive chats against live free OpenRouter models.
 - Verification: `pnpm -s typecheck`; `pnpm -s exec eslint src/lib/types/agent-runtime.ts src/features/dashboard/agent-settings-types.ts src/features/dashboard/hooks/use-agent-controller.tsx src/features/dashboard/hooks/use-agent-settings-controller.tsx src/features/dashboard/views/chat/AgentSettingsModal.tsx src/app/api/chat/agent-runtime/route.ts src/app/fleet.module.css` passed with warnings only; temporary dev server on port 5022 returned `200 OK` for `/`; `python3 /Users/liam/.codex/skills/github-assimilator/scripts/verify_assimilation_manifest.py`; `git diff --check -- src/lib/types/agent-runtime.ts src/features/dashboard/agent-settings-types.ts src/features/dashboard/hooks/use-agent-controller.tsx src/features/dashboard/hooks/use-agent-settings-controller.tsx src/features/dashboard/views/chat/AgentSettingsModal.tsx src/app/api/chat/agent-runtime/route.ts src/app/fleet.module.css CHANGELOG.md ASSIMILATION.json`; full `pnpm -s lint` still fails on pre-existing `src/components/agents/AgentSelectionModal.tsx` react-hooks/set-state-in-effect errors.
@@ -429,7 +429,7 @@ be added here first, then marked `Committed` or `Pushed` after the git action.
 
 ## 2026-05-27 05:45:28 WITA - Add Tailnet My Apps View
 
-- Status: Uncommitted
+- Status: Pushed
 - Areas changed: More navigation, My Apps dashboard panel, fleet apps API, telemetry collector app discovery, dashboard view routing, assimilation manifest
 - Summary: Add a My Apps utility view that aggregates HTTP apps reported by ready Tailscale fleet collectors, opens local apps through localhost, and opens remote apps through each machine's Tailscale DNS name or IP.
 - Verification: `node --check scripts/agent-telemetry-collector.mjs`; `pnpm exec tsc --noEmit --pretty false --skipLibCheck`; `pnpm exec eslint src/app/api/fleet/apps/route.ts src/features/dashboard/MorePanel.tsx src/features/dashboard/views/MyAppsPanel.tsx src/features/dashboard/views/UtilityPanels.tsx src/features/dashboard/dashboard-types.ts src/features/dashboard/views/DashboardHeader.tsx src/features/dashboard/dashboard-light-helpers.tsx --max-warnings=999` passed with existing warnings; local listener parser smoke found 28 listening sockets and parsed sample ports including 5020 and 8787; temporary collector on `127.0.0.1:8789` returned `ok: true` with 15 discovered HTTP apps from `/apps`. A throwaway Next dev server on port 5024 was attempted, but Next refused because the managed 5020 dev server is already running, and it was not stopped.
@@ -437,7 +437,7 @@ be added here first, then marked `Committed` or `Pushed` after the git action.
 
 ## 2026-05-27 04:30:51 WITA - Add Base Wallet Claim Address Connect
 
-- Status: Uncommitted
+- Status: Pushed
 - Areas changed: Bankr rewards UI, wallet styling, changelog
 - Summary: Add a Connect Base wallet action to the Honey rewards claim rail that uses the browser wallet to fill the Bankr receiving address, attempts to switch the wallet to Base, and keeps the manual address field as the fallback path.
 - Verification: `pnpm exec tsc --noEmit --pretty false --skipLibCheck`; `pnpm exec eslint src/features/dashboard/views/WalletPanel.tsx src/app/wallets.module.css --max-warnings=999` passed with existing warnings; `git diff --check`; local claim without a recipient still fails with `Enter a Bankr EVM receiving address before claiming HIVE.`; local claim with a syntactically valid recipient still reaches the official worker and is blocked only by Bankr treasury daily-limit pricing enforcement.
@@ -445,7 +445,7 @@ be added here first, then marked `Committed` or `Pushed` after the git action.
 
 ## 2026-05-27 04:27:47 WITA - Remove Recipient Bankr Key Requirement
 
-- Status: Uncommitted
+- Status: Pushed
 - Areas changed: Honey ledger claim service, Honey ledger API, wallet controller, Bankr rewards UI, wallet styling, Honey ledger worker, changelog
 - Summary: Stop using a recipient Bankr API key to discover the claiming wallet, accept a Bankr EVM receiving address instead, validate it before submitting the claim, save that address locally in the browser for repeat claims, and return the treasury Bankr transfer error from the official worker.
 - Verification: `pnpm exec tsc --noEmit --pretty false --skipLibCheck`; `pnpm --dir workers/honey-ledger typecheck`; `pnpm exec eslint src/lib/services/wallet/honey-ledger.ts src/app/api/honey-ledger/route.ts src/features/dashboard/hooks/use-wallet-files-controller.tsx src/features/dashboard/views/WalletPanel.tsx src/app/wallets.module.css --max-warnings=999` passed with existing warnings; `pnpm --dir workers/honey-ledger run deploy`; local claim without a recipient and with an invalid recipient both fail with `Enter a Bankr EVM receiving address before claiming HIVE.`; local claim with a syntactically valid recipient reaches the official worker and is blocked by Bankr treasury security with `Could not determine the USD value of this transaction; the daily limit could not be enforced. Disable the daily limit in Security settings if you want to proceed.`; ledger readback still reports `availableHoney: 0.000411` and `hiveBalance: 0`.
@@ -453,7 +453,7 @@ be added here first, then marked `Committed` or `Pushed` after the git action.
 
 ## 2026-05-27 04:22:03 WITA - Reuse Bankr CLI Key For Honey Claims
 
-- Status: Uncommitted
+- Status: Pushed
 - Areas changed: Honey ledger claim service, changelog
 - Summary: Let the Honey-to-Bankr-HIVE claim path reuse the local Bankr CLI API key from `~/.bankr/config.json` when `BANKR_API_KEY` is not set in the app environment, so local users do not have to duplicate their recipient Bankr key. Superseded by the receiving-address claim flow above.
 - Verification: `pnpm exec tsc --noEmit --pretty false --skipLibCheck`; `curl -sS --max-time 90 -X POST http://localhost:5021/api/honey-ledger -H 'Content-Type: application/json' -d '{"action":"claim-bankr-hive"}'` reached Bankr with the CLI key and was blocked by Bankr with `IP address not allowed for this API key`; direct worker no-Honey smoke returned `No Honey is ready to claim.`
@@ -461,7 +461,7 @@ be added here first, then marked `Committed` or `Pushed` after the git action.
 
 ## 2026-05-27 04:17:49 WITA - Fix Nested CSS Import Parse Failure
 
-- Status: Uncommitted
+- Status: Pushed
 - Areas changed: Global CSS imports, root layout font links, changelog
 - Summary: Remove duplicate Tailwind and animation imports from `nlux-base.css`, stop importing the starter base stylesheet into the app cascade, and move Google Fonts out of CSS `@import` into document `<link>` tags so Turbopack/PostCSS never sees late `@import` rules after generated CSS.
 - Verification: `pnpm exec eslint src/app/layout.tsx src/features/dashboard/views/MemoryTelemetryPanel.tsx src/lib/services/runtime-memory-telemetry.ts --max-warnings=999`; `pnpm exec tsc --noEmit --pretty false --skipLibCheck`; `git diff --check -- scripts/dev-server.mjs scripts/update-hivemindos.sh src/app/globals.css src/app/nlux-base.css src/app/layout.tsx src/features/dashboard/views/MemoryTelemetryPanel.tsx src/lib/services/runtime-memory-telemetry.ts CHANGELOG.md`; temporary webpack dev server on port 5023 returned `200 OK` for `/?view=memory` without the CSS import parse error.
@@ -469,7 +469,7 @@ be added here first, then marked `Committed` or `Pushed` after the git action.
 
 ## 2026-05-27 04:14:38 WITA - Lower Next Dev Memory Pressure
 
-- Status: Uncommitted
+- Status: Pushed
 - Areas changed: Dev server launcher, update restart path, changelog
 - Summary: Keep dashboard dev startup on webpack because Turbopack spawned enough compiler workers to push total RSS toward the 5 GB guard at startup, but disable dev source maps unless `NEXT_DEV_SOURCE_MAPS=1` is set. `HIVEMINDOS_NEXT_DEV_BUNDLER=turbo` or `NEXT_DEV_BUNDLER=turbo` remains available for local debugging experiments, while the default avoids the immediate multi-process RSS spike.
 - Verification: `node --check scripts/dev-server.mjs`; `bash -n scripts/update-hivemindos.sh`; `node scripts/dev-server.mjs --help`; temporary `next dev --webpack --disable-source-maps -p 5023` returned `200 OK` for `/?view=memory` and reported about 1.66 GB dashboard RSS after initial compile instead of the Turbopack worker tree's near-5 GB startup total.
@@ -477,7 +477,7 @@ be added here first, then marked `Committed` or `Pushed` after the git action.
 
 ## 2026-05-27 04:04:03 WITA - Clarify Memory Telemetry Composition
 
-- Status: Uncommitted
+- Status: Pushed
 - Areas changed: Memory telemetry panel composition chart, metric labels, suspect detection, changelog
 - Summary: Add a dashboard RSS donut chart that separates the Next.js server slice from other dashboard processes such as parents, wrappers, or compiler workers; make the Next RSS card show its percentage of the dashboard total, rename the timeline to Dashboard RSS samples, label heap/external memory as V8 logical heap and native buffers, keep ArrayBuffer memory from being double-counted, and surface a suspect when V8 logical heap greatly exceeds resident RSS.
 - Verification: `pnpm exec eslint src/features/dashboard/views/MemoryTelemetryPanel.tsx src/lib/services/runtime-memory-telemetry.ts src/lib/types/memory-telemetry.ts --max-warnings=999`; `pnpm exec tsc --noEmit --pretty false --skipLibCheck`; `git diff --check -- src/features/dashboard/views/MemoryTelemetryPanel.tsx src/lib/services/runtime-memory-telemetry.ts CHANGELOG.md`.
@@ -485,7 +485,7 @@ be added here first, then marked `Committed` or `Pushed` after the git action.
 
 ## 2026-05-27 03:38:12 WITA - Move Bankr Claim Treasury To Official Worker
 
-- Status: Uncommitted
+- Status: Pushed
 - Areas changed: Honey ledger worker, Honey ledger client service, worker config, Honey ledger docs, architecture docs, changelog
 - Summary: Move Honey-to-Bankr-HIVE settlement into the official Cloudflare Honey ledger worker so clones only submit a recipient Bankr EVM address, while the funded `HONEY_REWARD_BANKR_API_KEY` treasury secret stays in Worker secrets; the worker transfers HIVE, then spends Honey only after Bankr returns a transaction hash.
 - Verification: `pnpm --dir workers/honey-ledger typecheck`; `pnpm exec eslint src/lib/services/wallet/honey-ledger.ts src/app/api/honey-ledger/route.ts src/features/dashboard/hooks/use-wallet-files-controller.tsx src/features/dashboard/views/WalletPanel.tsx src/components/wallet/AgentWalletCard.tsx src/features/dashboard/DashboardApp.tsx src/features/dashboard/hooks/use-dashboard-derived-state.tsx --max-warnings=999` passed with existing warnings; `pnpm exec tsc --noEmit --pretty false --skipLibCheck`; `pnpm --dir workers/honey-ledger run deploy`; direct worker no-Honey smoke returned `No Honey is ready to claim.`, proving the deployed worker has the treasury secret configured and reaches balance validation; local dashboard claim was blocked by an unrelated dev CSS compile error in `src/app/globals.css`; local Bankr CLI key exists but Bankr rejected it with `IP address not allowed for this API key`.
@@ -493,7 +493,7 @@ be added here first, then marked `Committed` or `Pushed` after the git action.
 
 ## 2026-05-27 03:29:52 WITA - Configure HIVE Token Address
 
-- Status: Uncommitted
+- Status: Pushed
 - Areas changed: Local app environment, changelog
 - Summary: Set the local HIVE ERC20 token address used by Honey-to-Bankr-HIVE claims.
 - Verification: `./scripts/hive-env-add --scope app --no-backup --no-tailnet-sync HIVE_TOKEN_ADDRESS=0xA382c83e2a3B79368f372c2EB9b6925ffAf45bA3`; `curl -sS --max-time 20 -X POST http://127.0.0.1:5020/api/honey-ledger -H 'Content-Type: application/json' -d '{"action":"claim-bankr-hive"}'` now advances past token-address validation and fails on the missing `BANKR_API_KEY`, leaving Honey untouched.
@@ -501,7 +501,7 @@ be added here first, then marked `Committed` or `Pushed` after the git action.
 
 ## 2026-05-27 03:27:47 WITA - Wire Honey Claims To Bankr Transfers
 
-- Status: Uncommitted
+- Status: Pushed
 - Areas changed: Honey ledger service, Honey ledger API, wallet controller, wallet rewards panel, wallet styling, per-agent wallet card, changelog
 - Summary: Add a real Honey-to-Bankr-HIVE claim path that resolves the user's Bankr EVM wallet, sends HIVE from the configured Bankr reward treasury through `/wallet/transfer`, and only spends Honey in the ledger after Bankr returns a transaction hash; missing Bankr keys or HIVE token address now fail the claim without touching Honey.
 - Verification: `node -e 'for (const k of ["BANKR_API_KEY","HONEY_REWARD_BANKR_API_KEY","BANKR_REWARD_TREASURY_API_KEY","HIVE_TOKEN_ADDRESS"]) console.log(`${k}=${process.env[k]?"present":"missing"}`)'` confirmed the current shell is missing the required claim env; `curl -sS --max-time 20 -X POST http://127.0.0.1:5020/api/honey-ledger -H 'Content-Type: application/json' -d '{"action":"claim-bankr-hive"}'` failed with `Set HIVE_TOKEN_ADDRESS before claiming Bankr HIVE.`; `curl -fsS --max-time 20 http://127.0.0.1:5020/api/honey-ledger` still reports `availableHoney: 0.000411` and `hiveBalance: 0`; `pnpm exec eslint src/lib/services/wallet/honey-ledger.ts src/app/api/honey-ledger/route.ts src/features/dashboard/hooks/use-wallet-files-controller.tsx src/features/dashboard/views/WalletPanel.tsx src/components/wallet/AgentWalletCard.tsx src/features/dashboard/DashboardApp.tsx src/features/dashboard/hooks/use-dashboard-derived-state.tsx --max-warnings=999` passed with existing warnings; `pnpm exec tsc --noEmit --pretty false --skipLibCheck`.
@@ -509,7 +509,7 @@ be added here first, then marked `Committed` or `Pushed` after the git action.
 
 ## 2026-05-27 02:05:15 WITA - Stop Fake Bankr HIVE Awards
 
-- Status: Uncommitted
+- Status: Pushed
 - Areas changed: Wallet Honey rewards panel, per-agent wallet holdings, wallet controller wiring, Honey derived stats, wallet styling, changelog
 - Summary: Remove the fake instant Bankr award action from Honey rewards, show the old HIVE bucket as legacy non-Bankr state only, disable claim controls until real Bankr settlement is wired, and neutralize the oversized teal payout button styling.
 - Verification: `curl -fsS --max-time 20 -X POST http://127.0.0.1:5020/api/honey-ledger -H 'Content-Type: application/json' -d '{"action":"return-to-honey"}'`; `curl -fsS --max-time 20 http://127.0.0.1:5020/api/honey-ledger` reports `availableHoney: 0.000411` and `hiveBalance: 0`; `pnpm exec eslint src/app/wallets.module.css src/components/wallet/AgentWalletCard.tsx src/features/dashboard/DashboardApp.tsx src/features/dashboard/hooks/use-dashboard-derived-state.tsx src/features/dashboard/hooks/use-wallet-files-controller.tsx src/features/dashboard/views/WalletPanel.tsx src/lib/services/wallet/honey-ledger.ts --max-warnings=999` passed with existing warnings; `pnpm exec tsc --noEmit --pretty false --skipLibCheck`; Playwright wallet smoke confirmed the fake `Award Bankr HIVE` text is gone and only the expected dev HMR WebSocket warning appeared.
@@ -517,7 +517,7 @@ be added here first, then marked `Committed` or `Pushed` after the git action.
 
 ## 2026-05-27 01:56:43 WITA - Reconcile Returned Honey Balances
 
-- Status: Uncommitted
+- Status: Pushed
 - Areas changed: Honey ledger normalization, changelog
 - Summary: Reconcile per-agent Honey balance rows from the authoritative exchange and HIVE balance maps so a return-to-Honey action immediately shows restored Honey even when the remote worker response includes stale legacy balance fields.
 - Verification: `pnpm exec eslint src/lib/services/wallet/honey-ledger.ts src/app/api/honey-ledger/route.ts src/features/dashboard/views/WalletPanel.tsx src/features/dashboard/hooks/use-wallet-files-controller.tsx src/features/dashboard/hooks/use-dashboard-derived-state.tsx src/components/wallet/AgentWalletCard.tsx --max-warnings=999`; `pnpm --dir workers/honey-ledger typecheck`; `pnpm exec tsc --noEmit --pretty false --skipLibCheck`; `pnpm --dir workers/honey-ledger run deploy`; `curl -fsS --max-time 20 -X POST http://127.0.0.1:5020/api/honey-ledger -H 'Content-Type: application/json' -d '{"action":"return-to-honey"}'`; `curl -fsS --max-time 20 http://127.0.0.1:5020/api/honey-ledger` now reports `availableHoney: 0.000411` and `hiveBalance: 0` for `hermes-1779349579715`.
