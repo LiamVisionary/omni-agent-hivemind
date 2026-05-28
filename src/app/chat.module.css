@@ -1276,9 +1276,9 @@ details[open] > summary .treeDisclosure::before {
 .messageMarkdown ul,
 .messageMarkdown ol {
   display: grid;
-  gap: 7px;
-  margin: 0;
-  padding-left: 1.25rem;
+  gap: 6px;
+  margin: 2px 0;
+  padding-left: 1.35rem;
 }
 
 .messageMarkdown li + li {
@@ -1288,6 +1288,28 @@ details[open] > summary .treeDisclosure::before {
 .messageMarkdown li {
   padding-left: 0.1rem;
   overflow-wrap: anywhere;
+}
+
+.messageMarkdown li::marker {
+  color: rgba(94, 234, 212, 0.9);
+  font-weight: 800;
+}
+
+.messageMarkdown .markdownIndentBlock {
+  display: grid;
+  width: fit-content;
+  max-width: min(760px, calc(100% - 1rem));
+  gap: 8px;
+  margin: 4px 0 4px 0.65rem;
+  border-left: 2px solid rgba(94, 234, 212, 0.28);
+  border-radius: 0 5px 5px 0;
+  background: rgba(15, 23, 42, 0.18);
+  padding: 8px 12px 8px 14px;
+  color: rgba(232, 238, 247, 0.88);
+}
+
+.messageMarkdown .markdownIndentBlock p {
+  margin: 0;
 }
 
 .messageMarkdown code {

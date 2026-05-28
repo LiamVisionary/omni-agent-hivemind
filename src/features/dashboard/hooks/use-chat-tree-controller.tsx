@@ -6,8 +6,16 @@
 
 import { useCallback, useEffect, useMemo } from "react";
 
+function isAutomationHydratedTranscript(messages: Array<{ content?: string }> = []) {
+  const transcript = messages.slice(0, 8).map((message) => message.content ?? "").join("\n");
+  if (/\[IMPORTANT:\s*The user has invoked the "[^"]+" skill/i.test(transcript)) return true;
+  if (/running as a scheduled cron job/i.test(transcript)) return true;
+  if (/user has invoked the "[^"]+" skill/i.test(transcript)) return true;
+  return false;
+}
+
 export function useChatTreeController(props: any) {
-  const { RUNTIME_CAPABILITIES, RUNTIME_DEFAULTS, RUNTIME_KINDS, RUNTIME_LABELS, activeView, agentWorkById, chatCustomFolders, chatDedupeKey, chatFolderDraft, chatFolderLabel, chatLeafFromStorageKey, chatMessageStorageKey, chatMessageWindow, chatPreviewDedupeKey, chatSeedMessagesForTask, chooseDirectoryForMachine, createChatLeafKey, displayAgents, findRosterChatTask, runtimeSessionIdFromTask, isChatSidebarTask, isManualAgentChatMessage, logClientTelemetry, machineGroups, messagesByAgent, parentPathFromPath, preferChatTreeItem, recordRecentDirectory, runtimeCan, runtimeSessionForChat, selectedAgent, selectedChatDirectoryPath, selectedChatLeafKey, setActiveView, setChatCustomFolders, setChatFolderDraft, setChatMessageWindow, setMessagesByAgent, setSelectedAgentId, setSelectedChatDirectoryPath, setSelectedChatLeafKey, setSelectedChatPreview, setSelectedChatRuntimeSessionId, setSetupCommandCopied, setSetupMachineKey, setupCollectorCommand, setStatus, setStatusAgentId, taskChatLeafKey, updateAgent, workPriority, workspaceLabelFromPath } = props;
+  const { RUNTIME_CAPABILITIES, RUNTIME_DEFAULTS, RUNTIME_KINDS, RUNTIME_LABELS, activeView, agentWorkById, chatCustomFolders, chatDedupeKey, chatFolderDraft, chatFolderLabel, chatMessageStorageKey, chatMessageWindow, chatPreviewDedupeKey, chatSeedMessagesForTask, chooseDirectoryForMachine, createChatLeafKey, displayAgents, findRosterChatTask, runtimeSessionIdFromTask, isChatSidebarTask, isManualAgentChatMessage, logClientTelemetry, machineGroups, messagesByAgent, parentPathFromPath, preferChatTreeItem, recordRecentDirectory, runtimeCan, runtimeSessionForChat, selectedAgent, selectedChatDirectoryPath, selectedChatLeafKey, setActiveView, setChatCustomFolders, setChatFolderDraft, setChatMessageWindow, setMessagesByAgent, setSelectedAgentId, setSelectedChatDirectoryPath, setSelectedChatLeafKey, setSelectedChatPreview, setSelectedChatRuntimeSessionId, setSetupCommandCopied, setSetupMachineKey, setupCollectorCommand, setStatus, setStatusAgentId, taskChatLeafKey, updateAgent, workPriority, workspaceLabelFromPath } = props;
   function switchRuntime(runtime: AgentRuntime) {
     const defaults = RUNTIME_DEFAULTS[runtime];
     updateAgent({
@@ -85,6 +93,18 @@ export function useChatTreeController(props: any) {
     if (!hydratedMessages.length) return;
 
     const storageKey = chatMessageStorageKey(agent.id, leafKey);
+    if (isAutomationHydratedTranscript(hydratedMessages)) {
+      setMessagesByAgent((current) => {
+        if (!current[storageKey]) return current;
+        const next = { ...current };
+        delete next[storageKey];
+        return next;
+      });
+      setSelectedChatPreview((current) => (
+        current?.agentId === agent.id && current.leafKey === leafKey ? null : current
+      ));
+      return;
+    }
     setMessagesByAgent((current) => {
       const existing = current[storageKey] ?? [];
       const userSentAfterOpen = existing.some((message) => (
@@ -129,6 +149,32 @@ export function useChatTreeController(props: any) {
       });
     }
   }, [displayAgents, machineGroups]);
+
+  const chatHistoryByAgent = useMemo(() => {
+    const byAgent = new Map<string, ChatTreeItem[]>();
+    for (const [storageKey, storedMessages] of Object.entries(messagesByAgent)) {
+      const separatorIndex = storageKey.indexOf("::");
+      const agentId = separatorIndex === -1 ? storageKey : storageKey.slice(0, separatorIndex);
+      const storedLeafKey = separatorIndex === -1 ? `agent-${agentId}` : storageKey.slice(separatorIndex + 2);
+      if (!agentId || !storedLeafKey || storedLeafKey === `agent-${agentId}` || storedLeafKey.startsWith("task-")) continue;
+      const manualMessages = storedMessages.filter(isManualAgentChatMessage);
+      if (!manualMessages.some((message) => message.content.trim())) continue;
+      if (isAutomationHydratedTranscript(manualMessages)) continue;
+      const firstUser = manualMessages.find((message) => message.role === "user" && message.content.trim());
+      const lastMessage = [...manualMessages].reverse().find((message) => message.content.trim());
+      const item: ChatTreeItem = {
+        key: storedLeafKey,
+        title: firstUser?.content.trim().slice(0, 56) || "Previous chat",
+        subtitle: lastMessage?.content.trim().slice(0, 80) || agentId,
+        updatedAt: Math.max(...manualMessages.map((message) => Number(message.createdAt || 0))),
+        rank: 4,
+        active: selectedChatLeafKey === storedLeafKey,
+        onOpen: () => startAgentChat(agentId, { chatLeafKey: storedLeafKey }),
+      };
+      byAgent.set(agentId, [...(byAgent.get(agentId) ?? []), item]);
+    }
+    return byAgent;
+  }, [isManualAgentChatMessage, messagesByAgent, selectedChatLeafKey, startAgentChat]);
 
   const startAgentWorkChat = useCallback((agentId: string, displayedTask?: string) => {
     const agent = displayAgents.find((item) => item.id === agentId);
@@ -360,23 +406,10 @@ export function useChatTreeController(props: any) {
           });
         }
 
-        for (const [storageKey, storedMessages] of Object.entries(messagesByAgent)) {
-          const storedLeafKey = chatLeafFromStorageKey(agent.id, storageKey);
-          if (!storedLeafKey || storedLeafKey === agentChatKey || storedLeafKey.startsWith("task-")) continue;
-          const manualMessages = storedMessages.filter(isManualAgentChatMessage);
-          if (!manualMessages.some((message) => message.content.trim())) continue;
-          const firstUser = manualMessages.find((message) => message.role === "user" && message.content.trim());
-          const lastMessage = [...manualMessages].reverse().find((message) => message.content.trim());
-          folder.chats.push({
-            key: storedLeafKey,
-            title: firstUser?.content.trim().slice(0, 56) || "Previous chat",
-            subtitle: lastMessage?.content.trim().slice(0, 80) || agent.name,
-            updatedAt: Math.max(...manualMessages.map((message) => Number(message.createdAt || 0))),
-            rank: 4,
-            active: selectedChatLeafKey === storedLeafKey,
-            onOpen: () => startAgentChat(agent.id, { chatLeafKey: storedLeafKey }),
-          });
-        }
+        folder.chats.push(...(chatHistoryByAgent.get(agent.id) ?? []).map((chat) => ({
+          ...chat,
+          subtitle: chat.subtitle === agent.id ? agent.name : chat.subtitle,
+        })));
 
         const selectedStorageKey = chatMessageStorageKey(agent.id, selectedChatLeafKey);
         const selectedLeafMessages = selectedStorageKey !== agent.id
@@ -476,7 +509,7 @@ export function useChatTreeController(props: any) {
           )),
       };
     })
-  ), [agentWorkById, chatCustomFolders, chatMessageWindow, conversationTitle, hasConversation, hydrateRuntimeSessionChat, machineGroups, messagesByAgent, selectedAgent?.id, selectedChatDirectoryPath, selectedChatLeafKey, startAgentChat]);
+  ), [agentWorkById, chatCustomFolders, chatHistoryByAgent, chatMessageWindow, conversationTitle, hasConversation, hydrateRuntimeSessionChat, machineGroups, messagesByAgent, selectedAgent?.id, selectedChatDirectoryPath, selectedChatLeafKey, startAgentChat]);
 
   useEffect(() => {
     if (activeView !== "chat" || selectedChatLeafKey) return;

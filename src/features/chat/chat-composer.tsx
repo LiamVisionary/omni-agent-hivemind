@@ -208,9 +208,19 @@ export function shouldPromotePlainLineToBullet(line: string) {
 export function structureAssistantPlainText(lines: string[]) {
   const output: string[] = [];
   const headingPattern = /^(Summary|Main idea|Key features|Why it matters|Takeaway|Result|Details|Next steps|Practical answer|Where .+ wins|The nuance|Bottom line|Exo vs\..+|.+\s+vs\.\s+.+)$/i;
+  let inCodeFence = false;
   for (let index = 0; index < lines.length; index += 1) {
     const line = lines[index];
     const trimmed = line.trim();
+    if (trimmed.startsWith("```")) {
+      output.push(line);
+      inCodeFence = !inCodeFence;
+      continue;
+    }
+    if (inCodeFence) {
+      output.push(line);
+      continue;
+    }
     if (!trimmed) {
       output.push("");
       continue;

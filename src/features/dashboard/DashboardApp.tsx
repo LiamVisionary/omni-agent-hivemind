@@ -134,6 +134,8 @@ import {
   SwarmView,
   TaskModal,
 } from "@/features/dashboard/lazy-components";
+import { AgentsPanel } from "@/features/dashboard/views/AgentsPanel";
+import { ChatPanel } from "@/features/dashboard/views/ChatPanel";
 import { ChatMarkdown } from "@/features/dashboard/ChatMarkdown";
 import { MorePanel } from "@/features/dashboard/MorePanel";
 import {
@@ -227,7 +229,6 @@ import {
 } from "@/features/fleet/fleet-identity";
 import {
   AgentEnvCard,
-  chatLeafFromStorageKey,
   chatMessageStorageKey,
   chatSeedMessagesForTask,
   chatTaskMatchKey,
@@ -252,6 +253,7 @@ import {
   formatRelativeTime,
   HERMES_UPDATE_INTEGRATION_KEYS,
   hermesUpdateDetail,
+  isAutomationChatTranscript,
   mergeMachineNameAliases,
   normalizeAgentProfile,
   parseStoredAgents,
@@ -341,14 +343,12 @@ const chatClass = createStyleClass(chatStyles);
 const notificationClass = createStyleClass(notificationStyles);
 const vaultClass = createStyleClass(vaultStyles);
 const walletClass = createStyleClass(walletStyles);
-const AgentsPanel = dynamic(() => import("@/features/dashboard/views/AgentsPanel").then((mod) => mod.AgentsPanel), { loading: () => <FleetPanelLoading />, ssr: false });
 const KanbanPanel = dynamic(() => import("@/features/dashboard/views/KanbanPanel").then((mod) => mod.KanbanPanel), { ssr: false });
 const SchedulerPanel = dynamic(() => import("@/features/dashboard/views/SchedulerPanel").then((mod) => mod.SchedulerPanel), { ssr: false });
 const SwarmPanel = dynamic(() => import("@/features/dashboard/views/SwarmPanel").then((mod) => mod.SwarmPanel), { ssr: false });
 const WalletPanel = dynamic(() => import("@/features/dashboard/views/WalletPanel").then((mod) => mod.WalletPanel), { ssr: false });
 const VaultPanel = dynamic(() => import("@/features/dashboard/views/VaultPanel").then((mod) => mod.VaultPanel), { ssr: false });
 const UtilityPanels = dynamic(() => import("@/features/dashboard/views/UtilityPanels").then((mod) => mod.UtilityPanels), { ssr: false });
-const ChatPanel = dynamic(() => import("@/features/dashboard/views/ChatPanel").then((mod) => mod.ChatPanel), { ssr: false });
 const DashboardModals = dynamic(() => import("@/features/dashboard/views/DashboardModals").then((mod) => mod.DashboardModals), { ssr: false });
 const NangoIntegrationsView = dynamic(() => import("@/features/integrations/NangoIntegrationsView"), { ssr: false });
 const BRAIN_SKILL_PROVIDER_FALLBACK: BrainSkillProviderInventory[] = [
@@ -360,44 +360,15 @@ const BRAIN_SKILL_PROVIDER_FALLBACK: BrainSkillProviderInventory[] = [
   { id: "aeon", label: "Aeon", home: "~/.aeon", skills: [], installed: false },
 ];
 
-function FleetPanelLoading() {
-  return (
-    <section className={fleetClass("fleetConstellationPanel", "tabPanel")}>
-      <div className="grid min-h-[min(760px,calc(100vh-150px))] place-items-center overflow-hidden rounded-lg border border-[rgba(94,234,212,0.18)] bg-[radial-gradient(circle_at_50%_36%,rgba(45,212,191,0.10),transparent_35%),rgba(8,13,22,0.62)] p-6">
-        <div className="grid w-full max-w-5xl justify-items-center gap-8">
-          <div className="relative grid h-44 w-44 place-items-center">
-            <span className="absolute h-40 w-40 animate-ping rounded-full border border-[rgba(94,234,212,0.22)]" />
-            <span className="absolute h-28 w-28 animate-pulse rounded-full border border-[rgba(255,212,90,0.20)]" />
-            <span className="absolute h-px w-44 rotate-[24deg] bg-gradient-to-r from-transparent via-[rgba(94,234,212,0.54)] to-transparent" />
-            <span className="absolute h-px w-40 -rotate-[28deg] bg-gradient-to-r from-transparent via-[rgba(255,212,90,0.40)] to-transparent" />
-            <span className="grid h-20 w-20 animate-pulse place-items-center rounded-[24px] border border-[rgba(94,234,212,0.32)] bg-[rgba(10,14,21,0.82)] shadow-[0_24px_80px_rgba(45,212,191,0.18)]">
-              <span className="h-4 w-4 rounded-full bg-[rgba(94,234,212,0.72)] shadow-[0_0_22px_rgba(94,234,212,0.52)]" />
-            </span>
-          </div>
-
-          <div className="text-center">
-            <p className="eyebrow">Fleet Discovery</p>
-            <h2 className="m-0 text-2xl font-black text-[var(--foreground)]">Scanning the Tailnet</h2>
-            <p className="mx-auto mt-2 max-w-lg text-sm leading-6 text-[var(--muted)]">
-              Loading machines, agent bridges, and live constellation data.
-            </p>
-          </div>
-
-          <div className="grid w-full grid-cols-1 gap-3 md:grid-cols-3">
-            {["Roster", "Constellation", "Dispatch"].map((label, index) => (
-              <div key={label} className="rounded-lg border border-[rgba(148,163,184,0.14)] bg-[rgba(16,20,29,0.58)] p-4">
-                <div className="mb-4 text-[10px] font-bold uppercase tracking-[0.14em] text-[var(--muted)]">{label}</div>
-                <span className="block h-3 w-28 animate-pulse rounded-full bg-[rgba(226,232,240,0.18)]" style={{ animationDelay: `${index * 90}ms` }} />
-                <span className="mt-3 block h-2 w-full animate-pulse rounded-full bg-[rgba(148,163,184,0.14)]" style={{ animationDelay: `${index * 90 + 90}ms` }} />
-                <span className="mt-2 block h-2 w-2/3 animate-pulse rounded-full bg-[rgba(148,163,184,0.12)]" style={{ animationDelay: `${index * 90 + 160}ms` }} />
-              </div>
-            ))}
-          </div>
-        </div>
-      </div>
-    </section>
-  );
+function devicesToDiscoveredMachines(devices: TailscaleDevice[]): DiscoveredMachine[] {
+  return devices.map((device) => ({
+    device,
+    collector: "unknown",
+    agents: [],
+    snapshots: [],
+  }));
 }
+
 function isWorkView(view: DashboardView): view is WorkView {
   return view === "kanban" || view === "scheduler" || view === "swarm" || view === "history";
 }
@@ -913,7 +884,12 @@ export default function DashboardApp({ initialView, initialVaultPanelMode, initi
       devices?: TailscaleDevice[];
       error?: string;
     } | null;
-    setTailscaleDevices(data?.devices ?? []);
+    const devices = data?.devices ?? [];
+    setTailscaleDevices(devices);
+    if (devices.length > 0) {
+      setDiscoveredMachines((current) => mergeDiscoveredMachines(current, devicesToDiscoveredMachines(devices)));
+    }
+    setFleetDiscoveryLoading(false);
     if (data?.source === "hivemind-link") {
       applyHivemindLinkStatus({
         ok: data.ok,
@@ -1206,6 +1182,24 @@ export default function DashboardApp({ initialView, initialVaultPanelMode, initi
     if (!hydrated) return;
     window.localStorage.setItem(WALLET_STORAGE_KEY, JSON.stringify(walletsByAgent));
   }, [hydrated, walletsByAgent]);
+  useEffect(() => {
+    if (!hydrated) return;
+    if (!Object.values(messagesByAgent).some((messages) => isAutomationChatTranscript(messages))) return;
+    const cleanupTimer = window.setTimeout(() => {
+      setMessagesByAgent((current) => {
+        let changed = false;
+        const next = { ...current };
+        for (const [key, messages] of Object.entries(current)) {
+          if (isAutomationChatTranscript(messages)) {
+            delete next[key];
+            changed = true;
+          }
+        }
+        return changed ? next : current;
+      });
+    }, 0);
+    return () => window.clearTimeout(cleanupTimer);
+  }, [hydrated, messagesByAgent]);
   // Hydrate wallets from the shared vault ledger when sharedVault is enabled.
   // Vault wins where it has a newer `updatedAt` than the locally-stored copy.
   useEffect(() => {
@@ -1280,7 +1274,7 @@ export default function DashboardApp({ initialView, initialVaultPanelMode, initi
           .filter((message) => message.role !== "system" && (message.content.trim() || message.attachments?.length))
           .slice(-120),
       ])
-      .filter(([, messages]) => Array.isArray(messages) && messages.length > 0));
+      .filter(([, messages]) => Array.isArray(messages) && messages.length > 0 && !isAutomationChatTranscript(messages)));
     window.localStorage.setItem(CHAT_MESSAGES_STORAGE_KEY, JSON.stringify(compactMessages));
     logClientTelemetry("chat.messages.persisted", {
       agentCount: Object.keys(compactMessages).length,
@@ -1574,7 +1568,7 @@ export default function DashboardApp({ initialView, initialVaultPanelMode, initi
   const { updateAgent, updateAgentProfile: agentUpdateAgentProfile, syncAeonEnvToGitHub, openAgentCreationModal, closeAgentSettingsModal, browseAgentRuntimeFolder, refreshRuntimeIntegrations: agentRefreshRuntimeIntegrations, runRuntimeIntegrationAction, searchRuntimeSessionsForAgent, createAgentFromModal } = useAgentController({ RUNTIME_LABELS, aeonEnvKeys, agentCreateDraft, agentCreateMachine, agents, beeWorkerPreset, collectorKey, createAgentProfile, defaultWorkerClassDraft, displayAgents, hermesUpdateDetail, normalizeAgentProfile, openSetupModal, roleModalAgent, runtimeCount, runtimeSessionQuery, selectedAgent, setAeonEnvSyncStatus, setAeonEnvSyncing, setAgentCreateDraft, setAgentCreateMachineKey, setAgentRenameDraft, setAgentRenameEditing, setAgentRoleModalId, setAgentRuntimeAdvancedOpen, setAgentRuntimeFolderBrowsing, setAgentRuntimeFolderEditing, setAgentRuntimeFolderStatus, setAgentSettingsPanel, setAgentWorkerClassView, setAgents, setCustomWorkerDraft, setCustomWorkerImageError, setCustomWorkerSkillSearch, setDiscoveredMachines, setHermesUpdateRequiredDetail, setRuntimeBackgroundPrompt, setRuntimeIntegrationBusy, setRuntimeIntegrationMessage, setRuntimeIntegrationStatus, setRuntimeModelDraft, setRuntimeModelSelectionsByRuntime, setRuntimeModelSetupMode, setRuntimeSessionQuery, setRuntimeSessionResults, setSelectedAgentId });
   const { toggleScheduleSkill, toggleSchedulerStepMode, updateSchedulerStep, addSchedulerStep, removeSchedulerStep, addSchedulerStepPath, removeSchedulerStepPath, toggleSchedulerStepSkill, updateSchedulerStepModel, isSchedulerFilePath, pickSchedulerFolder, pickSchedulerFiles, addSchedulePath, removeSchedulePath, removeScheduleSkill, resetScheduleDraft, editSchedule, createSchedule, removeSchedule, importExistingSchedules, normalizeImportedScheduleEvery, toggleSchedule, schedulerPlainPrompt, schedulerSharedSnapshot, upsertSharedSchedule, upsertSharedSchedules, fetchPastRunContext, scheduleFromSharedSnapshot, mergeSharedSchedules, refreshSharedSchedulesFromVault: schedulerRefreshSharedSchedulesFromVault, recordSharedScheduledRun, runScheduleNow, schedulerStatusFromSchedule, scheduleIntervalMs, formatSchedulerDuration, schedulerCadenceLabel, schedulerJobs, findScheduleForJob, modalCadenceFromEvery, everyFromModalCadence, schedulerModalInitial, saveScheduleFromModal, browseSchedulerFolder } = useSchedulerController({ RUNTIME_LABELS, SCHEDULER_DYNAMIC_SKILL_ACTIONS_ENABLED, SCHEDULER_HERMES_SKILL_CONTEXT_ENABLED, SCHEDULER_MODEL_OPTIONS, SCHEDULER_RUN_STALE_MS, agents, appVersion, appendMessage, chatSetupIssue, createDefaultAgentWallet, displayAgents, displayMachineName, editingScheduleId, formatRelativeTime, honeyLedgerEnabled, logClientTelemetry, refreshHoneyLedger, scheduleDraft, schedules, selectedAgent, setEditingScheduleId, setMessagesByAgent, setScheduleDraft, setScheduleImportStatus, setScheduleImporting, setSchedulerAttachMenu, setSchedulerDraftOpen, setSchedulerPathDraft, setSchedulerPathKind, setSchedulerRunStates, setSchedulerSelectedStep, setSchedulerSkillSearch, setSchedules, sharedVault, updateTask, upsertTask, walletsByAgent });
   const { updateSharedVault, updateWallet, resetWalletBurnClock, copyPaymentPrompt, refreshMoneyClawStatus: walletRefreshMoneyClawStatus, saveMoneyClawKey, initializeCoreWalletRails, refreshHoneyLedger: walletRefreshHoneyLedger, observeHoneyUsage: walletObserveHoneyUsage, refreshRuntimeUsage, refreshWalletVaultBackupStatus, runWalletVaultBackupAction, refreshMaintenanceReport, runMaintenanceAction, runtimeFileRequest, refreshRuntimeFileRoots, listRuntimeFiles, openRuntimeFile, saveRuntimeFile, returnAllHiveToHoney, claimAllHoneyToBankrHive, enableHoneyLedger, updateWalletAction, createLocalWallet, refreshWalletBalance, sendWalletUsdc, testX402Fetch, addAgentToMachine, requestDuplicateAgent, duplicateAgent, deleteAgent } = useWalletFilesController({ buildAgentPaymentPrompt, createDefaultAgentWallet, createDefaultHoneyTreasuryConfig, displayAgents, duplicateAgentDraft, agents, honeyLedgerEnabled, normalizeMoney, openAgentCreationModal, runtimeFileDraft, runtimeFileOpen, runtimeFilePath, runtimeFileRootKey, runtimeFileRoots, selectedAgent, selectedAgentId, setAgents, setDuplicateAgentDraft, setHoneyLedgerEnabled, setHoneyTreasury, setMaintenanceBusy, setMaintenanceMessage, setMaintenanceReport, setMessagesByAgent, setMoneyClawLoadingEnvName, setMoneyClawStatusByEnvName, setRuntimeFileDraft, setRuntimeFileOpen, setRuntimeFilePath, setRuntimeFileRootKey, setRuntimeFileRoots, setRuntimeFileStatus, setRuntimeFiles, setRuntimeUsage, setRuntimeUsageLoading, setSelectedAgentId, setSharedVault, setWalletActionsByAgent, setWalletVaultBackupBusy, setWalletVaultBackupMessage, setWalletVaultBackupStatus, setWalletsByAgent, sharedVault, updateAgentProfile, walletActionsByAgent, walletsByAgent });
-  const { switchRuntime, hasConversation, conversationTitle, hydrateRuntimeSessionChat, startAgentChat, startAgentWorkChat, changeChatWorkingDirectory, closeChatFolderCreator, createChatFolder, chatSidebarTree, selectedChatMachine, selectedChatDirectory, chatFolderCreatorMachine, chatFolderCreatorParentOptions, copySetupCommand } = useChatTreeController({ RUNTIME_CAPABILITIES, RUNTIME_DEFAULTS, RUNTIME_KINDS, RUNTIME_LABELS, activeView, agentWorkById, chatCustomFolders, chatDedupeKey, chatFolderDraft, chatFolderLabel, chatLeafFromStorageKey, chatMessageStorageKey, chatMessageWindow, chatPreviewDedupeKey, chatSeedMessagesForTask, chooseDirectoryForMachine, createChatLeafKey, displayAgents, findRosterChatTask, runtimeSessionIdFromTask, isChatSidebarTask, isManualAgentChatMessage, logClientTelemetry, machineGroups, messagesByAgent, parentPathFromPath, preferChatTreeItem, recordRecentDirectory, runtimeCan, runtimeSessionForChat, selectedAgent, selectedChatDirectoryPath, selectedChatLeafKey, setActiveView, setChatCustomFolders, setChatFolderDraft, setChatMessageWindow, setMessagesByAgent, setSelectedAgentId, setSelectedChatDirectoryPath, setSelectedChatLeafKey, setSelectedChatPreview, setSelectedChatRuntimeSessionId, setSetupCommandCopied, setSetupMachineKey, setupCollectorCommand, setStatus, setStatusAgentId, taskChatLeafKey, updateAgent, workPriority, workspaceLabelFromPath });
+  const { switchRuntime, hasConversation, conversationTitle, hydrateRuntimeSessionChat, startAgentChat, startAgentWorkChat, changeChatWorkingDirectory, closeChatFolderCreator, createChatFolder, chatSidebarTree, selectedChatMachine, selectedChatDirectory, chatFolderCreatorMachine, chatFolderCreatorParentOptions, copySetupCommand } = useChatTreeController({ RUNTIME_CAPABILITIES, RUNTIME_DEFAULTS, RUNTIME_KINDS, RUNTIME_LABELS, activeView, agentWorkById, chatCustomFolders, chatDedupeKey, chatFolderDraft, chatFolderLabel, chatMessageStorageKey, chatMessageWindow, chatPreviewDedupeKey, chatSeedMessagesForTask, chooseDirectoryForMachine, createChatLeafKey, displayAgents, findRosterChatTask, runtimeSessionIdFromTask, isChatSidebarTask, isManualAgentChatMessage, logClientTelemetry, machineGroups, messagesByAgent, parentPathFromPath, preferChatTreeItem, recordRecentDirectory, runtimeCan, runtimeSessionForChat, selectedAgent, selectedChatDirectoryPath, selectedChatLeafKey, setActiveView, setChatCustomFolders, setChatFolderDraft, setChatMessageWindow, setMessagesByAgent, setSelectedAgentId, setSelectedChatDirectoryPath, setSelectedChatLeafKey, setSelectedChatPreview, setSelectedChatRuntimeSessionId, setSetupCommandCopied, setSetupMachineKey, setupCollectorCommand, setStatus, setStatusAgentId, taskChatLeafKey, updateAgent, workPriority, workspaceLabelFromPath });
   const { openMachineInitModal, saveHetznerToken, openHetznerEnvFile, initializeMachineProject, copyMachineInitCommand, refreshAppVersionNow, refreshDiscoveryNow, runMachineUpdate, copyUpdateDetail, refreshKanbanOnce, kanbanStorageBody, notificationStorageBody, raiseHermesAuthAlert, noteIntakeBody, scanNoteIntake, importNoteIntake, markNotificationRead, markAllNotificationsRead, updateNotificationSettings, trackAgentTaskOnKanban } = useFleetNotificationsController({ DEFAULT_SHARED_VAULT, addKanbanStorageParams, appVersion, hydrated, isCollectorAutoUpdateable, kanbanAssigneeFilter, kanbanBoardSlug, kanbanIncludeArchived, kanbanSearch, kanbanTenantFilter, cleanActivityTitle, localDashboardHasUnpublishedChanges, machineInitDraft, machineInitToken, machineNeedsChatBridgeRepair, machineNeedsEnvHttpSyncRepair, machineNeedsSkillSyncRepair, machineVersionCopy, mergeDiscoveredMachines, mergeSnapshotRecord, noteIntakeAutoInFlightRef, notifications, setAppVersion, setCopiedUpdateDetailKey, setDiscoveredMachines, setFleetSnapshots, setKanbanAssignees, setKanbanBoard, setKanbanBoards, setKanbanError, setKanbanStorage, setKanbanTenants, setActiveView, setSelectedKanbanTaskId, setMachineInitCopiedKey, setMachineInitOpen, setMachineInitStatus, setMachineInitToken, setMachineInitTokenStatus, setNoteIntakePending, setNoteIntakePreview, setNoteIntakeStatus, setNotificationCursor, setNotificationSummary, setNotifications, setNotificationsStatus, setTasks, setUpdateStatusByMachine, sharedVault, summarizeHermesAuthError, updateStatusByMachine });
   const { createKanbanTask, createKanbanBoard, patchKanbanTask, bulkPatchKanbanTasks, promoteKanbanIdea, updateKanbanTaskMachine, markKanbanTaskReviewed, requestKanbanTaskUndo, readWorkspaceGitSnapshot, kanbanWorkspaceChangeSummary, addKanbanCardFiles, openKanbanCardFilePicker, handleKanbanCardFileChange, handleKanbanCardImageChange, attachKanbanCardDirectory, attachKanbanCardRecentDirectory, removeKanbanCardAttachment, removeKanbanCardDirectory, moveKanbanTask, deleteKanbanTask, editAndInterruptKanbanTask, openKanbanTaskModal, kanbanTaskMenuItems, orchestrateReadyKanbanTask, addKanbanSystemComment } = useKanbanTaskController({ AbortController, Eye, GitBranch, KANBAN_COLUMNS, KANBAN_PICKUP_PREVIEW_MS, MessageSquare, Pencil, RotateCcw, Trash2, Users, agentsForKanbanTask, appVersion, appendMessage, attachmentSizeLabel, beeRoleIconPath, beeWorkerClassLabel, chatSetupIssue, chooseBeeAssignment, chooseDirectoryForMachine, createDefaultAgentWallet, dispatchKanbanTaskToAgentRef, displayAgents, honeyLedgerEnabled, kanbanBoard, kanbanBoardSlug, kanbanCardAttachmentTargetId, kanbanCardFileInputRef, kanbanCardImageInputRef, kanbanDispatchCooldownRef, kanbanEditDraft, kanbanEditPendingTaskId, kanbanReadyPickupAttemptRef, kanbanReadyPickupInFlightRef, kanbanReadyPickupSignature, kanbanRuntimeAbortRef, kanbanStorageBody, kanbanTaskAssigneeAgent, kanbanTaskInterruptPrompt, linkedDirectoryLabel, logClientTelemetry, newBoardDraft, quickAddAttachments, quickAddDirectories, quickAddDrafts, quickAddMachineTarget, readComposerFiles, recordRecentDirectory, refreshHoneyLedger, refreshKanbanOnce, selectedKanbanAgent, selectedKanbanBulkIds, selectedKanbanTask, selectedKanbanTaskId, setKanbanBoard, setKanbanBoardSlug, setKanbanBulkPending, setKanbanCardAttachmentMenuOpen, setKanbanCardAttachmentTargetId, setKanbanCardRecentsExpanded, setKanbanEditDraft, setKanbanEditPendingTaskId, setKanbanError, setKanbanPickupPreviewByTask, setKanbanStorage, setKanbanTaskModal, setMessagesByAgent, setNewBoardDraft, setQuickAddAttachmentError, setQuickAddAttachments, setQuickAddDirectories, setQuickAddDrafts, setQuickAddMachineMenuOpen, setQuickAddMachineTargets, setQuickAddStatus, setSelectedKanbanTaskId, setSelectedKanbanTaskIds, sharedVault, updateTask, upsertTask, wait, walletsByAgent });
   const { createKanbanArtistHandoffTask, requeueStaleKanbanTask, dispatchKanbanTaskToAgent, addKanbanComment, refreshKanbanAgentSession, steerSelectedKanbanTask } = useKanbanDispatchController({ AbortController, KANBAN_COLUMNS, KANBAN_DISPATCH_NO_PROGRESS_MS, KANBAN_NO_ASSISTANT_QUIET_MS, KANBAN_NO_ASSISTANT_STALL_MS, KANBAN_SESSION_POLL_FAILURE_LIMIT, KANBAN_STALE_AGENT_COOLDOWN_MS, KANBAN_TOOL_OUTPUT_STALL_MS, addKanbanSystemComment, appVersion, appendMessage, attachmentSizeLabel, attachmentSummary, chatSetupIssue, commentDraft, compactDiagnosticPreview, createDefaultAgentWallet, displayAgents, extractKanbanVisualBrief, formatDurationShort, honeyLedgerEnabled, hydrated, isHermesAuthFailure, isInternalHermesSessionPrelude, isKanbanAwaitingAgentUpdate, isKanbanStaleWorkingTask, isTransientDelegationMessage, kanbanBoard, kanbanBoardSlug, kanbanDispatchCooldownRef, kanbanNoAssistantStalledDetail, kanbanReadyPickupAttemptRef, kanbanReadyPickupInFlightRef, kanbanReadyPickupSignature, kanbanRuntimeAbortRef, kanbanSessionPollFailureRef, kanbanSessionPollRef, kanbanStaleAge, kanbanStaleRequeueAttemptRef, kanbanSteerAttachments, kanbanSteerDirectories, kanbanSteerDraft, kanbanSteerTargetStatus, kanbanSteeringTaskId, kanbanStorageBody, kanbanTaskAssigneeAgent, kanbanTaskAssignmentForAgent, kanbanTaskDispatchPrompt, kanbanToolOutputStalledDetail, kanbanWorkspaceChangeSummary, logClientTelemetry, messageContentParts, messagesByAgent, orchestrateReadyKanbanTask, patchKanbanTask, raiseHermesAuthAlert, readWorkspaceGitSnapshot, refreshHoneyLedger, refreshKanbanOnce, selectedKanbanAgent, selectedKanbanTask, setCommentDraft, setKanbanError, setKanbanSteerAttachmentError, setKanbanSteerAttachmentMenuOpen, setKanbanSteerAttachments, setKanbanSteerDirectories, setKanbanSteerDraft, setKanbanSteeringTaskId, setMessagesByAgent, sharedVault, simpleStableHash, summarizeKanbanToolOutput, updateTask, upsertTask, walletsByAgent });

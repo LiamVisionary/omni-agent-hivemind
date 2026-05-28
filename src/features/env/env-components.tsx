@@ -33,6 +33,15 @@ export function isMeaningfulActive(task: AgentTask) {
 
 export function isCronChatTask(task: AgentTask) {
   if (task.source?.includes("/cron")) return true;
+  if (/(cron|schedul|automation|background)/i.test(task.sourceDetail ?? "")) return true;
+  const transcript = [
+    task.title,
+    task.lastMessage,
+    ...(task.messages ?? []).slice(0, 3).map((message) => message.content),
+  ].join("\n");
+  if (/\[IMPORTANT:\s*The user has invoked the "[^"]+" skill/i.test(transcript)) return true;
+  if (/running as a scheduled cron job/i.test(transcript)) return true;
+  if (/user has invoked the "[^"]+" skill/i.test(transcript)) return true;
   return /^hermes\s+cron\s+session$/i.test(cleanActivityTitle(task.title));
 }
 

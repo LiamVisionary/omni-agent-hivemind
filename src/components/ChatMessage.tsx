@@ -8,6 +8,8 @@ import {
   type UIMessage,
 } from "ai";
 
+import { ChatMarkdown } from "@/features/dashboard/ChatMarkdown";
+
 function ToolBlock({ part }: { part: UIMessage["parts"][number] }) {
   if (!isToolOrDynamicToolUIPart(part)) {
     return null;
@@ -70,9 +72,7 @@ export function ChatMessageRow({ message }: { message: UIMessage }) {
           {message.parts.map((part, i) => {
             if (isTextUIPart(part)) {
               return (
-                <p key={i} className="whitespace-pre-wrap">
-                  {part.text}
-                </p>
+                <ChatMarkdown key={i} text={part.text} />
               );
             }
             if (isReasoningUIPart(part)) {

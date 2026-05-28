@@ -2026,6 +2026,7 @@ async function scanHermesState(agent, hermesDir) {
       lastMessage: compact(latest?.content, HERMES_EMPTY_TRANSCRIPT_MESSAGE),
       status: session.ended_at ? (/error|fail/i.test(session.end_reason || "") ? "failed" : "completed") : "active",
       source: "hermes-state",
+      sourceDetail: session.source || "",
       startedAt: session.started_at * 1000,
       updatedAt: (latest?.timestamp ?? session.started_at) * 1000,
       messages: chatMessages,

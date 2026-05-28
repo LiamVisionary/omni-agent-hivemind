@@ -247,6 +247,7 @@ export type AgentTask = {
   updatedAt: number;
   completedAt?: number;
   source?: string;
+  sourceDetail?: string;
   messages?: ChatMessage[];
   workingDirectory?: string;
 };

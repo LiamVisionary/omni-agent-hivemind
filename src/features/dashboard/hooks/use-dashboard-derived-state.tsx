@@ -367,12 +367,13 @@ export function useDashboardDerivedState(props: any) {
       }
     }
 
-    return dedupeMachineGroups(groups)
+    const visibleGroups = dedupeMachineGroups(groups)
       .filter(isVisibleFleetMachine)
       .map((machine) => ({
         ...machine,
         name: machineNameAliases[machine.key]?.trim() || machine.name,
       }));
+    return unassigned.agents.length > 0 ? [...visibleGroups, unassigned] : visibleGroups;
   }, [dashboardHostName, displayAgents, discoveredMachines, machineNameAliases, tailscaleDevices]);
 
   const renameMachine = useCallback((machineId: string, nextName: string) => {

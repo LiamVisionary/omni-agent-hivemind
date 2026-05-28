@@ -340,6 +340,14 @@ export function parseStoredChatFolders(): ChatCustomFolder[] {
   }
 }
 
+export function isAutomationChatTranscript(messages: ChatMessage[] = []) {
+  const transcript = messages.slice(0, 8).map((message) => message.content).join("\n");
+  if (/\[IMPORTANT:\s*The user has invoked the "[^"]+" skill/i.test(transcript)) return true;
+  if (/running as a scheduled cron job/i.test(transcript)) return true;
+  if (/user has invoked the "[^"]+" skill/i.test(transcript)) return true;
+  return false;
+}
+
 export function parseStoredChatMessages(): Record<string, ChatMessage[]> {
   if (typeof window === "undefined") return {};
   const raw = readStoredValue(CHAT_MESSAGES_STORAGE_KEY, STORAGE_SUFFIXES.chatMessages);
@@ -349,9 +357,9 @@ export function parseStoredChatMessages(): Record<string, ChatMessage[]> {
     if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return {};
     return Object.fromEntries(Object.entries(parsed)
       .filter(([agentId, messages]) => typeof agentId === "string" && Array.isArray(messages))
-      .map(([agentId, messages]) => [
+      .map(([agentId, messages]): [string, ChatMessage[]] => [
         agentId,
-        messages.filter((message) => (
+        messages.filter((message): message is ChatMessage => (
           (message?.role === "user" || message?.role === "assistant" || message?.role === "system")
           && typeof message.content === "string"
         )).map((message) => ({
@@ -373,7 +381,8 @@ export function parseStoredChatMessages(): Record<string, ChatMessage[]> {
             }
             : undefined,
         })).slice(-120),
-      ]));
+      ])
+      .filter(([, messages]) => !isAutomationChatTranscript(messages)));
   } catch {
     return {};
   }

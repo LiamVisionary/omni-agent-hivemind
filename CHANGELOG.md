@@ -3,9 +3,17 @@
 This file records user-visible changes before they are committed. New work should
 be added here first, then marked `Committed` or `Pushed` after the git action.
 
+## 2026-05-29 01:55:26 WITA - Add X Outreach Launchpad
+
+- Status: Committed
+- Areas changed: Honey ledger worker outreach launchpad artifact, changelog
+- Summary: Add a local X outreach launchpad HTML file with target profiles, post links, prefilled reply/DM intent links where available, standalone post drafts, and copyable fallback text for manual approval in X.
+- Verification: Opened the generated HTML launchpad in Chrome during the outreach workflow; no messages were posted or sent automatically.
+- Intended commit message: `Improve chat history and markdown rendering`
+
 ## 2026-05-29 01:19:11 WITA - Speed Up Chat History Loading
 
-- Status: Pushed
+- Status: Committed
 - Areas changed: Dashboard chat view loading, chat sidebar history indexing, machine group fallback, changelog
 - Summary: Load the chat panel with the main dashboard bundle, pre-index stored chat transcripts by agent so the sidebar no longer scans every saved chat for every machine/agent while rendering, and keep saved agents available in a fallback chat machine group before Tailnet discovery attaches them to live machines.
 - Verification: `pnpm exec eslint src/features/dashboard/DashboardApp.tsx src/features/dashboard/hooks/use-chat-tree-controller.tsx src/features/dashboard/hooks/use-dashboard-derived-state.tsx --max-warnings=999` passed with existing warnings; `pnpm exec tsc --noEmit --pretty false --skipLibCheck`; `git diff --check -- src/features/dashboard/DashboardApp.tsx src/features/dashboard/hooks/use-chat-tree-controller.tsx src/features/dashboard/hooks/use-dashboard-derived-state.tsx CHANGELOG.md`; Browser check on `http://127.0.0.1:5020/?view=chat` rendered the chat view without a Next error template or console errors.
@@ -13,7 +21,7 @@ be added here first, then marked `Committed` or `Pushed` after the git action.
 
 ## 2026-05-29 01:12:42 WITA - Hydrate Link-Proxied Next Apps
 
-- Status: Uncommitted
+- Status: Pushed
 - Areas changed: Hivemind Link peer proxy, link proxy tests, changelog
 - Summary: Redirect peer app web-page requests back to the app's real same-origin path after setting the app-proxy context cookie, leave root-fallback HTML unmodified, and keep asset/API requests proxied, so Z-Image Studio hydrates at `/` instead of staying stuck on the password gate's `Checking unlock…` screen under `/peer/.../app-proxy/...`.
 - Verification: `go test ./cmd/hivemind-linkd`; rebuilt and restarted `com.hivemindos.linkd.agent`; Playwright against the real Z-Image app-proxy path advances from `Checking unlock…` to the password entry screen.
@@ -21,7 +29,7 @@ be added here first, then marked `Committed` or `Pushed` after the git action.
 
 ## 2026-05-28 23:09:43 WITA - Speed Up Fleet First Paint
 
-- Status: Uncommitted
+- Status: Committed
 - Areas changed: Dashboard fleet loading flow, fleet lazy component exports, changelog
 - Summary: Seed visible fleet machines from the fast Tailnet devices response and clear the initial discovery gate before slower collector health and agent bridge probes finish; load the FleetView with the dashboard bundle so the full-screen constellation placeholder is no longer shown just because the fleet component chunk is pending.
 - Verification: `pnpm exec eslint src/features/dashboard/DashboardApp.tsx src/features/dashboard/lazy-components.tsx --max-warnings=999` passed with existing `DashboardApp.tsx` warnings; `pnpm exec tsc --noEmit --pretty false --skipLibCheck`; `git diff --check -- src/features/dashboard/DashboardApp.tsx src/features/dashboard/lazy-components.tsx CHANGELOG.md`; `curl http://localhost:5020/api/tailscale/devices` returned 3 devices in ~0.4s and `curl http://localhost:5020/api/fleet/discover?includeSnapshots=0` returned 3 ready machines in ~1.35s; Browser check on `http://127.0.0.1:5020/?view=agents` no longer showed the full-screen `Loading constellation` or `Scanning the Tailnet` splash after reload.
@@ -29,7 +37,7 @@ be added here first, then marked `Committed` or `Pushed` after the git action.
 
 ## 2026-05-28 22:59:09 WITA - Render Chat Links And Code Fences
 
-- Status: Uncommitted
+- Status: Committed
 - Areas changed: Chat markdown renderer, chat markdown styling, chat text normalization, fallback AI SDK chat row
 - Summary: Auto-link bare `http(s)` and `mailto` URLs in chat markdown, preserve fenced code blocks while normalizing assistant text, style indented markdown bodies as compact inset detail notes without overriding normal bullet-list readability, and route fallback AI SDK text parts through the shared markdown renderer so triple-backtick snippets render as code blocks.
 - Verification: `pnpm exec eslint src/features/dashboard/ChatMarkdown.tsx src/features/chat/chat-composer.tsx src/components/ChatMessage.tsx --max-warnings=999`; `pnpm exec eslint src/features/env/env-components.tsx src/features/dashboard/dashboard-storage.ts src/features/dashboard/DashboardApp.tsx src/features/dashboard/hooks/use-chat-tree-controller.tsx src/features/dashboard/ChatMarkdown.tsx scripts/agent-telemetry-collector.mjs --quiet`; `pnpm exec tsc --noEmit --pretty false --skipLibCheck`.
@@ -37,7 +45,7 @@ be added here first, then marked `Committed` or `Pushed` after the git action.
 
 ## 2026-05-28 22:57:48 WITA - Hide Cron Skill Runs From Chat History
 
-- Status: Uncommitted
+- Status: Committed
 - Areas changed: Hermes collector session metadata, chat sidebar task filtering, persisted chat cleanup, runtime session hydration, changelog
 - Summary: Preserve the original Hermes session source on collected runtime tasks and filter cron/scheduled automation sessions out of chat history, live session hydration, current chat state, and persisted chat storage so one-off skill or autopilot runs do not open as ordinary "Live conversation" chats. Skill-invocation preludes like `[IMPORTANT: The user has invoked ... skill]` are now enough to suppress the chat leaf.
 - Verification: `pnpm exec eslint src/features/env/env-components.tsx src/features/dashboard/dashboard-storage.ts src/features/dashboard/DashboardApp.tsx src/features/dashboard/hooks/use-chat-tree-controller.tsx src/features/dashboard/ChatMarkdown.tsx scripts/agent-telemetry-collector.mjs --quiet`; `pnpm exec tsc --noEmit --pretty false --skipLibCheck`; `node --check scripts/agent-telemetry-collector.mjs`.
