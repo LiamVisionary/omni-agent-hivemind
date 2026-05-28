@@ -594,17 +594,36 @@ export function useDashboardDerivedState(props: any) {
   }, [agentWorkById, dashboardHostName, displayAgents, fleetSnapshots, machineGroups, notifications, tailscaleStatus, walletsByAgent]);
 
   const fleetUpdateStatusByMachine = useMemo<Record<string, "updating" | "updated" | "failed">>(() => {
-    return Object.fromEntries(Object.entries(updateStatusByMachine).map(([key, status]) => [
-      key,
-      status.tone === "working" ? "updating" : status.tone === "success" ? "updated" : "failed",
-    ]));
-  }, [updateStatusByMachine]);
+    return Object.fromEntries(Object.entries(updateStatusByMachine)
+      .filter(([key, status]) => {
+        if (status.tone === "working") return true;
+        const machine = machineGroups.find((item) => item.key === key);
+        if (!machine) return true;
+        return fleetVersionState(machine) === "stale"
+          || machineNeedsChatBridgeRepair(machine)
+          || machineNeedsEnvHttpSyncRepair(machine)
+          || machineNeedsSkillSyncRepair(machine);
+      })
+      .map(([key, status]) => [
+        key,
+        status.tone === "working" ? "updating" : status.tone === "success" ? "updated" : "failed",
+      ]));
+  }, [fleetVersionState, machineGroups, machineNeedsChatBridgeRepair, machineNeedsEnvHttpSyncRepair, machineNeedsSkillSyncRepair, updateStatusByMachine]);
 
   const fleetUpdateDetailByMachine = useMemo(() => (
     Object.fromEntries(Object.entries(updateStatusByMachine)
-      .filter(([, status]) => status.detail)
+      .filter(([key, status]) => {
+        if (!status.detail) return false;
+        if (status.tone === "working") return true;
+        const machine = machineGroups.find((item) => item.key === key);
+        if (!machine) return true;
+        return fleetVersionState(machine) === "stale"
+          || machineNeedsChatBridgeRepair(machine)
+          || machineNeedsEnvHttpSyncRepair(machine)
+          || machineNeedsSkillSyncRepair(machine);
+      })
       .map(([key, status]) => [key, { label: status.label, detail: status.detail }]))
-  ), [updateStatusByMachine]);
+  ), [fleetVersionState, machineGroups, machineNeedsChatBridgeRepair, machineNeedsEnvHttpSyncRepair, machineNeedsSkillSyncRepair, updateStatusByMachine]);
 
   const kanbanColumns = useMemo(
     () => groupKanbanTasks(kanbanBoard?.tasks ?? [], kanbanIncludeArchived),

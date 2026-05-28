@@ -131,8 +131,12 @@ function isStaleSelfDuplicate(
   device: ReturnType<typeof simplifyDevice>,
 ) {
   if (!self || device.self) return false;
+  const deviceIsHivemindLink = isHivemindLinkDevice(device);
   const selfBase = hivemindMachineBase(self);
   const deviceBase = hivemindMachineBase(device);
+  if (deviceIsHivemindLink) {
+    return Boolean(!device.online && selfBase && deviceBase && selfBase === deviceBase);
+  }
   if (selfBase && deviceBase && selfBase === deviceBase) return true;
   const physicalSelfBase = physicalMachineBase(self);
   const physicalDeviceBase = physicalMachineBase(device);

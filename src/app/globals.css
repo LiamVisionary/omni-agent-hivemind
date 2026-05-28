@@ -212,6 +212,11 @@ a {
   min-width: 0;
 }
 
+.mobileRouteShell,
+.mobileRouteDrawer {
+  display: none;
+}
+
 .brandIntro {
   display: flex;
   min-width: 0;
@@ -613,12 +618,15 @@ h1 {
 
   .commandTopbar {
     position: static;
-    padding: 14px;
+    min-height: 0;
+    padding: calc(10px + env(safe-area-inset-top, 0px)) 14px 12px;
   }
 
   .topbarMasthead {
+    height: auto;
+    min-height: 0;
     grid-template-columns: 1fr;
-    gap: 14px;
+    gap: 12px;
     align-items: stretch;
   }
 
@@ -638,6 +646,7 @@ h1 {
   .brandHex {
     width: 68px;
     height: 72px;
+    min-height: 0;
   }
 
   .brandLogo {
@@ -648,13 +657,249 @@ h1 {
 
 @media (max-width: 720px) {
   .shell {
-    width: min(100vw - 20px, 1560px);
-    padding-top: 10px;
+    width: 100%;
+    padding-top: 0;
   }
 
-  .commandTopbar,
-  .hero {
-    border-radius: 7px;
+  .commandShell {
+    display: block;
+    gap: 0;
+    min-height: 100dvh;
+    padding-bottom: 0;
+  }
+
+  .commandMain {
+    width: 100%;
+  }
+
+  .commandTopbar {
+    position: fixed;
+    top: calc(10px + env(safe-area-inset-top, 0px));
+    left: 10px;
+    z-index: 80;
+    width: auto;
+    min-height: 0;
+    padding: 0;
+    border-radius: 0;
+    background: transparent;
+    box-shadow: none;
+    pointer-events: none;
+  }
+
+  .commandTopbar::before {
+    display: none;
+  }
+
+  .topbarMasthead {
+    display: none;
+  }
+
+  .mobileRouteShell {
+    display: block;
+    pointer-events: auto;
+  }
+
+  .mobileRouteToggle {
+    position: fixed;
+    top: calc(12px + env(safe-area-inset-top, 0px));
+    right: 12px;
+    z-index: 83;
+    display: inline-flex;
+    width: 54px;
+    height: 54px;
+    min-height: 54px;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+    border: 1px solid rgba(255, 255, 255, 0.18);
+    border-radius: 999px;
+    background: rgba(12, 16, 24, 0.76);
+    color: var(--foreground);
+    padding: 0;
+    box-shadow:
+      0 10px 28px rgba(0, 0, 0, 0.3),
+      inset 0 1px 0 rgba(255, 255, 255, 0.12);
+    backdrop-filter: blur(18px) saturate(1.25);
+    -webkit-backdrop-filter: blur(18px) saturate(1.25);
+    pointer-events: auto;
+    list-style: none;
+  }
+
+  .mobileRouteToggle span {
+    display: block;
+    width: 17px;
+    height: 2px;
+    border-radius: 999px;
+    background: currentColor;
+  }
+
+  .mobileRouteShell.open .mobileRouteToggle {
+    display: none;
+  }
+
+  .mobileRouteBackdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 81;
+    display: none;
+    border: 0;
+    background: rgba(0, 0, 0, 0.34);
+    padding: 0;
+    backdrop-filter: blur(3px);
+    -webkit-backdrop-filter: blur(3px);
+    pointer-events: auto;
+  }
+
+  .mobileRouteShell.open .mobileRouteBackdrop {
+    display: block;
+  }
+
+  .mobileRouteDrawer {
+    position: fixed;
+    inset: 0;
+    z-index: 82;
+    display: none;
+    overflow: hidden;
+    width: 100vw;
+    max-height: none;
+    border: 0;
+    border-radius: 0;
+    background:
+      linear-gradient(180deg, rgba(20, 28, 40, 0.92), rgba(7, 10, 16, 0.94)),
+      rgba(7, 10, 16, 0.94);
+    box-shadow: none;
+    backdrop-filter: blur(26px) saturate(1.25);
+    -webkit-backdrop-filter: blur(26px) saturate(1.25);
+    pointer-events: auto;
+  }
+
+  .mobileRouteShell.open .mobileRouteDrawer {
+    display: grid;
+    grid-template-rows: auto minmax(0, 1fr);
+  }
+
+  .mobileRouteDrawerHeader {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 12px;
+    align-items: center;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.12);
+    padding: calc(18px + env(safe-area-inset-top, 0px)) 76px 14px 14px;
+  }
+
+  .mobileRouteDrawerHeader span {
+    display: block;
+    color: var(--honey);
+    font-family: "JetBrains Mono", ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+    font-size: 9px;
+    font-weight: 800;
+    letter-spacing: 0.1em;
+    line-height: 1.2;
+    text-transform: uppercase;
+  }
+
+  .mobileRouteDrawerHeader strong {
+    display: block;
+    margin-top: 4px;
+    color: var(--foreground);
+    font-size: 22px;
+    line-height: 1.05;
+  }
+
+  .mobileRouteClose {
+    position: fixed;
+    top: calc(18px + env(safe-area-inset-top, 0px));
+    right: 14px;
+    z-index: 84;
+    display: inline-grid;
+    min-height: 38px;
+    place-items: center;
+    border: 1px solid rgba(255, 255, 255, 0.16);
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.08);
+    color: var(--honey);
+    font-family: "JetBrains Mono", ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+    font-size: 11px;
+    font-weight: 900;
+    letter-spacing: 0.1em;
+    line-height: 1;
+    padding: 0 12px;
+    text-transform: uppercase;
+  }
+
+  .mobileRouteDrawer nav {
+    display: grid;
+    align-content: start;
+    gap: 6px;
+    overflow: auto;
+    padding: 12px 14px calc(18px + env(safe-area-inset-bottom, 0px));
+  }
+
+  .mobileRouteDrawer nav > button {
+    display: grid;
+    grid-template-columns: 24px minmax(0, 1fr) auto;
+    gap: 10px;
+    align-items: center;
+    width: 100%;
+    min-height: 58px;
+    border: 1px solid transparent;
+    border-radius: 12px;
+    background: rgba(255, 255, 255, 0.045);
+    color: var(--foreground);
+    padding: 9px 11px;
+    text-align: left;
+  }
+
+  .mobileRouteDrawer nav > button.active {
+    border-color: rgba(94, 234, 212, 0.36);
+    background: rgba(45, 212, 191, 0.14);
+  }
+
+  .mobileRouteDrawer nav svg {
+    width: 18px;
+    height: 18px;
+    color: var(--accent-strong);
+  }
+
+  .mobileRouteDrawer nav strong,
+  .mobileRouteDrawer nav small {
+    display: block;
+    overflow-wrap: anywhere;
+  }
+
+  .mobileRouteDrawer nav strong {
+    font-size: 14px;
+    line-height: 1.15;
+  }
+
+  .mobileRouteDrawer nav small {
+    margin-top: 3px;
+    color: var(--muted);
+    font-size: 12px;
+    line-height: 1.25;
+  }
+
+  .tabPanel {
+    min-height: 100dvh;
+  }
+
+  .tabPanel > .grid {
+    min-height: 100dvh !important;
+    border-right: 0 !important;
+    border-left: 0 !important;
+    border-radius: 0 !important;
+    padding: calc(62px + env(safe-area-inset-top, 0px)) 14px 18px !important;
+  }
+
+  .tabPanel > .grid h2 {
+    font-size: 28px;
+    line-height: 1.05;
+  }
+
+  .tabPanel > .grid p {
+    font-size: 15px;
+    line-height: 1.45;
   }
 
 }

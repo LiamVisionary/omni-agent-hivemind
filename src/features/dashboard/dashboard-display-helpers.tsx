@@ -5,7 +5,9 @@ import type { AgentSnapshot, AppVersion, BrainGraphNode, DiscoveredMachine, Mach
 import {
   isLocalLinkDuplicateOfSelf,
   isLoopbackCollector,
+  machineHivemindBase,
   machineIdentityFromParts,
+  machinePhysicalBase,
   shouldPreserveMissingDiscoveredMachine,
 } from "@/features/fleet/fleet-identity";
 import type { AgentProfile } from "@/lib/types/agent-runtime";
@@ -250,6 +252,18 @@ export function discoveredMachineScore(machine: DiscoveredMachine) {
     + (machine.lastSeenAt ? 1 : 0);
 }
 
+function machineBaseCandidates(machine: DiscoveredMachine) {
+  return [
+    machineHivemindBase(machine.device.name, machine.device.dnsName),
+    machinePhysicalBase(machine.device.name, machine.device.dnsName),
+  ].filter((value, index, all) => value && all.indexOf(value) === index);
+}
+
+function hasFreshReadyDuplicate(machine: DiscoveredMachine, readyMachineBases: Set<string>) {
+  if (machine.collector === "ready") return false;
+  return machineBaseCandidates(machine).some((base) => readyMachineBases.has(base));
+}
+
 export function dedupeDiscoveredMachines(machines: DiscoveredMachine[]) {
   const byIdentity = new Map<string, DiscoveredMachine>();
   for (const machine of machines) {
@@ -273,6 +287,9 @@ export function mergeDiscoveredMachines(current: DiscoveredMachine[], incoming: 
   const incomingKeys = new Set(incoming.map((machine) => discoveredMachineIdentity(machine)));
   const incomingHasTailnetSelf = incoming.some((machine) => machine.device.self && !isLoopbackCollector(machine.device.collectorUrl));
   const incomingSelf = incoming.find((machine) => machine.device.self)?.device;
+  const incomingReadyMachineBases = new Set(incoming
+    .filter((machine) => machine.collector === "ready")
+    .flatMap(machineBaseCandidates));
   const now = Date.now();
 
   const merged = incoming.map((machine) => {
@@ -308,6 +325,7 @@ export function mergeDiscoveredMachines(current: DiscoveredMachine[], incoming: 
     .filter(shouldPreserveMissingDiscoveredMachine)
     .filter((machine) => !(incomingHasTailnetSelf && machine.device.self && isLoopbackCollector(machine.device.collectorUrl)))
     .filter((machine) => !isLocalLinkDuplicateOfSelf(incomingSelf, machine.device))
+    .filter((machine) => !hasFreshReadyDuplicate(machine, incomingReadyMachineBases))
     .map((machine) => ({
       ...machine,
       device: machine.device.self ? machine.device : { ...machine.device, online: false },

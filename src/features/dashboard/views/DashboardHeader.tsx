@@ -1,8 +1,6 @@
 "use client";
 
-/* eslint-disable react-hooks/immutability, react-hooks/purity */
-
-import type { Dispatch, ElementType, ReactNode, SetStateAction } from "react";
+import { useState, type Dispatch, type ElementType, type ReactNode, type SetStateAction } from "react";
 import type { AgentNotificationSummary } from "@/lib/types/agent-notifications";
 import type { KanbanBoard } from "@/lib/types/kanban";
 import type { DashboardView } from "@/features/dashboard/dashboard-types";
@@ -47,10 +45,86 @@ export function DashboardHeader(props: DashboardHeaderProps) {
     setKanbanLoading,
     viewIcon,
   } = props;
+  const [mobileRoutesOpen, setMobileRoutesOpen] = useState(false);
+  const primaryNavItems = (["agents", "kanban", "vault", "chat", "wallet", "more"] as DashboardView[])
+    .map((id) => navItems.find((item) => item.id === id))
+    .filter((item): item is (typeof navItems)[number] => Boolean(item));
+  const isActiveRoute = (id: DashboardView) => id === activeView
+    || (id === "kanban" && isWorkView(activeView))
+    || (id === "more" && (activeView === "maintenance" || activeView === "memory" || activeView === "files" || activeView === "notifications" || activeView === "env" || activeView === "integrations" || activeView === "my-apps"));
+  const activeNavLabel = navItems.find((item) => item.id === activeView)?.label
+    ?? primaryNavItems.find((item) => isActiveRoute(item.id))?.label
+    ?? activeHeader.title;
+  const closeMobileRoutes = () => {
+    setMobileRoutesOpen(false);
+  };
+  const selectRoute = (id: DashboardView) => {
+    if (id === "kanban" && !kanbanBoard) setKanbanLoading(true);
+    setActiveView(id);
+    closeMobileRoutes();
+  };
 
   return (
     <TooltipProvider delayDuration={120}>
       <header className="commandTopbar" aria-label="Control room navigation">
+        <div id="mobile-route-drawer-shell" className={`mobileRouteShell ${mobileRoutesOpen ? "open" : ""}`}>
+          <button
+            type="button"
+            className="mobileRouteToggle"
+            aria-expanded={mobileRoutesOpen}
+            aria-controls="mobile-route-drawer"
+            aria-label="Open route drawer"
+            onClick={() => setMobileRoutesOpen(true)}
+          >
+            <span aria-hidden="true" />
+            <span aria-hidden="true" />
+            <span aria-hidden="true" />
+          </button>
+          <button
+            type="button"
+            className="mobileRouteBackdrop"
+            aria-label="Close route drawer"
+            hidden={!mobileRoutesOpen}
+            onClick={closeMobileRoutes}
+          />
+          <div id="mobile-route-drawer" className="mobileRouteDrawer" hidden={!mobileRoutesOpen}>
+            <div className="mobileRouteDrawerHeader">
+              <div>
+                <span>{activeHeader.eyebrow}</span>
+                <strong>{activeNavLabel}</strong>
+              </div>
+              <button type="button" className="mobileRouteClose" aria-label="Close route drawer" onClick={closeMobileRoutes}>
+                Close
+              </button>
+            </div>
+            <nav aria-label="Mobile dashboard routes">
+              {navItems.map((item) => {
+                const active = isActiveRoute(item.id);
+                return (
+                  <button
+                    key={item.id}
+                    type="button"
+                    className={active ? "active" : ""}
+                    aria-pressed={active}
+                    onClick={() => selectRoute(item.id)}
+                  >
+                    {viewIcon(item.id)}
+                    <span>
+                      <strong>{item.label}</strong>
+                      <small>{item.detail}</small>
+                    </span>
+                    {item.id === "notifications" && notificationSummary?.unread ? (
+                      <i className={notificationClass("navBadge")} aria-label={`${notificationSummary.unread} unread notifications`}>
+                        {notificationSummary.unread > 99 ? "99+" : notificationSummary.unread}
+                      </i>
+                    ) : null}
+                  </button>
+                );
+              })}
+            </nav>
+          </div>
+        </div>
+
         <div className="topbarMasthead">
           <div className="brandIntro">
             <button
@@ -75,13 +149,8 @@ export function DashboardHeader(props: DashboardHeaderProps) {
           </div>
 
           <nav className="viewTabs" aria-label="Dashboard views">
-            {(["agents", "kanban", "vault", "chat", "wallet", "more"] as DashboardView[])
-              .map((id) => navItems.find((item) => item.id === id))
-              .filter((item): item is (typeof navItems)[number] => Boolean(item))
-              .map((item) => {
-                const active = item.id === activeView
-                  || (item.id === "kanban" && isWorkView(activeView))
-                  || (item.id === "more" && (activeView === "maintenance" || activeView === "memory" || activeView === "files" || activeView === "notifications" || activeView === "env" || activeView === "integrations" || activeView === "my-apps"));
+            {primaryNavItems.map((item) => {
+                const active = isActiveRoute(item.id);
                 return (
                   <Tooltip key={item.id}>
                     <TooltipTrigger asChild>
@@ -90,10 +159,7 @@ export function DashboardHeader(props: DashboardHeaderProps) {
                         className={`viewTab ${active ? "active" : ""}`}
                         aria-pressed={active}
                         title={`${item.label}: ${item.detail}`}
-                        onClick={() => {
-                          if (item.id === "kanban" && !kanbanBoard) setKanbanLoading(true);
-                          setActiveView(item.id);
-                        }}
+                        onClick={() => selectRoute(item.id)}
                       >
                         {viewIcon(item.id)}
                         <span>

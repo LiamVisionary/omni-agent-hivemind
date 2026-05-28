@@ -3,17 +3,53 @@
 "use client";
 
 import { ChatFolderModal } from "@/features/dashboard/views/chat/ChatFolderModal";
+import { ChatInlineMarkdown } from "@/features/dashboard/ChatMarkdown";
 import { SkillBrowserModal } from "@/features/dashboard/views/chat/SkillBrowserModal";
 import { AgentSettingsModal } from "@/features/dashboard/views/chat/AgentSettingsModal";
 import { CloseIconButton } from "@/components/ui/close-icon-button";
 import { useEffect, useState } from "react";
 
-/* eslint-disable react-hooks/immutability, react-hooks/purity */
+const PROVIDER_LABELS: Record<string, string> = {
+  "openai-codex": "OpenAI Codex",
+  openai: "OpenAI",
+  openrouter: "OpenRouter",
+  anthropic: "Anthropic",
+  google: "Google",
+  groq: "Groq",
+  xai: "xAI",
+  "lm-studio": "LM Studio",
+  ollama: "Ollama",
+};
+
+function headerValueLabel(value?: string) {
+  const trimmed = value?.trim();
+  if (!trimmed) return "Not set";
+  const known = PROVIDER_LABELS[trimmed.toLowerCase()];
+  if (known) return known;
+  if (trimmed.toLowerCase() === "adaptive") return "Adaptive";
+  return trimmed
+    .split(/[-_\s]+/)
+    .filter(Boolean)
+    .map((part) => part.length <= 3 ? part.toUpperCase() : `${part.slice(0, 1).toUpperCase()}${part.slice(1)}`)
+    .join(" ");
+}
+
+function modelValueLabel(value?: string) {
+  const trimmed = value?.trim();
+  if (!trimmed) return "Not set";
+  if (trimmed.toLowerCase() === "adaptive") return "Adaptive";
+  return trimmed;
+}
 
 export function ChatPanel(props: any) {
-  const { Activity, AgentResponseLoader, Button, ChatMarkdown, Check, ComposerField, Copy, Folder, KanbanSquare, LoaderCircle, MessageAttachments, MessageSquare, Monitor, RUNTIME_LABELS, Sparkles, Tooltip, TooltipContent, TooltipProvider, TooltipTrigger, Upload, activeView, aeonEnvKeys, aeonEnvSyncStatus, aeonEnvSyncing, attachChatDirectory, attachChatRecentDirectory, attachmentError, attachmentMenuOpen, attachmentMenuRef, busy, chatAttachments, chatClass, chatContextMenu, chatContextMenuRef, chatDirectories, chatDisplayContent, chatFileInputRef, chatImageInputRef, chatKanbanGeneration, chatSidebarTree, checkStatus, dismissChatKanbanGeneration, displayAgents, expandedChatFolders, fleetClass, formatAgentEnvText, formatRelativeTime, generateKanbanTaskFromChat, handleChatFileChange, handleChatImageChange, hasStreamingChunk, lastAssistant, machineGroups, messagesEndRef, messagesScrollRef, parseAgentEnvText, recentDirectories, recentDirectoriesExpanded, recording, removeChatAttachment, removeChatDirectory, selectedAgent, selectedChatDirectory, selectedChatMachine, sendMessage, sessionNotice, setAeonEnvKeys, setAttachmentMenuOpen, setChatContextMenu, setExpandedChatFolders, setRecentDirectoriesExpanded, setText, startAgentChat, startAudioRecording, status, statusAgentId, stopAudioRecording, switchRuntime, syncAeonEnvToGitHub, text, updateAgent, updateChatAutoScroll, vaultClass, visibleMessages, voiceBands, voiceTarget, voiceTranscript } = props;
+  const { Activity, AgentResponseLoader, Button, ChatMarkdown, Check, ComposerField, Copy, Folder, KanbanSquare, LoaderCircle, MessageAttachments, MessageSquare, Monitor, RUNTIME_LABELS, Sparkles, Tooltip, TooltipContent, TooltipProvider, TooltipTrigger, Upload, activeView, aeonEnvKeys, aeonEnvSyncStatus, aeonEnvSyncing, attachChatDirectory, attachChatRecentDirectory, attachmentError, attachmentMenuOpen, attachmentMenuRef, busy, changeChatWorkingDirectory, chatAttachments, chatClass, chatContextMenu, chatContextMenuRef, chatDirectories, chatDisplayContent, chatFileInputRef, chatImageInputRef, chatKanbanGeneration, chatSidebarTree, checkStatus, dismissChatKanbanGeneration, displayAgents, expandedChatFolders, fleetClass, formatAgentEnvText, formatRelativeTime, generateKanbanTaskFromChat, handleChatFileChange, handleChatImageChange, hasStreamingChunk, lastAssistant, machineGroups, messagesEndRef, messagesScrollRef, parseAgentEnvText, recentDirectories, recentDirectoriesExpanded, recording, removeChatAttachment, removeChatDirectory, runtimeModelSelection, selectedAgent, selectedChatDirectory, selectedChatMachine, sendMessage, sessionNotice, setAeonEnvKeys, setAttachmentMenuOpen, setChatContextMenu, setExpandedChatFolders, setRecentDirectoriesExpanded, setText, startAgentChat, startAudioRecording, status, statusAgentId, stopAudioRecording, switchRuntime, syncAeonEnvToGitHub, text, updateAgent, updateChatAutoScroll, vaultClass, visibleMessages, voiceBands, voiceTarget, voiceTranscript } = props;
   const [openKanbanTaskMenuKey, setOpenKanbanTaskMenuKey] = useState("");
   const [copiedMessageKey, setCopiedMessageKey] = useState("");
+  const [agentMode, setAgentMode] = useState<"plan" | "act">("act");
+  const [chatHistoryOpen, setChatHistoryOpen] = useState(false);
+  const runtimeLabel = selectedAgent ? RUNTIME_LABELS[selectedAgent.runtime] ?? headerValueLabel(selectedAgent.runtime) : "Not set";
+  const providerLabel = selectedAgent ? headerValueLabel(selectedAgent.provider ?? runtimeModelSelection?.provider) : "Not set";
+  const modelLabel = selectedAgent ? modelValueLabel(selectedAgent.model ?? runtimeModelSelection?.model) : "Not set";
   useEffect(() => {
     if (chatKanbanGeneration?.phase !== "done") return undefined;
     const key = chatKanbanGeneration.key;
@@ -37,13 +73,21 @@ export function ChatPanel(props: any) {
   }
   return (<>
       {activeView === "chat" ? (
-        <section className={chatClass("workspace", "tabPanel")}>
+        <section className={chatClass("workspace", "tabPanel", chatHistoryOpen && "historyOpen")}>
           <aside className={chatClass("settings")}>
             <div className={chatClass("settingsHeader")}>
               <div>
                 <p className="eyebrow">Chat</p>
                 <h2>Machines</h2>
               </div>
+              <button
+                type="button"
+                className={chatClass("historyCloseButton")}
+                aria-label="Close chat history"
+                onClick={() => setChatHistoryOpen(false)}
+              >
+                Close
+              </button>
               <span className={chatClass("runtimeBadge")}>{displayAgents.length} agents</span>
             </div>
 
@@ -85,6 +129,7 @@ export function ChatPanel(props: any) {
                                 event.preventDefault();
                                 event.stopPropagation();
                                 machine.onStartChat?.();
+                                setChatHistoryOpen(false);
                               }}
                             >
                               <MessageSquare aria-hidden="true" />
@@ -112,6 +157,7 @@ export function ChatPanel(props: any) {
                                       event.preventDefault();
                                       event.stopPropagation();
                                       folder.onStartChat?.();
+                                      setChatHistoryOpen(false);
                                     }}
                                   >
                                     <MessageSquare aria-hidden="true" />
@@ -128,11 +174,14 @@ export function ChatPanel(props: any) {
                                 key={chat.key}
                                 className={chatClass(chat.active && "active")}
                                 aria-current={chat.active ? "true" : undefined}
-                                onClick={chat.onOpen}
+                                onClick={() => {
+                                  chat.onOpen?.();
+                                  setChatHistoryOpen(false);
+                                }}
                               >
-                                <span>{chat.title}</span>
+                                <span><ChatInlineMarkdown text={chat.title} /></span>
                                 {chat.updatedAt ? <time>{formatRelativeTime(chat.updatedAt)}</time> : null}
-                                <small>{chat.subtitle}</small>
+                                <small><ChatInlineMarkdown text={chat.subtitle} /></small>
                               </button>
                             ))}
                             {!expandedChatFolders.has(folder.key) && folder.chats.length > 4 ? (
@@ -306,10 +355,33 @@ export function ChatPanel(props: any) {
 
           {selectedAgent ? (
           <section className={chatClass("chat")}>
+            <button
+              type="button"
+              className={chatClass("historyOpenButton")}
+              aria-label="Open chat history"
+              aria-expanded={chatHistoryOpen}
+              onClick={() => setChatHistoryOpen(true)}
+            >
+              <MessageSquare aria-hidden="true" />
+            </button>
             <div className={chatClass("chatHeader")}>
               <div>
                 <p className="eyebrow">Live conversation</p>
                 <h2>{selectedAgent.name}</h2>
+                <dl className={chatClass("chatRuntimeMeta")} aria-label="Agent runtime details">
+                  <div>
+                    <dt>Runtime</dt>
+                    <dd>{runtimeLabel}</dd>
+                  </div>
+                  <div>
+                    <dt>Provider</dt>
+                    <dd>{providerLabel}</dd>
+                  </div>
+                  <div>
+                    <dt>Model</dt>
+                    <dd>{modelLabel}</dd>
+                  </div>
+                </dl>
                 <div className={chatClass("chatContextControls")} ref={chatContextMenuRef}>
                   <div className={chatClass("chatContextControl")}>
                     <button
@@ -341,35 +413,6 @@ export function ChatPanel(props: any) {
                             </button>
                           ));
                         })}
-                      </div>
-                    ) : null}
-                  </div>
-                  <div className={chatClass("chatContextControl")}>
-                    <button
-                      type="button"
-                      title="Choose the working directory for this chat"
-                      onClick={() => setChatContextMenu((current) => current === "directory" ? "" : "directory")}
-                    >
-                      <Folder aria-hidden="true" />
-                      {selectedChatDirectory || "Choose directory"}
-                    </button>
-                    {chatContextMenu === "directory" ? (
-                      <div className={chatClass("chatContextMenu")} role="menu">
-                        {(selectedChatMachine?.folders.length ? selectedChatMachine.folders : chatSidebarTree.flatMap((machine) => machine.folders)).map((folder) => (
-                          <button
-                            type="button"
-                            role="menuitem"
-                            key={folder.key}
-                            onClick={() => {
-                              folder.onStartChat?.();
-                              setChatContextMenu("");
-                            }}
-                          >
-                            <Folder aria-hidden="true" />
-                            <span>{folder.label}</span>
-                            <small>{folder.chats.length ? `${folder.chats.length} chats` : "New chat"}</small>
-                          </button>
-                        ))}
                       </div>
                     ) : null}
                   </div>
@@ -586,6 +629,8 @@ export function ChatPanel(props: any) {
                 setRecentDirectoriesExpanded={setRecentDirectoriesExpanded}
                 onAttachRecentDirectory={attachChatRecentDirectory}
                 onRemoveDirectory={removeChatDirectory}
+                workingDirectoryLabel={selectedChatDirectory}
+                onChangeWorkingDirectory={() => void changeChatWorkingDirectory?.()}
                 recording={recording && voiceTarget === "chat"}
                 voiceBands={voiceBands}
                 voiceTranscript={voiceTranscript}
@@ -593,6 +638,8 @@ export function ChatPanel(props: any) {
                 canSend={Boolean(text.trim() || chatAttachments.length || chatDirectories.length)}
                 submitOnEnter
                 hermesSlashCommands={selectedAgent.runtime === "hermes"}
+                agentMode={agentMode}
+                onAgentModeChange={setAgentMode}
               />
             </form>
             <p className="hint">
@@ -601,6 +648,15 @@ export function ChatPanel(props: any) {
           </section>
           ) : (
           <section className={chatClass("chat", "chatEmptyState")}>
+            <button
+              type="button"
+              className={chatClass("historyOpenButton")}
+              aria-label="Open chat history"
+              aria-expanded={chatHistoryOpen}
+              onClick={() => setChatHistoryOpen(true)}
+            >
+              <MessageSquare aria-hidden="true" />
+            </button>
             <strong>No machine selected</strong>
             <p>Choose a connected machine on the left to start a chat.</p>
           </section>

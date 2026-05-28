@@ -1,7 +1,9 @@
 import { execFile } from "node:child_process";
-import { cpus, freemem, totalmem } from "node:os";
-import { basename } from "node:path";
+import { appendFile, mkdir } from "node:fs/promises";
+import { cpus, freemem, homedir, totalmem } from "node:os";
+import { basename, dirname, join } from "node:path";
 import { promisify } from "node:util";
+import { getHeapSpaceStatistics, getHeapStatistics } from "node:v8";
 
 import type {
   MemoryTelemetryAggregateSample,
@@ -18,7 +20,8 @@ const PROCESS_RECENT_WINDOW_MS = 15 * 60_000;
 const PROCESS_STALE_MS = 45 * 60_000;
 const TRACKED_PROCESS_LIMIT = 80;
 const TOP_SYSTEM_PROCESS_LIMIT = 12;
-const TELEMETRY_SCHEMA_VERSION = 2;
+const TELEMETRY_SCHEMA_VERSION = 3;
+const MEMORY_SAMPLES_FILE = join(homedir(), ".hivemindos", "telemetry", "memory-samples.jsonl");
 
 type ProcessRow = {
   pid: number;
@@ -97,19 +100,27 @@ export async function collectMemoryTelemetry(): Promise<MemoryTelemetryPayload> 
   trimProcessHistory(checkedAt, new Set(trackedRows.map((row) => processKey(row))));
 
   const currentMemory = process.memoryUsage();
+  const heapDiagnostics = collectHeapDiagnostics();
   const aggregateSample: MemoryTelemetryAggregateSample = {
     ts: checkedAt,
     appRssMb: kbToMb(appRows.reduce((total, row) => total + row.rssKb, 0)),
     currentRssMb: bytesToMb(currentMemory.rss),
     heapUsedMb: bytesToMb(currentMemory.heapUsed),
     heapTotalMb: bytesToMb(currentMemory.heapTotal),
+    heapLimitMb: heapDiagnostics.heapLimitMb,
+    oldSpaceUsedMb: heapDiagnostics.oldSpaceUsedMb,
+    codeSpaceUsedMb: heapDiagnostics.codeSpaceUsedMb,
+    largeObjectSpaceUsedMb: heapDiagnostics.largeObjectSpaceUsedMb,
     externalMb: bytesToMb(currentMemory.external),
     arrayBuffersMb: bytesToMb(currentMemory.arrayBuffers),
+    nativeContexts: heapDiagnostics.nativeContexts,
+    detachedContexts: heapDiagnostics.detachedContexts,
     trackedProcessCount: appRows.length,
   };
   const currentState = state();
   currentState.aggregateSamples.push(aggregateSample);
   currentState.aggregateSamples = currentState.aggregateSamples.slice(-MAX_AGGREGATE_SAMPLES);
+  await persistMemorySample(aggregateSample, heapDiagnostics);
 
   const processes = tracked
     .filter((item) => item.isAppRelated)
@@ -135,6 +146,13 @@ export async function collectMemoryTelemetry(): Promise<MemoryTelemetryPayload> 
       heapUsedMb: bytesToMb(currentMemory.heapUsed),
       externalMb: bytesToMb(currentMemory.external),
       arrayBuffersMb: bytesToMb(currentMemory.arrayBuffers),
+      heapLimitMb: heapDiagnostics.heapLimitMb,
+      totalAvailableSizeMb: heapDiagnostics.totalAvailableSizeMb,
+      mallocedMemoryMb: heapDiagnostics.mallocedMemoryMb,
+      peakMallocedMemoryMb: heapDiagnostics.peakMallocedMemoryMb,
+      nativeContexts: heapDiagnostics.nativeContexts,
+      detachedContexts: heapDiagnostics.detachedContexts,
+      heapSpaces: heapDiagnostics.heapSpaces,
     },
     resourceUsage: {
       maxRssMb: kbToMb(resourceUsage.maxRSS),
@@ -145,6 +163,12 @@ export async function collectMemoryTelemetry(): Promise<MemoryTelemetryPayload> 
       totalMb: bytesToMb(totalmem()),
       freeMb: bytesToMb(freemem()),
       usedMb: bytesToMb(totalmem() - freemem()),
+    },
+    cleanup: {
+      devGuardEnabled: process.env.NODE_ENV === "development" && process.env.HIVEMINDOS_DEV_MEMORY_GUARD !== "0",
+      gcAvailable: typeof (globalThis as typeof globalThis & { gc?: () => void }).gc === "function",
+      forceGcEnabled: process.env.HIVEMINDOS_DEV_FORCE_GC === "1",
+      maxOldSpaceMb: configuredMaxOldSpaceMb(),
     },
     summary: {
       appRssMb: aggregateSample.appRssMb,
@@ -157,7 +181,52 @@ export async function collectMemoryTelemetry(): Promise<MemoryTelemetryPayload> 
     processes,
     topGrowers,
     topSystemProcesses,
-    suspects: buildSuspects(processes, topGrowers, aggregateSample),
+    suspects: buildSuspects(processes, topGrowers, aggregateSample, currentState.aggregateSamples),
+  };
+}
+
+async function persistMemorySample(
+  sample: MemoryTelemetryAggregateSample,
+  heapDiagnostics: ReturnType<typeof collectHeapDiagnostics>,
+) {
+  const row = {
+    ...sample,
+    pid: process.pid,
+    uptimeSeconds: Math.round(process.uptime()),
+    recordedAt: new Date(sample.ts).toISOString(),
+    topHeapSpaces: [...heapDiagnostics.heapSpaces]
+      .sort((left, right) => right.usedMb - left.usedMb)
+      .slice(0, 8),
+  };
+  try {
+    await mkdir(dirname(MEMORY_SAMPLES_FILE), { recursive: true, mode: 0o700 });
+    await appendFile(MEMORY_SAMPLES_FILE, `${JSON.stringify(row)}\n`, "utf-8");
+  } catch {
+    // Memory telemetry should never fail the diagnostics endpoint.
+  }
+}
+
+function collectHeapDiagnostics() {
+  const heap = getHeapStatistics();
+  const heapSpaces = getHeapSpaceStatistics().map((space) => ({
+    name: space.space_name,
+    usedMb: bytesToMb(space.space_used_size),
+    sizeMb: bytesToMb(space.space_size),
+    availableMb: bytesToMb(space.space_available_size),
+    physicalMb: bytesToMb(space.physical_space_size),
+  }));
+  const usedByName = new Map(heapSpaces.map((space) => [space.name, space.usedMb]));
+  return {
+    heapLimitMb: bytesToMb(heap.heap_size_limit),
+    totalAvailableSizeMb: bytesToMb(heap.total_available_size),
+    mallocedMemoryMb: bytesToMb(heap.malloced_memory),
+    peakMallocedMemoryMb: bytesToMb(heap.peak_malloced_memory),
+    nativeContexts: heap.number_of_native_contexts,
+    detachedContexts: heap.number_of_detached_contexts,
+    oldSpaceUsedMb: usedByName.get("old_space") ?? 0,
+    codeSpaceUsedMb: usedByName.get("code_space") ?? 0,
+    largeObjectSpaceUsedMb: (usedByName.get("large_object_space") ?? 0) + (usedByName.get("code_large_object_space") ?? 0),
+    heapSpaces,
   };
 }
 
@@ -327,8 +396,12 @@ function buildSuspects(
   processes: MemoryTelemetryProcess[],
   topGrowers: MemoryTelemetryProcess[],
   aggregate: MemoryTelemetryAggregateSample,
+  samples: MemoryTelemetryAggregateSample[],
 ): MemoryTelemetrySuspect[] {
   const suspects: MemoryTelemetrySuspect[] = [];
+  const firstSample = samples[0];
+  const oldSpaceGrowthMb = firstSample ? aggregate.oldSpaceUsedMb - firstSample.oldSpaceUsedMb : 0;
+  const heapLimitPercent = aggregate.heapLimitMb > 0 ? (aggregate.heapUsedMb / aggregate.heapLimitMb) * 100 : 0;
   if (aggregate.appRssMb > 4_000) {
     suspects.push({
       severity: "critical",
@@ -353,6 +426,37 @@ function buildSuspects(
   }
 
   const current = processes.find((item) => item.isCurrentProcess);
+  if (heapLimitPercent > 85) {
+    suspects.push({
+      severity: "critical",
+      title: "V8 heap is close to its configured limit",
+      detail: `Heap used is ${aggregate.heapUsedMb.toFixed(1)} MB, ${heapLimitPercent.toFixed(0)}% of the ${aggregate.heapLimitMb.toFixed(0)} MB V8 limit. This is the direct precondition for the out-of-memory crash.`,
+      pid: current?.pid,
+    });
+  } else if (heapLimitPercent > 70) {
+    suspects.push({
+      severity: "warning",
+      title: "V8 heap is getting close to its limit",
+      detail: `Heap used is ${aggregate.heapUsedMb.toFixed(1)} MB, ${heapLimitPercent.toFixed(0)}% of the ${aggregate.heapLimitMb.toFixed(0)} MB V8 limit.`,
+      pid: current?.pid,
+    });
+  }
+  if (aggregate.oldSpaceUsedMb > 700 || oldSpaceGrowthMb > 100) {
+    suspects.push({
+      severity: aggregate.oldSpaceUsedMb > 1_200 ? "critical" : "warning",
+      title: "Old-space retained objects dominate the heap",
+      detail: `V8 old_space is ${aggregate.oldSpaceUsedMb.toFixed(1)} MB${oldSpaceGrowthMb > 0 ? `, up ${oldSpaceGrowthMb.toFixed(1)} MB across the sample window` : ""}. Old-space growth usually means long-lived compiled modules, caches, or retained request/session objects.`,
+      pid: current?.pid,
+    });
+  }
+  if (aggregate.nativeContexts > 80 || aggregate.detachedContexts > 0) {
+    suspects.push({
+      severity: aggregate.detachedContexts > 0 || aggregate.nativeContexts > 200 ? "warning" : "info",
+      title: "Many V8 contexts are alive",
+      detail: `V8 reports ${aggregate.nativeContexts} native contexts and ${aggregate.detachedContexts} detached contexts. Context growth fits repeated server module evaluation, VM sandbox creation, or dev compiler churn.`,
+      pid: current?.pid,
+    });
+  }
   if (current && current.rssMb - aggregate.heapUsedMb > 500 && current.recentGrowthMb > 50) {
     suspects.push({
       severity: "warning",
@@ -423,6 +527,11 @@ function roundMb(value: number) {
 
 function microsecondsToSeconds(value: number) {
   return Math.round((value / 1_000_000) * 10) / 10;
+}
+
+function configuredMaxOldSpaceMb() {
+  const match = (process.env.NODE_OPTIONS ?? "").match(/--max-old-space-size=(\d+)/);
+  return match ? Number(match[1]) : undefined;
 }
 
 export function memoryTelemetryCapabilities() {

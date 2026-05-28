@@ -1,7 +1,8 @@
 import { NextRequest } from "next/server";
 import { execFile } from "child_process";
-import { stat } from "fs/promises";
-import { resolve } from "path";
+import { readFile, stat } from "fs/promises";
+import { homedir } from "os";
+import { join, resolve } from "path";
 import { promisify } from "util";
 import type { AgentProfile, SharedVaultConfig } from "@/lib/types/agent-runtime";
 import { getRuntimeUrl } from "@/lib/types/agent-runtime";
@@ -33,8 +34,12 @@ type RuntimeRouteTelemetry = {
   routeStartedAt: number;
 };
 
+type AgentMode = "plan" | "act";
+
 const INTERACTIVE_RUNTIME_LOCK_MS = 130_000;
 const RUNTIME_FETCH_TIMEOUT_MS = 10 * 60 * 1000;
+const HIVE_ENV_FILE = join(homedir(), ".hivemindos", ".env");
+const HERMES_ENV_FILE = join(homedir(), ".hermes", ".env");
 const interactiveRuntimeLocks = new Map<string, number>();
 const execFileAsync = promisify(execFile);
 
@@ -109,6 +114,26 @@ function buildWorkingDirectoryContext(workingDirectory?: string): string {
   return [
     "Working directory context:",
     `- Use this directory for the chat unless the user says otherwise: ${trimmed}`,
+  ].join("\n");
+}
+
+function normalizeAgentMode(value: unknown): AgentMode {
+  return value === "plan" ? "plan" : "act";
+}
+
+function buildAgentModeContext(mode: AgentMode): string {
+  if (mode === "plan") {
+    return [
+      "Agent operating mode: Plan.",
+      "- Think through the approach, assumptions, and verification path before making changes.",
+      "- Prefer explaining the intended steps and asking only when a decision is genuinely needed.",
+      "- Do not mutate files, services, wallets, or remote systems unless the user explicitly asks you to proceed.",
+    ].join("\n");
+  }
+  return [
+    "Agent operating mode: Act.",
+    "- Execute the user's request directly, make reasonable assumptions, and keep moving until the task is handled.",
+    "- Use concise progress updates and surface blockers only when you cannot resolve them safely.",
   ].join("\n");
 }
 
@@ -322,6 +347,64 @@ function isAdaptiveOpenRouterProfile(profile: AgentProfile) {
   return profile.provider?.trim().toLowerCase() === "openrouter" && profile.model?.trim().toLowerCase() === "adaptive";
 }
 
+function profileWithResolvedModel(profile: AgentProfile, model: string): AgentProfile {
+  return model && model !== profile.model ? { ...profile, model } : profile;
+}
+
+function buildAdaptiveOpenRouterResolvedModelContext(profile: AgentProfile, model: string): string {
+  if (!isAdaptiveOpenRouterProfile(profile) && !(isOpenRouterProvider(profile) && Boolean(profile.adaptiveOpenRouter))) return "";
+  const configuredModel = [profile.provider, profile.model].filter(Boolean).join("/") || "adaptive";
+  return [
+    "Adaptive OpenRouter routing context:",
+    `- Configured adaptive model: ${configuredModel}`,
+    `- Concrete model selected for this request: ${model}`,
+    "- If the user asks which model is responding, answer with the concrete model selected for this request, not the adaptive configuration name.",
+    "- Do not claim the OpenRouter endpoint cannot be verified; this request is already being served through the selected concrete model.",
+  ].join("\n");
+}
+
+function isOpenRouterProvider(profile: AgentProfile) {
+  return profile.provider?.trim().toLowerCase() === "openrouter";
+}
+
+function parseEnvFileValue(raw: string, key: string) {
+  const pattern = new RegExp(`^\\s*(?:export\\s+)?${key.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\s*=\\s*(.*)\\s*$`, "m");
+  const match = raw.match(pattern);
+  if (!match) return "";
+  const value = match[1].trim();
+  if ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'"))) {
+    return value.slice(1, -1);
+  }
+  return value.replace(/\s+#.*$/, "").trim();
+}
+
+async function openRouterApiKey() {
+  const existing = process.env.OPENROUTER_API_KEY?.trim();
+  if (existing) return existing;
+  for (const path of [HIVE_ENV_FILE, HERMES_ENV_FILE]) {
+    const raw = await readFile(path, "utf8").catch(() => "");
+    const value = parseEnvFileValue(raw, "OPENROUTER_API_KEY");
+    if (value) return value;
+  }
+  return "";
+}
+
+async function openRouterCompatibleProfile(profile: AgentProfile) {
+  const model = profile.model?.trim();
+  if (!model) throw new Error("OpenRouter model is required.");
+  const token = profile.token?.trim() || await openRouterApiKey();
+  if (!token) throw new Error("OPENROUTER_API_KEY is required for OpenRouter Adaptive agents.");
+  return {
+    ...profile,
+    runtime: "openai-compatible" as AgentProfile["runtime"],
+    gatewayUrl: "https://openrouter.ai/api",
+    chatPath: "/v1/chat/completions",
+    provider: "openrouter",
+    model,
+    token,
+  };
+}
+
 type OpenRouterModelRecord = {
   id?: string;
   name?: string;
@@ -348,53 +431,123 @@ function isFreeOpenRouterModel(model: OpenRouterModelRecord) {
   return ["prompt", "completion", "request", "image", "web_search", "internal_reasoning"].every((key) => zeroPriced(pricing[key]));
 }
 
-function modelMatchesAdaptiveCategory(model: OpenRouterModelRecord, categories: string[]) {
-  if (!categories.length || categories.includes("general")) return true;
-  const haystack = `${model.id ?? ""} ${model.name ?? ""} ${model.description ?? ""} ${(model.supported_parameters ?? []).join(" ")}`.toLowerCase();
-  return categories.some((category) => {
-    if (category === "coding") return /code|coding|coder|programming|developer|devstral|deepseek|qwen|kimi|agent|tools?/.test(haystack);
-    if (category === "writing") return /write|writing|creative|story|copy|editor|chat|instruct/.test(haystack);
-    if (category === "vision") return /vision|visual|image|vlm|multimodal/.test(haystack) || model.architecture?.input_modalities?.includes("image");
-    if (category === "image") return model.architecture?.output_modalities?.includes("image") || /image|diffusion|flux|stable/.test(haystack);
-    if (category === "research") return /research|search|reason|r1|thinking|analysis/.test(haystack);
-    if (category === "tool-use") return (model.supported_parameters ?? []).includes("tools") || /tool|function/.test(haystack);
-    return true;
-  });
+function configuredAdaptiveUseCase(profile: AgentProfile) {
+  const useCase = profile.adaptiveOpenRouter?.useCase;
+  return useCase && useCase !== "auto" ? [useCase] : null;
 }
 
-async function resolveAdaptiveOpenRouterModel(profile: AgentProfile) {
-  const policy = profile.adaptiveOpenRouter ?? {
-    inputModalities: ["text"],
-    minContextLength: 32000,
-    categories: ["general"],
-    minScores: {},
-    fallbackModel: "",
-  };
+function adaptiveUseCases(profile: AgentProfile, messages: IncomingMessage[]) {
+  const configured = configuredAdaptiveUseCase(profile);
+  if (configured) return configured;
+  const latest = latestUserMessage(messages);
+  const latestText = typeof latest?.content === "string"
+    ? latest.content
+    : latest?.content?.map((part) => part.text ?? "").join(" ") ?? "";
+  const hasImage = Array.isArray(latest?.content) && latest.content.some((part) => part.type === "image_url");
+  const hasFile = Array.isArray(latest?.content) && latest.content.some((part) => part.type === "file");
+  const text = [
+    profile.workerClass,
+    profile.name,
+    profile.skillProfilePrompt,
+    profile.preferredSkillSlugs?.join(" "),
+    latestText,
+  ].filter(Boolean).join(" ").toLowerCase();
+  const cases = new Set<string>();
+  if (hasImage) cases.add("vision");
+  if (hasFile) cases.add("research");
+  if (/\b(code|coding|program|developer|debug|repo|typescript|javascript|python|react|next\.?js|bug|test|refactor|cli|api|schema|sql)\b/.test(text)) cases.add("coding");
+  if (/\b(write|writing|copy|essay|story|draft|edit|rewrite|tone|blog|newsletter|creative)\b/.test(text)) cases.add("writing");
+  if (/\b(research|compare|summari[sz]e|sources?|search|evidence|market|analysis|report)\b/.test(text)) cases.add("research");
+  if (/\b(image|draw|illustration|photo|visual|vision|screenshot|diagram)\b/.test(text)) cases.add(hasImage ? "vision" : "image");
+  if (/\b(tool|function|agent|workflow|automation|shell|command|browser|github|filesystem)\b/.test(text)) cases.add("tool-use");
+  if (!cases.size) cases.add("general");
+  return [...cases];
+}
+
+function modelUseCaseScore(model: OpenRouterModelRecord, useCases: string[]) {
+  const haystack = `${model.id ?? ""} ${model.name ?? ""} ${model.description ?? ""} ${(model.supported_parameters ?? []).join(" ")}`.toLowerCase();
+  let score = 0;
+  for (const useCase of useCases) {
+    if (useCase === "coding" && /code|coding|coder|programming|developer|devstral|deepseek|qwen|kimi|agent|tools?/.test(haystack)) score += 40;
+    if (useCase === "writing" && /write|writing|creative|story|copy|editor|chat|instruct/.test(haystack)) score += 32;
+    if (useCase === "vision" && (/vision|visual|image|vlm|multimodal/.test(haystack) || model.architecture?.input_modalities?.includes("image"))) score += 44;
+    if (useCase === "image" && (model.architecture?.output_modalities?.includes("image") || /image|diffusion|flux|stable/.test(haystack))) score += 44;
+    if (useCase === "research" && /research|search|reason|r1|thinking|analysis/.test(haystack)) score += 34;
+    if (useCase === "tool-use" && ((model.supported_parameters ?? []).includes("tools") || /tool|function/.test(haystack))) score += 30;
+  }
+  if ((model.supported_parameters ?? []).includes("tools")) score += 10;
+  if ((model.supported_parameters ?? []).includes("reasoning")) score += 8;
+  if (/latest|preview|turbo|pro|large|reason|thinking|instruct/.test(haystack)) score += 6;
+  return score;
+}
+
+async function resolveAdaptiveOpenRouterModels(profile: AgentProfile, messages: IncomingMessage[]) {
   const response = await fetch("https://openrouter.ai/api/v1/models?output_modalities=all", {
     headers: { Accept: "application/json" },
     cache: "no-store",
     signal: AbortSignal.timeout(12_000),
   }).catch(() => null);
-  if (!response?.ok) return policy.fallbackModel?.trim() || "openrouter/free";
+  const fallbackModel = profile.adaptiveOpenRouter?.fallbackModel?.trim();
+  if (!response?.ok) {
+    if (fallbackModel) return [fallbackModel];
+    throw new Error("Could not fetch OpenRouter's free model inventory for Adaptive mode.");
+  }
   const payload = await response.json().catch(() => null) as { data?: OpenRouterModelRecord[] } | null;
-  const requiredModalities = policy.inputModalities?.length ? policy.inputModalities : ["text"];
-  const categories = policy.categories?.length ? policy.categories : ["general"];
-  const minContext = Number(policy.minContextLength) || 0;
+  const latest = latestUserMessage(messages);
+  const requiresImage = Array.isArray(latest?.content) && latest.content.some((part) => part.type === "image_url");
+  const requiredModalities = requiresImage ? ["text", "image"] : ["text"];
+  const useCases = adaptiveUseCases(profile, messages);
   const candidates = (payload?.data ?? [])
     .filter((model) => model.id)
     .filter(isFreeOpenRouterModel)
     .filter((model) => requiredModalities.every((modality) => model.architecture?.input_modalities?.includes(modality)))
-    .filter((model) => (model.context_length ?? 0) >= minContext)
-    .filter((model) => modelMatchesAdaptiveCategory(model, categories))
     .sort((left, right) => {
       const rightTools = right.supported_parameters?.includes("tools") ? 1 : 0;
       const leftTools = left.supported_parameters?.includes("tools") ? 1 : 0;
-      return rightTools - leftTools
-        || (right.context_length ?? 0) - (left.context_length ?? 0)
-        || (right.created ?? 0) - (left.created ?? 0)
-        || (left.name ?? left.id ?? "").localeCompare(right.name ?? right.id ?? "");
+      return modelUseCaseScore(right, useCases) - modelUseCaseScore(left, useCases)
+        || rightTools - leftTools
+      || (right.context_length ?? 0) - (left.context_length ?? 0)
+      || (right.created ?? 0) - (left.created ?? 0)
+      || (left.name ?? left.id ?? "").localeCompare(right.name ?? right.id ?? "");
     });
-  return candidates[0]?.id ?? policy.fallbackModel?.trim() ?? "openrouter/free";
+  if (!candidates[0]?.id && fallbackModel) return [fallbackModel];
+  if (!candidates[0]?.id) throw new Error("OpenRouter did not report any free model that matches this Adaptive request.");
+  const ids = candidates.map((model) => model.id!).filter(Boolean);
+  return fallbackModel && !ids.includes(fallbackModel) ? [...ids, fallbackModel] : ids;
+}
+
+async function resolveAdaptiveOpenRouterModel(profile: AgentProfile, messages: IncomingMessage[]) {
+  const candidates = await resolveAdaptiveOpenRouterModels(profile, messages);
+  return candidates[0];
+}
+
+function retryableAdaptiveOpenRouterStatus(status: number) {
+  return status === 408 || status === 409 || status === 429 || status === 502 || status === 503 || status === 504;
+}
+
+function providerErrorMessage(body: string, status: number, model?: string) {
+  const parsed = (() => {
+    try {
+      return JSON.parse(body || "{}") as { error?: { message?: string; code?: string | number }; message?: string };
+    } catch {
+      return null;
+    }
+  })();
+  const rawMessage = parsed?.error?.message || parsed?.message || body.trim();
+  if (status === 429) {
+    return model
+      ? `OpenRouter rate-limited ${model}. Adaptive will try another free model when available.`
+      : "OpenRouter rate-limited this free model. Adaptive will try another free model when available.";
+  }
+  if (rawMessage) return rawMessage;
+  return `Provider returned error (${status})`;
+}
+
+function finalAdaptiveOpenRouterError(status: number, modelAttempts: string[]) {
+  if (status === 429) {
+    return `OpenRouter's free models are currently rate-limited or out of promo capacity. Adaptive tried ${modelAttempts.length} free model${modelAttempts.length === 1 ? "" : "s"}${modelAttempts.length ? `, ending with ${modelAttempts.at(-1)}` : ""}. Try again shortly or set a paid fallback model in Adaptive advanced settings.`;
+  }
+  return `OpenRouter could not complete this Adaptive request after trying ${modelAttempts.length || 1} free model${modelAttempts.length === 1 ? "" : "s"}.`;
 }
 
 async function recordChatHoney(profile: AgentProfile, inputText: string, outputText: string, enabled: boolean, source: "chat" | "kanban-chat" = "chat") {
@@ -469,6 +622,7 @@ async function streamHttpRuntime(
   messages: IncomingMessage[],
   userText: string,
   sharedVault: SharedVaultConfig | null,
+  agentMode: AgentMode,
   workingDirectory?: string,
   wallet?: AgentWalletConfig,
   honeyLedgerEnabled = false,
@@ -480,21 +634,40 @@ async function streamHttpRuntime(
     return Response.json({ error: inputCheck.reason ?? "Message blocked by security policy" }, { status: 400 });
   }
   if (isOpenAICompatibleRuntime(profile)) {
-    return streamOpenAICompatibleRuntime(profile, messages, userText, sharedVault, workingDirectory, wallet, honeyLedgerEnabled, telemetry);
+    return streamOpenAICompatibleRuntime(profile, messages, userText, sharedVault, agentMode, workingDirectory, wallet, honeyLedgerEnabled, telemetry);
+  }
+  if (isOpenRouterProvider(profile)) {
+    try {
+      const openRouterProfile = await openRouterCompatibleProfile(profile);
+      return streamOpenAICompatibleRuntime(openRouterProfile, messages, userText, sharedVault, agentMode, workingDirectory, wallet, honeyLedgerEnabled, telemetry);
+    } catch (error) {
+      return Response.json({ error: error instanceof Error ? error.message : "OpenRouter model selection failed." }, { status: 502 });
+    }
+  }
+  let runtimeProfile = profile;
+  let adaptiveResolvedModel = "";
+  if (isAdaptiveOpenRouterProfile(profile)) {
+    try {
+      adaptiveResolvedModel = await resolveAdaptiveOpenRouterModel(profile, messages);
+      runtimeProfile = profileWithResolvedModel(profile, adaptiveResolvedModel);
+    } catch (error) {
+      return Response.json({ error: error instanceof Error ? error.message : "Adaptive OpenRouter model selection failed." }, { status: 502 });
+    }
   }
   const url = getRuntimeUrl(profile, profile.chatPath || "/chat");
   const lockKey = interactiveRuntimeLockKey(profile, url);
   if (!reserveInteractiveRuntime(lockKey)) {
     const message = `${profile.name || profile.runtime} is already running another interactive request at ${url}. Wait for that run to finish before sending another chat, scheduler run, or Kanban assignment.`;
     recordRuntimeTelemetry(telemetry, "agent_runtime.http.busy", {
-      ...telemetryPayloadForProfile(profile),
+      ...telemetryPayloadForProfile(runtimeProfile),
       url,
     });
     return Response.json({ error: message }, { status: 409 });
   }
   const vaultContext = buildVaultContext(sharedVault);
   const walletContext = buildWalletToolContext(wallet);
-  const context = [buildAgentProfileContext(profile), buildWorkingDirectoryContext(workingDirectory), vaultContext, walletContext].filter(Boolean).join("\n\n");
+  const modeContext = buildAgentModeContext(agentMode);
+  const context = [buildAgentProfileContext(runtimeProfile), modeContext, buildWorkingDirectoryContext(workingDirectory), vaultContext, walletContext].filter(Boolean).join("\n\n");
   const hermesSlashCommand = profile.runtime === "hermes" && /^\/[^\s/]*(?:\s|$)/.test(inputCheck.text.trim());
   const runtimeMessages = context && !hermesSlashCommand
     ? [{ role: "system", content: context }, ...messages]
@@ -507,7 +680,7 @@ async function streamHttpRuntime(
   const slowTimers = [10_000, 30_000, 60_000].map((waitMs) => setTimeout(() => {
     if (fetchSettled) return;
     recordRuntimeTelemetry(telemetry, "agent_runtime.http.fetch.slow", {
-      ...telemetryPayloadForProfile(profile),
+      ...telemetryPayloadForProfile(runtimeProfile),
       url,
       waitMs,
       fetchElapsedMs: Date.now() - fetchStartedAt,
@@ -515,8 +688,10 @@ async function streamHttpRuntime(
   }, waitMs));
   try {
     recordRuntimeTelemetry(telemetry, "agent_runtime.http.fetch.start", {
-      ...telemetryPayloadForProfile(profile),
+      ...telemetryPayloadForProfile(runtimeProfile),
       url,
+      model: runtimeProfile.model || null,
+      adaptiveOpenRouter: Boolean(adaptiveResolvedModel),
       contextLength: context.length,
       messageCount: runtimeMessages.length,
       runtimeMessageLength: runtimeMessage.length,
@@ -528,13 +703,15 @@ async function streamHttpRuntime(
         ...(profile.token ? { Authorization: `Bearer ${profile.token}` } : {}),
       },
       body: JSON.stringify({
-        agent: profile,
-        agentId: profile.agentId || profile.id,
-        sessionKey: profile.sessionKey,
-        provider: profile.provider || undefined,
-        model: profile.model || undefined,
-        agentEnv: safeAgentEnv(profile.agentEnv),
+        agent: runtimeProfile,
+        agentId: runtimeProfile.agentId || runtimeProfile.id,
+        sessionKey: runtimeProfile.sessionKey,
+        provider: runtimeProfile.provider || undefined,
+        model: runtimeProfile.model || undefined,
+        agentEnv: safeAgentEnv(runtimeProfile.agentEnv),
         rawUserMessage: inputCheck.text,
+        agentMode,
+        mode: agentMode,
         runtimeSessionId: runtimeSessionId || undefined,
         hermesSessionId: runtimeSessionId || undefined,
         message: runtimeMessage,
@@ -551,8 +728,10 @@ async function streamHttpRuntime(
       signal: AbortSignal.timeout(RUNTIME_FETCH_TIMEOUT_MS),
     });
     recordRuntimeTelemetry(telemetry, "agent_runtime.http.fetch.response", {
-      ...telemetryPayloadForProfile(profile),
+      ...telemetryPayloadForProfile(runtimeProfile),
       url,
+      model: runtimeProfile.model || null,
+      adaptiveOpenRouter: Boolean(adaptiveResolvedModel),
       status: upstream.status,
       ok: upstream.ok,
       contentType: upstream.headers.get("content-type") ?? null,
@@ -561,8 +740,10 @@ async function streamHttpRuntime(
   } catch (error) {
     releaseInteractiveRuntime(lockKey);
     recordRuntimeTelemetry(telemetry, "agent_runtime.http.fetch.failed", {
-      ...telemetryPayloadForProfile(profile),
+      ...telemetryPayloadForProfile(runtimeProfile),
       url,
+      model: runtimeProfile.model || null,
+      adaptiveOpenRouter: Boolean(adaptiveResolvedModel),
       errorName: error instanceof Error ? error.name : null,
       errorMessage: error instanceof Error ? error.message : String(error),
       fetchElapsedMs: Date.now() - fetchStartedAt,
@@ -584,8 +765,10 @@ async function streamHttpRuntime(
       ? "This machine's local agent bridge is connected but does not have the Hermes chat bridge yet. Run Update/Setup on that machine, then try again."
       : errorText || `${profile.runtime} returned ${upstream.status}`;
     recordRuntimeTelemetry(telemetry, "agent_runtime.http.upstream_error", {
-      ...telemetryPayloadForProfile(profile),
+      ...telemetryPayloadForProfile(runtimeProfile),
       url,
+      model: runtimeProfile.model || null,
+      adaptiveOpenRouter: Boolean(adaptiveResolvedModel),
       status: upstream.status,
       bodyPreview: message.slice(0, 500),
       fetchElapsedMs: Date.now() - fetchStartedAt,
@@ -600,8 +783,10 @@ async function streamHttpRuntime(
   const contentType = upstream.headers.get("content-type") ?? "";
   if (!contentType.includes("text/event-stream")) {
     recordRuntimeTelemetry(telemetry, "agent_runtime.http.non_stream_response", {
-      ...telemetryPayloadForProfile(profile),
+      ...telemetryPayloadForProfile(runtimeProfile),
       url,
+      model: runtimeProfile.model || null,
+      adaptiveOpenRouter: Boolean(adaptiveResolvedModel),
       contentType,
       fetchElapsedMs: Date.now() - fetchStartedAt,
     });
@@ -615,7 +800,7 @@ async function streamHttpRuntime(
       );
     }
     const chunk = outputCheck.text;
-    const event = await recordChatHoney(profile, userText, chunk, honeyLedgerEnabled);
+    const event = await recordChatHoney(runtimeProfile, userText, chunk, honeyLedgerEnabled);
     releaseInteractiveRuntime(lockKey);
     return new Response(
       ssePayload({ choices: [{ delta: { content: chunk || JSON.stringify(json) } }] })
@@ -662,8 +847,10 @@ async function streamHttpRuntime(
       let fullText = "";
       let sawFirstChunk = false;
       recordRuntimeTelemetry(telemetry, "agent_runtime.http.stream.start", {
-        ...telemetryPayloadForProfile(profile),
+        ...telemetryPayloadForProfile(runtimeProfile),
         url,
+        model: runtimeProfile.model || null,
+        adaptiveOpenRouter: Boolean(adaptiveResolvedModel),
         fetchElapsedMs: Date.now() - fetchStartedAt,
       });
       try {
@@ -673,8 +860,10 @@ async function streamHttpRuntime(
           if (!sawFirstChunk) {
             sawFirstChunk = true;
             recordRuntimeTelemetry(telemetry, "agent_runtime.http.stream.first_chunk", {
-              ...telemetryPayloadForProfile(profile),
+              ...telemetryPayloadForProfile(runtimeProfile),
               url,
+              model: runtimeProfile.model || null,
+              adaptiveOpenRouter: Boolean(adaptiveResolvedModel),
               byteLength: value.byteLength,
               streamElapsedMs: Date.now() - fetchStartedAt,
             });
@@ -720,18 +909,22 @@ async function streamHttpRuntime(
             fullText = summary;
             safeEnqueue(ssePayload({ choices: [{ delta: { content: summary } }] }));
             recordRuntimeTelemetry(telemetry, "agent_runtime.http.workspace_completed", {
-              ...telemetryPayloadForProfile(profile),
+              ...telemetryPayloadForProfile(runtimeProfile),
               url,
+              model: runtimeProfile.model || null,
+              adaptiveOpenRouter: Boolean(adaptiveResolvedModel),
               changedFiles: workspaceAfter?.statusLines.length ?? 0,
               headChanged: Boolean(workspaceBefore?.head && workspaceAfter?.head && workspaceBefore.head !== workspaceAfter.head),
             });
           }
         }
-        const event = await recordChatHoney(profile, userText, fullText, honeyLedgerEnabled);
+        const event = await recordChatHoney(runtimeProfile, userText, fullText, honeyLedgerEnabled);
         if (event) safeEnqueue(ssePayload({ honey: event }));
         recordRuntimeTelemetry(telemetry, "agent_runtime.http.stream.completed", {
-          ...telemetryPayloadForProfile(profile),
+          ...telemetryPayloadForProfile(runtimeProfile),
           url,
+          model: runtimeProfile.model || null,
+          adaptiveOpenRouter: Boolean(adaptiveResolvedModel),
           outputLength: fullText.length,
           sawFirstChunk,
           streamElapsedMs: Date.now() - fetchStartedAt,
@@ -740,8 +933,10 @@ async function streamHttpRuntime(
       } catch (error) {
         const message = runtimeStreamErrorMessage(profile, error);
         recordRuntimeTelemetry(telemetry, "agent_runtime.http.stream.failed", {
-          ...telemetryPayloadForProfile(profile),
+          ...telemetryPayloadForProfile(runtimeProfile),
           url,
+          model: runtimeProfile.model || null,
+          adaptiveOpenRouter: Boolean(adaptiveResolvedModel),
           message,
           streamElapsedMs: Date.now() - fetchStartedAt,
         });
@@ -768,6 +963,7 @@ async function streamOpenAICompatibleRuntime(
   messages: IncomingMessage[],
   userText: string,
   sharedVault: SharedVaultConfig | null,
+  agentMode: AgentMode,
   workingDirectory?: string,
   wallet?: AgentWalletConfig,
   honeyLedgerEnabled = false,
@@ -783,49 +979,110 @@ async function streamOpenAICompatibleRuntime(
     return Response.json({ error: `${profile.name || profile.runtime} is already running another interactive request at ${url}.` }, { status: 409 });
   }
 
-  const context = [
-    buildAgentProfileContext(profile),
-    buildWorkingDirectoryContext(workingDirectory),
-    buildVaultContext(sharedVault),
-    buildWalletToolContext(wallet),
-  ].filter(Boolean).join("\n\n");
-  const modelMessages = context ? [{ role: "system", content: context }, ...messages] : messages;
-  const model = isAdaptiveOpenRouterProfile(profile)
-    ? await resolveAdaptiveOpenRouterModel(profile)
-    : openAICompatibleModel(profile);
-  const fetchStartedAt = Date.now();
-  let upstream: Response;
+  const adaptiveOpenRouter = isAdaptiveOpenRouterProfile(profile) || (isOpenRouterProvider(profile) && Boolean(profile.adaptiveOpenRouter));
+  const modelMessagesFor = (candidateModel: string) => {
+    const runtimeProfile = profileWithResolvedModel(profile, candidateModel);
+    const context = [
+      buildAgentProfileContext(runtimeProfile),
+      buildAdaptiveOpenRouterResolvedModelContext(profile, candidateModel),
+      buildAgentModeContext(agentMode),
+      buildWorkingDirectoryContext(workingDirectory),
+      buildVaultContext(sharedVault),
+      buildWalletToolContext(wallet),
+    ].filter(Boolean).join("\n\n");
+    return context ? [{ role: "system" as const, content: context }, ...messages] : messages;
+  };
+  let candidateModels: string[];
   try {
+    candidateModels = isAdaptiveOpenRouterProfile(profile)
+      ? await resolveAdaptiveOpenRouterModels(profile, messages)
+      : [openAICompatibleModel(profile)];
+  } catch (error) {
+    releaseInteractiveRuntime(lockKey);
+    return Response.json({ error: error instanceof Error ? error.message : "Adaptive OpenRouter model selection failed." }, { status: 502 });
+  }
+  const fetchStartedAt = Date.now();
+  let upstream: Response | null = null;
+  let model = candidateModels[0] ?? openAICompatibleModel(profile);
+  let lastStatus = 0;
+  let lastFetchError: unknown = null;
+  const attemptedModels: string[] = [];
+  for (const candidateModel of candidateModels) {
+    model = candidateModel;
+    attemptedModels.push(candidateModel);
+    const modelMessages = modelMessagesFor(candidateModel);
     recordRuntimeTelemetry(telemetry, "agent_runtime.openai_compatible.fetch.start", {
       ...telemetryPayloadForProfile(profile),
       url,
       model,
-      adaptiveOpenRouter: isAdaptiveOpenRouterProfile(profile),
+      adaptiveOpenRouter,
       messageCount: modelMessages.length,
     });
-    upstream = await fetch(url, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        ...(profile.token ? { Authorization: `Bearer ${profile.token}` } : {}),
-      },
-      body: JSON.stringify({
+    try {
+      upstream = await fetch(url, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...(profile.token ? { Authorization: `Bearer ${profile.token}` } : {}),
+        },
+        body: JSON.stringify({
+          model,
+          messages: modelMessages,
+          stream: true,
+        }),
+        signal: AbortSignal.timeout(RUNTIME_FETCH_TIMEOUT_MS),
+      });
+    } catch (error) {
+      lastFetchError = error;
+      recordRuntimeTelemetry(telemetry, "agent_runtime.openai_compatible.fetch.failed", {
+        ...telemetryPayloadForProfile(profile),
+        url,
         model,
-        messages: modelMessages,
-        stream: true,
-      }),
-      signal: AbortSignal.timeout(RUNTIME_FETCH_TIMEOUT_MS),
-    });
-  } catch (error) {
-    releaseInteractiveRuntime(lockKey);
-    return Response.json({ error: runtimeFetchError(profile, url, error) }, { status: 502 });
-  }
-
-  if (!upstream.ok) {
+        adaptiveOpenRouter,
+        errorName: error instanceof Error ? error.name : null,
+        errorMessage: error instanceof Error ? error.message : String(error),
+        attempt: attemptedModels.length,
+        remainingCandidates: Math.max(0, candidateModels.length - attemptedModels.length),
+        elapsedMs: Date.now() - fetchStartedAt,
+      });
+      if (adaptiveOpenRouter && attemptedModels.length < candidateModels.length) {
+        continue;
+      }
+      releaseInteractiveRuntime(lockKey);
+      return Response.json({ error: runtimeFetchError(profile, url, error) }, { status: 502 });
+    }
+    if (upstream.ok) break;
+    lastStatus = upstream.status;
     const errorText = await upstream.text().catch(() => "");
+    recordRuntimeTelemetry(telemetry, "agent_runtime.openai_compatible.upstream_error", {
+      ...telemetryPayloadForProfile(profile),
+      url,
+      model,
+      adaptiveOpenRouter,
+      status: upstream.status,
+      bodyPreview: errorText.slice(0, 500),
+      attempt: attemptedModels.length,
+      remainingCandidates: Math.max(0, candidateModels.length - attemptedModels.length),
+      elapsedMs: Date.now() - fetchStartedAt,
+    });
+    if (adaptiveOpenRouter && retryableAdaptiveOpenRouterStatus(upstream.status) && attemptedModels.length < candidateModels.length) {
+      continue;
+    }
     releaseInteractiveRuntime(lockKey);
     return new Response(
-      ssePayload({ error: errorText || `${profile.runtime} returned ${upstream.status}` }) + "data: [DONE]\n\n",
+      ssePayload({ error: adaptiveOpenRouter && retryableAdaptiveOpenRouterStatus(upstream.status)
+        ? finalAdaptiveOpenRouterError(upstream.status, attemptedModels)
+        : providerErrorMessage(errorText, upstream.status, model) }) + "data: [DONE]\n\n",
+      { headers: { "Content-Type": "text/event-stream", "Cache-Control": "no-cache" } },
+    );
+  }
+
+  if (!upstream?.ok) {
+    releaseInteractiveRuntime(lockKey);
+    return new Response(
+      ssePayload({ error: lastFetchError
+        ? `OpenRouter had a network issue while Adaptive was trying free models. Adaptive tried ${attemptedModels.length || 1} model${attemptedModels.length === 1 ? "" : "s"}. Try again shortly or set a paid fallback model in Adaptive advanced settings.`
+        : finalAdaptiveOpenRouterError(lastStatus || 502, attemptedModels) }) + "data: [DONE]\n\n",
       { headers: { "Content-Type": "text/event-stream", "Cache-Control": "no-cache" } },
     );
   }
@@ -897,6 +1154,8 @@ async function streamOpenAICompatibleRuntime(
         recordRuntimeTelemetry(telemetry, "agent_runtime.openai_compatible.stream.done", {
           ...telemetryPayloadForProfile(profile),
           url,
+          model,
+          adaptiveOpenRouter,
           outputLength: fullText.length,
           elapsedMs: Date.now() - fetchStartedAt,
         });
@@ -928,6 +1187,7 @@ export async function POST(request: NextRequest) {
   let wallet: AgentWalletConfig | undefined;
   let honeyLedgerEnabled = false;
   let runtimeSessionId = "";
+  let agentMode: AgentMode = "act";
   try {
     const body = (await request.json()) as {
       agent?: AgentProfile;
@@ -936,6 +1196,7 @@ export async function POST(request: NextRequest) {
       workingDirectory?: string;
       wallet?: AgentWalletConfig;
       honeyLedgerEnabled?: boolean;
+      agentMode?: string;
       runtimeSessionId?: string;
       hermesSessionId?: string;
     };
@@ -946,6 +1207,7 @@ export async function POST(request: NextRequest) {
     workingDirectory = body.workingDirectory;
     wallet = body.wallet;
     honeyLedgerEnabled = body.honeyLedgerEnabled === true;
+    agentMode = normalizeAgentMode(body.agentMode);
     runtimeSessionId = typeof body.runtimeSessionId === "string"
       ? body.runtimeSessionId
       : typeof body.hermesSessionId === "string"
@@ -960,6 +1222,7 @@ export async function POST(request: NextRequest) {
     messageCount: messages.length,
     workingDirectorySet: Boolean(workingDirectory?.trim()),
     runtimeSessionIdSet: Boolean(runtimeSessionId.trim()),
+    agentMode,
     sharedVaultEnabled: Boolean(sharedVault?.enabled),
     honeyLedgerEnabled,
     elapsedMs: Date.now() - routeStartedAt,
@@ -986,7 +1249,7 @@ export async function POST(request: NextRequest) {
     return Response.json({ error: promptCheck.reason ?? "Message blocked by security policy" }, { status: 400 });
   }
   const vault = activeSharedVault(profile, sharedVault);
-  const runtimeContexts = [buildAgentProfileContext(profile), buildWorkingDirectoryContext(workingDirectory), buildVaultContext(vault), buildWalletToolContext(wallet)].filter(Boolean).join("\n\n");
+  const runtimeContexts = [buildAgentProfileContext(profile), buildAgentModeContext(agentMode), buildWorkingDirectoryContext(workingDirectory), buildVaultContext(vault), buildWalletToolContext(wallet)].filter(Boolean).join("\n\n");
   const textWithVaultContext = runtimeContexts
     ? `${runtimeContexts}\n\nUser message:\n${userPrompt}`
     : promptCheck.text;
@@ -1029,9 +1292,10 @@ export async function POST(request: NextRequest) {
       ...telemetryPayloadForProfile(effectiveProfile),
       promptLength: userPrompt.length,
       contextLength: runtimeContexts.length,
+      agentMode,
       elapsedMs: Date.now() - routeStartedAt,
     });
-    return streamHttpRuntime(effectiveProfile, messages, promptCheck.text, vault, workingDirectory, wallet, honeyLedgerEnabled, runtimeSessionId, {
+    return streamHttpRuntime(effectiveProfile, messages, promptCheck.text, vault, agentMode, workingDirectory, wallet, honeyLedgerEnabled, runtimeSessionId, {
       request,
       routeStartedAt,
     });
@@ -1050,6 +1314,7 @@ export async function POST(request: NextRequest) {
     ...telemetryPayloadForProfile(profile),
     promptLength: userPrompt.length,
     contextLength: runtimeContexts.length,
+    agentMode,
     elapsedMs: Date.now() - routeStartedAt,
   });
 

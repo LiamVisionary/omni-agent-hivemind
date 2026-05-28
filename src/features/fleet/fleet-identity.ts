@@ -75,7 +75,6 @@ export function machinePhysicalBase(name?: string, dnsName?: string) {
 
 export function isLocalLinkDuplicateOfSelf(self: FleetMachineIdentity | undefined, device: FleetMachineIdentity) {
   if (!self || device.self) return false;
-  if (isHivemindMachineName(device.name, device.dnsName)) return false;
   const deviceBase = machineHivemindBase(device.name, device.dnsName);
   const selfBase = machineHivemindBase(self.name, self.dnsName);
   if (selfBase && deviceBase && selfBase === deviceBase) return true;
@@ -114,10 +113,7 @@ export function shouldPreserveMissingDiscoveredMachine(machine: DiscoveredMachin
   })) {
     return false;
   }
-  if (isHivemindMachineName(machine.device.name, machine.device.dnsName)) {
-    return machine.agents.length > 0 || machine.snapshots.length > 0;
-  }
-  return true;
+  return machine.agents.length > 0 || machine.snapshots.length > 0;
 }
 
 export function machineIdentityFromParts({

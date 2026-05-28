@@ -110,6 +110,10 @@ async function readRemoteSnapshot(agent: AgentWithLocal): Promise<AgentSnapshot 
       sources: [...new Set(["remote agent bridge", ...snapshot.sources])],
     };
   } catch (error) {
+    const reason = error instanceof Error && error.message !== "fetch failed"
+      ? error.message
+      : "endpoint is not listening";
+    const snapshotUrl = `${normalizeCollectorUrl(baseUrl)}/snapshot`;
     return {
       agentId: agent.id,
       ok: false,
@@ -119,7 +123,7 @@ async function readRemoteSnapshot(agent: AgentWithLocal): Promise<AgentSnapshot 
       sources: ["remote agent bridge"],
       tasks: [],
       checkedAt: Date.now(),
-      error: error instanceof Error ? error.message : "Could not reach remote agent bridge",
+      error: `Remote agent bridge unavailable at ${snapshotUrl}: ${reason}`,
     };
   }
 }

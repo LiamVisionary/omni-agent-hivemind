@@ -24,6 +24,8 @@ type UpdateBody = {
 
 type CollectorHealth = {
   ok?: boolean;
+  collectorStartedAt?: string;
+  collectorStartedAtMs?: number;
   capabilities?: {
     chat?: boolean;
     envHttpSync?: boolean;
@@ -38,6 +40,12 @@ type CollectorHealth = {
     latestCommit?: string;
     latestShortCommit?: string;
   };
+};
+
+type VerificationOptions = {
+  requireCollectorRestart?: boolean;
+  previousCollectorStartedAtMs?: number;
+  requestedAtMs?: number;
 };
 
 function collectorBase(collectorUrl?: string) {
@@ -72,6 +80,31 @@ function hasExpectedVersion(health: CollectorHealth | null, expectedCommit?: str
   return commit === expected;
 }
 
+function collectorStartedAtMs(health: CollectorHealth | null) {
+  if (typeof health?.collectorStartedAtMs === "number" && Number.isFinite(health.collectorStartedAtMs)) {
+    return health.collectorStartedAtMs;
+  }
+  const parsed = Date.parse(health?.collectorStartedAt ?? "");
+  return Number.isNaN(parsed) ? 0 : parsed;
+}
+
+function hasPostUpdateCollector(health: CollectorHealth | null, options?: VerificationOptions) {
+  if (!options?.requireCollectorRestart) return true;
+  const startedAt = collectorStartedAtMs(health);
+  if (!startedAt) return false;
+  if (options.previousCollectorStartedAtMs && startedAt <= options.previousCollectorStartedAtMs) return false;
+  if (options.requestedAtMs && startedAt < options.requestedAtMs - 2_000) return false;
+  return true;
+}
+
+function updateNeededBefore(body: UpdateBody, health: CollectorHealth | null) {
+  return Boolean(
+    health?.version?.dirty
+    || !hasExpectedVersion(health, body.expectedCommit)
+    || !hasRequiredCapabilities(health, body.requiredCapabilities)
+  );
+}
+
 function hasVerificationTarget(body: UpdateBody) {
   return Boolean(
     body.expectedCommit?.trim()
@@ -98,7 +131,10 @@ async function updateBodyWithTarget(body: UpdateBody): Promise<UpdateBody> {
   return body;
 }
 
-function verificationError(body: UpdateBody, health: CollectorHealth | null) {
+function verificationError(body: UpdateBody, health: CollectorHealth | null, options?: VerificationOptions) {
+  if (!hasPostUpdateCollector(health, options)) {
+    return "The update started, but the agent bridge has not restarted into the updated collector yet. It may still be installing dependencies or rebuilding.";
+  }
   if (body.expectedCommit?.trim() && health?.version?.commit !== body.expectedCommit.trim()) {
     const current = health?.version?.shortCommit || health?.version?.commit?.slice(0, 7) || "unknown";
     const expected = health?.version?.latestShortCommit || body.expectedCommit.trim().slice(0, 7);
@@ -112,17 +148,17 @@ function verificationError(body: UpdateBody, health: CollectorHealth | null) {
   return "The update command finished, but agent bridge verification did not pass.";
 }
 
-async function waitForCollectorVerification(body: UpdateBody) {
+async function waitForCollectorVerification(body: UpdateBody, options?: VerificationOptions) {
   const delays = [1_000, 2_000, 4_000, 8_000, 15_000, 30_000, 45_000, 60_000, 60_000, 60_000];
   let health = await fetchCollectorHealth(body.collectorUrl);
   if (!hasVerificationTarget(body)) return { verified: false, health };
-  if (hasVerificationTarget(body) && hasRequiredCapabilities(health, body.requiredCapabilities) && hasExpectedVersion(health, body.expectedCommit)) {
+  if (hasVerificationTarget(body) && hasPostUpdateCollector(health, options) && hasRequiredCapabilities(health, body.requiredCapabilities) && hasExpectedVersion(health, body.expectedCommit)) {
     return { verified: true, health };
   }
   for (const delay of delays) {
     await new Promise((resolve) => setTimeout(resolve, delay));
     health = await fetchCollectorHealth(body.collectorUrl);
-    if (hasVerificationTarget(body) && hasRequiredCapabilities(health, body.requiredCapabilities) && hasExpectedVersion(health, body.expectedCommit)) {
+    if (hasVerificationTarget(body) && hasPostUpdateCollector(health, options) && hasRequiredCapabilities(health, body.requiredCapabilities) && hasExpectedVersion(health, body.expectedCommit)) {
       return { verified: true, health };
     }
   }
@@ -466,6 +502,12 @@ async function tryLocalShell(body: UpdateBody) {
 export async function POST(request: Request) {
   const parsedBody = await request.json().catch(() => ({})) as UpdateBody;
   const body = await updateBodyWithTarget(parsedBody);
+  const preUpdateHealth = await fetchCollectorHealth(body.collectorUrl);
+  const verificationOptions: VerificationOptions = {
+    requireCollectorRestart: updateNeededBefore(body, preUpdateHealth),
+    previousCollectorStartedAtMs: collectorStartedAtMs(preUpdateHealth),
+    requestedAtMs: Date.now(),
+  };
   try {
     const result = await (await isLocalCheckout(body.appDir)
       ? tryLocalShell(body)
@@ -474,11 +516,11 @@ export async function POST(request: Request) {
       : body.collectorUrl
         ? tryCollectorUpdate(body)
         : tryTailscaleSsh(body));
-    const verification = await waitForCollectorVerification(body);
+    const verification = await waitForCollectorVerification(body, verificationOptions);
     if (!verification.verified) {
       return Response.json({
         ok: false,
-        error: verificationError(body, verification.health),
+        error: verificationError(body, verification.health, verificationOptions),
         method: result.method,
         stdout: "stdout" in result ? result.stdout : undefined,
         stderr: "stderr" in result ? result.stderr : undefined,

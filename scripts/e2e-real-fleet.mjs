@@ -1,18 +1,25 @@
 #!/usr/bin/env node
-import { mkdir, rm, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { randomBytes, createHash } from "node:crypto";
+import { homedir } from "node:os";
 import { join } from "node:path";
 
 const dashboardUrl = (process.env.DASHBOARD_URL || "http://127.0.0.1:5020").replace(/\/+$/, "");
 const runId = process.env.HIVE_E2E_RUN_ID || `hive-e2e-${new Date().toISOString().replace(/\D/g, "").slice(0, 14)}-${randomBytes(3).toString("hex")}`;
 const artifactDir = join(process.cwd(), "artifacts", "e2e-real-fleet", runId);
 const suiteArg = process.argv.find((arg) => arg.startsWith("--suite="))?.split("=", 2)[1] || "all";
-const suites = suiteArg === "all" ? ["agents", "env", "skills", "file-share", "kanban", "smoke"] : suiteArg.split(",").map((item) => item.trim()).filter(Boolean);
+const suites = suiteArg === "all" ? ["agents", "env", "skills", "file-share", "kanban", "adaptive-agent", "smoke"] : suiteArg.split(",").map((item) => item.trim()).filter(Boolean);
 const pollMs = Number(process.env.HIVE_E2E_POLL_MS || 2_000);
 const timeoutMs = Number(process.env.HIVE_E2E_TIMEOUT_MS || 180_000);
 const vaultPath = process.env.HIVE_E2E_VAULT_PATH || "";
 const kanbanFolder = process.env.HIVE_E2E_KANBAN_FOLDER || "";
 const kanbanBoard = process.env.HIVE_E2E_KANBAN_BOARD || "hivemindos-e2e";
+const adaptiveAgentName = process.env.HIVE_E2E_ADAPTIVE_AGENT_NAME || "AdaptiveAgent";
+const adaptiveCases = (process.env.HIVE_E2E_ADAPTIVE_AGENT_CASES || "auto,coding,writing,vision,research,tool-use")
+  .split(",")
+  .map((item) => item.trim())
+  .filter(Boolean);
+const telemetryEventsPath = process.env.HIVE_E2E_TELEMETRY_EVENTS || join(homedir(), ".hivemindos", "telemetry", "events.jsonl");
 
 const summary = {
   ok: false,
@@ -79,6 +86,20 @@ async function requestJson(url, options = {}) {
   return data;
 }
 
+async function requestRaw(url, options = {}) {
+  const response = await fetch(url, {
+    ...options,
+    headers: {
+      ...(options.body ? { "Content-Type": "application/json" } : {}),
+      ...(options.headers || {}),
+    },
+    cache: "no-store",
+    signal: AbortSignal.timeout(options.timeoutMs || 60_000),
+  });
+  const text = await response.text().catch(() => "");
+  return { response, text };
+}
+
 async function poll(label, fn, timeout = timeoutMs) {
   const deadline = Date.now() + timeout;
   let lastError;
@@ -101,6 +122,65 @@ async function collector(machine, path, options = {}) {
 
 async function dashboard(path, options = {}) {
   return requestJson(`${dashboardUrl}${path}`, options);
+}
+
+async function dashboardRaw(path, options = {}) {
+  return requestRaw(`${dashboardUrl}${path}`, options);
+}
+
+function parseSseText(raw) {
+  const events = [];
+  const errors = [];
+  const sessions = [];
+  let text = "";
+  for (const eventText of String(raw || "").split("\n\n")) {
+    const dataLines = eventText
+      .split("\n")
+      .filter((line) => line.startsWith("data:"))
+      .map((line) => line.replace(/^data:\s*/, ""));
+    if (dataLines.length === 0) continue;
+    const data = dataLines.join("\n");
+    if (data === "[DONE]") continue;
+    try {
+      const parsed = JSON.parse(data);
+      events.push(parsed);
+      const chunk = parsed?.choices?.[0]?.delta?.content
+        ?? parsed?.choices?.[0]?.text
+        ?? parsed?.choices?.[0]?.message?.content
+        ?? parsed?.delta
+        ?? parsed?.text
+        ?? parsed?.content
+        ?? parsed?.message?.content
+        ?? "";
+      if (chunk) text += chunk;
+      const error = typeof parsed?.error === "string"
+        ? parsed.error
+        : typeof parsed?.error?.message === "string"
+          ? parsed.error.message
+          : "";
+      if (error) errors.push(error);
+      if (parsed?.session) sessions.push(parsed.session);
+    } catch {
+      events.push({ raw: data });
+      text += data;
+    }
+  }
+  return { text, errors, sessions, events };
+}
+
+async function readTelemetryEventsSince(sinceMs, predicate = () => true) {
+  const raw = await readFile(telemetryEventsPath, "utf8").catch(() => "");
+  return raw
+    .split("\n")
+    .filter(Boolean)
+    .map((line) => {
+      try {
+        return JSON.parse(line);
+      } catch {
+        return null;
+      }
+    })
+    .filter((event) => event && event.ts >= sinceMs && predicate(event));
 }
 
 async function discoverFleet() {
@@ -442,6 +522,151 @@ async function testKanbanHandoff(machines) {
   return { taskId, parentStatus: finalBoard.parent.status, childStatus: finalBoard.artistChild.status };
 }
 
+function adaptiveAgentCandidates(machines) {
+  const needle = adaptiveAgentName.toLowerCase();
+  return machines.flatMap((machine) => (machine.agents || [])
+    .filter((agent) => [agent.name, agent.id, agent.agentId].filter(Boolean).some((value) => String(value).toLowerCase() === needle))
+    .map((agent) => ({ machine, agent })));
+}
+
+function adaptiveCasePrompt(testCase) {
+  const marker = `ADAPTIVE_E2E_OK_${testCase.toUpperCase().replace(/[^A-Z0-9]+/g, "_")}`;
+  const prompts = {
+    auto: `HivemindOS real AdaptiveAgent E2E ${runId}. Reply with one short sentence containing ${marker} and the model name you are using.`,
+    coding: `HivemindOS real AdaptiveAgent coding E2E ${runId}. Reply with ${marker} and one JavaScript function name you would use for parsing SSE.`,
+    writing: `HivemindOS real AdaptiveAgent writing E2E ${runId}. Reply with ${marker} and a five-word tagline for adaptive routing.`,
+    vision: `HivemindOS real AdaptiveAgent vision E2E ${runId}. Reply with ${marker} and identify the dominant color in the attached image.`,
+    research: `HivemindOS real AdaptiveAgent research E2E ${runId}. Reply with ${marker} and one concise research-checklist item.`,
+    "tool-use": `HivemindOS real AdaptiveAgent tool-use E2E ${runId}. Reply with ${marker} and name one tool-call safety check.`,
+  };
+  return { marker, prompt: prompts[testCase] || prompts.auto };
+}
+
+function adaptiveMessagesForCase(testCase, prompt) {
+  if (testCase !== "vision") return [{ role: "user", content: prompt }];
+  return [{
+    role: "user",
+    content: [
+      { type: "text", text: prompt },
+      {
+        type: "image_url",
+        image_url: {
+          url: "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADUlEQVR4nGP4z8DwHwAFAAH/AL+X8nAAAAAASUVORK5CYII=",
+        },
+      },
+    ],
+  }];
+}
+
+async function sendAdaptiveDashboardChat(agent, testCase) {
+  const { marker, prompt } = adaptiveCasePrompt(testCase);
+  const profile = {
+    ...agent,
+    adaptiveOpenRouter: {
+      ...(agent.adaptiveOpenRouter || {}),
+      useCase: testCase === "auto" ? "auto" : testCase,
+    },
+  };
+  const messages = adaptiveMessagesForCase(testCase, prompt);
+  const sinceMs = Date.now() - 1_000;
+  const { response, text: raw } = await dashboardRaw("/api/chat/agent-runtime", {
+    method: "POST",
+    body: JSON.stringify({
+      agent: profile,
+      messages,
+      sharedVault: { enabled: false },
+      workingDirectory: process.cwd(),
+      honeyLedgerEnabled: false,
+      agentMode: "act",
+    }),
+    timeoutMs: Number(process.env.HIVE_E2E_ADAPTIVE_AGENT_CHAT_TIMEOUT_MS || 180_000),
+  });
+  const stream = parseSseText(raw);
+  if (!response.ok) {
+    throw new Error(`AdaptiveAgent ${testCase} dashboard request returned ${response.status}: ${raw.slice(0, 500)}`);
+  }
+  if (stream.errors.length > 0) {
+    throw new Error(`AdaptiveAgent ${testCase} streamed error: ${stream.errors.join(" | ")}`);
+  }
+  assert(stream.text.trim().length > 0, `AdaptiveAgent ${testCase} returned an empty SSE stream.`);
+  assert(!/finished without returning any text/i.test(stream.text), `AdaptiveAgent ${testCase} surfaced the empty-response fallback.`);
+
+  const telemetry = await poll(`AdaptiveAgent ${testCase} resolved-model telemetry`, async () => {
+    const events = await readTelemetryEventsSince(sinceMs, (event) => event.payload?.agentId === agent.id || event.payload?.agentName === agent.name);
+    const fetchStart = events.find((event) => (
+      (event.type === "agent_runtime.http.fetch.start" || event.type === "agent_runtime.openai_compatible.fetch.start")
+      && event.payload?.adaptiveOpenRouter === true
+    ));
+    const completed = [...events].reverse().find((event) => (
+      event.type === "agent_runtime.http.stream.completed"
+      || event.type === "agent_runtime.openai_compatible.stream.done"
+    ));
+    return fetchStart && completed ? { events, fetchStart, completed } : null;
+  }, 30_000);
+  const resolvedModel = String(telemetry.fetchStart.payload?.model || "");
+  assert(resolvedModel && resolvedModel.toLowerCase() !== "adaptive", `AdaptiveAgent ${testCase} did not record a concrete resolved model.`);
+  assert(telemetry.completed.payload?.outputLength > 0, `AdaptiveAgent ${testCase} completed with outputLength=${telemetry.completed.payload?.outputLength}.`);
+  return {
+    case: testCase,
+    marker,
+    resolvedModel,
+    outputLength: telemetry.completed.payload.outputLength,
+    preview: stream.text.trim().slice(0, 240),
+  };
+}
+
+async function assertCollectorForwardsAdaptiveErrors(agent, machine) {
+  const invalidModel = process.env.HIVE_E2E_ADAPTIVE_AGENT_INVALID_MODEL || "hivemindos/definitely-not-a-real-model";
+  const base = machine.device.collectorUrl.replace(/\/+$/, "");
+  const { response, text: raw } = await requestRaw(`${base}/chat`, {
+    method: "POST",
+    body: JSON.stringify({
+      agent: { ...agent, model: invalidModel, provider: "openrouter" },
+      provider: "openrouter",
+      model: invalidModel,
+      rawUserMessage: `HivemindOS AdaptiveAgent invalid-model E2E ${runId}`,
+      message: `HivemindOS AdaptiveAgent invalid-model E2E ${runId}`,
+      messages: [{ role: "user", content: `Reply with ADAPTIVE_E2E_SHOULD_NOT_SUCCEED ${runId}.` }],
+      stream: true,
+    }),
+    timeoutMs: 90_000,
+  });
+  const stream = parseSseText(raw);
+  assert(response.ok, `Collector invalid-model request returned HTTP ${response.status}: ${raw.slice(0, 500)}`);
+  assert(stream.errors.length > 0, `Collector swallowed invalid-model upstream failure instead of streaming an error. Raw SSE: ${raw.slice(0, 500)}`);
+  return { invalidModel, errorPreview: stream.errors.join(" | ").slice(0, 240) };
+}
+
+async function testAdaptiveAgent(machines) {
+  const candidates = adaptiveAgentCandidates(machines);
+  assert(candidates.length > 0, `Could not find real local agent named ${adaptiveAgentName}.`);
+  const local = candidates.find((candidate) => /127\.0\.0\.1|localhost/.test(candidate.machine.device?.collectorUrl || "")) || candidates[0];
+  const { machine, agent } = local;
+  assert(agent.runtime === "hermes", `${adaptiveAgentName} is ${agent.runtime}, expected hermes.`);
+  assert(String(agent.provider || "").toLowerCase() === "openrouter", `${adaptiveAgentName} provider is ${agent.provider}, expected openrouter.`);
+  assert(String(agent.model || "").toLowerCase() === "adaptive", `${adaptiveAgentName} model is ${agent.model}, expected adaptive.`);
+  assert(machine.device?.collectorUrl, `${adaptiveAgentName} is missing a collector URL.`);
+
+  const checks = [];
+  checks.push(await assertCollectorForwardsAdaptiveErrors(agent, machine)
+    .then((detail) => ({ name: "collector-error-forwarding", ok: true, detail }))
+    .catch((error) => ({ name: "collector-error-forwarding", ok: false, error: error instanceof Error ? error.message : String(error) })));
+  for (const testCase of adaptiveCases) {
+    checks.push(await sendAdaptiveDashboardChat(agent, testCase)
+      .then((detail) => ({ name: `dashboard-${testCase}`, ok: true, detail }))
+      .catch((error) => ({ name: `dashboard-${testCase}`, ok: false, error: error instanceof Error ? error.message : String(error) })));
+  }
+  const failed = checks.filter((check) => !check.ok);
+  assert(failed.length === 0, `AdaptiveAgent checks failed: ${failed.map((check) => `${check.name}: ${check.error}`).join(" || ")}`);
+  return {
+    agentId: agent.id,
+    agentName: agent.name,
+    machine: machine.device?.name,
+    collectorUrl: machine.device?.collectorUrl,
+    checks,
+  };
+}
+
 async function testSmoke() {
   const { chromium } = await import("playwright");
   const browser = await chromium.launch({ headless: true });
@@ -466,6 +691,7 @@ async function main() {
   if (suites.includes("skills")) await withResult("skills", () => testSkillSync(machines));
   if (suites.includes("file-share")) await withResult("file-share", () => testEncryptedFileShare(machines));
   if (suites.includes("kanban")) await withResult("kanban", () => testKanbanHandoff(machines));
+  if (suites.includes("adaptive-agent")) await withResult("adaptive-agent", () => testAdaptiveAgent(machines));
   if (suites.includes("smoke")) await withResult("smoke", () => testSmoke());
   summary.ok = summary.results.every((result) => result.ok);
 }

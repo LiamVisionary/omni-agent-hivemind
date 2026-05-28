@@ -195,8 +195,10 @@ function setupCommands(config: NangoHostConfig) {
     `ssh ${host}`,
     "git clone https://github.com/NangoHQ/nango.git ~/nango",
     "cd ~/nango && cp .env.example .env",
-    `printf 'NANGO_SERVER_URL=${config.baseUrl}\\nSERVER_PORT=3003\\n' >> .env`,
-    "docker compose up -d",
+    "cd ~/nango && sed -i.bak \"s/'6379:6379'/'${NANGO_REDIS_PORT:-16379}:6379'/\" docker-compose.yaml",
+    `printf 'NANGO_SERVER_URL=${config.baseUrl}\\nSERVER_PORT=3003\\nNANGO_DB_PORT=15432\\nNANGO_REDIS_PORT=16379\\n' >> .env`,
+    "cd ~/nango && docker compose down --remove-orphans",
+    "cd ~/nango && docker compose up -d",
   ];
 }
 
@@ -247,6 +249,9 @@ function nangoSetupScript(config: NangoHostConfig) {
     "fi",
     "cd \"$NANGO_DIR\"",
     "if [ ! -f .env ]; then cp .env.example .env; fi",
+    "if [ -f docker-compose.yaml ]; then",
+    "  sed -i.bak \"s/'6379:6379'/'${NANGO_REDIS_PORT:-16379}:6379'/\" docker-compose.yaml",
+    "fi",
     "set_env() {",
     "  key=\"$1\"",
     "  value=\"$2\"",
@@ -261,7 +266,10 @@ function nangoSetupScript(config: NangoHostConfig) {
     "}",
     `set_env NANGO_SERVER_URL ${shellSingleQuote(baseUrl)}`,
     `set_env SERVER_PORT ${shellSingleQuote(new URL(baseUrl).port || "3003")}`,
+    "set_env NANGO_DB_PORT 15432",
+    "set_env NANGO_REDIS_PORT 16379",
     "log 'Starting Nango containers'",
+    "$DOCKER compose down --remove-orphans >/dev/null 2>&1 || true",
     "$DOCKER compose up -d",
     "log 'Nango setup command finished'",
   ].join("\n");

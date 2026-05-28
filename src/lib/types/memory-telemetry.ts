@@ -32,9 +32,23 @@ export type MemoryTelemetryAggregateSample = {
   currentRssMb: number;
   heapUsedMb: number;
   heapTotalMb: number;
+  heapLimitMb: number;
+  oldSpaceUsedMb: number;
+  codeSpaceUsedMb: number;
+  largeObjectSpaceUsedMb: number;
   externalMb: number;
   arrayBuffersMb: number;
+  nativeContexts: number;
+  detachedContexts: number;
   trackedProcessCount: number;
+};
+
+export type MemoryTelemetryHeapSpace = {
+  name: string;
+  usedMb: number;
+  sizeMb: number;
+  availableMb: number;
+  physicalMb: number;
 };
 
 export type MemoryTelemetrySuspect = {
@@ -55,6 +69,13 @@ export type MemoryTelemetryPayload = {
     heapUsedMb: number;
     externalMb: number;
     arrayBuffersMb: number;
+    heapLimitMb: number;
+    totalAvailableSizeMb: number;
+    mallocedMemoryMb: number;
+    peakMallocedMemoryMb: number;
+    nativeContexts: number;
+    detachedContexts: number;
+    heapSpaces: MemoryTelemetryHeapSpace[];
   };
   resourceUsage: {
     maxRssMb: number;
@@ -65,6 +86,12 @@ export type MemoryTelemetryPayload = {
     totalMb: number;
     freeMb: number;
     usedMb: number;
+  };
+  cleanup: {
+    devGuardEnabled: boolean;
+    gcAvailable: boolean;
+    forceGcEnabled: boolean;
+    maxOldSpaceMb?: number;
   };
   summary: {
     appRssMb: number;

@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { ArrowLeft, ExternalLink, LoaderCircle, Maximize2, RefreshCcw, Sparkles } from "lucide-react";
+import { ArrowLeft, ExternalLink, LoaderCircle, Maximize2, Minimize2, RefreshCcw, Sparkles } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import type { DashboardView } from "@/features/dashboard/dashboard-types";
 
@@ -45,6 +45,17 @@ type MyAppsPanelProps = {
   formatRelativeTime: (timestamp: number) => string;
 };
 
+const loadingIconThemes = [
+  "from-teal-300/25 to-emerald-500/10",
+  "from-sky-300/25 to-cyan-500/10",
+  "from-amber-200/25 to-yellow-500/10",
+  "from-rose-300/25 to-orange-500/10",
+  "from-lime-200/25 to-teal-500/10",
+  "from-fuchsia-300/20 to-sky-500/10",
+  "from-white/20 to-slate-500/10",
+  "from-cyan-200/25 to-emerald-500/10",
+];
+
 function AppIcon({ app, large = false }: { app: HostedApp; large?: boolean }) {
   const sizeClass = large ? "h-24 w-24 rounded-[24px] text-3xl" : "h-20 w-20 rounded-[22px] text-2xl";
   const [broken, setBroken] = useState(false);
@@ -65,11 +76,72 @@ function AppIcon({ app, large = false }: { app: HostedApp; large?: boolean }) {
   );
 }
 
+function MyAppsLoadingState() {
+  return (
+    <div
+      className="mt-6 grid min-h-[58vh] place-items-center overflow-hidden rounded-md border border-[rgba(94,234,212,0.14)] bg-[radial-gradient(circle_at_50%_30%,rgba(20,184,166,0.10),transparent_34%),rgba(8,12,19,0.42)] px-4 py-10"
+      aria-live="polite"
+      aria-busy="true"
+    >
+      <div className="grid w-full max-w-4xl justify-items-center gap-8">
+        <div className="relative grid h-36 w-36 place-items-center">
+          <span className="absolute h-28 w-28 rounded-full border border-[rgba(94,234,212,0.24)] animate-ping" />
+          <span className="absolute h-20 w-20 rounded-full border border-[rgba(251,191,36,0.22)] animate-pulse" />
+          <span className="absolute h-px w-32 origin-center rotate-45 bg-gradient-to-r from-transparent via-[rgba(94,234,212,0.55)] to-transparent" />
+          <span className="grid h-16 w-16 place-items-center rounded-[22px] border border-[rgba(94,234,212,0.28)] bg-[rgba(10,14,21,0.82)] shadow-[0_20px_70px_rgba(20,184,166,0.18)]">
+            <LoaderCircle aria-hidden="true" className="h-7 w-7 animate-spin text-[var(--accent-strong)]" />
+          </span>
+        </div>
+
+        <div className="text-center">
+          <p className="eyebrow">Scanning Tailnet</p>
+          <h3 className="m-0 text-xl font-black text-[var(--foreground)]">Finding interactive apps</h3>
+          <p className="mx-auto mt-2 max-w-md text-sm leading-6 text-[var(--muted)]">
+            Checking ready machines and sorting the app launcher.
+          </p>
+        </div>
+
+        <div className="grid w-full grid-cols-4 gap-x-5 gap-y-7 sm:grid-cols-6 lg:grid-cols-8">
+          {Array.from({ length: 16 }, (_, index) => (
+            <div
+              key={index}
+              className="grid justify-items-center gap-3"
+            >
+              <span
+                className={`h-16 w-16 animate-pulse rounded-[18px] bg-gradient-to-br ${loadingIconThemes[index % loadingIconThemes.length]} ring-1 ring-white/10 shadow-[0_16px_38px_rgba(0,0,0,0.22)]`}
+                style={{ animationDelay: `${index * 70}ms` }}
+              />
+              <span
+                className="h-2 w-14 animate-pulse rounded-full bg-[rgba(148,163,184,0.16)]"
+                style={{ animationDelay: `${index * 70 + 90}ms` }}
+              />
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function appLaunchUrl(app: HostedApp) {
+  if (!/z-image/i.test(app.name)) return app.openUrl;
+  try {
+    const url = new URL(app.openUrl);
+    if (!url.searchParams.get("api")) {
+      url.searchParams.set("api", url.origin);
+    }
+    return url.toString();
+  } catch {
+    return app.openUrl;
+  }
+}
+
 export function MyAppsPanel({ activeView, fleetClass, formatRelativeTime }: MyAppsPanelProps) {
   const [payload, setPayload] = useState<FleetAppsPayload | null>(null);
   const [loading, setLoading] = useState(false);
   const [status, setStatus] = useState("");
   const [selectedAppId, setSelectedAppId] = useState<string | null>(null);
+  const [liveAppExpanded, setLiveAppExpanded] = useState(false);
 
   const refresh = useCallback(async () => {
     setLoading(true);
@@ -94,6 +166,15 @@ export function MyAppsPanel({ activeView, fleetClass, formatRelativeTime }: MyAp
     return () => window.clearTimeout(timer);
   }, [activeView, loading, payload, refresh]);
 
+  useEffect(() => {
+    if (!liveAppExpanded) return undefined;
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setLiveAppExpanded(false);
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [liveAppExpanded]);
+
   if (activeView !== "my-apps") return null;
 
   const apps = payload?.apps ?? [];
@@ -104,10 +185,19 @@ export function MyAppsPanel({ activeView, fleetClass, formatRelativeTime }: MyAp
 
   if (selectedApp) {
     const isComfy = /comfy/i.test(selectedApp.name);
+    const launchUrl = appLaunchUrl(selectedApp);
     return (
       <section className={fleetClass("taskPanel", "tabPanel")}>
         <div className="flex flex-wrap items-center justify-between gap-3">
-          <Button type="button" size="sm" variant="secondary" onClick={() => setSelectedAppId(null)}>
+          <Button
+            type="button"
+            size="sm"
+            variant="secondary"
+            onClick={() => {
+              setLiveAppExpanded(false);
+              setSelectedAppId(null);
+            }}
+          >
             <ArrowLeft aria-hidden="true" />
             Apps
           </Button>
@@ -117,7 +207,7 @@ export function MyAppsPanel({ activeView, fleetClass, formatRelativeTime }: MyAp
               Refresh
             </Button>
             <Button type="button" size="sm" asChild>
-              <a href={selectedApp.openUrl} target="_blank" rel="noreferrer">
+              <a href={launchUrl} target="_blank" rel="noreferrer">
                 <ExternalLink aria-hidden="true" />
                 Open
               </a>
@@ -152,18 +242,30 @@ export function MyAppsPanel({ activeView, fleetClass, formatRelativeTime }: MyAp
             </div>
           </div>
 
-          <div className="min-h-[520px] overflow-hidden rounded-md border border-[rgba(148,163,184,0.18)] bg-black/40">
+          <div
+            className={
+              liveAppExpanded
+                ? "fixed inset-0 z-[80] overflow-hidden border border-[rgba(148,163,184,0.18)] bg-black"
+                : "min-h-[520px] overflow-hidden rounded-md border border-[rgba(148,163,184,0.18)] bg-black/40"
+            }
+          >
             <div className="flex items-center justify-between gap-3 border-b border-[rgba(148,163,184,0.14)] bg-[rgba(10,14,21,0.86)] px-3 py-2">
               <span className="text-xs font-bold text-[var(--muted)]">Live app</span>
-              <a href={selectedApp.openUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-2 rounded-md px-2 py-1 text-xs font-bold text-[var(--accent-strong)] hover:bg-[rgba(20,184,166,0.10)]">
-                <Maximize2 aria-hidden="true" className="h-3 w-3" />
-                Full screen
-              </a>
+              <Button
+                type="button"
+                size="sm"
+                variant="ghost"
+                className="h-8 px-2 text-xs font-bold text-[var(--accent-strong)] hover:bg-[rgba(20,184,166,0.10)]"
+                onClick={() => setLiveAppExpanded((expanded) => !expanded)}
+              >
+                {liveAppExpanded ? <Minimize2 aria-hidden="true" className="h-3 w-3" /> : <Maximize2 aria-hidden="true" className="h-3 w-3" />}
+                {liveAppExpanded ? "Exit full screen" : "Full screen"}
+              </Button>
             </div>
             <iframe
               title={selectedApp.name}
-              src={selectedApp.openUrl}
-              className="h-[520px] w-full border-0 bg-white"
+              src={launchUrl}
+              className={liveAppExpanded ? "h-[calc(100dvh-41px)] w-full border-0 bg-white" : "h-[520px] w-full border-0 bg-white"}
               sandbox="allow-forms allow-modals allow-popups allow-same-origin allow-scripts allow-downloads"
             />
           </div>
@@ -198,12 +300,17 @@ export function MyAppsPanel({ activeView, fleetClass, formatRelativeTime }: MyAp
         <span>{checkedAt ? formatRelativeTime(checkedAt) : loading ? "Scanning..." : "Not yet"}</span>
       </div>
 
+      {loading && apps.length === 0 ? <MyAppsLoadingState /> : null}
+
       <div className="mt-6 grid grid-cols-3 gap-x-4 gap-y-7 sm:grid-cols-4 md:grid-cols-5 xl:grid-cols-7">
         {apps.map((app) => (
           <button
             type="button"
             key={app.id}
-            onClick={() => setSelectedAppId(app.id)}
+            onClick={() => {
+              setLiveAppExpanded(false);
+              setSelectedAppId(app.id);
+            }}
             className="group grid justify-items-center gap-3 text-center text-[var(--foreground)] outline-none"
           >
             <span className="relative">

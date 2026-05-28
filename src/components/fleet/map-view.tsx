@@ -5,8 +5,8 @@ import * as React from "react";
 import { Monitor, Smartphone } from "lucide-react";
 import { HexTile } from "./hex-tile";
 import { LottieBee } from "./lottie-bee";
-import { projectLatLon } from "./hex-math";
 import { isFleetMachineMobile, type FleetAgent, type FleetMachine } from "./fleet-data";
+import coastlineData from "./data/ne_110m_coastline";
 
 interface MapViewProps {
   width?: number;
@@ -20,13 +20,16 @@ interface MapViewProps {
   onAddAgent: (m: FleetMachine) => void;
 }
 
-// Coarse hand-drawn silhouettes for the visible regions (NE NA + Europe).
-// Rendered as dotted lines so they read as a stylized swarm map, not a real
-// world atlas. Scale targets a 540×300 viewBox.
-const CONTINENT_PATHS = [
-  "M 12 88 Q 30 76 38 70 Q 52 60 58 80 Q 70 92 86 110 Q 100 130 122 138 Q 140 152 160 158 Q 178 168 192 184 L 196 196 L 178 198 Q 158 192 138 200 L 120 212 L 108 230 L 90 240 L 70 232 L 50 220 L 36 200 L 28 178 L 22 156 L 18 132 L 14 110 Z",
-  "M 360 70 Q 380 50 408 56 Q 430 62 450 78 Q 470 92 478 116 Q 482 138 472 158 Q 460 178 442 196 Q 420 212 400 218 Q 376 224 354 218 Q 330 210 312 196 Q 296 180 290 158 Q 286 134 296 110 Q 308 88 332 76 Z",
-];
+type CoastlineFeatureCollection = {
+  features?: ReadonlyArray<{
+    geometry?: {
+      type?: string;
+      coordinates?: unknown;
+    };
+  }>;
+};
+
+const COASTLINE_LINES = extractCoastlineLines(coastlineData);
 
 // Coincident machines (atlas + honeycomb in Brooklyn) get a small offset so
 // pins don't fully overlap.
@@ -48,16 +51,23 @@ export function MapView({
   const [pan, setPan] = React.useState({ x: 0, y: 0 });
   const [dragging, setDragging] = React.useState(false);
 
+  const projection = React.useMemo(() => createFleetProjection(machines, w, h), [h, machines, w]);
   const pos = React.useMemo(() => {
     const o: Record<string, { x: number; y: number }> = {};
     for (const m of machines) {
-      const p = projectLatLon(m.lon, m.lat, w, h);
+      const p = projection.project(m.lon, m.lat);
       const [dx, dy] = PIN_OFFSET[m.id] ?? [0, 0];
       o[m.id] = { x: p.x + dx, y: p.y + dy };
     }
     return o;
-  }, [machines, w, h]);
-  const bounds = React.useMemo(() => mapContentBounds(machines, pos, w, h), [machines, pos, w, h]);
+  }, [machines, projection]);
+  const regionPaths = React.useMemo(() => {
+    return COASTLINE_LINES
+      .map((line) => coastlinePath(line, projection.project, w, h))
+      .filter(Boolean);
+  }, [h, projection, w]);
+  const bounds = React.useMemo(() => mapContentBounds(machines, edges, pos), [edges, machines, pos]);
+  const latestBeeMapRef = React.useRef({ edges, pos });
 
   const clampPan = React.useCallback((next: { x: number; y: number }) => {
     return {
@@ -77,8 +87,12 @@ export function MapView({
   }, []);
 
   React.useLayoutEffect(() => {
+    latestBeeMapRef.current = { edges, pos };
+  }, [edges, pos]);
+
+  React.useLayoutEffect(() => {
     if (!viewport.width || !viewport.height) return;
-    // Recenter when the projected map or containing stage changes size.
+    // Recenter on the fleet objects, not the whole atlas rectangle.
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setPan(clampPan({
       x: viewport.width / 2 - (bounds.minX + bounds.maxX) / 2,
@@ -102,18 +116,29 @@ export function MapView({
     let raf = 0;
     const SZ = 38;
     const tick = (now: number) => {
+      const { edges: currentEdges, pos: currentPos } = latestBeeMapRef.current;
       for (let i = 0; i < BEE_COUNT; i++) {
+        const el = beeRefs.current[i];
+        if (!currentEdges.length) {
+          if (el) el.style.opacity = "0";
+          beeStateRef.current[i].t0 = now;
+          continue;
+        }
         const s = beeStateRef.current[i];
         if ((now - s.t0) / s.dur >= 1) {
-          s.edgeIdx = edges.length ? (s.edgeIdx + i + 1) % edges.length : 0;
+          s.edgeIdx = (s.edgeIdx + i + 1) % currentEdges.length;
           s.dir = s.dir === 1 ? -1 : 1;
           s.t0 = now;
         }
+        if (s.edgeIdx >= currentEdges.length) s.edgeIdx = i % currentEdges.length;
         const phase = Math.min(Math.max((now - s.t0) / s.dur, 0), 1);
         const p = s.dir === 1 ? phase : 1 - phase;
-        const [a, b] = edges[s.edgeIdx] ?? [];
-        const A = pos[a], B = pos[b];
-        if (!A || !B) continue;
+        const [a, b] = currentEdges[s.edgeIdx] ?? [];
+        const A = currentPos[a], B = currentPos[b];
+        if (!A || !B) {
+          if (el) el.style.opacity = "0";
+          continue;
+        }
         const dist = Math.hypot(B.x - A.x, B.y - A.y);
         const mx = (A.x + B.x) / 2;
         const my = (A.y + B.y) / 2 - Math.min(60, dist * 0.18);
@@ -121,7 +146,6 @@ export function MapView({
         const y = (1 - p) * (1 - p) * A.y + 2 * (1 - p) * p * my + p * p * B.y;
         const o = Math.sin(phase * Math.PI);
         const flip = (s.dir === 1 ? B.x - A.x : A.x - B.x) < 0 ? -1 : 1;
-        const el = beeRefs.current[i];
         if (el) {
           el.style.transform = `translate(${x - SZ / 2}px, ${y - SZ / 2}px) scaleX(${flip})`;
           el.style.opacity = String(o);
@@ -131,7 +155,6 @@ export function MapView({
     };
     raf = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(raf);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   return (
@@ -195,16 +218,15 @@ export function MapView({
             <line key={"v" + i} y1={0} y2={h} x1={((i + 1) * w) / 8} x2={((i + 1) * w) / 8} strokeDasharray="2 4" />
           ))}
         </g>
-        {/* Continent silhouettes (scaled from 540×300 base) */}
+        {/* Natural Earth coastline silhouettes */}
         <g
-          transform={`scale(${w / 540} ${h / 300})`}
           fill="none"
           stroke="var(--edge-stroke-start)"
           strokeWidth={0.7}
           strokeDasharray="0.8 3"
           opacity={0.55}
         >
-          {CONTINENT_PATHS.map((d, i) => <path key={i} d={d} />)}
+          {regionPaths.map((d, i) => <path key={i} d={d} />)}
         </g>
         {/* Tailscale arcs */}
         {edges.map(([a, b], i) => {
@@ -330,27 +352,130 @@ export function MapView({
   );
 }
 
-function mapContentBounds(
-  machines: FleetMachine[],
-  pos: Record<string, { x: number; y: number }>,
+function createFleetProjection(machines: FleetMachine[], width: number, height: number) {
+  const compression = 0.58;
+  const points = machines
+    .filter((machine) => Number.isFinite(machine.lon) && Number.isFinite(machine.lat))
+    .map((machine) => ({ lon: machine.lon, lat: machine.lat }));
+
+  if (!points.length) {
+    return {
+      project: (lon: number, lat: number) => ({ x: width / 2 + lon, y: height / 2 - lat }),
+    };
+  }
+
+  let minLon = Math.min(...points.map((point) => point.lon));
+  let maxLon = Math.max(...points.map((point) => point.lon));
+  let minLat = Math.min(...points.map((point) => point.lat));
+  let maxLat = Math.max(...points.map((point) => point.lat));
+
+  const minLonSpan = 56;
+  const minLatSpan = 36;
+  const lonSpan = Math.max(maxLon - minLon, minLonSpan);
+  const latSpan = Math.max(maxLat - minLat, minLatSpan);
+  const lonCenter = (minLon + maxLon) / 2;
+  const latCenter = (minLat + maxLat) / 2;
+  const lonPad = Math.max(12, lonSpan * 0.18);
+  const latPad = Math.max(8, latSpan * 0.18);
+
+  minLon = lonCenter - lonSpan / 2 - lonPad;
+  maxLon = lonCenter + lonSpan / 2 + lonPad;
+  minLat = latCenter - latSpan / 2 - latPad;
+  maxLat = latCenter + latSpan / 2 + latPad;
+
+  return {
+    project: (lon: number, lat: number) => {
+      const x = ((lon - minLon) / (maxLon - minLon)) * width;
+      const y = ((maxLat - lat) / (maxLat - minLat)) * height;
+      return {
+        x: width / 2 + (x - width / 2) * compression,
+        y: height / 2 + (y - height / 2) * compression,
+      };
+    },
+  };
+}
+
+function extractCoastlineLines(data: CoastlineFeatureCollection) {
+  const lines: Array<Array<[number, number]>> = [];
+  for (const feature of data.features ?? []) {
+    const geometry = feature.geometry;
+    if (geometry?.type === "LineString" && Array.isArray(geometry.coordinates)) {
+      const line = parseCoordinateLine(geometry.coordinates);
+      if (line.length > 1) lines.push(line);
+    }
+    if (geometry?.type === "MultiLineString" && Array.isArray(geometry.coordinates)) {
+      for (const coordinates of geometry.coordinates) {
+        if (!Array.isArray(coordinates)) continue;
+        const line = parseCoordinateLine(coordinates);
+        if (line.length > 1) lines.push(line);
+      }
+    }
+  }
+  return lines;
+}
+
+function parseCoordinateLine(coordinates: readonly unknown[]) {
+  const line: Array<[number, number]> = [];
+  for (const coordinate of coordinates) {
+    if (!Array.isArray(coordinate) || coordinate.length < 2) continue;
+    const lon = Number(coordinate[0]);
+    const lat = Number(coordinate[1]);
+    if (Number.isFinite(lon) && Number.isFinite(lat)) line.push([lon, lat]);
+  }
+  return line;
+}
+
+function coastlinePath(
+  points: Array<[number, number]>,
+  project: (lon: number, lat: number) => { x: number; y: number },
   width: number,
   height: number,
+) {
+  if (points.length < 2) return "";
+  const projected = points.map(([lon, lat]) => project(lon, lat));
+  const visible = projected.some((point) => point.x >= -80 && point.x <= width + 80 && point.y >= -80 && point.y <= height + 80);
+  if (!visible) return "";
+  return projected
+    .map((point, index) => `${index === 0 ? "M" : "L"} ${point.x.toFixed(1)} ${point.y.toFixed(1)}`)
+    .join(" ");
+}
+
+function mapContentBounds(
+  machines: FleetMachine[],
+  edges: Array<[string, string]>,
+  pos: Record<string, { x: number; y: number }>,
 ) {
   const padding = 90;
   const pinWidth = 56;
   const pinHeight = (pinWidth * 2) / Math.sqrt(3);
-  let minX = 0;
-  let minY = 0;
-  let maxX = width;
-  let maxY = height;
+  let minX = Number.POSITIVE_INFINITY;
+  let minY = Number.POSITIVE_INFINITY;
+  let maxX = Number.NEGATIVE_INFINITY;
+  let maxY = Number.NEGATIVE_INFINITY;
+
+  const includePoint = (x: number, y: number) => {
+    minX = Math.min(minX, x);
+    maxX = Math.max(maxX, x);
+    minY = Math.min(minY, y);
+    maxY = Math.max(maxY, y);
+  };
 
   for (const machine of machines) {
     const point = pos[machine.id];
     if (!point) continue;
-    minX = Math.min(minX, point.x - pinWidth / 2);
-    maxX = Math.max(maxX, point.x + pinWidth / 2);
-    minY = Math.min(minY, point.y - pinHeight / 2);
-    maxY = Math.max(maxY, point.y + 72);
+    includePoint(point.x - pinWidth / 2, point.y - pinHeight / 2);
+    includePoint(point.x + pinWidth / 2, point.y + 72);
+  }
+
+  for (const [a, b] of edges) {
+    const A = pos[a], B = pos[b];
+    if (!A || !B) continue;
+    const dist = Math.hypot(B.x - A.x, B.y - A.y);
+    includePoint((A.x + B.x) / 2, (A.y + B.y) / 2 - Math.min(60, dist * 0.18));
+  }
+
+  if (!Number.isFinite(minX) || !Number.isFinite(minY) || !Number.isFinite(maxX) || !Number.isFinite(maxY)) {
+    return { minX: -padding, minY: -padding, maxX: padding, maxY: padding };
   }
 
   return {

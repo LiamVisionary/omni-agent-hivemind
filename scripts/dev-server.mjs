@@ -40,6 +40,15 @@ const bundlerArgs = (() => {
 const sourceMapArgs = process.env.NEXT_DEV_SOURCE_MAPS === "1" || hasSourceMapFlag ? [] : ["--disable-source-maps"];
 
 const command = "scripts/run-with-memory-limit.sh";
+const nodeOptionSet = new Set((process.env.NODE_OPTIONS ?? "").split(/\s+/).filter(Boolean));
+if (process.env.NEXT_DEV_EXPOSE_GC !== "0") {
+  nodeOptionSet.add("--expose-gc");
+}
+const maxOldSpaceMb = process.env.NEXT_DEV_MAX_OLD_SPACE_MB ?? "3072";
+if (maxOldSpaceMb !== "0" && ![...nodeOptionSet].some((option) => option.startsWith("--max-old-space-size="))) {
+  nodeOptionSet.add(`--max-old-space-size=${maxOldSpaceMb}`);
+}
+const nodeOptions = [...nodeOptionSet].join(" ");
 const commandArgs = [
   "--limit-mb",
   process.env.MEMORY_LIMIT_MB || "5000",
@@ -55,7 +64,13 @@ const commandArgs = [
   ...nextArgs,
 ];
 
-const child = spawn(command, commandArgs, { stdio: "inherit" });
+const child = spawn(command, commandArgs, {
+  stdio: "inherit",
+  env: {
+    ...process.env,
+    NODE_OPTIONS: nodeOptions,
+  },
+});
 
 child.on("exit", (code, signal) => {
   if (signal) {

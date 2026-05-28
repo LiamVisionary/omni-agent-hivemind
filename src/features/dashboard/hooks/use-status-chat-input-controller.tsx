@@ -5,6 +5,7 @@
 /* eslint-disable react-hooks/immutability, react-hooks/purity */
 
 import { useCallback, useEffect, useState } from "react";
+import { parseRuntimeSsePayload, responseErrorMessage, runtimeErrorMessage } from "./runtime-stream-errors";
 
 export function useStatusChatInputController(props: any) {
   const { AbortController, CHAT_RESPONSE_STALL_TIMEOUT_MS, Uint8Array, appendMessage, attachmentSummary, brainDragMovedRef, brainDragRef, brainGraph, brainPan, busy, chatAttachments, chatAutoScrollRef, chatDirectories, chatMessageStorageKey, chatSetupIssue, chooseDirectoryForMachine, collectorKey, createDefaultAgentWallet, discoveredMachines, honeyLedgerEnabled, hydrated, isManualAgentChatMessage, kanbanBoardSlug, kanbanReadyPickupInFlightRef, kanbanStorageBody, linkedDirectoryLabel, localKanbanMachineTarget, machineGroups, messageContentParts, messages, orchestrateReadyKanbanTask, quickAddMachineTarget, quickAddMachineTargets, readComposerFiles, recordRecentDirectory, recording, refreshHoneyLedger, refreshKanbanOnce, selectedAgent, selectedBrainNodeId, selectedChatDirectoryPath, selectedChatLeafKey, selectedChatRuntimeSessionId, selectedKanbanAgent, selectedKanbanTask, setAttachmentError, setAttachmentMenuOpen, setBrainGraph, setBrainGraphStatus, setBrainPan, setBusy, setBusyAgentId, setChatAttachments, setChatDirectories, setControlRoomStatus, setHasStreamingChunk, setKanbanBoard, setKanbanError, setKanbanSteerAttachmentError, setKanbanSteerAttachmentMenuOpen, setKanbanSteerAttachments, setKanbanSteerDirectories, setKanbanSteerDraft, setKanbanStorage, setMessagesByAgent, setQuickAddAttachmentError, setQuickAddAttachmentMenuOpen, setQuickAddAttachments, setQuickAddDirectories, setQuickAddDrafts, setRecentDirectoriesExpanded, setRecording, setSelectedBrainNodeId, setSelectedChatPreview, setSelectedChatRuntimeSessionId, setStatus, setStatusAgentId, setText, setVaultStatus, setVaultSyncPending, setVaultSyncStatus, setVoiceBands, setVoiceTarget, setVoiceTranscript, sharedVault, speechRecognitionConstructor, syncthingAutoPairRef, tailscaleDevices, text, updateSharedVault, updateTask, upsertTask, voiceAnimationRef, voiceAudioContextRef, voiceRecognitionRef, voiceStreamRef, voiceTarget, voiceTranscriptRef, walletsByAgent } = props;
@@ -721,6 +722,9 @@ export function useStatusChatInputController(props: any) {
       return;
     }
     const prompt = text.trim();
+    const form = event.currentTarget as HTMLFormElement | null;
+    const submittedAgentMode = String(form ? new FormData(form).get("agentMode") ?? "" : "");
+    const agentMode = submittedAgentMode === "plan" ? "plan" : "act";
     const outgoingAttachments = chatAttachments;
     const outgoingDirectories = chatDirectories;
     if (!selectedAgent || busy || (!prompt && outgoingAttachments.length === 0 && outgoingDirectories.length === 0)) return;
@@ -814,6 +818,7 @@ export function useStatusChatInputController(props: any) {
           hermesSessionId: selectedChatRuntimeSessionId || undefined,
           wallet: walletsByAgent[selectedAgent.id] ?? createDefaultAgentWallet(selectedAgent.id),
           honeyLedgerEnabled,
+          agentMode,
           messages: [
             ...contextMessages.map((message) => ({
               role: message.role,
@@ -825,8 +830,7 @@ export function useStatusChatInputController(props: any) {
       });
 
       if (!response.ok || !response.body) {
-        const data = await response.json().catch(() => ({}));
-        throw new Error(data.error ?? `Request failed with ${response.status}`);
+        throw new Error(await responseErrorMessage(response, `Request failed with ${response.status}`));
       }
 
       const reader = response.body.getReader();
@@ -850,9 +854,9 @@ export function useStatusChatInputController(props: any) {
             sawDone = true;
             continue;
           }
-          const parsed = JSON.parse(payload) as {
+          const parsed = parseRuntimeSsePayload(payload) as {
             choices?: Array<{ delta?: { content?: string } }>;
-            error?: string;
+            error?: unknown;
             honey?: unknown;
             session?: { id?: string; runtime?: string; source?: string; startedAt?: number; updatedAt?: number; messageCount?: number };
             clarify?: unknown;
@@ -860,7 +864,8 @@ export function useStatusChatInputController(props: any) {
             event?: { type?: string };
             type?: string;
           };
-          if (parsed.error) throw new Error(parsed.error);
+          const runtimeError = runtimeErrorMessage(parsed);
+          if (runtimeError) throw new Error(runtimeError);
           if (parsed.honey) {
             await refreshHoneyLedger();
             continue;
@@ -918,8 +923,9 @@ export function useStatusChatInputController(props: any) {
         }
       }
       if (!sawAssistantContent) {
-        replacePendingAssistant({ role: "assistant", content: "Hermes finished without returning any text for this message.", surface: "chat" });
-        updateTask(taskId, { status: "failed", lastMessage: "Hermes finished without returning any text.", completedAt: Date.now() });
+        const message = `${selectedAgent.name || selectedAgent.runtime || "The agent"} finished without returning any text for this message. No runtime error was reported.`;
+        replacePendingAssistant({ role: "assistant", content: `Error: ${message}`, surface: "chat" });
+        updateTask(taskId, { status: "failed", lastMessage: message, completedAt: Date.now() });
         return;
       }
       updateTask(taskId, sawAgentPrompt ? { status: "active", completedAt: undefined } : { status: "completed", completedAt: Date.now() });
@@ -998,8 +1004,7 @@ export function useStatusChatInputController(props: any) {
         }),
       });
       if (!response.ok || !response.body) {
-        const data = await response.json().catch(() => ({}));
-        throw new Error(data.error ?? `Request failed with ${response.status}`);
+        throw new Error(await responseErrorMessage(response, `Request failed with ${response.status}`));
       }
       const reader = response.body.getReader();
       const decoder = new TextDecoder();
@@ -1021,8 +1026,9 @@ export function useStatusChatInputController(props: any) {
             sawDone = true;
             continue;
           }
-          const parsed = JSON.parse(payload);
-          if (parsed.error) throw new Error(parsed.error);
+          const parsed = parseRuntimeSsePayload(payload);
+          const runtimeError = runtimeErrorMessage(parsed);
+          if (runtimeError) throw new Error(runtimeError);
           if (parsed.honey) {
             await refreshHoneyLedger();
             continue;

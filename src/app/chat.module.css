@@ -547,6 +547,11 @@ details[open] > summary .treeDisclosure::before {
   flex: 0 0 auto;
 }
 
+.historyOpenButton,
+.historyCloseButton {
+  display: none;
+}
+
 .runtimeStatus {
   max-height: 180px;
   margin: 14px 0 16px;
@@ -598,6 +603,41 @@ details[open] > summary .treeDisclosure::before {
   font-weight: 600;
   line-height: 1.2;
   letter-spacing: 0;
+}
+
+.chatRuntimeMeta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 9px 0 0;
+}
+
+.chatRuntimeMeta div {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 100%;
+  border: 1px solid rgba(148, 163, 184, 0.16);
+  border-radius: 999px;
+  background: rgba(15, 23, 42, 0.38);
+  color: #cbd5e1;
+  padding: 5px 9px;
+  font-size: 11px;
+  line-height: 1.25;
+}
+
+.chatRuntimeMeta dt {
+  margin: 0;
+  color: #7f8da3;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.chatRuntimeMeta dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+  color: #e5edf7;
+  font-weight: 700;
 }
 
 .chatHeader button {
@@ -1736,7 +1776,188 @@ details[open] > summary .treeDisclosure::before {
   stroke-width: 2.2;
 }
 
-.composerTools span {
+.composerModeButton,
+.chat button.composerModeButton,
+.composerDirectoryButton,
+.chat button.composerDirectoryButton {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-height: 30px;
+  border: 1px solid rgba(148, 163, 184, 0.14);
+  border-radius: 999px;
+  background: rgba(15, 23, 42, 0.38);
+  color: rgba(203, 213, 225, 0.82);
+  padding: 0 9px 0 11px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0;
+  pointer-events: auto;
+  transition: border-color 140ms ease, background 140ms ease, color 140ms ease;
+}
+
+.composerModeButton:hover,
+.composerModeButton[aria-expanded="true"],
+.chat button.composerModeButton:hover,
+.chat button.composerModeButton[aria-expanded="true"],
+.composerDirectoryButton:hover,
+.composerDirectoryButton[aria-expanded="true"],
+.chat button.composerDirectoryButton:hover,
+.chat button.composerDirectoryButton[aria-expanded="true"] {
+  border-color: rgba(94, 234, 212, 0.24);
+  background: rgba(94, 234, 212, 0.09);
+  color: #e5eaf2;
+}
+
+.composerModeButton:disabled,
+.chat button.composerModeButton:disabled,
+.composerDirectoryButton:disabled,
+.chat button.composerDirectoryButton:disabled {
+  opacity: 0.55;
+}
+
+.composerModeButton svg,
+.chat button.composerModeButton svg,
+.composerDirectoryButton svg,
+.chat button.composerDirectoryButton svg {
+  width: 13px;
+  height: 13px;
+  flex: 0 0 auto;
+}
+
+.composerModeButton span,
+.chat button.composerModeButton span,
+.composerDirectoryButton span,
+.chat button.composerDirectoryButton span {
+  max-width: min(28vw, 180px);
+  overflow: hidden;
+  color: inherit;
+  font-size: inherit;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.composerModeButton span,
+.chat button.composerModeButton span {
+  max-width: none;
+}
+
+.workingDirectoryTooltip {
+  width: min(280px, calc(100vw - 32px));
+  max-width: min(280px, calc(100vw - 32px));
+  border-color: rgba(94, 234, 212, 0.2);
+  background: rgba(8, 13, 21, 0.98);
+  padding: 6px;
+}
+
+.workingDirectoryPanel {
+  display: grid;
+  gap: 7px;
+}
+
+.workingDirectoryPanel > span {
+  color: #8ea0b8;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.workingDirectoryPanel strong {
+  color: #e5eaf2;
+  font-size: 12px;
+  line-height: 1.3;
+  overflow-wrap: anywhere;
+}
+
+.workingDirectoryPanel button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  min-height: 32px;
+  border: 1px solid rgba(94, 234, 212, 0.2);
+  border-radius: 8px;
+  background: rgba(94, 234, 212, 0.1);
+  color: #d9fffb;
+  padding: 0 10px;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.workingDirectoryPanel button:hover {
+  background: rgba(94, 234, 212, 0.16);
+}
+
+.workingDirectoryPanel button:disabled {
+  cursor: wait;
+  opacity: 0.68;
+}
+
+.workingDirectoryPanel button svg {
+  width: 14px;
+  height: 14px;
+}
+
+.agentModeTooltip {
+  width: min(260px, calc(100vw - 32px));
+  max-width: min(260px, calc(100vw - 32px));
+  border-color: rgba(94, 234, 212, 0.2);
+  background: rgba(8, 13, 21, 0.98);
+  padding: 5px;
+}
+
+.agentModeList {
+  display: grid;
+  gap: 3px;
+}
+
+.agentModeList button {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 16px;
+  gap: 10px;
+  align-items: center;
+  width: 100%;
+  min-height: 0;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--foreground);
+  padding: 8px;
+  text-align: left;
+}
+
+.agentModeList button:hover,
+.agentModeList button[aria-selected="true"] {
+  border-color: rgba(94, 234, 212, 0.2);
+  background: rgba(94, 234, 212, 0.08);
+}
+
+.agentModeList button span {
+  display: grid;
+  min-width: 0;
+  gap: 3px;
+}
+
+.agentModeList strong {
+  color: #f8fafc;
+  font-size: 12px;
+  line-height: 1.2;
+}
+
+.agentModeList small {
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.35;
+}
+
+.agentModeList svg {
+  width: 15px;
+  height: 15px;
+  color: rgba(94, 234, 212, 0.9);
+}
+
+.composerTools > span[role="status"] {
   color: #fca5a5;
   font-size: 12px;
 }
@@ -1965,9 +2186,152 @@ details[open] > summary .treeDisclosure::before {
 }
 
 @media (max-width: 720px) {
+  .workspace,
+  .workspace:has(.chat) {
+    position: relative;
+    display: block;
+    min-height: 100dvh;
+    overflow: hidden;
+  }
+
+  .settings {
+    position: fixed;
+    inset: 0 auto 0 0;
+    z-index: 58;
+    width: min(84vw, 328px);
+    height: 100dvh;
+    overflow: auto;
+    border: 0;
+    border-right: 1px solid rgba(255, 255, 255, 0.14);
+    border-radius: 0 18px 18px 0;
+    background:
+      linear-gradient(180deg, rgba(20, 28, 40, 0.95), rgba(7, 10, 16, 0.96)),
+      rgba(7, 10, 16, 0.96);
+    box-shadow: 20px 0 70px rgba(0, 0, 0, 0.42);
+    padding: calc(14px + env(safe-area-inset-top, 0px)) 14px calc(18px + env(safe-area-inset-bottom, 0px));
+    transform: translate3d(-102%, 0, 0);
+    transition: transform 260ms cubic-bezier(0.22, 1, 0.36, 1);
+    will-change: transform;
+  }
+
+  .historyOpen .settings {
+    transform: translate3d(0, 0, 0);
+  }
+
+  .chat,
+  .chat.chatEmptyState {
+    width: 100%;
+    min-height: 100dvh;
+    border: 0;
+    border-radius: 0;
+    padding: calc(64px + env(safe-area-inset-top, 0px)) 14px calc(14px + env(safe-area-inset-bottom, 0px));
+    transform: translate3d(0, 0, 0);
+    transition: transform 260ms cubic-bezier(0.22, 1, 0.36, 1);
+    will-change: transform;
+  }
+
+  .historyOpen .chat {
+    transform: translate3d(min(84vw, 328px), 0, 0);
+  }
+
+  .historyOpenButton {
+    position: fixed;
+    top: calc(12px + env(safe-area-inset-top, 0px));
+    left: 12px;
+    z-index: 54;
+    display: inline-grid;
+    width: 54px;
+    height: 54px;
+    place-items: center;
+    border: 1px solid rgba(255, 255, 255, 0.18);
+    border-radius: 999px;
+    background: rgba(12, 16, 24, 0.76);
+    color: var(--foreground);
+    padding: 0;
+    box-shadow:
+      0 10px 28px rgba(0, 0, 0, 0.3),
+      inset 0 1px 0 rgba(255, 255, 255, 0.12);
+    backdrop-filter: blur(18px) saturate(1.25);
+    -webkit-backdrop-filter: blur(18px) saturate(1.25);
+  }
+
+  .historyOpenButton svg {
+    width: 20px;
+    height: 20px;
+    stroke-width: 2.2;
+  }
+
+  .historyOpen .historyOpenButton {
+    opacity: 0;
+    pointer-events: none;
+  }
+
+  .historyCloseButton {
+    display: inline-grid;
+    min-height: 36px;
+    place-items: center;
+    border: 1px solid rgba(255, 255, 255, 0.16);
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.08);
+    color: var(--honey);
+    font-family: "JetBrains Mono", ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+    font-size: 11px;
+    font-weight: 900;
+    letter-spacing: 0.1em;
+    line-height: 1;
+    padding: 0 12px;
+    text-transform: uppercase;
+  }
+
   .settings,
   .chat {
-    border-radius: 7px;
+    border-radius: 0;
+  }
+
+  .settingsHeader {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: start;
+  }
+
+  .settingsHeader .runtimeBadge {
+    grid-column: 1 / -1;
+    justify-self: start;
+  }
+
+  .chatHeader {
+    margin: calc(-64px - env(safe-area-inset-top, 0px)) -14px 0;
+    min-height: calc(64px + env(safe-area-inset-top, 0px));
+    padding: calc(12px + env(safe-area-inset-top, 0px)) 76px 12px 76px;
+  }
+
+  .chatContextControls {
+    display: none;
+  }
+
+  .chatHeader > button {
+    display: none;
+  }
+
+  .messages {
+    margin-right: -14px;
+    margin-left: -14px;
+    padding-right: 14px;
+    padding-left: 14px;
+  }
+
+  .message.user,
+  .message {
+    max-width: 100%;
+  }
+
+  .chat form {
+    padding-bottom: 0;
+  }
+
+  .chat textarea {
+    min-height: 96px;
+    max-height: 160px;
   }
 }
 

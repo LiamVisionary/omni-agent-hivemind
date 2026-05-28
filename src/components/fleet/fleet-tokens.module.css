@@ -367,7 +367,60 @@
 }
 
 .dispatchRail {
+  min-width: 0;
   padding: 16px 14px;
+}
+
+.dispatchRail > section,
+.dispatchCard,
+.dispatchStoryList,
+.dispatchStoryCard {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.dispatchText,
+.dispatchStoryName,
+.dispatchStoryTask,
+.dispatchBrief {
+  min-width: 0;
+  max-width: 100%;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.dispatchMeta {
+  display: flex;
+  min-width: 0;
+  max-width: 100%;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px 10px;
+}
+
+.dispatchStoryHeader {
+  display: flex;
+  min-width: 0;
+  max-width: 100%;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 4px 10px;
+}
+
+.dispatchStorySource {
+  min-width: 0;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.dispatchStoryTime {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 @media (max-width: 1100px) {

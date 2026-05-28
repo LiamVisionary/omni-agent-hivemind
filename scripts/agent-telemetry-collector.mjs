@@ -16,6 +16,8 @@ const execFileAsync = promisify(execFile);
 const port = Number(process.env.AGENT_TELEMETRY_PORT || 8787);
 const host = process.env.AGENT_TELEMETRY_HOST || "0.0.0.0";
 const appDir = resolve(join(fileURLToPath(import.meta.url), "..", ".."));
+const collectorStartedAtMs = Date.now();
+const collectorStartedAt = new Date(collectorStartedAtMs).toISOString();
 const defaultHermesDir = process.env.HERMES_HOME || join(homedir(), ".hermes");
 const defaultOpenClawDir = process.env.OPENCLAW_HOME || join(homedir(), ".openclaw");
 const defaultAeonDir = process.env.AEON_LOCAL_PATH || process.env.AEON_HOME || join(homedir(), ".aeon");
@@ -1890,6 +1892,9 @@ function nangoSetupScript(baseUrl) {
     "fi",
     "cd \"$NANGO_DIR\"",
     "if [ ! -f .env ]; then cp .env.example .env; fi",
+    "if [ -f docker-compose.yaml ]; then",
+    "  sed -i.bak \"s/'6379:6379'/'${NANGO_REDIS_PORT:-16379}:6379'/\" docker-compose.yaml",
+    "fi",
     "set_env() {",
     "  key=\"$1\"",
     "  value=\"$2\"",
@@ -1904,7 +1909,10 @@ function nangoSetupScript(baseUrl) {
     "}",
     `set_env NANGO_SERVER_URL ${shellQuote(normalized)}`,
     `set_env SERVER_PORT ${shellQuote(portValue)}`,
+    "set_env NANGO_DB_PORT 15432",
+    "set_env NANGO_REDIS_PORT 16379",
     "log 'Starting Nango containers'",
+    "$DOCKER compose down --remove-orphans >/dev/null 2>&1 || true",
     "$DOCKER compose up -d",
     "log 'Nango setup command finished'",
   ].join("\n");
@@ -3046,6 +3054,7 @@ async function proxyHermesApiChat(body, response, text, hermesHome) {
       headers: hermesApiHeaders({ "Content-Type": "application/json" }),
       body: JSON.stringify({
         model: body.agent?.model || "hermes-agent",
+        provider: body.agent?.provider || undefined,
         stream: true,
         messages: apiServerMessages(body, text, requestMarker),
       }),
@@ -3088,6 +3097,17 @@ async function proxyHermesApiChat(body, response, text, hermesHome) {
         }
         try {
           const parsed = JSON.parse(raw);
+          const errorMessage = typeof parsed?.error === "string"
+            ? parsed.error
+            : typeof parsed?.error?.message === "string"
+              ? parsed.error.message
+              : "";
+          if (errorMessage.trim()) {
+            ensureHeaders();
+            response.write(ssePayload({ error: errorMessage }));
+            wroteDone = true;
+            continue;
+          }
           const content = streamingChatContent(parsed);
           if (content) {
             wroteContent = true;
@@ -3102,6 +3122,10 @@ async function proxyHermesApiChat(body, response, text, hermesHome) {
     if (hasMultimodal && !wroteContent && !wroteDone) {
       ensureHeaders();
       response.write(ssePayload({ error: "Hermes accepted the attached media but returned no text. Check that the active Hermes model supports the attached image/audio type." }));
+      wroteDone = true;
+    } else if (!hasMultimodal && !wroteContent) {
+      ensureHeaders();
+      response.write(ssePayload({ error: "Hermes API finished without returning any text. Check the active provider, model, and credentials." }));
       wroteDone = true;
     }
     await emitSession();
@@ -3423,6 +3447,8 @@ const telemetryServer = createServer(async (request, response) => {
       ok: true,
       host: hostname(),
       machineId: await stableMachineId(),
+      collectorStartedAt,
+      collectorStartedAtMs,
       version: await appVersion(),
       envSync: {
         ready: envSync.ready,

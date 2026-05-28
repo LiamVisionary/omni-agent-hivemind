@@ -40,6 +40,7 @@ type CollectorApp = {
 type HostedApp = {
   id: string;
   name: string;
+  sourceName?: string;
   description: string;
   kind: AppKind;
   theme: string;
@@ -170,6 +171,10 @@ function rewriteCollectorUrl(rawUrl: string | undefined, collectorUrl: string) {
     const collector = new URL(collectorUrl);
     raw.protocol = collector.protocol;
     raw.host = collector.host;
+    const collectorPrefix = collector.pathname.replace(/\/+$/, "");
+    if (collectorPrefix && collectorPrefix !== "/" && raw.pathname.startsWith("/")) {
+      raw.pathname = `${collectorPrefix}${raw.pathname}`;
+    }
     return raw.toString();
   } catch {
     return "";
@@ -183,6 +188,10 @@ function appOriginUrl(openUrl: string) {
   } catch {
     return "";
   }
+}
+
+function dashboardIconProxyUrl(url: string) {
+  return `/api/fleet/app-icon?url=${encodeURIComponent(url)}`;
 }
 
 async function isImageUrl(url: string) {
@@ -332,13 +341,17 @@ async function toHostedApp(app: CollectorApp, machine: FleetMachine, collectorUr
   if (!isInteractiveApp(name, app)) return null;
   const kind = appKind(name);
   const local = isLocalMachine(machine);
-  const iconUrl = await firstReachableIcon([
-    rewriteCollectorUrl(app.iconUrl, collectorUrl) || rewriteServiceAssetUrl(app.iconUrl, machine),
-    await discoverDirectAppIcon(openUrl),
-  ]) || brandFallbackIconUrl(name) || undefined;
+  const collectorIconUrl = rewriteCollectorUrl(app.iconUrl, collectorUrl) || rewriteServiceAssetUrl(app.iconUrl, machine);
+  const iconUrl = /\/app-assets\//.test(collectorIconUrl)
+    ? dashboardIconProxyUrl(collectorIconUrl)
+    : await firstReachableIcon([
+      collectorIconUrl,
+      await discoverDirectAppIcon(openUrl),
+    ]) || brandFallbackIconUrl(name) || undefined;
   return {
     id: `${local ? "local" : machineOpenHost(machine)}:${port}:${app.id || name}`,
     name,
+    sourceName: app.name?.trim() || "",
     description: appDescription(kind, machineName),
     kind,
     theme: appTheme(kind),
@@ -358,11 +371,25 @@ async function toHostedApp(app: CollectorApp, machine: FleetMachine, collectorUr
 
 function dedupeVisibleApps(apps: HostedApp[]) {
   const byNameAndMachine = new Map<string, HostedApp>();
+  const score = (app: HostedApp) => (
+    (/gateway/i.test(app.sourceName || "") ? -100 : 0)
+    + (app.iconUrl ? 10 : 0)
+    + (app.local ? 2 : 0)
+  );
+  const iconScore = (app: HostedApp) => (
+    (app.iconUrl ? 10 : 0)
+    + (/gateway/i.test(app.sourceName || "") ? 30 : 0)
+  );
   for (const app of apps) {
     const key = `${app.machineName.toLowerCase()}:${app.name.toLowerCase()}`;
     const previous = byNameAndMachine.get(key);
-    if (!previous || (app.local && !previous.local) || app.openUrl.length < previous.openUrl.length) {
-      byNameAndMachine.set(key, app);
+    if (!previous || score(app) > score(previous) || (score(app) === score(previous) && app.openUrl.length < previous.openUrl.length)) {
+      const iconSource = previous && iconScore(previous) > iconScore(app) ? previous : app;
+      byNameAndMachine.set(key, { ...app, iconUrl: iconSource.iconUrl || app.iconUrl });
+      continue;
+    }
+    if (iconScore(app) > iconScore(previous)) {
+      byNameAndMachine.set(key, { ...previous, iconUrl: app.iconUrl || previous.iconUrl });
     }
   }
   return [...byNameAndMachine.values()];

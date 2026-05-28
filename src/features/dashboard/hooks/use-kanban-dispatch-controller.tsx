@@ -5,6 +5,7 @@
 /* eslint-disable react-hooks/immutability, react-hooks/purity */
 
 import { useCallback, useEffect, useMemo, useRef } from "react";
+import { parseRuntimeSsePayload, responseErrorMessage, runtimeErrorMessage } from "./runtime-stream-errors";
 
 export function useKanbanDispatchController(props: any) {
   const { AbortController, KANBAN_COLUMNS, KANBAN_DISPATCH_NO_PROGRESS_MS, KANBAN_NO_ASSISTANT_QUIET_MS, KANBAN_NO_ASSISTANT_STALL_MS, KANBAN_SESSION_POLL_FAILURE_LIMIT, KANBAN_STALE_AGENT_COOLDOWN_MS, KANBAN_TOOL_OUTPUT_STALL_MS, addKanbanSystemComment, appVersion, appendMessage, attachmentSizeLabel, attachmentSummary, chatSetupIssue, commentDraft, compactDiagnosticPreview, createDefaultAgentWallet, displayAgents, extractKanbanVisualBrief, formatDurationShort, honeyLedgerEnabled, hydrated, isHermesAuthFailure, isInternalHermesSessionPrelude, isKanbanAwaitingAgentUpdate, isKanbanStaleWorkingTask, isTransientDelegationMessage, kanbanBoard, kanbanBoardSlug, kanbanDispatchCooldownRef, kanbanNoAssistantStalledDetail, kanbanReadyPickupAttemptRef, kanbanReadyPickupInFlightRef, kanbanReadyPickupSignature, kanbanRuntimeAbortRef, kanbanSessionPollFailureRef, kanbanSessionPollRef, kanbanStaleAge, kanbanStaleRequeueAttemptRef, kanbanSteerAttachments, kanbanSteerDirectories, kanbanSteerDraft, kanbanSteerTargetStatus, kanbanSteeringTaskId, kanbanStorageBody, kanbanTaskAssigneeAgent, kanbanTaskAssignmentForAgent, kanbanTaskDispatchPrompt, kanbanToolOutputStalledDetail, kanbanWorkspaceChangeSummary, logClientTelemetry, messageContentParts, messagesByAgent, orchestrateReadyKanbanTask, patchKanbanTask, raiseHermesAuthAlert, readWorkspaceGitSnapshot, refreshHoneyLedger, refreshKanbanOnce, selectedKanbanAgent, selectedKanbanTask, setCommentDraft, setKanbanError, setKanbanSteerAttachmentError, setKanbanSteerAttachmentMenuOpen, setKanbanSteerAttachments, setKanbanSteerDirectories, setKanbanSteerDraft, setKanbanSteeringTaskId, setMessagesByAgent, sharedVault, simpleStableHash, summarizeKanbanToolOutput, updateTask, upsertTask, walletsByAgent } = props;
@@ -135,8 +136,7 @@ export function useKanbanDispatchController(props: any) {
       });
 
       if (!response.ok || !response.body) {
-        const data = await response.json().catch(() => ({}));
-        throw new Error(typeof data.error === "string" ? data.error : `Request failed with ${response.status}`);
+        throw new Error(await responseErrorMessage(response, `Request failed with ${response.status}`));
       }
 
       const reader = response.body.getReader();
@@ -155,13 +155,14 @@ export function useKanbanDispatchController(props: any) {
           if (!line) continue;
           const payload = line.slice(6);
           if (payload === "[DONE]") continue;
-          const parsed = JSON.parse(payload) as {
+          const parsed = parseRuntimeSsePayload(payload) as {
             choices?: Array<{ delta?: { content?: string } }>;
-            error?: string;
+            error?: unknown;
             honey?: unknown;
             session?: { id?: string; runtime?: string; source?: string; startedAt?: number; updatedAt?: number; messageCount?: number };
           };
-          if (parsed.error) throw new Error(parsed.error);
+          const runtimeError = runtimeErrorMessage(parsed);
+          if (runtimeError) throw new Error(runtimeError);
           if (parsed.honey) {
             await refreshHoneyLedger();
             continue;
@@ -787,8 +788,7 @@ export function useKanbanDispatchController(props: any) {
         }),
       });
       if (!response.ok || !response.body) {
-        const data = await response.json().catch(() => ({}));
-        throw new Error(typeof data.error === "string" ? data.error : `Request failed with ${response.status}`);
+        throw new Error(await responseErrorMessage(response, `Request failed with ${response.status}`));
       }
 
       const reader = response.body.getReader();
@@ -806,13 +806,14 @@ export function useKanbanDispatchController(props: any) {
           if (!line) continue;
           const payload = line.slice(6);
           if (payload === "[DONE]") continue;
-          const parsed = JSON.parse(payload) as {
+          const parsed = parseRuntimeSsePayload(payload) as {
             choices?: Array<{ delta?: { content?: string } }>;
-            error?: string;
+            error?: unknown;
             honey?: unknown;
             session?: { id?: string; runtime?: string; source?: string; startedAt?: number; updatedAt?: number; messageCount?: number };
           };
-          if (parsed.error) throw new Error(parsed.error);
+          const runtimeError = runtimeErrorMessage(parsed);
+          if (runtimeError) throw new Error(runtimeError);
           if (parsed.honey) {
             await refreshHoneyLedger();
             continue;

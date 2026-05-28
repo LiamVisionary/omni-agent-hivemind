@@ -1672,14 +1672,68 @@
   gap: 6px;
 }
 
-.agentWorkerSkillSet code {
+.agentWorkerSkillBadge {
+  display: inline-flex;
+  gap: 5px;
+  align-items: center;
   border: 1px solid rgba(168, 85, 247, 0.2);
   border-radius: 999px;
   background: rgba(168, 85, 247, 0.09);
   color: rgba(216, 180, 254, 0.88);
+  cursor: pointer;
+  font-family: inherit;
   font-size: 10px;
   font-weight: 800;
+  letter-spacing: 0;
   padding: 5px 7px;
+}
+
+.agentWorkerSkillBadge svg {
+  width: 12px;
+  height: 12px;
+}
+
+.agentWorkerSkillBadge:hover {
+  border-color: rgba(251, 113, 133, 0.42);
+  background: rgba(251, 113, 133, 0.1);
+  color: #fecdd3;
+}
+
+.agentWorkerAddSkillBadge {
+  display: inline-flex;
+  gap: 5px;
+  align-items: center;
+  border: 1px dashed rgba(94, 234, 212, 0.58);
+  border-radius: 999px;
+  background: rgba(45, 212, 191, 0.045);
+  color: var(--accent-strong);
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 10px;
+  font-weight: 850;
+  letter-spacing: 0;
+  padding: 5px 8px;
+}
+
+.agentWorkerAddSkillBadge svg {
+  width: 12px;
+  height: 12px;
+}
+
+.agentWorkerAddSkillBadge:hover {
+  border-color: rgba(94, 234, 212, 0.9);
+  background: rgba(45, 212, 191, 0.1);
+}
+
+.skillBrowserRemoveSkillButton {
+  border-color: rgba(251, 113, 133, 0.34) !important;
+  background: rgba(251, 113, 133, 0.11) !important;
+  color: #fecdd3 !important;
+}
+
+.skillBrowserRemoveSkillButton:hover {
+  border-color: rgba(251, 113, 133, 0.55) !important;
+  background: rgba(251, 113, 133, 0.18) !important;
 }
 
 .agentWorkerClassCreator {
@@ -2115,6 +2169,32 @@
   overflow-wrap: anywhere;
 }
 
+.agentRuntimeModelCard strong {
+  color: var(--foreground);
+  font-size: 12.5px;
+  font-weight: 720;
+  line-height: 1.18;
+}
+
+.agentRuntimeModelCard.selectedRuntimeCard strong {
+  color: var(--foreground);
+}
+
+.agentRuntimeModelTitle {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.agentRuntimeModelTitle > span {
+  color: var(--muted);
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  line-height: 1.1;
+  overflow-wrap: anywhere;
+}
+
 .providerCardTitle {
   display: inline-flex;
   min-width: 0;
@@ -2223,134 +2303,63 @@
   transform: translateY(0);
 }
 
-.adaptiveRuntimeSettings {
+.adaptiveAdvanced {
   display: grid;
-  gap: 12px;
-  border: 1px solid rgba(148, 163, 184, 0.16);
-  border-radius: 8px;
-  background: rgba(2, 6, 23, 0.22);
-  padding: 12px;
-}
-
-.adaptiveRuntimeHeader {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: start;
-  justify-content: space-between;
   gap: 10px;
-}
-
-.adaptiveRuntimeHeader strong {
-  display: block;
-  color: var(--foreground);
-  font-size: 13px;
-}
-
-.adaptiveRuntimeHeader small,
-.adaptiveRuntimeHeader span {
-  color: var(--muted);
-  font-size: 11px;
-  line-height: 1.35;
-}
-
-.adaptiveRuntimeHeader span {
-  border: 1px solid rgba(148, 163, 184, 0.16);
-  border-radius: 999px;
-  padding: 5px 8px;
-}
-
-.adaptiveFilterGrid {
-  display: grid;
-  grid-template-columns: minmax(0, 1.1fr) minmax(140px, 0.55fr) minmax(0, 1.25fr);
-  gap: 10px;
-  align-items: start;
-}
-
-.adaptiveFilterGroup {
-  display: grid;
-  gap: 7px;
-}
-
-.adaptiveFilterGroup > span,
-.adaptiveScoreSlider > span {
-  color: var(--muted);
-  font-size: 10px;
-  font-weight: 900;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-}
-
-.adaptiveFilterGroup select {
-  width: 100%;
-  min-height: 34px;
-  border: 1px solid rgba(148, 163, 184, 0.18);
+  border: 1px solid rgba(148, 163, 184, 0.14);
   border-radius: 7px;
-  background: rgba(15, 23, 42, 0.48);
-  color: var(--foreground);
-  font-size: 12px;
-  font-weight: 800;
-  padding: 7px 9px;
+  background: rgba(15, 23, 42, 0.22);
+  padding: 0;
 }
 
-.adaptiveChipGrid {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-}
-
-.adaptiveChip {
-  border: 1px solid rgba(148, 163, 184, 0.16);
-  border-radius: 999px;
-  background: rgba(15, 23, 42, 0.38);
-  color: var(--muted);
-  cursor: pointer;
-  font-size: 11px;
-  font-weight: 850;
-  padding: 6px 9px;
-}
-
-.adaptiveChip:hover {
-  border-color: rgba(94, 234, 212, 0.34);
-  color: var(--foreground);
-}
-
-.adaptiveChipActive {
-  border-color: rgba(94, 234, 212, 0.44);
-  background: rgba(45, 212, 191, 0.1);
-  color: var(--accent-strong);
-}
-
-.adaptiveScoreGrid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
-  gap: 10px;
-}
-
-.adaptiveScoreSlider {
-  display: grid;
-  gap: 7px;
-  min-width: 0;
-}
-
-.adaptiveScoreSlider span {
+.adaptiveAdvanced summary {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 8px;
-}
-
-.adaptiveScoreSlider b {
-  color: var(--accent-strong);
+  gap: 10px;
+  cursor: pointer;
+  color: var(--text-soft);
   font-size: 11px;
+  font-weight: 850;
+  list-style: none;
+  padding: 9px 11px;
 }
 
-.adaptiveScoreSlider input {
-  accent-color: #5eead4;
-  width: 100%;
+.adaptiveAdvanced summary::-webkit-details-marker {
+  display: none;
 }
 
-.adaptiveFallbackSelect {
-  max-width: 420px;
+.adaptiveAdvanced summary::before {
+  content: "";
+  width: 7px;
+  height: 7px;
+  border-right: 1.5px solid currentColor;
+  border-bottom: 1.5px solid currentColor;
+  transform: rotate(-45deg);
+  transition: transform 140ms ease;
+}
+
+.adaptiveAdvanced[open] summary::before {
+  transform: rotate(45deg);
+}
+
+.adaptiveAdvanced summary span {
+  margin-right: auto;
+}
+
+.adaptiveAdvanced summary small {
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 750;
+  text-transform: capitalize;
+}
+
+.adaptiveAdvancedGrid {
+  display: grid;
+  grid-template-columns: minmax(0, 0.7fr) minmax(0, 1.3fr);
+  gap: 10px;
+  border-top: 1px solid rgba(148, 163, 184, 0.1);
+  padding: 0 11px 11px;
 }
 
 .agentRuntimeModelSetup {
@@ -2367,9 +2376,8 @@
 }
 
 .agentRuntimeModelSetupProvider {
-  grid-template-columns: minmax(0, 1fr) auto;
-  align-items: center;
-  gap: 12px 16px;
+  grid-template-columns: 1fr;
+  gap: 12px;
 }
 
 .agentRuntimeModelSetup > div:first-child {
@@ -2399,6 +2407,96 @@
   min-height: 32px;
   white-space: normal;
   text-align: center;
+}
+
+.guidedProviderSetup {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+}
+
+.guidedProviderHeader {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: start;
+  gap: 10px;
+}
+
+.guidedProviderIcon {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border: 1px solid rgba(94, 234, 212, 0.26);
+  border-radius: 8px;
+  background: rgba(45, 212, 191, 0.1);
+  color: var(--accent-strong);
+}
+
+.guidedProviderIcon svg,
+.guidedProviderStatus svg {
+  width: 16px;
+  height: 16px;
+}
+
+.guidedProviderHeader strong {
+  display: block;
+  color: var(--foreground);
+  font-size: 14px;
+  line-height: 1.2;
+}
+
+.guidedProviderHeader p,
+.guidedProviderStatus p,
+.guidedProviderMessage {
+  margin: 3px 0 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.guidedProviderBody {
+  display: grid;
+  grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.35fr);
+  gap: 10px;
+}
+
+.guidedProviderStatusGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.guidedProviderStatus {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 8px;
+  align-items: start;
+  border: 1px solid rgba(148, 163, 184, 0.16);
+  border-radius: 8px;
+  background: rgba(15, 23, 42, 0.34);
+  color: var(--muted);
+  padding: 9px;
+}
+
+.guidedProviderStatus.ready {
+  border-color: rgba(45, 212, 191, 0.26);
+  background: rgba(45, 212, 191, 0.08);
+  color: var(--accent-strong);
+}
+
+.guidedProviderStatus strong {
+  display: block;
+  color: var(--foreground);
+  font-size: 12px;
+  line-height: 1.2;
+}
+
+.guidedProviderActions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
 }
 
 .agentRuntimeToolsPanel {
@@ -3885,12 +3983,21 @@
   .skillBrowserGithubForm,
   .agentRuntimeModelPanel,
   .agentRuntimeModelSetup,
-  .adaptiveFilterGrid {
+  .adaptiveAdvancedGrid {
     grid-template-columns: 1fr;
   }
 
   .agentRuntimeModelSetupProvider > button[data-slot="button"] {
     justify-self: start;
+  }
+
+  .guidedProviderBody,
+  .guidedProviderStatusGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .guidedProviderActions {
+    justify-content: flex-start;
   }
 
   .agentBubbleStack {

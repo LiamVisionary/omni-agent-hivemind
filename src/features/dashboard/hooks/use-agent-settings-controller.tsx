@@ -148,6 +148,19 @@ export function useAgentSettingsController(props: UseAgentSettingsControllerProp
     if (agentCreateMachine) setAgentCreateDraft((current) => ({ ...current, skillProfilePrompt }));
     else if (roleModalAgent) updateAgentProfile(roleModalAgent.id, { skillProfilePrompt });
   };
+  const addAgentPreferredSkill = (slug: string) => {
+    const trimmedSlug = slug.trim();
+    if (!trimmedSlug || agentSettingsPreferredSkills.includes(trimmedSlug)) return;
+    const preferredSkillSlugs = [...agentSettingsPreferredSkills, trimmedSlug];
+    if (agentCreateMachine) setAgentCreateDraft((current) => ({ ...current, preferredSkillSlugs }));
+    else if (roleModalAgent) updateAgentProfile(roleModalAgent.id, { preferredSkillSlugs });
+  };
+  const removeAgentPreferredSkill = (slug: string) => {
+    const preferredSkillSlugs = agentSettingsPreferredSkills.filter((item) => item !== slug);
+    if (preferredSkillSlugs.length === agentSettingsPreferredSkills.length) return;
+    if (agentCreateMachine) setAgentCreateDraft((current) => ({ ...current, preferredSkillSlugs }));
+    else if (roleModalAgent) updateAgentProfile(roleModalAgent.id, { preferredSkillSlugs });
+  };
   const openCustomWorkerClassCreator = () => {
     setCustomWorkerDraft({
       label: "",
@@ -226,5 +239,5 @@ export function useAgentSettingsController(props: UseAgentSettingsControllerProp
     && hivemindLinkStatus?.ok === true
     && hivemindLinkConnectedUntil > Date.now();
 
-  return { agentSettingsSelectedCustomWorkerId, agentSettingsCustomWorker, agentSettingsWorkerLabel, agentSettingsWorkerImage, agentSettingsSkillProfile, agentSettingsPreferredSkills, agentSettingsRuntime, agentSettingsProvider, agentSettingsModel, runtimeModelSelection, runtimeModelProviders, selectedRuntimeProvider, selectedRuntimeModels, selectedRuntimeModelId, selectedRuntimeModel, updateAgentRuntimeModel, agentSettingsIntegrationTarget, addHermesModelFromDraft, selectAgentWorkerClass, selectCustomWorkerClass, updateAgentSkillProfile, openCustomWorkerClassCreator, applyCustomWorkerClass, toggleCustomWorkerSkill, uploadCustomWorkerImage, filteredCustomWorkerSkills, selectedHetznerServerType, showHivemindLinkConnectedBanner };
+  return { agentSettingsSelectedCustomWorkerId, agentSettingsCustomWorker, agentSettingsWorkerLabel, agentSettingsWorkerImage, agentSettingsSkillProfile, agentSettingsPreferredSkills, agentSettingsRuntime, agentSettingsProvider, agentSettingsModel, runtimeModelSelection, runtimeModelProviders, selectedRuntimeProvider, selectedRuntimeModels, selectedRuntimeModelId, selectedRuntimeModel, updateAgentRuntimeModel, agentSettingsIntegrationTarget, addHermesModelFromDraft, selectAgentWorkerClass, selectCustomWorkerClass, updateAgentSkillProfile, addAgentPreferredSkill, removeAgentPreferredSkill, openCustomWorkerClassCreator, applyCustomWorkerClass, toggleCustomWorkerSkill, uploadCustomWorkerImage, filteredCustomWorkerSkills, selectedHetznerServerType, showHivemindLinkConnectedBanner };
 }

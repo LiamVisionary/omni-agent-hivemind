@@ -8,6 +8,16 @@ import { resolveObsidianVaultPath } from "@/lib/services/obsidian/vault-path";
 
 const RECENT_DIRECTORIES_PATH = "Projects/HivemindOS/Brain Access/recent-directories.json";
 const MAX_RECENT_DIRECTORIES = 40;
+const RECENT_DIRECTORIES_CACHE_MS = 30_000;
+
+type RecentDirectoriesResult = { vaultPath: string; directories: RecentDirectory[] };
+type RecentDirectoriesCacheEntry = {
+  expiresAt: number;
+  result?: RecentDirectoriesResult;
+  inFlight?: Promise<RecentDirectoriesResult>;
+};
+
+const recentDirectoriesCache = new Map<string, RecentDirectoriesCacheEntry>();
 
 function toVaultPath(root: string, path: string): string {
   return relative(root, path).split(sep).join("/");
@@ -137,14 +147,32 @@ function mergeRecents(entries: RecentDirectory[]) {
     .slice(0, MAX_RECENT_DIRECTORIES);
 }
 
-export async function listRecentDirectories(vaultPath?: string): Promise<{ vaultPath: string; directories: RecentDirectory[] }> {
+export async function listRecentDirectories(vaultPath?: string): Promise<RecentDirectoriesResult> {
   const root = resolveObsidianVaultPath(vaultPath);
   await access(root, constants.R_OK);
+  const now = Date.now();
+  const cached = recentDirectoriesCache.get(root);
+  if (cached?.result && cached.expiresAt > now) return cached.result;
+  if (cached?.inFlight) return cached.inFlight;
+
+  const inFlight = scanRecentDirectories(root).finally(() => {
+    const entry = recentDirectoriesCache.get(root);
+    if (entry?.inFlight === inFlight) {
+      recentDirectoriesCache.set(root, { ...entry, inFlight: undefined });
+    }
+  });
+  recentDirectoriesCache.set(root, { expiresAt: now + RECENT_DIRECTORIES_CACHE_MS, inFlight });
+  return inFlight;
+}
+
+async function scanRecentDirectories(root: string): Promise<RecentDirectoriesResult> {
   const [stored, kanban] = await Promise.all([
     readStoredRecents(root),
     readKanbanRecents(root),
   ]);
-  return { vaultPath: root, directories: mergeRecents([...stored, ...kanban]) };
+  const result = { vaultPath: root, directories: mergeRecents([...stored, ...kanban]) };
+  recentDirectoriesCache.set(root, { expiresAt: Date.now() + RECENT_DIRECTORIES_CACHE_MS, result });
+  return result;
 }
 
 export async function recordRecentDirectory(input: {
@@ -170,5 +198,6 @@ export async function recordRecentDirectory(input: {
   const file = recentDirectoriesFile(root);
   await mkdir(dirname(file), { recursive: true });
   await writeFile(file, `${JSON.stringify({ updatedAt: new Date().toISOString(), directories }, null, 2)}\n`, "utf-8");
+  recentDirectoriesCache.delete(root);
   return { vaultPath: root, directory, directories };
 }

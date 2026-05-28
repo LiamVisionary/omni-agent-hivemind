@@ -33,6 +33,7 @@ type AgentsPanelProps = {
   fleetClass: ClassNameBuilder;
   fleetUpdateDetailByMachine: NonNullable<FleetViewProps["updateDetailByMachine"]>;
   fleetUpdateStatusByMachine: NonNullable<FleetViewProps["updateStatusByMachine"]>;
+  fleetDiscoveryLoading: boolean;
   fleetViewData: FleetViewData;
   formatRelativeTime: (timestamp: number) => string;
   hivemindLinkSignInPolling: boolean;
@@ -64,7 +65,7 @@ type AgentsPanelProps = {
 };
 
 export function AgentsPanel(props: AgentsPanelProps) {
-  const { Button, Check, ExternalLink, FleetView, activeView, addAgentToMachine, deleteAgent, fleetCheckedAt, fleetClass, fleetUpdateDetailByMachine, fleetUpdateStatusByMachine, fleetViewData, formatRelativeTime, hivemindLinkSignInPolling, hivemindLinkSignInPollingRef, hivemindLinkStatus, machineGroups, markNotificationRead, openMachineInitModal, renameMachine, requestDuplicateAgent, runMachineUpdate, setActiveView, setAgentRenameDraft, setAgentRenameEditing, setAgentRoleModalId, setAgentRuntimeAdvancedOpen, setAgentRuntimeFolderEditing, setAgentRuntimeFolderStatus, setAgentSettingsPanel, setHivemindLinkBannerDismissed, setHivemindLinkConnectedUntil, setHivemindLinkSignInPolling, setSelectedAgentId, showHivemindLinkConnectedBanner, showHivemindLinkSignInBanner, startAgentChat, startAgentWorkChat, tailscaleStatus } = props;
+  const { Button, Check, ExternalLink, FleetView, activeView, addAgentToMachine, deleteAgent, fleetCheckedAt, fleetClass, fleetDiscoveryLoading, fleetUpdateDetailByMachine, fleetUpdateStatusByMachine, fleetViewData, formatRelativeTime, hivemindLinkSignInPolling, hivemindLinkSignInPollingRef, hivemindLinkStatus, machineGroups, markNotificationRead, openMachineInitModal, renameMachine, requestDuplicateAgent, runMachineUpdate, setActiveView, setAgentRenameDraft, setAgentRenameEditing, setAgentRoleModalId, setAgentRuntimeAdvancedOpen, setAgentRuntimeFolderEditing, setAgentRuntimeFolderStatus, setAgentSettingsPanel, setHivemindLinkBannerDismissed, setHivemindLinkConnectedUntil, setHivemindLinkSignInPolling, setSelectedAgentId, showHivemindLinkConnectedBanner, showHivemindLinkSignInBanner, startAgentChat, startAgentWorkChat, tailscaleStatus } = props;
   return (<>
       {activeView === "agents" ? (
       <section className={fleetClass("fleetConstellationPanel", "tabPanel")}>
@@ -120,6 +121,7 @@ export function AgentsPanel(props: AgentsPanelProps) {
           alerts={fleetViewData.alerts}
           ticker={fleetViewData.ticker}
           edges={fleetViewData.edges}
+          loading={fleetDiscoveryLoading}
           checkedLabel={fleetCheckedAt ? `Scanned ${formatRelativeTime(fleetCheckedAt)}` : tailscaleStatus}
           tailnetLabel={tailscaleStatus}
           onAddAgent={(machine) => {

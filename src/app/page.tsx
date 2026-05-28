@@ -18,6 +18,7 @@ const DASHBOARD_VIEWS = new Set<DashboardView>([
   "chat",
   "more",
   "env",
+  "my-apps",
 ]);
 const DASHBOARD_VAULT_PANEL_MODES = new Set<DashboardVaultPanelMode>([
   "hive-vault",

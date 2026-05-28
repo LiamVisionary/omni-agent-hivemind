@@ -49,6 +49,9 @@ export function MemoryTelemetryPanel(props: MemoryTelemetryPanelProps) {
   const currentProcess = memoryTelemetry?.processes.find((processInfo) => processInfo.isCurrentProcess);
   const nextProcessRss = currentProcess?.rssMb ?? memoryTelemetry?.processMemory.rssMb ?? 0;
   const dashboardRss = memoryTelemetry?.summary.appRssMb ?? 0;
+  const cleanupDetail = memoryTelemetry?.cleanup.forceGcEnabled
+    ? `forced GC enabled${memoryTelemetry.cleanup.maxOldSpaceMb ? ` · ${memoryTelemetry.cleanup.maxOldSpaceMb} MB heap cap` : ""}`
+    : `pressure logging active${memoryTelemetry?.cleanup.maxOldSpaceMb ? ` · ${memoryTelemetry.cleanup.maxOldSpaceMb} MB heap cap` : ""}`;
 
   return (
     <section className={fleetClass("taskPanel", "tabPanel")}>
@@ -69,12 +72,13 @@ export function MemoryTelemetryPanel(props: MemoryTelemetryPanelProps) {
           <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
             <MetricCard label="Dashboard RSS" value={formatMb(memoryTelemetry.summary.appRssMb)} detail={`${growthLabel(appGrowth)} total tree`} />
             <MetricCard label="Next RSS" value={formatMb(nextProcessRss)} detail={`${percentLabel(nextProcessRss, dashboardRss)} of dashboard RSS`} />
-            <MetricCard label="V8 heap" value={formatMb(memoryTelemetry.processMemory.heapUsedMb)} detail={`${formatMb(memoryTelemetry.processMemory.heapTotalMb)} logical allocation`} />
-            <MetricCard label="Native buffers" value={formatMb(memoryTelemetry.processMemory.externalMb)} detail={`includes ${formatMb(memoryTelemetry.processMemory.arrayBuffersMb)} array buffers`} />
+            <MetricCard label="V8 heap" value={formatMb(memoryTelemetry.processMemory.heapUsedMb)} detail={`${percentLabel(memoryTelemetry.processMemory.heapUsedMb, memoryTelemetry.processMemory.heapLimitMb)} of ${formatMb(memoryTelemetry.processMemory.heapLimitMb)} limit`} />
+            <MetricCard label="Native buffers" value={formatMb(memoryTelemetry.processMemory.externalMb)} detail={`includes ${formatMb(memoryTelemetry.processMemory.arrayBuffersMb)} array buffers · ${cleanupDetail}`} />
             <MetricCard label="Top grower" value={growthLabel(memoryTelemetry.summary.topGrowerGrowthMb)} detail={memoryTelemetry.summary.topGrowerLabel} />
           </div>
 
           <MemoryCompositionPanel memoryTelemetry={memoryTelemetry} nextProcessRss={nextProcessRss} />
+          <HeapBreakdownPanel memoryTelemetry={memoryTelemetry} />
 
           <section className="grid gap-3 rounded-md border border-[rgba(148,163,184,0.14)] bg-[rgba(10,14,21,0.55)] p-4">
             <div className="flex flex-wrap items-center justify-between gap-3">
@@ -90,16 +94,75 @@ export function MemoryTelemetryPanel(props: MemoryTelemetryPanelProps) {
               {samples.slice(-24).map((sample) => (
                 <div key={sample.ts} className="grid grid-cols-[5.5rem_minmax(0,1fr)_5rem] items-center gap-3 text-xs">
                   <span className="text-[var(--muted)]">{new Date(sample.ts).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</span>
-                  <span className="h-2 rounded-full bg-[rgba(148,163,184,0.16)]">
-                    <span
-                      className="block h-2 rounded-full bg-[rgba(94,234,212,0.72)]"
-                      style={{ width: `${barPercent(sample.appRssMb, maxAppRss)}%` }}
-                    />
+                  <span className="grid gap-1">
+                    <span className="h-2 rounded-full bg-[rgba(148,163,184,0.16)]">
+                      <span
+                        className="block h-2 rounded-full bg-[rgba(94,234,212,0.72)]"
+                        style={{ width: `${barPercent(sample.appRssMb, maxAppRss)}%` }}
+                      />
+                    </span>
+                    <span className="h-1.5 rounded-full bg-[rgba(148,163,184,0.12)]">
+                      <span
+                        className="block h-1.5 rounded-full bg-[rgba(250,204,21,0.68)]"
+                        style={{ width: `${barPercent(sample.heapUsedMb, sample.heapLimitMb)}%` }}
+                      />
+                    </span>
                   </span>
                   <strong className="text-right">{formatMb(sample.appRssMb)}</strong>
                 </div>
               ))}
+              {samples.length > 0 ? (
+                <div className="flex flex-wrap gap-3 text-[11px] text-[var(--muted)]">
+                  <span className="inline-flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-[rgba(94,234,212,0.72)]" />RSS</span>
+                  <span className="inline-flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-[rgba(250,204,21,0.68)]" />V8 heap as limit percent</span>
+                </div>
+              ) : null}
               {samples.length === 0 ? <p className="m-0 text-sm text-[var(--muted)]">No samples yet. Press Refresh or leave the app open for the background sampler.</p> : null}
+            </div>
+          </section>
+
+          <section className="grid gap-3 rounded-md border border-[rgba(148,163,184,0.14)] bg-[rgba(10,14,21,0.55)] p-4">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <p className="eyebrow">Heap trend</p>
+                <h3 className="m-0 text-base font-bold">Retained V8 spaces</h3>
+              </div>
+              <small className="text-[var(--muted)]">sampled after dev cleanup</small>
+            </div>
+            <div className="grid gap-2">
+              {samples.slice(-12).map((sample) => (
+                <div key={`heap:${sample.ts}`} className="grid grid-cols-[5.5rem_minmax(0,1fr)_5rem] items-center gap-3 text-xs">
+                  <span className="text-[var(--muted)]">{new Date(sample.ts).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</span>
+                  <span className="grid gap-1">
+                    <span className="h-2 rounded-full bg-[rgba(148,163,184,0.16)]">
+                      <span
+                        className="block h-2 rounded-full bg-[rgba(251,113,133,0.72)]"
+                        style={{ width: `${barPercent(sample.oldSpaceUsedMb, sample.heapLimitMb)}%` }}
+                      />
+                    </span>
+                    <span className="grid grid-cols-2 gap-1">
+                      <span className="h-1.5 rounded-full bg-[rgba(148,163,184,0.12)]">
+                        <span
+                          className="block h-1.5 rounded-full bg-[rgba(96,165,250,0.68)]"
+                          style={{ width: `${barPercent(sample.largeObjectSpaceUsedMb, sample.heapLimitMb)}%` }}
+                        />
+                      </span>
+                      <span className="h-1.5 rounded-full bg-[rgba(148,163,184,0.12)]">
+                        <span
+                          className="block h-1.5 rounded-full bg-[rgba(196,181,253,0.68)]"
+                          style={{ width: `${barPercent(sample.codeSpaceUsedMb, sample.heapLimitMb)}%` }}
+                        />
+                      </span>
+                    </span>
+                  </span>
+                  <strong className="text-right">{formatMb(sample.oldSpaceUsedMb)}</strong>
+                </div>
+              ))}
+              <div className="flex flex-wrap gap-3 text-[11px] text-[var(--muted)]">
+                <span className="inline-flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-[rgba(251,113,133,0.72)]" />old space</span>
+                <span className="inline-flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-[rgba(96,165,250,0.68)]" />large objects</span>
+                <span className="inline-flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-[rgba(196,181,253,0.68)]" />code space</span>
+              </div>
             </div>
           </section>
 
@@ -169,6 +232,45 @@ function MemoryCompositionPanel({ memoryTelemetry, nextProcessRss }: { memoryTel
             </div>
           ))}
         </div>
+      </div>
+    </section>
+  );
+}
+
+function HeapBreakdownPanel({ memoryTelemetry }: { memoryTelemetry: MemoryTelemetryPayload }) {
+  const spaces = [...memoryTelemetry.processMemory.heapSpaces]
+    .sort((left, right) => right.usedMb - left.usedMb)
+    .slice(0, 8);
+  const oldSpace = memoryTelemetry.processMemory.heapSpaces.find((space) => space.name === "old_space");
+  return (
+    <section className="grid gap-4 rounded-md border border-[rgba(148,163,184,0.14)] bg-[rgba(10,14,21,0.55)] p-4 lg:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
+      <div className="grid gap-3">
+        <div>
+          <p className="eyebrow">V8 internals</p>
+          <h3 className="m-0 text-base font-bold">Heap pressure sources</h3>
+        </div>
+        <div className="grid gap-2 sm:grid-cols-2">
+          <MetricCard label="Old space" value={formatMb(oldSpace?.usedMb ?? 0)} detail="long-lived JS objects after cleanup" />
+          <MetricCard label="Available heap" value={formatMb(memoryTelemetry.processMemory.totalAvailableSizeMb)} detail={`${memoryTelemetry.processMemory.nativeContexts} native contexts · ${memoryTelemetry.processMemory.detachedContexts} detached`} />
+          <MetricCard label="Malloced" value={formatMb(memoryTelemetry.processMemory.mallocedMemoryMb)} detail={`${formatMb(memoryTelemetry.processMemory.peakMallocedMemoryMb)} peak malloced memory`} />
+          <MetricCard label="Heap allocation" value={formatMb(memoryTelemetry.processMemory.heapTotalMb)} detail={`${formatMb(memoryTelemetry.processMemory.heapUsedMb)} currently used`} />
+        </div>
+      </div>
+      <div className="grid gap-2">
+        <div className="hidden grid-cols-[minmax(0,1fr)_5rem_5rem_5rem] gap-3 border-b border-[rgba(148,163,184,0.14)] pb-2 text-xs font-bold uppercase tracking-[0.08em] text-[var(--muted)] md:grid">
+          <span>Space</span>
+          <span>Used</span>
+          <span>Size</span>
+          <span>Avail</span>
+        </div>
+        {spaces.map((space) => (
+          <article key={space.name} className="grid gap-2 rounded-md border border-[rgba(148,163,184,0.10)] bg-[rgba(2,6,23,0.34)] p-3 text-xs md:grid-cols-[minmax(0,1fr)_5rem_5rem_5rem] md:items-center">
+            <strong className="break-words font-mono text-[11px]">{space.name}</strong>
+            <span>{formatMb(space.usedMb)}</span>
+            <span className="text-[var(--muted)]">{formatMb(space.sizeMb)}</span>
+            <span className="text-[var(--muted)]">{formatMb(space.availableMb)}</span>
+          </article>
+        ))}
       </div>
     </section>
   );

@@ -5,6 +5,7 @@
 /* eslint-disable react-hooks/immutability, react-hooks/purity */
 
 import { useCallback, useEffect, useMemo } from "react";
+import { parseRuntimeSsePayload, responseErrorMessage, runtimeErrorMessage } from "./runtime-stream-errors";
 
 export function useKanbanTaskController(props: any) {
   const { AbortController, Eye, GitBranch, KANBAN_COLUMNS, KANBAN_PICKUP_PREVIEW_MS, MessageSquare, Pencil, RotateCcw, Trash2, Users, agentsForKanbanTask, appVersion, appendMessage, attachmentSizeLabel, beeRoleIconPath, beeWorkerClassLabel, chatSetupIssue, chooseBeeAssignment, chooseDirectoryForMachine, createDefaultAgentWallet, dispatchKanbanTaskToAgentRef, displayAgents, honeyLedgerEnabled, kanbanBoard, kanbanBoardSlug, kanbanCardAttachmentTargetId, kanbanCardFileInputRef, kanbanCardImageInputRef, kanbanDispatchCooldownRef, kanbanEditDraft, kanbanEditPendingTaskId, kanbanReadyPickupAttemptRef, kanbanReadyPickupInFlightRef, kanbanReadyPickupSignature, kanbanRuntimeAbortRef, kanbanStorageBody, kanbanTaskAssigneeAgent, kanbanTaskInterruptPrompt, linkedDirectoryLabel, logClientTelemetry, newBoardDraft, quickAddAttachments, quickAddDirectories, quickAddDrafts, quickAddMachineTarget, readComposerFiles, recordRecentDirectory, refreshHoneyLedger, refreshKanbanOnce, selectedKanbanAgent, selectedKanbanBulkIds, selectedKanbanTask, selectedKanbanTaskId, setKanbanBoard, setKanbanBoardSlug, setKanbanBulkPending, setKanbanCardAttachmentMenuOpen, setKanbanCardAttachmentTargetId, setKanbanCardRecentsExpanded, setKanbanEditDraft, setKanbanEditPendingTaskId, setKanbanError, setKanbanPickupPreviewByTask, setKanbanStorage, setKanbanTaskModal, setMessagesByAgent, setNewBoardDraft, setQuickAddAttachmentError, setQuickAddAttachments, setQuickAddDirectories, setQuickAddDrafts, setQuickAddMachineMenuOpen, setQuickAddMachineTargets, setQuickAddStatus, setSelectedKanbanTaskId, setSelectedKanbanTaskIds, sharedVault, updateTask, upsertTask, wait, walletsByAgent } = props;
@@ -466,8 +467,7 @@ export function useKanbanTaskController(props: any) {
         signal: controller.signal,
       });
       if (!response.ok || !response.body) {
-        const data = await response.json().catch(() => ({}));
-        throw new Error(typeof data.error === "string" ? data.error : `Request failed with ${response.status}`);
+        throw new Error(await responseErrorMessage(response, `Request failed with ${response.status}`));
       }
 
       const reader = response.body.getReader();
@@ -484,13 +484,14 @@ export function useKanbanTaskController(props: any) {
           if (!line) continue;
           const payload = line.slice(6);
           if (payload === "[DONE]") continue;
-          const parsed = JSON.parse(payload) as {
+          const parsed = parseRuntimeSsePayload(payload) as {
             choices?: Array<{ delta?: { content?: string } }>;
-            error?: string;
+            error?: unknown;
             honey?: unknown;
             session?: { id?: string; runtime?: string; source?: string; startedAt?: number; updatedAt?: number; messageCount?: number };
           };
-          if (parsed.error) throw new Error(parsed.error);
+          const runtimeError = runtimeErrorMessage(parsed);
+          if (runtimeError) throw new Error(runtimeError);
           if (parsed.honey) {
             await refreshHoneyLedger();
             continue;

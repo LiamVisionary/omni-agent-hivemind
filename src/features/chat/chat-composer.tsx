@@ -616,6 +616,8 @@ export function ComposerField({
   setRecentDirectoriesExpanded,
   onAttachRecentDirectory,
   onRemoveDirectory,
+  workingDirectoryLabel,
+  onChangeWorkingDirectory,
   recording,
   voiceBands,
   voiceTranscript,
@@ -625,6 +627,8 @@ export function ComposerField({
   onCancel,
   submitOnEnter = false,
   hermesSlashCommands = false,
+  agentMode,
+  onAgentModeChange,
 }: {
   value: string;
   onChange: (value: string) => void;
@@ -651,6 +655,8 @@ export function ComposerField({
   setRecentDirectoriesExpanded?: (open: boolean | ((current: boolean) => boolean)) => void;
   onAttachRecentDirectory?: (directory: LinkedDirectory) => void;
   onRemoveDirectory?: (id: string) => void;
+  workingDirectoryLabel?: string;
+  onChangeWorkingDirectory?: () => void | Promise<void>;
   recording?: boolean;
   voiceBands: number[];
   voiceTranscript?: string;
@@ -660,9 +666,14 @@ export function ComposerField({
   onCancel?: () => void;
   submitOnEnter?: boolean;
   hermesSlashCommands?: boolean;
+  agentMode?: "plan" | "act";
+  onAgentModeChange?: (mode: "plan" | "act") => void;
 }) {
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const [selectedSlashCommandIndex, setSelectedSlashCommandIndex] = useState(0);
+  const [agentModeMenuOpen, setAgentModeMenuOpen] = useState(false);
+  const [workingDirectoryMenuOpen, setWorkingDirectoryMenuOpen] = useState(false);
+  const [workingDirectoryOpening, setWorkingDirectoryOpening] = useState(false);
   const slashTokenMatch = hermesSlashCommands ? value.match(/^\/([^\s/]*)$/) : null;
   const slashCommandQuery = slashTokenMatch?.[1]?.toLowerCase() ?? "";
   const filteredSlashCommands = useMemo(() => {
@@ -735,6 +746,7 @@ export function ComposerField({
 
   return (
     <div className={chatClass("chatComposerField", compact && "compactComposer")}>
+      {agentMode ? <input type="hidden" name="agentMode" value={agentMode} /> : null}
       <input
         ref={fileInputRef}
         type="file"
@@ -850,6 +862,118 @@ export function ComposerField({
           >
             <Plus aria-hidden="true" />
           </button>
+          {agentMode && onAgentModeChange ? (
+            <TooltipProvider>
+              <Tooltip open={agentModeMenuOpen}>
+                <TooltipTrigger asChild>
+                  <button
+                    type="button"
+                    className={chatClass("composerModeButton")}
+                    onClick={() => setAgentModeMenuOpen((open) => !open)}
+                    onBlur={(event) => {
+                      if (!event.currentTarget.parentElement?.contains(event.relatedTarget as Node | null)) {
+                        setAgentModeMenuOpen(false);
+                      }
+                    }}
+                    disabled={disabled}
+                    aria-label="Choose agent mode"
+                    aria-expanded={agentModeMenuOpen}
+                  >
+                    <span>{agentMode === "plan" ? "Plan" : "Act"}</span>
+                    <ChevronDown aria-hidden="true" />
+                  </button>
+                </TooltipTrigger>
+                <TooltipContent
+                  side="top"
+                  align="start"
+                  sideOffset={8}
+                  className={chatClass("agentModeTooltip")}
+                  onPointerDown={(event) => event.preventDefault()}
+                >
+                  <div className={chatClass("agentModeList")} role="listbox" aria-label="Agent mode">
+                    {[
+                      { mode: "plan" as const, label: "Plan", detail: "Think through steps and tradeoffs before changing things." },
+                      { mode: "act" as const, label: "Act", detail: "Execute directly and keep moving unless blocked." },
+                    ].map((option) => (
+                      <button
+                        type="button"
+                        role="option"
+                        aria-selected={agentMode === option.mode}
+                        key={option.mode}
+                        onMouseDown={(event) => event.preventDefault()}
+                        onClick={() => {
+                          onAgentModeChange(option.mode);
+                          setAgentModeMenuOpen(false);
+                          window.requestAnimationFrame(() => textareaRef.current?.focus());
+                        }}
+                      >
+                        <span>
+                          <strong>{option.label}</strong>
+                          <small>{option.detail}</small>
+                        </span>
+                        {agentMode === option.mode ? <Check aria-hidden="true" /> : null}
+                      </button>
+                    ))}
+                  </div>
+                </TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
+          ) : null}
+          {onChangeWorkingDirectory ? (
+            <TooltipProvider>
+              <Tooltip open={workingDirectoryMenuOpen}>
+                <TooltipTrigger asChild>
+                  <button
+                    type="button"
+                    className={chatClass("composerDirectoryButton")}
+                    onClick={() => setWorkingDirectoryMenuOpen((open) => !open)}
+                    onBlur={(event) => {
+                      if (!event.currentTarget.parentElement?.contains(event.relatedTarget as Node | null)) {
+                        setWorkingDirectoryMenuOpen(false);
+                      }
+                    }}
+                    disabled={disabled || workingDirectoryOpening}
+                    aria-label="Change working directory"
+                    aria-expanded={workingDirectoryMenuOpen}
+                  >
+                    <FolderOpen aria-hidden="true" />
+                    <span>{workingDirectoryOpening ? "Opening..." : workingDirectoryLabel || "Directory"}</span>
+                  </button>
+                </TooltipTrigger>
+                <TooltipContent
+                  side="top"
+                  align="start"
+                  sideOffset={8}
+                  className={chatClass("workingDirectoryTooltip")}
+                  onPointerDown={(event) => event.preventDefault()}
+                >
+                  <div className={chatClass("workingDirectoryPanel")}>
+                    <span>Working directory</span>
+                    <strong>{workingDirectoryLabel || "No directory selected"}</strong>
+                    <button
+                      type="button"
+                      disabled={workingDirectoryOpening}
+                      onMouseDown={(event) => event.preventDefault()}
+                      onClick={async () => {
+                        if (workingDirectoryOpening) return;
+                        setWorkingDirectoryOpening(true);
+                        setWorkingDirectoryMenuOpen(false);
+                        try {
+                          await onChangeWorkingDirectory();
+                        } finally {
+                          setWorkingDirectoryOpening(false);
+                          window.requestAnimationFrame(() => textareaRef.current?.focus());
+                        }
+                      }}
+                    >
+                      <FolderOpen aria-hidden="true" />
+                      {workingDirectoryOpening ? "Opening..." : "Change directory"}
+                    </button>
+                  </div>
+                </TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
+          ) : null}
           {attachmentMenuOpen ? (
             <AttachmentMenuContent
               onAttachImages={() => imageInputRef.current?.click()}

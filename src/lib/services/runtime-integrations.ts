@@ -15,6 +15,7 @@ const HERMES_HOME = join(homedir(), ".hermes");
 const HERMES_AGENT_DIR = join(HERMES_HOME, "hermes-agent");
 const HERMES_PYTHON = join(HERMES_AGENT_DIR, "venv", "bin", "python");
 const HERMES_DB = join(HERMES_HOME, "state.db");
+const HIVE_ENV = join(homedir(), ".hivemindos", ".env");
 const OPENCLAW_CONFIG = join(homedir(), ".openclaw", "openclaw.json");
 const OPENCLAW_AGENTS = join(homedir(), ".openclaw", "agents");
 const RUN_LOG_ROOT = join(homedir(), ".hivemindos", "runtime-runs");
@@ -202,6 +203,17 @@ export async function runRuntimeIntegrationAction(runtime: AgentRuntime, action:
     if (!provider || !model) return { ok: false, error: "Provider and model are required." };
     await setHermesModel(provider, model);
     return { ok: true, message: `Hermes default model set to ${provider}/${model}.` };
+  }
+  if (action === "provider-setup-options") {
+    const providers = await getHermesProviderSetupOptions();
+    return { ok: true, providers };
+  }
+  if (action === "add-provider") {
+    const provider = String(input.provider ?? "").trim();
+    const model = String(input.model ?? "").trim();
+    if (!provider || !model) return { ok: false, error: "Provider and model are required." };
+    await addHermesProvider(provider, model);
+    return { ok: true, provider, model, message: `Added Hermes provider ${provider} with ${model}.` };
   }
   if (action === "add-model") {
     const provider = String(input.provider ?? "").trim();
@@ -455,18 +467,147 @@ save_config(cfg)
   });
 }
 
+async function getHermesProviderSetupOptions() {
+  const script = `
+import json
+from hermes_cli.inventory import build_models_payload, load_picker_context
+payload = build_models_payload(
+    load_picker_context(),
+    include_unconfigured=True,
+    picker_hints=True,
+    canonical_order=True,
+    max_models=24,
+)
+print(json.dumps(payload.get("providers", [])))
+`;
+  const stdout = await runHermesPython(script, {});
+  const rows = JSON.parse(stdout || "[]") as Array<{
+    slug?: string;
+    name?: string;
+    models?: Array<string | { id?: string; name?: string }>;
+    total_models?: number;
+    totalModels?: number;
+    authenticated?: boolean;
+    auth_type?: string;
+    key_env?: string;
+    warning?: string;
+  }>;
+  return rows
+    .filter((provider) => provider.slug)
+    .map((provider) => ({
+      slug: provider.slug ?? "",
+      name: provider.name || provider.slug || "Provider",
+      models: (provider.models ?? []).map((model) => (
+        typeof model === "string" ? { id: model } : { id: model.id ?? "", name: model.name }
+      )).filter((model) => model.id),
+      totalModels: provider.total_models ?? provider.totalModels ?? provider.models?.length ?? 0,
+      authenticated: provider.authenticated,
+      authType: provider.auth_type,
+      keyEnv: provider.key_env,
+      warning: provider.warning,
+    }));
+}
+
+async function addHermesProvider(provider: string, model: string) {
+  const script = `
+from hermes_cli.config import load_config, save_config
+from hermes_cli.models import provider_model_ids
+try:
+    from hermes_cli.auth import PROVIDER_REGISTRY
+except Exception:
+    PROVIDER_REGISTRY = {}
+provider = __PROVIDER__
+model = __MODEL__
+provider_defaults = {
+    "openrouter": {
+        "name": "OpenRouter",
+        "base_url": "https://openrouter.ai/api/v1",
+        "key_env": "OPENROUTER_API_KEY",
+        "models": provider_model_ids("openrouter")[:24],
+    },
+}
+cfg_def = PROVIDER_REGISTRY.get(provider)
+if cfg_def:
+    key_envs = list(getattr(cfg_def, "api_key_env_vars", ()) or ())
+    defaults = {
+        "name": getattr(cfg_def, "name", provider),
+        "base_url": getattr(cfg_def, "inference_base_url", "") or "",
+        "key_env": key_envs[0] if key_envs else "",
+        "models": provider_model_ids(provider)[:24],
+    }
+else:
+    defaults = provider_defaults.get(provider, {"name": provider, "base_url": "", "key_env": "", "models": [model]})
+models = list(dict.fromkeys([model] + [item for item in defaults.get("models", []) if item]))
+cfg = load_config()
+providers = cfg.get("providers")
+if not isinstance(providers, dict):
+    providers = {}
+entry = providers.get(provider)
+if not isinstance(entry, dict):
+    entry = {}
+entry["name"] = entry.get("name") or defaults.get("name") or provider
+if defaults.get("base_url") and not entry.get("base_url"):
+    entry["base_url"] = defaults["base_url"]
+if defaults.get("key_env") and not entry.get("key_env"):
+    entry["key_env"] = defaults["key_env"]
+entry["default_model"] = model
+current_models = entry.get("models")
+if isinstance(current_models, dict):
+    for item in models:
+        current_models.setdefault(item, {})
+elif isinstance(current_models, list):
+    current_models = list(dict.fromkeys(current_models + models))
+else:
+    current_models = {item: {} for item in models}
+entry["models"] = current_models
+providers[provider] = entry
+cfg["providers"] = providers
+save_config(cfg)
+`;
+  await runHermesPython(script, { __PROVIDER__: provider, __MODEL__: model });
+}
+
+async function loadHiveEnv() {
+  const raw = await readFile(HIVE_ENV, "utf8").catch(() => "");
+  const values: Record<string, string> = {};
+  for (const rawLine of raw.split(/\r?\n/)) {
+    let line = rawLine.trim();
+    if (!line || line.startsWith("#")) continue;
+    if (line.startsWith("export ")) line = line.slice("export ".length).trim();
+    const equals = line.indexOf("=");
+    if (equals <= 0) continue;
+    const key = line.slice(0, equals).trim();
+    let value = line.slice(equals + 1).trim();
+    if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(key)) continue;
+    if (value.length >= 2 && ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'")))) {
+      value = value.slice(1, -1);
+    }
+    value = value.replaceAll("\0", "");
+    if (value) values[key] = value;
+  }
+  return { ...values, ...process.env };
+}
+
+async function hermesProcessEnv() {
+  return {
+    ...await loadHiveEnv(),
+    PYTHONPATH: HERMES_AGENT_DIR,
+  };
+}
+
 async function runHermesPython(script: string, values: Record<string, string | number>) {
   if (!existsSync(HERMES_PYTHON) || !existsSync(HERMES_AGENT_DIR)) throw new Error("Hermes Python runtime was not found.");
   let rendered = script;
   for (const [key, value] of Object.entries(values)) {
     rendered = rendered.replaceAll(key, JSON.stringify(value));
   }
-  await execFileAsync(HERMES_PYTHON, ["-c", rendered], {
+  const { stdout } = await execFileAsync(HERMES_PYTHON, ["-c", rendered], {
     cwd: HERMES_AGENT_DIR,
-    env: { ...process.env, PYTHONPATH: HERMES_AGENT_DIR },
+    env: await hermesProcessEnv(),
     timeout: 20_000,
     maxBuffer: 2_000_000,
   });
+  return stdout.trim();
 }
 
 async function searchOpenClawSessions(query: string, limit: number) {
@@ -501,7 +642,7 @@ async function runHermes(args: string[], timeout = 10_000) {
   const { stdout, stderr } = await execFileAsync("hermes", args, {
     timeout,
     maxBuffer: 2_000_000,
-    env: { ...process.env },
+    env: await loadHiveEnv(),
   });
   return `${stdout}${stderr ? `\n${stderr}` : ""}`.trim();
 }

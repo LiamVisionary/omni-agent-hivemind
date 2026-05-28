@@ -5,6 +5,7 @@
 /* eslint-disable react-hooks/immutability, react-hooks/purity */
 
 import { useCallback, useEffect, useMemo } from "react";
+import { parseRuntimeSsePayload, responseErrorMessage, runtimeErrorMessage } from "./runtime-stream-errors";
 
 export function useSchedulerController(props: any) {
   const { RUNTIME_LABELS, SCHEDULER_DYNAMIC_SKILL_ACTIONS_ENABLED, SCHEDULER_HERMES_SKILL_CONTEXT_ENABLED, SCHEDULER_MODEL_OPTIONS, SCHEDULER_RUN_STALE_MS, agents, appVersion, appendMessage, chatSetupIssue, createDefaultAgentWallet, displayAgents, displayMachineName, editingScheduleId, formatRelativeTime, honeyLedgerEnabled, logClientTelemetry, refreshHoneyLedger, scheduleDraft, schedules, selectedAgent, setEditingScheduleId, setMessagesByAgent, setScheduleDraft, setScheduleImportStatus, setScheduleImporting, setSchedulerAttachMenu, setSchedulerDraftOpen, setSchedulerPathDraft, setSchedulerPathKind, setSchedulerRunStates, setSchedulerSelectedStep, setSchedulerSkillSearch, setSchedules, sharedVault, updateTask, upsertTask, walletsByAgent } = props;
@@ -1005,8 +1006,7 @@ export function useSchedulerController(props: any) {
         contentType: response.headers.get("content-type"),
       });
       if (!response.ok || !response.body) {
-        const data = await response.json().catch(() => ({}));
-        throw new Error(typeof data.error === "string" ? data.error : `Request failed with ${response.status}`);
+        throw new Error(await responseErrorMessage(response, `Request failed with ${response.status}`));
       }
 
       const reader = response.body.getReader();
@@ -1039,14 +1039,15 @@ export function useSchedulerController(props: any) {
             sawTerminalEvent = true;
             continue;
           }
-          const parsed = JSON.parse(payload) as {
+          const parsed = parseRuntimeSsePayload(payload) as {
             choices?: Array<{ delta?: { content?: string; tool_results?: unknown } }>;
-            error?: string;
+            error?: unknown;
             honey?: unknown;
             status?: { type?: string };
             tool_call?: unknown;
           };
-          if (parsed.error) throw new Error(parsed.error);
+          const runtimeError = runtimeErrorMessage(parsed);
+          if (runtimeError) throw new Error(runtimeError);
           if (parsed.honey) {
             honeyEventCount += 1;
             logSchedulerRun("scheduler.run.stream.honey", { honeyEventCount });

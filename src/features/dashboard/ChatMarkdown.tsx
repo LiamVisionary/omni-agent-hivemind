@@ -11,7 +11,7 @@ function safeMarkdownHref(href: string) {
   return "#";
 }
 
-function renderInlineMarkdown(text: string): ReactNode[] {
+function renderInlineMarkdown(text: string, options: { links?: "anchor" | "text" } = {}): ReactNode[] {
   const parts: ReactNode[] = [];
   const pattern = /(`[^`]+`|\*\*[^*]+\*\*|\*[^*]+\*|\[[^\]]+\]\([^)]+\))/g;
   let cursor = 0;
@@ -27,7 +27,7 @@ function renderInlineMarkdown(text: string): ReactNode[] {
       parts.push(<em key={`${index}-em`}>{value.slice(1, -1)}</em>);
     } else {
       const link = /^\[([^\]]+)\]\(([^)]+)\)$/.exec(value);
-      parts.push(link ? (
+      parts.push(link ? options.links === "text" ? link[1] : (
         <a href={safeMarkdownHref(link[2])} key={`${index}-link`} onClick={(event) => event.stopPropagation()}>
           {link[1]}
         </a>
@@ -37,6 +37,10 @@ function renderInlineMarkdown(text: string): ReactNode[] {
   }
   if (cursor < text.length) parts.push(text.slice(cursor));
   return parts;
+}
+
+export function ChatInlineMarkdown({ text }: { text: string }) {
+  return <>{renderInlineMarkdown(text.replace(/\s+/g, " "), { links: "text" })}</>;
 }
 
 export function ChatMarkdown({ text, className, headingClassName }: { text: string; className?: string; headingClassName?: string }) {
