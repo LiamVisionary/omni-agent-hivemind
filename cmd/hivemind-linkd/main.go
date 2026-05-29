@@ -479,8 +479,10 @@ func appPortalScript(hostPort string, appProxyPrefix string) string {
   const isRootRelative = (value) => /^\/(?!\/)/.test(value);
   const isHttpLike = (protocol) => ["http:", "https:", "ws:", "wss:"].includes(protocol);
   const localPortFromUrl = (url) => url.port || defaultPort(url.protocol);
+  const alreadyPortal = (value) => value.startsWith(ctx.peerPrefix + "/app-proxy/") || value.startsWith("/peer/");
   function rewriteString(value) {
     if (typeof value !== "string" || value === "" || value.startsWith("data:") || value.startsWith("blob:")) return value;
+    if (alreadyPortal(value)) return value;
     let url;
     try {
       url = new URL(value, window.location.href);
@@ -501,6 +503,15 @@ func appPortalScript(hostPort string, appProxyPrefix string) string {
       return (window.location.protocol === "https:" ? "wss://" : "ws://") + window.location.host + target;
     }
     return target;
+  }
+  function rewriteSrcset(value) {
+    if (typeof value !== "string" || value === "") return value;
+    return value.split(",").map((candidate) => {
+      const parts = candidate.trim().split(/\s+/);
+      if (!parts[0]) return candidate;
+      parts[0] = rewriteString(parts[0]);
+      return parts.join(" ");
+    }).join(", ");
   }
   function rewriteInput(input) {
     if (typeof input === "string") return rewriteString(input);
@@ -559,6 +570,74 @@ func appPortalScript(hostPort string, appProxyPrefix string) string {
     const rewritten = rewriteString(anchor.getAttribute("href") || "");
     if (rewritten !== anchor.getAttribute("href")) anchor.setAttribute("href", rewritten);
   }, true);
+  const urlAttributes = new Set(["src", "href", "poster", "data-full-src", "data-preview-src"]);
+  const observedAttributes = ["src", "srcset", "href", "poster", "data-full-src", "data-preview-src"];
+  function rewriteElementUrls(element) {
+    if (!element || element.nodeType !== 1) return;
+    for (const attr of urlAttributes) {
+      const value = element.getAttribute(attr);
+      if (!value) continue;
+      const rewritten = rewriteString(value);
+      if (rewritten !== value) element.setAttribute(attr, rewritten);
+    }
+    const srcset = element.getAttribute("srcset");
+    if (srcset) {
+      const rewritten = rewriteSrcset(srcset);
+      if (rewritten !== srcset) element.setAttribute("srcset", rewritten);
+    }
+  }
+  const originalSetAttribute = Element.prototype.setAttribute;
+  Element.prototype.setAttribute = function(name, value) {
+    const attr = String(name).toLowerCase();
+    if (urlAttributes.has(attr)) {
+      value = rewriteString(String(value));
+    } else if (attr === "srcset") {
+      value = rewriteSrcset(String(value));
+    }
+    return originalSetAttribute.call(this, name, value);
+  };
+  function patchURLProperty(proto, property, rewriter) {
+    if (!proto) return;
+    const descriptor = Object.getOwnPropertyDescriptor(proto, property);
+    if (!descriptor || !descriptor.set || !descriptor.get || !descriptor.configurable) return;
+    Object.defineProperty(proto, property, {
+      configurable: true,
+      enumerable: descriptor.enumerable,
+      get() {
+        return descriptor.get.call(this);
+      },
+      set(value) {
+        return descriptor.set.call(this, rewriter(String(value)));
+      },
+    });
+  }
+  patchURLProperty(window.HTMLImageElement && HTMLImageElement.prototype, "src", rewriteString);
+  patchURLProperty(window.HTMLImageElement && HTMLImageElement.prototype, "srcset", rewriteSrcset);
+  patchURLProperty(window.HTMLSourceElement && HTMLSourceElement.prototype, "src", rewriteString);
+  patchURLProperty(window.HTMLSourceElement && HTMLSourceElement.prototype, "srcset", rewriteSrcset);
+  patchURLProperty(window.HTMLVideoElement && HTMLVideoElement.prototype, "poster", rewriteString);
+  const observer = new MutationObserver((mutations) => {
+    for (const mutation of mutations) {
+      if (mutation.type === "attributes") {
+        rewriteElementUrls(mutation.target);
+        continue;
+      }
+      for (const node of mutation.addedNodes) {
+        rewriteElementUrls(node);
+        if (node && node.querySelectorAll) {
+          node.querySelectorAll("img,source,video,a,[data-full-src],[data-preview-src],[srcset]").forEach(rewriteElementUrls);
+        }
+      }
+    }
+  });
+  const observeRoot = () => {
+    if (!document.documentElement) return;
+    observer.observe(document.documentElement, { subtree: true, childList: true, attributes: true, attributeFilter: observedAttributes });
+    rewriteElementUrls(document.documentElement);
+    document.documentElement.querySelectorAll("img,source,video,a,[data-full-src],[data-preview-src],[srcset]").forEach(rewriteElementUrls);
+  };
+  if (document.documentElement) observeRoot();
+  else document.addEventListener("DOMContentLoaded", observeRoot, { once: true });
 })();
 ` + `</script>`
 }

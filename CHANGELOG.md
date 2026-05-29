@@ -3,6 +3,14 @@
 This file records user-visible changes before they are committed. New work should
 be added here first, then marked `Committed` or `Pushed` after the git action.
 
+## 2026-05-29 17:18:37 WITA - Route Portal Media URLs Explicitly
+
+- Status: Uncommitted
+- Areas changed: Hivemind Link app portal proxy, link proxy tests, changelog
+- Summary: Rewrite dynamically rendered image, source, video poster, link, srcset, and app preview data URLs inside proxied app pages through the explicit `/peer/<collector>/app-proxy/<port>/...` route so generated ComfyUI Mobile outputs do not fall back to broken bare `/mobile/api/...` image paths when browser cookie or referrer context is unavailable.
+- Verification: `go test ./cmd/hivemind-linkd`; rebuilt, re-signed, and restarted `com.hivemindos.linkd.agent`; Link health returned `{"ok":true,"service":"hivemind-linkd"}`; Playwright against the real Z-Image ComfyUI Mobile route opened the queue/output panel and verified generated output thumbnail and preview images loaded with non-zero natural dimensions through explicit `/peer/100.84.93.114%3A8787/app-proxy/8788/mobile/api/...` URLs instead of bare `/mobile/api/...` paths.
+- Intended commit message: `Route portal media URLs explicitly`
+
 ## 2026-05-29 16:43:54 WITA - Preserve Encoded Workflow Paths Through Link
 
 - Status: Pushed
