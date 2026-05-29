@@ -3,6 +3,14 @@
 This file records user-visible changes before they are committed. New work should
 be added here first, then marked `Committed` or `Pushed` after the git action.
 
+## 2026-05-29 21:45:54 WITA - Preserve Binary App Upload Bodies
+
+- Status: Uncommitted
+- Areas changed: telemetry collector app proxy, changelog
+- Summary: Preserve raw request bytes when forwarding proxied app HTTP bodies so multipart image uploads to remote ComfyUI/Z-Image apps are not decoded as UTF-8 text and corrupted before preview.
+- Verification: `node --check scripts/agent-telemetry-collector.mjs`; `pnpm exec eslint scripts/agent-telemetry-collector.mjs --max-warnings=999`; `git diff --check -- scripts/agent-telemetry-collector.mjs CHANGELOG.md`.
+- Intended commit message: `Preserve binary app upload bodies`
+
 ## 2026-05-29 17:18:37 WITA - Route Portal Media URLs Explicitly
 
 - Status: Pushed

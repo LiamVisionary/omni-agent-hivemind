@@ -3338,6 +3338,16 @@ function readBody(request) {
   });
 }
 
+function readBodyBuffer(request) {
+  return new Promise((resolveBody) => {
+    const chunks = [];
+    request.on("data", (chunk) => {
+      chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+    });
+    request.on("end", () => resolveBody(Buffer.concat(chunks)));
+  });
+}
+
 function proxiedAppTarget(pathname, search) {
   const match = pathname.match(/^\/app-proxy\/(\d+)(\/.*)?$/);
   const targetPort = Number(match?.[1]);
@@ -3392,7 +3402,7 @@ async function proxyAppHttp(request, response, targetUrl) {
   }
   headers.host = target.host;
   headers.connection = "close";
-  const body = ["GET", "HEAD"].includes(request.method || "GET") ? undefined : await readBody(request);
+  const body = ["GET", "HEAD"].includes(request.method || "GET") ? undefined : await readBodyBuffer(request);
 
   await new Promise((resolve, reject) => {
     const upstream = httpRequest(target, { method: request.method, headers }, (appResponse) => {
