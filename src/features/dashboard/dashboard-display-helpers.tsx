@@ -421,9 +421,19 @@ export function brainLoaderEdgeLines() {
 
 export const BRAIN_LOADER_EDGES = brainLoaderEdgeLines();
 
-export function BrainGraphLoader({ compact = false }: { compact?: boolean }) {
+export function BrainGraphLoader({
+  compact = false,
+  detail = "Reading vault notes and link edges",
+  inline = false,
+  title = "Mapping shared brain",
+}: {
+  compact?: boolean;
+  detail?: string;
+  inline?: boolean;
+  title?: string;
+}) {
   return (
-    <div className={vaultClass("brainLoader", compact && "compact")} role="status" aria-live="polite">
+    <div className={vaultClass("brainLoader", compact && "compact", inline && "inline")} role="status" aria-live="polite">
       <svg className={vaultClass("brainLoaderComb")} viewBox="8 10 112 108" aria-hidden="true">
         <g className={vaultClass("brainLoaderCells")}>
           {BRAIN_LOADER_COORDS.map((coord, index) => {
@@ -444,8 +454,8 @@ export function BrainGraphLoader({ compact = false }: { compact?: boolean }) {
         </g>
       </svg>
       <div>
-        <strong>Mapping shared brain</strong>
-        <span>Reading vault notes and link edges</span>
+        <strong>{title}</strong>
+        <span>{detail}</span>
       </div>
       <div className={vaultClass("brainLoadingRail")} aria-hidden="true">
         <span />

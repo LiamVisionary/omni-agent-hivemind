@@ -1,11 +1,11 @@
-import { Activity, AppWindow, Bell, FolderOpen, KeyRound, PlugZap, ShieldCheck } from "lucide-react";
+import { Activity, AppWindow, Bell, Bot, FolderOpen, KeyRound, PlugZap, ShieldCheck } from "lucide-react";
 
 import fleetStyles from "@/app/fleet.module.css";
 import { createStyleClass } from "@/features/dashboard/style-classes";
 
 const fleetClass = createStyleClass(fleetStyles);
 
-type MorePanelTarget = "integrations" | "env" | "maintenance" | "files" | "notifications" | "memory" | "my-apps";
+type MorePanelTarget = "integrations" | "env" | "maintenance" | "files" | "notifications" | "memory" | "my-apps" | "aeon";
 
 export type MorePanelProps = {
   sharedEnvCount: number;
@@ -31,6 +31,13 @@ export function MorePanel({
   onNavigate,
 }: MorePanelProps) {
   const items = [
+    {
+      id: "aeon" as const,
+      icon: <Bot aria-hidden="true" />,
+      eyebrow: "Autopilot",
+      title: "Aeon",
+      body: "Manage unattended skills, schedules, workflow runs, and outputs.",
+    },
     {
       id: "integrations" as const,
       icon: <PlugZap aria-hidden="true" />,
@@ -91,7 +98,7 @@ export function MorePanel({
           <p>Integrations, diagnostics, scoped files, and agent notifications live here so the main navigation stays focused.</p>
         </div>
       </div>
-      <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-7">
+      <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
         {items.map((item) => (
           <button
             type="button"

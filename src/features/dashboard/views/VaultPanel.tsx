@@ -8,7 +8,7 @@ import { BrainModule } from "@/features/dashboard/brain-modules";
 import { useEffect, useRef, useState } from "react";
 
 export function VaultPanel(props: any) {
-  const { Activity, BRAIN_SKILL_PROVIDER_FALLBACK, Bot, BrainCircuit, BrainGraphLoader, Button, Cell, Check, CircleAlert, Clock3, DEFAULT_SHARED_VAULT, Download, Eye, FileText, FolderOpen, GitBranch, Hexagon, Image, KeyRound, LoaderCircle, MemoryCell, Network, PlugZap, RefreshCcw, Repeat2, Sparkles, activeView, brainGraph, brainGraphEdgePath, brainGraphLoading, brainGraphStats, brainGraphStatus, brainLayout, brainNodePoints, brainPan, brainSkillAeonSyncing, brainSkillImportAllDescription, brainSkillImportAllLabel, brainSkillImportProvider, brainSkillImportSuccess, brainSkillImportableCount, brainSkills, brainSkillsLoading, brainSkillsStatus, checkControlRoomStatus, checkVaultStatus, controlRoomStatus, displayAgents, endBrainPan, formatBrainDate, gbrainActionStatus, gbrainBusy, gbrainQuery, gbrainQueryResult, gbrainStatus, hermesUpdateRequired, hermesUpdateRequiredDetail, importBrainSkills, inspectBrainNode, installTradingBrainFromDashboard, moveBrainPan, openSkillBrowser, pairSyncthingVaultSync, queryGbrainFromDashboard, refreshBrainGraph, refreshBrainSkills, refreshGbrainStatus, refreshRuntimeFileRoots, refreshTradingBrainStatus, runGbrainAction, runVaultTailnetSync, selectedAgent, selectedBrainNode, selectedBrainTargetIds, setActiveView, setGbrainQuery, setTradingBrainForAllRuntimes, setTradingBrainForRuntime, setVaultPanelMode, sharedVault, skillRequiresHermesUpdate, splitBrainLabel, startBrainPan, syncBrainSkillsToAeon, tradingBrainActionStatus, tradingBrainAllRuntimeAttached, tradingBrainBusy, tradingBrainRuntimeCards, tradingBrainStatus, updateAllSkillAutoSync, updateSharedVault, updateSkillAutoSync, vaultClass, vaultPanelMode, vaultStatus, vaultSyncPending, vaultSyncStatus, visibleBrainNodes, walletClass } = props;
+  const { Activity, BRAIN_SKILL_PROVIDER_FALLBACK, Bot, BrainCircuit, BrainGraphLoader, Button, Cell, Check, CircleAlert, Clock3, DEFAULT_SHARED_VAULT, Download, Eye, FileText, FolderOpen, GitBranch, Hexagon, Image, KeyRound, LoaderCircle, MemoryCell, Network, PlugZap, RefreshCcw, Repeat2, Sparkles, activeView, brainGraph, brainGraphEdgePath, brainGraphLoading, brainGraphStats, brainGraphStatus, brainLayout, brainNodePoints, brainPan, brainSkillAeonSyncing, brainSkillImportAllDescription, brainSkillImportAllLabel, brainSkillImportProvider, brainSkillImportSuccess, brainSkillImportableCount, brainSkills, brainSkillsLoading, brainSkillsStatus, checkControlRoomStatus, checkVaultStatus, controlRoomStatus, displayAgents, endBrainPan, formatBrainDate, gbrainActionStatus, gbrainBusy, gbrainQuery, gbrainQueryResult, gbrainStatus, hermesUpdateRequired, hermesUpdateRequiredDetail, importBrainSkills, inspectBrainNode, installTradingBrainFromDashboard, moveBrainPan, openSkillBrowser, pairSyncthingVaultSync, queryGbrainFromDashboard, refreshBrainGraph, refreshBrainSkills, refreshGbrainStatus, refreshRuntimeFileRoots, refreshTradingBrainStatus, runGbrainAction, runVaultTailnetSync, selectedAgent, selectedBrainNode, selectedBrainTargetIds, setActiveView, setGbrainQuery, setSkillBrowserSearch, setTradingBrainForAllRuntimes, setTradingBrainForRuntime, setVaultPanelMode, sharedVault, skillBrowserSearch, skillRequiresHermesUpdate, splitBrainLabel, startBrainPan, syncBrainSkillsToAeon, tradingBrainActionStatus, tradingBrainAllRuntimeAttached, tradingBrainBusy, tradingBrainRuntimeCards, tradingBrainStatus, updateAllSkillAutoSync, updateSharedVault, updateSkillAutoSync, vaultClass, vaultPanelMode, vaultStatus, vaultSyncPending, vaultSyncStatus, visibleBrainNodes, walletClass } = props;
   const gbrainMetric = (keys: string[]) => {
     const stats = gbrainStatus?.stats ?? {};
     for (const key of keys) {
@@ -25,6 +25,26 @@ export function VaultPanel(props: any) {
   const tradingCounts = tradingBrainStatus?.counts ?? {};
   const tradingBrainConfiguredFiles = tradingBrainStatus?.files?.filter((file) => file.exists).length ?? 0;
   const tradingBrainTotalFiles = tradingBrainStatus?.files?.length ?? 0;
+  const skillSearchQuery = (skillBrowserSearch ?? "").trim().toLowerCase();
+  const skillMatchesBrowserSearch = (skill, source = "") => {
+    if (!skillSearchQuery) return true;
+    return (
+      skill.name?.toLowerCase().includes(skillSearchQuery)
+      || skill.slug?.toLowerCase().includes(skillSearchQuery)
+      || skill.description?.toLowerCase().includes(skillSearchQuery)
+      || source.toLowerCase().includes(skillSearchQuery)
+    );
+  };
+  const sharedBrainSkills = brainSkills?.shared ?? [];
+  const filteredSharedBrainSkills = sharedBrainSkills.filter((skill) => skillMatchesBrowserSearch(skill, skill.providerLabel || "Shared brain"));
+  const providerSkillInventories = (brainSkills?.providers ?? BRAIN_SKILL_PROVIDER_FALLBACK).map((provider) => ({
+    ...provider,
+    skills: skillSearchQuery ? provider.skills.filter((skill) => skillMatchesBrowserSearch(skill, provider.label)) : provider.skills,
+  }));
+  const filteredProviderSkillTotal = providerSkillInventories.reduce((total, provider) => total + provider.skills.length, 0);
+  const providerSkillSummary = skillSearchQuery
+    ? `${filteredProviderSkillTotal} matching provider skill${filteredProviderSkillTotal === 1 ? "" : "s"}`
+    : `${brainSkills?.totals.importable ?? 0} skill${(brainSkills?.totals.importable ?? 0) === 1 ? "" : "s"} ready to mirror into Obsidian`;
   useEffect(() => {
     const previousBusy = previousGbrainBusyRef.current;
     previousGbrainBusyRef.current = gbrainBusy;
@@ -523,9 +543,12 @@ export function VaultPanel(props: any) {
         {vaultPanelMode === "shared-skills" && brainSkillsLoading ? (
         <section className={vaultClass("brainSkillsLoadingPanel")} aria-label="Loading shared brain skills" aria-busy="true">
           <div className={vaultClass("skillLoadingBeacon")}>
-            <div className={vaultClass("skillLoadingComb")}>
-              {Array.from({ length: 19 }).map((_, index) => <span key={index} style={{ "--cell-index": index }} />)}
-            </div>
+            <BrainGraphLoader
+              compact
+              inline
+              title="Scanning shared skills"
+              detail={brainSkillsStatus || "Reading shared brain skills and provider installs"}
+            />
           </div>
           <div className={vaultClass("skillLoadingCopy")}>
             <p className="eyebrow">Shared skills</p>
@@ -579,14 +602,28 @@ export function VaultPanel(props: any) {
             <p className={vaultClass("hermesUpdateNotice")}>Hermes update available: {hermesUpdateRequiredDetail}. Skills using the newest Hermes features are marked below.</p>
           ) : null}
 
-          {brainSkills?.shared.length ? (
+          <div className={vaultClass("brainSkillsSearch")}>
+            <input
+              value={skillBrowserSearch}
+              onChange={(event) => setSkillBrowserSearch(event.target.value)}
+              placeholder="Search skills, tools, runtimes, workflows..."
+              aria-label="Search shared skills"
+            />
+            {skillSearchQuery ? (
+              <Button type="button" size="sm" variant="secondary" onClick={() => setSkillBrowserSearch("")}>
+                Clear
+              </Button>
+            ) : null}
+          </div>
+
+          {sharedBrainSkills.length ? (
             <div className={vaultClass("sharedSkillGrid")}>
               <button type="button" className={vaultClass("sharedSkillAddCard")} onClick={openSkillBrowser}>
                 <Image src="/icons/worker-bee-general-v2.png" alt="" width={34} height={34} unoptimized />
                 <strong>Add skill</strong>
                 <p>Browse featured and community skills, then mirror the ones you trust into the shared brain.</p>
               </button>
-              {brainSkills.shared.map((skill) => {
+              {filteredSharedBrainSkills.map((skill) => {
                 const needsHermesUpdate = skillRequiresHermesUpdate(skill, hermesUpdateRequired);
                 return (
                   <article key={skill.id} className={vaultClass("sharedSkillCard")}>
@@ -603,6 +640,15 @@ export function VaultPanel(props: any) {
                   </article>
                 );
               })}
+              {skillSearchQuery && !filteredSharedBrainSkills.length ? (
+                <div className={vaultClass("brainSkillsEmpty", "searchEmpty")}>
+                  <Sparkles aria-hidden="true" />
+                  <div>
+                    <strong>No matching shared skills</strong>
+                    <p>Try a different search, or browse skills to add another recipe to the brain.</p>
+                  </div>
+                </div>
+              ) : null}
             </div>
           ) : (
             <div className={vaultClass("brainSkillsEmpty")}>
@@ -621,7 +667,7 @@ export function VaultPanel(props: any) {
           <div className={vaultClass("providerSkillsToolbar")}>
             <div>
               <strong>Provider installs</strong>
-              <span>{brainSkills?.totals.importable ?? 0} skill{(brainSkills?.totals.importable ?? 0) === 1 ? "" : "s"} ready to mirror into Obsidian</span>
+              <span>{providerSkillSummary}</span>
             </div>
             <Button
               type="button"
@@ -651,7 +697,7 @@ export function VaultPanel(props: any) {
           </label>
 
           <div className={vaultClass("providerSkillStrip")}>
-            {(brainSkills?.providers ?? BRAIN_SKILL_PROVIDER_FALLBACK).map((provider) => {
+            {providerSkillInventories.map((provider) => {
               const importable = provider.skills.filter((skill) => !skill.imported).length;
               const imported = provider.skills.length - importable;
               const updateRequiredCount = provider.skills.filter((skill) => skillRequiresHermesUpdate({ ...skill, providerId: provider.id, source: provider.label }, hermesUpdateRequired)).length;

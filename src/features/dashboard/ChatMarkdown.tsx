@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 
 import chatStyles from "@/app/chat.module.css";
 import { createStyleClass } from "@/features/dashboard/style-classes";
@@ -18,8 +18,8 @@ const indentBlockStyle = {
 } as const;
 const bulletListStyle = {
   display: "grid",
-  gap: "8px",
-  margin: "2px 0 2px 0.35rem",
+  gap: "9px",
+  margin: "4px 0",
 } as const;
 const nestedBulletListStyle = {
   ...bulletListStyle,
@@ -27,23 +27,31 @@ const nestedBulletListStyle = {
 } as const;
 const bulletItemStyle = {
   display: "grid",
-  gridTemplateColumns: "0.65rem minmax(0, 1fr)",
-  gap: "0.55rem",
-  alignItems: "baseline",
+  gridTemplateColumns: "0.55rem minmax(0, 1fr)",
+  gap: "0.72rem",
+  alignItems: "start",
+  border: "1px solid rgba(255, 255, 255, 0.08)",
+  borderRadius: "12px",
+  background: "rgba(255, 255, 255, 0.026)",
+  padding: "0.62rem 0.72rem",
 } as const;
 const orderedItemStyle = {
   display: "grid",
   gridTemplateColumns: "1.8rem minmax(0, 1fr)",
-  gap: "0.55rem",
-  alignItems: "baseline",
+  gap: "0.65rem",
+  alignItems: "start",
+  border: "1px solid rgba(255, 255, 255, 0.08)",
+  borderRadius: "12px",
+  background: "rgba(255, 255, 255, 0.026)",
+  padding: "0.62rem 0.72rem",
 } as const;
 const bulletDotStyle = {
-  width: "0.34rem",
-  height: "0.34rem",
+  width: "0.38rem",
+  height: "0.38rem",
   borderRadius: "999px",
-  background: "rgba(94, 234, 212, 0.9)",
-  boxShadow: "0 0 0 3px rgba(94, 234, 212, 0.1)",
-  transform: "translateY(-0.05rem)",
+  background: "rgba(103, 232, 249, 0.96)",
+  boxShadow: "0 0 12px rgba(103, 232, 249, 0.9)",
+  transform: "translateY(0.52rem)",
 } as const;
 const orderedIndexStyle = {
   color: "rgba(94, 234, 212, 0.9)",
@@ -59,6 +67,8 @@ const fieldLabelStyle = {
   whiteSpace: "nowrap",
 } as const;
 const fieldPattern = /(^|\s)(Suggested comment|Suggested DM|Post context|Related post|Best action|Comment under Wake or related thread|Name|Followers|Bio|Why|Post|Comment|DM|Account|Action|Profile|Handle|Engagement|URL|Link):/g;
+const jsonStartPattern = /^\s*[{[]/;
+const jsonPropertyPattern = /"[^"\n]+"\s*:/g;
 
 function safeMarkdownHref(href: string) {
   const trimmed = href.trim();
@@ -74,7 +84,114 @@ function splitTrailingUrlPunctuation(value: string) {
   };
 }
 
-function renderInlineMarkdown(text: string, options: { links?: "anchor" | "text" } = {}): ReactNode[] {
+function copyCodeText(value: string) {
+  void navigator.clipboard?.writeText(value);
+}
+
+function formatJsonBlock(value: string) {
+  try {
+    return JSON.stringify(JSON.parse(value), null, 2);
+  } catch {
+    return "";
+  }
+}
+
+function trimJsonCandidate(value: string) {
+  return value.trim().replace(/^[,:\s]+/, "").replace(/;\s*$/, "");
+}
+
+function formatJsonCandidate(value: string) {
+  const trimmed = trimJsonCandidate(value);
+  if (!trimmed) return "";
+  const formatted = formatJsonBlock(trimmed);
+  if (formatted) return formatted;
+  if (/^"[^"]+"\s*:/.test(trimmed)) return formatJsonBlock(`{${trimmed}}`);
+  return "";
+}
+
+function extractEmbeddedJson(text: string) {
+  const searchStart = Math.max(0, Math.min(
+    ...["{", "["]
+      .map((token) => {
+        const found = text.indexOf(token);
+        return found === -1 ? Number.POSITIVE_INFINITY : found;
+      }),
+  ));
+  const candidates = Number.isFinite(searchStart) ? [searchStart] : [];
+  for (const match of text.matchAll(jsonPropertyPattern)) {
+    candidates.push(match.index ?? 0);
+  }
+  for (const start of [...new Set(candidates)].sort((a, b) => a - b)) {
+    const formatted = formatJsonCandidate(text.slice(start));
+    if (!formatted) continue;
+    return {
+      prefix: text.slice(0, start).trim(),
+      formatted,
+    };
+  }
+  return null;
+}
+
+function likelyJsonLine(line: string) {
+  const trimmed = line.trim();
+  return Boolean(trimmed)
+    && (
+      jsonStartPattern.test(trimmed)
+      || /^[}\]],?$/.test(trimmed)
+      || /^"[^"]+"\s*:/.test(trimmed)
+      || /^"[^"]+"\s*,?$/.test(trimmed)
+      || /^(true|false|null|-?\d+(?:\.\d+)?),?$/.test(trimmed)
+    );
+}
+
+function collectJsonBlock(lines: string[], startIndex: number) {
+  const body: string[] = [];
+  let index = startIndex;
+  while (index < lines.length && (likelyJsonLine(lines[index]) || !lines[index].trim())) {
+    body.push(lines[index]);
+    index += 1;
+  }
+
+  const raw = body.join("\n").trim().replace(/;\s*$/, "");
+  const formatted = formatJsonBlock(raw);
+  if (!formatted) return null;
+  return { formatted, nextIndex: index };
+}
+
+function collectLooseJsonBlock(lines: string[], startIndex: number) {
+  const body: string[] = [];
+  let index = startIndex;
+  while (index < lines.length && (likelyJsonLine(lines[index]) || !lines[index].trim())) {
+    body.push(lines[index]);
+    index += 1;
+  }
+  return {
+    raw: body.join("\n").trim(),
+    nextIndex: Math.max(index, startIndex + 1),
+  };
+}
+
+function renderDataBlock(value: string, key: string) {
+  return (
+    <pre className={chatClass("jsonBlock")} key={key}>
+      <code>{value}</code>
+    </pre>
+  );
+}
+
+function renderParagraphBlock(text: string, key: string, inlineOptions: { codeCopied?: string; onCopyCode?: (value: string) => void } = {}) {
+  const embeddedJson = extractEmbeddedJson(text);
+  if (!embeddedJson) return <p key={key}>{renderFieldLine(text, inlineOptions)}</p>;
+  return (
+    <div className={chatClass("markdownMixedDataBlock")} key={key}>
+      {embeddedJson.prefix ? <p>{renderFieldLine(embeddedJson.prefix, inlineOptions)}</p> : null}
+      {renderDataBlock(embeddedJson.formatted, `${key}-json`)}
+    </div>
+  );
+}
+
+
+function renderInlineMarkdown(text: string, options: { links?: "anchor" | "text"; codeCopied?: string; onCopyCode?: (value: string) => void } = {}): ReactNode[] {
   const parts: ReactNode[] = [];
   const pattern = /(`[^`]+`|\*\*[^*]+\*\*|\*[^*]+\*|\[[^\]]+\]\([^)]+\)|(?:https?:\/\/|mailto:)[^\s<]+)/g;
   let cursor = 0;
@@ -83,7 +200,27 @@ function renderInlineMarkdown(text: string, options: { links?: "anchor" | "text"
     const index = match.index ?? 0;
     if (index > cursor) parts.push(text.slice(cursor, index));
     if (value.startsWith("`")) {
-      parts.push(<code key={`${index}-code`}>{value.slice(1, -1)}</code>);
+      const codeValue = value.slice(1, -1);
+      parts.push(
+        <code
+          data-copied={options.codeCopied === codeValue ? "true" : undefined}
+          key={`${index}-code`}
+          onClick={(event) => {
+            event.stopPropagation();
+            options.onCopyCode?.(codeValue);
+          }}
+          onKeyDown={(event) => {
+            if (event.key !== "Enter" && event.key !== " ") return;
+            event.preventDefault();
+            options.onCopyCode?.(codeValue);
+          }}
+          role="button"
+          tabIndex={0}
+          title="Copy code"
+        >
+          {codeValue}
+        </code>,
+      );
     } else if (value.startsWith("**")) {
       parts.push(<strong key={`${index}-strong`}>{value.slice(2, -2)}</strong>);
     } else if (value.startsWith("*")) {
@@ -116,9 +253,9 @@ function renderInlineMarkdown(text: string, options: { links?: "anchor" | "text"
   return parts;
 }
 
-function renderFieldLine(text: string) {
+function renderFieldLine(text: string, options: { codeCopied?: string; onCopyCode?: (value: string) => void } = {}) {
   const matches = [...text.matchAll(fieldPattern)];
-  if (!matches.length) return renderInlineMarkdown(text);
+  if (!matches.length) return renderInlineMarkdown(text, options);
   const parts: ReactNode[] = [];
   let cursor = 0;
   for (const match of matches) {
@@ -126,7 +263,7 @@ function renderFieldLine(text: string) {
     const prefix = match[1] ?? "";
     const label = match[2] ?? "";
     const labelIndex = index + prefix.length;
-    if (labelIndex > cursor) parts.push(...renderInlineMarkdown(text.slice(cursor, labelIndex)));
+    if (labelIndex > cursor) parts.push(...renderInlineMarkdown(text.slice(cursor, labelIndex), options));
     parts.push(
       <strong
         key={`field-${labelIndex}`}
@@ -138,7 +275,7 @@ function renderFieldLine(text: string) {
     cursor = index + match[0].length;
     if (text[cursor] === " ") cursor += 1;
   }
-  if (cursor < text.length) parts.push(...renderInlineMarkdown(text.slice(cursor)));
+  if (cursor < text.length) parts.push(...renderInlineMarkdown(text.slice(cursor), options));
   return parts;
 }
 
@@ -147,7 +284,14 @@ export function ChatInlineMarkdown({ text }: { text: string }) {
 }
 
 export function ChatMarkdown({ text, className, headingClassName }: { text: string; className?: string; headingClassName?: string }) {
+  const [copiedCode, setCopiedCode] = useState("");
   if (!text.trim()) return null;
+  function handleCopyCode(value: string) {
+    copyCodeText(value);
+    setCopiedCode(value);
+    window.setTimeout(() => setCopiedCode((current) => current === value ? "" : current), 1200);
+  }
+  const inlineOptions = { codeCopied: copiedCode, onCopyCode: handleCopyCode };
   const lines = text.trim().split("\n");
   const blocks: ReactNode[] = [];
   let index = 0;
@@ -171,9 +315,23 @@ export function ChatMarkdown({ text, className, headingClassName }: { text: stri
       previousBlockKind = "code";
       continue;
     }
+    if (jsonStartPattern.test(line)) {
+      const jsonBlock = collectJsonBlock(lines, index);
+      if (jsonBlock) {
+        blocks.push(renderDataBlock(jsonBlock.formatted, `json-${index}`));
+        index = jsonBlock.nextIndex;
+        previousBlockKind = "json";
+        continue;
+      }
+      const looseJsonBlock = collectLooseJsonBlock(lines, index);
+      blocks.push(renderDataBlock(looseJsonBlock.raw, `json-raw-${index}`));
+      index = looseJsonBlock.nextIndex;
+      previousBlockKind = "json";
+      continue;
+    }
     const heading = /^(#{1,3})\s+(.+)$/.exec(line);
     if (heading) {
-      blocks.push(<strong className={headingClassName ?? chatClass("markdownHeading")} key={`heading-${index}`}>{renderInlineMarkdown(heading[2])}</strong>);
+      blocks.push(<strong className={headingClassName ?? chatClass("markdownHeading")} key={`heading-${index}`}>{renderInlineMarkdown(heading[2], inlineOptions)}</strong>);
       index += 1;
       previousBlockKind = "heading";
       continue;
@@ -190,7 +348,7 @@ export function ChatMarkdown({ text, className, headingClassName }: { text: stri
           {items.map((item, itemIndex) => (
             <div className={chatClass("markdownBulletItem")} key={`${index}-${itemIndex}`} role="listitem" style={bulletItemStyle}>
               <span aria-hidden="true" className={chatClass("markdownBulletDot")} style={bulletDotStyle} />
-              <span>{renderFieldLine(item)}</span>
+              <span>{renderFieldLine(item, inlineOptions)}</span>
             </div>
           ))}
         </div>,
@@ -210,7 +368,7 @@ export function ChatMarkdown({ text, className, headingClassName }: { text: stri
           {items.map((item, itemIndex) => (
             <div className={chatClass("markdownBulletItem")} key={`${index}-${itemIndex}`} role="listitem" style={orderedItemStyle}>
               <span aria-hidden="true" style={orderedIndexStyle}>{item.marker}</span>
-              <span>{renderFieldLine(item.text)}</span>
+              <span>{renderFieldLine(item.text, inlineOptions)}</span>
             </div>
           ))}
         </div>,
@@ -230,7 +388,7 @@ export function ChatMarkdown({ text, className, headingClassName }: { text: stri
           {items.map((item, itemIndex) => (
             <div className={chatClass("markdownBulletItem")} key={`${index}-${itemIndex}`} role="listitem" style={orderedItemStyle}>
               <span aria-hidden="true" style={orderedIndexStyle}>{item.marker}</span>
-              <span>{renderFieldLine(item.text)}</span>
+              <span>{renderFieldLine(item.text, inlineOptions)}</span>
             </div>
           ))}
         </div>,
@@ -246,7 +404,7 @@ export function ChatMarkdown({ text, className, headingClassName }: { text: stri
       }
       blocks.push(
         <div className={chatClass("markdownIndentBlock")} key={`indent-${index}`} style={indentBlockStyle}>
-          {body.map((item, itemIndex) => <p key={`${index}-${itemIndex}`}>{renderFieldLine(item)}</p>)}
+          {body.map((item, itemIndex) => <p key={`${index}-${itemIndex}`}>{renderFieldLine(item, inlineOptions)}</p>)}
         </div>,
       );
       previousBlockKind = "indent";
@@ -266,9 +424,14 @@ export function ChatMarkdown({ text, className, headingClassName }: { text: stri
       paragraph.push(lines[index]);
       index += 1;
     }
-    blocks.push(<p key={`paragraph-${index}`}>{renderFieldLine(paragraph.join("\n"))}</p>);
+    blocks.push(renderParagraphBlock(paragraph.join("\n"), `paragraph-${index}`, inlineOptions));
     previousBlockKind = "paragraph";
   }
 
-  return <div className={className ?? chatClass("messageMarkdown")}>{blocks}</div>;
+  return (
+    <div className={className ?? chatClass("messageMarkdown")}>
+      {blocks}
+      {copiedCode ? <span className={chatClass("codeCopiedToast")} aria-live="polite">Copied</span> : null}
+    </div>
+  );
 }

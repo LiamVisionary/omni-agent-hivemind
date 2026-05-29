@@ -19,6 +19,7 @@ const DASHBOARD_VIEWS = new Set<DashboardView>([
   "more",
   "env",
   "my-apps",
+  "aeon",
 ]);
 const DASHBOARD_VAULT_PANEL_MODES = new Set<DashboardVaultPanelMode>([
   "hive-vault",

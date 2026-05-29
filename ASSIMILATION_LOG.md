@@ -770,3 +770,81 @@ cached 0 public candidates in /Users/liam/Documents/github-assimilator-vault
   - Decision: donor
   - Reason: MIT GitHub Actions workflow monitoring dashboard; useful only for cross-repo workflow dashboard ideas, not AEON-specific
   - Path: `workflow dashboard`
+## 2026-05-29T16:25:55.885174+00:00 - local-search
+
+- Request: Improve existing React/Next AI chat screen UI with polished dark glassmorphism message bubbles markdown renderer and composer
+- Source: local-index
+- Query: `Improve existing React/Next AI chat screen UI with polished dark glassmorphism message bubbles markdown renderer and composer`
+- Decision: retrieved
+- Reason: Retrieved local/private-visible index hits.
+- Note: 1. score=10.27 nativelaunch/expolaunch-template [repo-summary]
+   url: https://github.com/nativelaunch/expolaunch-template
+   note: /Users/liam/Documents/github-assimilator-vault/Repos/nativelaunch-expolaunch-template.md
+   nativelaunch/expolaunch-template NativeLaunch Starter – Expo SDK 55 + React Native template with Supabase, RevenueCat, OneSignal, UniWind + HeroUI Native. TypeScript Expo React React Native
+2. score=10.27 nativelaunch/nativelaunch-monorepo-template [repo-summary]
+   url: https://github.com/nativelaunch/nativelaunch-monorepo-template
+   note: /Users/liam/Documents/github-assimilator-vault/Repos/nativelaunch-nativelaunch-monorepo-template.md
+   nativelaunch/nativelaunch-monorepo-template NativeLaunch Monorepo – Expo SDK 55 + React Native + Turborepo + UniWind + HeroUI Native. Monorepo template with shared packages. TypeScript Expo React React Native
+3. score=8.64 react-native-google-signin/google-signin-next [repo-summary]
+   url: https://github.com/react-native-google-signin/google-signin-next
+   note: /Users/liam/Documents/github-assimilator-vault/Repos/react-native-google-signin-google-signin-next.md
+   react-native-google-signin/google-signin-next Google Sign-in for your React Native applications TypeScript React React Native
+4. score=6.70 LiamVisionary/ami-revenue-optimizer [repo-summary]
+   url: https://github.com/LiamVisionary/ami-revenue-optimizer
+   note: /Users/liam/Documents/github-assimilator-vault/Repos/LiamVisionary-ami-revenue-optimizer.md
+   LiamVisionary/ami-revenue-optimizer CrewAI-based revenue optimizer and ad management flows for Ami AI Companion Python Python
+5. score=6.70 LiamVisionary/floradex [repo-summary]
+   url: https://github.com/LiamVisionary/floradex
+   note: /Users/liam/Documents/github-assimilator-vault/Repos/LiamVisionary-floradex.md
+   LiamVisionary/floradex An AI powered plant scanner and collection tracker. TypeScript
+
+## 2026-05-29T16:26:01.110963+00:00 - prebuild-gate
+
+- Request: Improve existing React/Next AI chat screen UI with polished dark glassmorphism message bubbles markdown renderer and composer
+- Source: public-github
+- Query: `Improve existing React/Next AI chat screen UI with polished dark glassmorphism message bubbles markdown renderer and composer`
+- Decision: passed
+- Reason: Public search returned candidates; choose and audit backbone/donors before implementation.
+## 2026-05-29T16:26:33.807328+00:00 - triage
+
+- Request: Improve existing React/Next AI chat screen UI with polished dark glassmorphism message bubbles markdown renderer and composer
+- Source: public-github
+
+### Candidates
+- Sfedfcv/redesigned-pancake
+  - Decision: rejected
+  - Reason: highest-star result but unrelated GitHub/docs maintenance content, no compatible chat UI source paths
+- JOHNFLEURIMOND/BoardsCommissionsForm
+  - Decision: rejected
+  - Reason: Boston form workflow, not chat UI and no reusable message/composer components
+- sleekcharly/gistoracle-v2
+  - Decision: rejected
+  - Reason: gist app with unrelated Firebase/SEO surface, not compatible chat screen UI
+- Shodydosh/AI-Chat-App
+  - Decision: inspecting
+  - Reason: only directionally compatible Next chat UI candidate from public search
+## 2026-05-29T16:26:58.864862+00:00 - rejection
+
+- Request: Improve existing React/Next AI chat screen UI with polished dark glassmorphism message bubbles markdown renderer and composer
+- Source: public-github
+
+### Candidates
+- Shodydosh/AI-Chat-App
+  - Decision: rejected
+  - Reason: audited with one medium environment/API hint; UI components are a basic ChatGPT clone with direct API handling and no richer markdown/composer code worth transplanting into the existing dashboard
+## 2026-05-29T16:40:22.007587+00:00 - implementation
+
+- Request: Add Aeon Autopilot dashboard to HivemindOS
+- Source: public-github
+- Decision: implemented
+- Reason: HivemindOS already had an Aeon runtime adapter; upstream AEON dashboard patterns informed a first-class Autopilot UI for status, skills, schedules, runs, outputs, shared-skill sync, and secret sync.
+- Selected backbone: aaronjmars/aeon
+- Assimilated: Adapted upstream AEON dashboard concepts from dashboard/lib/config.ts, dashboard/app/api/runs/route.ts, dashboard/app/api/outputs/route.ts, SkillDetail, and RightPanel into the existing HivemindOS runtime adapter API surface without copying wholesale code.
+- Not assimilated: Did not import AEON dashboard routes wholesale, did not reuse destructive git pull/stash output refresh behavior, and did not add yaml/json-render dependencies in this pass.
+- Verification: Targeted eslint for AeonAutopilotPanel, full TypeScript noEmit, git diff --check, and Playwright desktop/mobile smoke on /?view=aeon passed.
+
+### Candidates
+- aaronjmars/aeon
+  - Decision: implemented
+  - Reason: Upstream AEON dashboard and runtime patterns guided the HivemindOS Autopilot surface
+  - Path: `dashboard/lib/config.ts,dashboard/app/api/runs/route.ts,dashboard/components/SkillDetail.tsx,dashboard/components/RightPanel.tsx`

@@ -41,8 +41,39 @@ function modelValueLabel(value?: string) {
   return trimmed;
 }
 
+function runtimeIdentityLabel(agent?: any, runtimeModelSelection?: any, runtimeModelSelectionsByRuntime?: Record<string, any>) {
+  if (!agent) return "not-set";
+  const runtime = agent.runtime?.trim() || "not-set";
+  const runtimeSelection = runtimeModelSelectionsByRuntime?.[runtime];
+  const provider = agent.provider?.trim() || runtimeModelSelection?.provider?.trim() || runtimeSelection?.provider?.trim();
+  const model = agent.model?.trim() || runtimeModelSelection?.model?.trim() || runtimeSelection?.model?.trim();
+  return provider && model ? `${runtime} • ${provider}/${model}` : runtime;
+}
+
+function agentInitials(agent?: any) {
+  if (agent?.beeRole === "queen") return "QB";
+  const name = agent?.name?.trim() ?? "";
+  const initials = name
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((part: string) => part.slice(0, 1).toUpperCase())
+    .join("");
+  return initials || "A";
+}
+
+function selectedAgentIcon(agent?: any, beeRoleIconPath?: (role?: string, workerClass?: string) => string) {
+  if (!agent) return "";
+  if (agent.beeRole === "queen") return beeRoleIconPath?.("queen") ?? "/icons/queen-bee-v2.png";
+  const customWorkerClass = agent.customWorkerClasses?.find((workerClass: any) => workerClass.id === agent.selectedCustomWorkerClassId)
+    ?? agent.customWorkerClass;
+  return customWorkerClass?.imageSrc
+    || beeRoleIconPath?.("worker", agent.workerClass ?? "general")
+    || "/icons/worker-bee-general-v2.png";
+}
+
 export function ChatPanel(props: any) {
-  const { Activity, AgentResponseLoader, Button, ChatMarkdown, Check, ComposerField, Copy, Folder, KanbanSquare, LoaderCircle, MessageAttachments, MessageSquare, Monitor, RUNTIME_LABELS, Sparkles, Tooltip, TooltipContent, TooltipProvider, TooltipTrigger, Upload, activeView, aeonEnvKeys, aeonEnvSyncStatus, aeonEnvSyncing, attachChatDirectory, attachChatRecentDirectory, attachmentError, attachmentMenuOpen, attachmentMenuRef, busy, changeChatWorkingDirectory, chatAttachments, chatClass, chatContextMenu, chatContextMenuRef, chatDirectories, chatDisplayContent, chatFileInputRef, chatImageInputRef, chatKanbanGeneration, chatSidebarTree, checkStatus, dismissChatKanbanGeneration, displayAgents, expandedChatFolders, fleetClass, formatAgentEnvText, formatRelativeTime, generateKanbanTaskFromChat, handleChatFileChange, handleChatImageChange, hasStreamingChunk, lastAssistant, machineGroups, messagesEndRef, messagesScrollRef, parseAgentEnvText, recentDirectories, recentDirectoriesExpanded, recording, removeChatAttachment, removeChatDirectory, runtimeModelSelection, selectedAgent, selectedChatDirectory, selectedChatMachine, sendMessage, sessionNotice, setAeonEnvKeys, setAttachmentMenuOpen, setChatContextMenu, setExpandedChatFolders, setRecentDirectoriesExpanded, setText, startAgentChat, startAudioRecording, status, statusAgentId, stopAudioRecording, switchRuntime, syncAeonEnvToGitHub, text, updateAgent, updateChatAutoScroll, vaultClass, visibleMessages, voiceBands, voiceTarget, voiceTranscript } = props;
+  const { Activity, AgentResponseLoader, Button, ChatMarkdown, Check, ComposerField, Copy, Folder, KanbanSquare, LoaderCircle, MessageAttachments, MessageSquare, Monitor, RUNTIME_LABELS, Sparkles, Tooltip, TooltipContent, TooltipProvider, TooltipTrigger, Upload, activeView, aeonEnvKeys, aeonEnvSyncStatus, aeonEnvSyncing, attachChatDirectory, attachChatRecentDirectory, attachmentError, attachmentMenuOpen, attachmentMenuRef, beeRoleIconPath, busy, changeChatWorkingDirectory, chatAttachments, chatClass, chatContextMenu, chatContextMenuRef, chatDirectories, chatDisplayContent, chatFileInputRef, chatImageInputRef, chatKanbanGeneration, chatSidebarTree, checkStatus, dismissChatKanbanGeneration, displayAgents, expandedChatFolders, fleetClass, formatAgentEnvText, formatRelativeTime, generateKanbanTaskFromChat, handleChatFileChange, handleChatImageChange, hasStreamingChunk, lastAssistant, machineGroups, messagesEndRef, messagesScrollRef, parseAgentEnvText, recentDirectories, recentDirectoriesExpanded, recording, refreshRuntimeIntegrations, removeChatAttachment, removeChatDirectory, runtimeModelSelection, runtimeModelSelectionsByRuntime, selectedAgent, selectedChatDirectory, selectedChatMachine, sendMessage, sessionNotice, setAeonEnvKeys, setAttachmentMenuOpen, setChatContextMenu, setExpandedChatFolders, setRecentDirectoriesExpanded, setText, startAgentChat, startAudioRecording, status, statusAgentId, stopAudioRecording, switchRuntime, syncAeonEnvToGitHub, text, updateAgent, updateChatAutoScroll, vaultClass, visibleMessages, voiceBands, voiceTarget, voiceTranscript } = props;
   const [openKanbanTaskMenuKey, setOpenKanbanTaskMenuKey] = useState("");
   const [copiedMessageKey, setCopiedMessageKey] = useState("");
   const [agentMode, setAgentMode] = useState<"plan" | "act">("act");
@@ -50,6 +81,21 @@ export function ChatPanel(props: any) {
   const runtimeLabel = selectedAgent ? RUNTIME_LABELS[selectedAgent.runtime] ?? headerValueLabel(selectedAgent.runtime) : "Not set";
   const providerLabel = selectedAgent ? headerValueLabel(selectedAgent.provider ?? runtimeModelSelection?.provider) : "Not set";
   const modelLabel = selectedAgent ? modelValueLabel(selectedAgent.model ?? runtimeModelSelection?.model) : "Not set";
+  const runtimeIdentity = runtimeIdentityLabel(selectedAgent, runtimeModelSelection, runtimeModelSelectionsByRuntime);
+  const selectedAgentInitials = agentInitials(selectedAgent);
+  const selectedAgentIconSrc = selectedAgentIcon(selectedAgent, beeRoleIconPath);
+  const selectedAgentIsQueen = selectedAgent?.beeRole === "queen";
+  const selectedRuntimeModelSelection = selectedAgent ? runtimeModelSelectionsByRuntime?.[selectedAgent.runtime] : undefined;
+  const shouldLoadRuntimeIdentity = selectedAgent
+    && activeView === "chat"
+    && !selectedAgent.provider?.trim()
+    && !selectedAgent.model?.trim()
+    && !selectedRuntimeModelSelection
+    && ["hermes", "openclaw"].includes(selectedAgent.runtime);
+  useEffect(() => {
+    if (!shouldLoadRuntimeIdentity) return;
+    void refreshRuntimeIntegrations?.(selectedAgent);
+  }, [refreshRuntimeIntegrations, selectedAgent, shouldLoadRuntimeIdentity]);
   useEffect(() => {
     if (chatKanbanGeneration?.phase !== "done") return undefined;
     const key = chatKanbanGeneration.key;
@@ -71,6 +117,25 @@ export function ChatPanel(props: any) {
       window.setTimeout(() => setCopiedMessageKey((current) => current === messageKey ? "" : current), 1400);
     });
   }
+
+  function renderAgentAvatar(className: string) {
+    return (
+      <div className={chatClass("agentAvatar", className, selectedAgentIsQueen && "queenAvatar")} aria-hidden="true">
+        <span className={chatClass("agentAvatarFallback")}>{selectedAgentInitials}</span>
+        {selectedAgentIconSrc ? (
+          <img
+            className={chatClass("agentAvatarImage")}
+            src={selectedAgentIconSrc}
+            alt=""
+            onError={(event) => {
+              event.currentTarget.style.display = "none";
+            }}
+          />
+        ) : null}
+      </div>
+    );
+  }
+
   return (<>
       {activeView === "chat" ? (
         <section className={chatClass("workspace", "tabPanel", chatHistoryOpen && "historyOpen")}>
@@ -365,24 +430,41 @@ export function ChatPanel(props: any) {
               <MessageSquare aria-hidden="true" />
             </button>
             <div className={chatClass("chatHeader")}>
-              <div>
-                <p className="eyebrow">Live conversation</p>
-                <h2>{selectedAgent.name}</h2>
-                <dl className={chatClass("chatRuntimeMeta")} aria-label="Agent runtime details">
-                  <div>
-                    <dt>Runtime</dt>
-                    <dd>{runtimeLabel}</dd>
+              <div className={chatClass("chatIdentity")}>
+                {renderAgentAvatar("agentAvatarLarge")}
+                <div className={chatClass("chatIdentityCopy")}>
+                  <div className={chatClass("chatTitleRow")}>
+                    <h2>{selectedAgent.name}</h2>
+                    <span className={chatClass("livePill")}><span aria-hidden="true" />Live</span>
                   </div>
-                  <div>
-                    <dt>Provider</dt>
-                    <dd>{providerLabel}</dd>
-                  </div>
-                  <div>
-                    <dt>Model</dt>
-                    <dd>{modelLabel}</dd>
-                  </div>
-                </dl>
-                <div className={chatClass("chatContextControls")} ref={chatContextMenuRef}>
+                  <p>{runtimeIdentity} · {selectedChatMachine?.name ?? selectedAgent.machineName ?? "This Mac"}</p>
+                </div>
+              </div>
+              <div className={chatClass("chatHeaderActions")}>
+                <span className={chatClass("readyPill")}>Ready</span>
+                <Button type="button" variant="secondary" onClick={() => checkStatus()}>
+                  <Activity aria-hidden="true" />
+                  Check status
+                </Button>
+                <details className={chatClass("runtimeDetails")}>
+                  <summary>System</summary>
+                  <dl className={chatClass("chatRuntimeMeta")} aria-label="Agent runtime details">
+                    <div>
+                      <dt>Runtime</dt>
+                      <dd>{runtimeLabel}</dd>
+                    </div>
+                    <div>
+                      <dt>Provider</dt>
+                      <dd>{providerLabel}</dd>
+                    </div>
+                    <div>
+                      <dt>Model</dt>
+                      <dd>{modelLabel}</dd>
+                    </div>
+                  </dl>
+                </details>
+              </div>
+              <div className={chatClass("chatContextControls")} ref={chatContextMenuRef}>
                   <div className={chatClass("chatContextControl")}>
                     <button
                       type="button"
@@ -417,11 +499,6 @@ export function ChatPanel(props: any) {
                     ) : null}
                   </div>
                 </div>
-              </div>
-              <Button type="button" variant="secondary" onClick={() => checkStatus()}>
-                <Activity aria-hidden="true" />
-                Check status
-              </Button>
             </div>
             {sessionNotice && visibleMessages.length > 0 ? (
               <div className={chatClass("chatSessionNote")}>
@@ -470,60 +547,70 @@ export function ChatPanel(props: any) {
                 const agentPrompt = message.agentPrompt;
                 return (
                   <div className={chatClass("message", message.role, isStreamingAssistant && "streaming")} key={messageKey}>
-                    {message.role === "user" ? <span className={chatClass("messageRole")}>You</span> : null}
-                    <MessageAttachments attachments={message.attachments} />
-                    {agentPrompt ? (
-                      <div className={chatClass("agentPromptCard")}>
-                        <div className={chatClass("agentPromptHeader")}>
-                          <Sparkles aria-hidden="true" />
-                          <span>{agentPrompt.type === "approval" ? "Approval needed" : agentPrompt.type === "secret" ? "Secret needed" : agentPrompt.type === "sudo" ? "Local prompt" : "Agent question"}</span>
-                        </div>
-                        <p>{agentPrompt.question}</p>
-                        {agentPrompt.choices?.length ? (
-                          <div className={chatClass("agentPromptChoices")}>
-                            {agentPrompt.choices.map((choice) => (
-                              <button
-                                type="button"
-                                key={choice}
-                                onClick={() => setText(choice)}
-                              >
-                                {choice}
-                              </button>
-                            ))}
-                          </div>
-                        ) : null}
-                        {agentPrompt.allowFreeText ? <small>Choose a reply or type your answer below.</small> : null}
-                      </div>
-                    ) : displayContent ? (
-                      <ChatMarkdown text={displayContent} />
-                    ) : (
-                      message.role === "assistant" && busy ? <AgentResponseLoader /> : <p />
-                    )}
-                    {isStreamingAssistant && displayContent?.trim() ? (
-                      <div className={chatClass("streamingStatus")} aria-live="polite">
-                        <span aria-hidden="true" />
-                        <small>Still writing</small>
-                      </div>
+                    {message.role === "assistant" ? (
+                      renderAgentAvatar("messageAvatar")
                     ) : null}
-                    {message.role === "assistant" && !isStreamingAssistant && displayContent?.trim() ? (
-                      <TooltipProvider>
-                        <div className={chatClass("messageActions")}>
-                          <Tooltip open={copied ? true : undefined}>
-                            <TooltipTrigger asChild>
-                              <button
-                                type="button"
-                                className={chatClass("messageActionButton", copied && "active", copied && "copied")}
-                                aria-label={copied ? "Copied response" : "Copy response"}
-                                onClick={() => copyAssistantResponse(messageKey, displayContent)}
-                              >
-                                {copied ? <Check aria-hidden="true" /> : <Copy aria-hidden="true" />}
-                              </button>
-                            </TooltipTrigger>
-                            <TooltipContent side="bottom">{copied ? "Copied!" : "Copy response"}</TooltipContent>
-                          </Tooltip>
-                          {canGenerateKanbanTask ? (
-                            <>
-                              <Tooltip>
+                    <div className={chatClass("messageBody")}>
+                      {message.role === "user" ? <span className={chatClass("messageRole")}>You</span> : null}
+                      {message.role === "assistant" ? (
+                        <div className={chatClass("assistantByline")}>
+                          <span>{selectedAgent.name}</span>
+                          <small>{runtimeIdentity}</small>
+                        </div>
+                      ) : null}
+                      <MessageAttachments attachments={message.attachments} />
+                      {agentPrompt ? (
+                        <div className={chatClass("agentPromptCard")}>
+                          <div className={chatClass("agentPromptHeader")}>
+                            <Sparkles aria-hidden="true" />
+                            <span>{agentPrompt.type === "approval" ? "Approval needed" : agentPrompt.type === "secret" ? "Secret needed" : agentPrompt.type === "sudo" ? "Local prompt" : "Agent question"}</span>
+                          </div>
+                          <p>{agentPrompt.question}</p>
+                          {agentPrompt.choices?.length ? (
+                            <div className={chatClass("agentPromptChoices")}>
+                              {agentPrompt.choices.map((choice) => (
+                                <button
+                                  type="button"
+                                  key={choice}
+                                  onClick={() => setText(choice)}
+                                >
+                                  {choice}
+                                </button>
+                              ))}
+                            </div>
+                          ) : null}
+                          {agentPrompt.allowFreeText ? <small>Choose a reply or type your answer below.</small> : null}
+                        </div>
+                      ) : displayContent ? (
+                        <ChatMarkdown text={displayContent} />
+                      ) : (
+                        message.role === "assistant" && busy ? <AgentResponseLoader /> : <p />
+                      )}
+                      {isStreamingAssistant && displayContent?.trim() ? (
+                        <div className={chatClass("streamingStatus")} aria-live="polite">
+                          <span aria-hidden="true" />
+                          <small>Still writing</small>
+                        </div>
+                      ) : null}
+                      {message.role === "assistant" && !isStreamingAssistant && displayContent?.trim() ? (
+                        <TooltipProvider>
+                          <div className={chatClass("messageActions")}>
+                            <Tooltip open={copied ? true : undefined}>
+                              <TooltipTrigger asChild>
+                                <button
+                                  type="button"
+                                  className={chatClass("messageActionButton", copied && "active", copied && "copied")}
+                                  aria-label={copied ? "Copied response" : "Copy response"}
+                                  onClick={() => copyAssistantResponse(messageKey, displayContent)}
+                                >
+                                  {copied ? <Check aria-hidden="true" /> : <Copy aria-hidden="true" />}
+                                </button>
+                              </TooltipTrigger>
+                              <TooltipContent side="bottom">{copied ? "Copied!" : "Copy response"}</TooltipContent>
+                            </Tooltip>
+                            {canGenerateKanbanTask ? (
+                              <>
+                                <Tooltip>
                                 <TooltipTrigger asChild>
                                   <button
                                     type="button"
@@ -584,9 +671,10 @@ export function ChatPanel(props: any) {
                               ) : null}
                             </>
                           ) : null}
-                        </div>
-                      </TooltipProvider>
-                    ) : null}
+                          </div>
+                        </TooltipProvider>
+                      ) : null}
+                    </div>
                   </div>
                 );
               })}
@@ -642,8 +730,10 @@ export function ChatPanel(props: any) {
                 onAgentModeChange={setAgentMode}
               />
             </form>
-            <p className="hint">
-              Last assistant response: {lastAssistant ? `${lastAssistant.slice(0, 120)}...` : "none yet"}
+            <p className={chatClass("composerHint")}>
+              <span>{runtimeIdentity} active</span>
+              <span>Enter to send · Shift Enter for a new line</span>
+              {lastAssistant ? <span>Last reply ready</span> : null}
             </p>
           </section>
           ) : (

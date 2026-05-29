@@ -3,6 +3,38 @@
 This file records user-visible changes before they are committed. New work should
 be added here first, then marked `Committed` or `Pushed` after the git action.
 
+## 2026-05-30 01:38:47 WITA - Add Shared Skills Vault Search
+
+- Status: Pushed
+- Areas changed: Vault dashboard shared skills tab, dashboard prop wiring, vault CSS, changelog
+- Summary: Add a Skill Browser-style search field to the Shared Skills vault tab and filter shared skill cards plus provider install counts using the same name, slug, description, and source matching logic as the Skill Browser.
+- Verification: `pnpm exec eslint src/features/dashboard/DashboardApp.tsx src/features/dashboard/views/VaultPanel.tsx --max-warnings=999` passed with existing warnings; `pnpm exec tsc --noEmit --pretty false --skipLibCheck`; `git diff --check -- src/features/dashboard/DashboardApp.tsx src/features/dashboard/views/VaultPanel.tsx src/app/vault.module.css CHANGELOG.md`; Browser check on `http://localhost:5020/?view=vault&vaultPanel=shared-skills` verified the search field appears, searching `karpathy` filters shared skills by name/description/source fields, and provider install summary switches to matching provider skill counts.
+- Intended commit message: `Update dashboard chat and vault surfaces`
+
+## 2026-05-30 01:30:37 WITA - Match Shared Skills Loading Animation
+
+- Status: Pushed
+- Areas changed: Vault dashboard shared skills loading state, shared brain loader helper, vault CSS, changelog
+- Summary: Reuse the Hive Vault brain loading comb animation inside the Shared Skills loading grid so both vault loading states show the same animated brain cells and progress rail.
+- Verification: `pnpm exec eslint src/features/dashboard/dashboard-display-helpers.tsx src/features/dashboard/views/VaultPanel.tsx --max-warnings=999` passed with one existing unused-disable warning in `VaultPanel.tsx`; `pnpm exec tsc --noEmit --pretty false --skipLibCheck`; `git diff --check -- src/features/dashboard/dashboard-display-helpers.tsx src/features/dashboard/views/VaultPanel.tsx src/app/vault.module.css CHANGELOG.md`; Browser visual check on `http://localhost:5020/?view=vault&vaultPanel=shared-skills` verified the Shared Skills loading panel renders the Hive Vault brain comb animation and progress rail.
+- Intended commit message: `Update dashboard chat and vault surfaces`
+
+## 2026-05-30 00:37:34 WITA - Redesign Chat Screen As Royal Hive Terminal
+
+- Status: Pushed
+- Areas changed: Dashboard chat panel, chat markdown renderer, chat CSS, assimilation log
+- Summary: Refine the chat screen into a darker Royal Hive Terminal layout with a sleeker agent header, subtler tightly tiled real hex-hive background matching the rest of the app while keeping the chat color wash, wider conversation column, glassy user and assistant message cards, richer markdown rows/code chips, pretty-printed standalone and embedded JSON payload blocks, hover assistant actions, selected-agent bee icons instead of hardcoded Queen Bee initials, compact `runtime • provider/model` identity labels loaded from runtime defaults when agent profiles omit them, and a floating bottom composer without a visible wrapper slab.
+- Verification: `pnpm typecheck`; Playwright render check on `http://localhost:5020/?view=chat` with seeded Queen Bee chat data verified desktop header/composer/messages render without horizontal overflow; mobile CSS overlap fix applied after screenshot review; Playwright JSON payload check verified a raw simulation object renders as an indented JSON block in a wider message card without horizontal page overflow; Playwright regression check verified incomplete JSON falls back to a raw data panel without crashing; Playwright composer check verified the input dock wrapper is transparent with no top border, background image, or backdrop blur; Playwright sticky composer check verified desktop and mobile chat panels keep the composer pinned over the visible bottom while the message list scrolls with bottom padding; Playwright glass composer check verified the controls row and textarea are transparent while the input panel uses `blur(34px) saturate(1.55)` for legibility; Playwright height check verified the chat panel and history column share the same top and bottom; Playwright avatar check verified a seeded Emerson worker chat uses the selected agent worker bee icon rather than `QB`; Playwright runtime identity check verified the visible byline reads `Emerson hermes • openai/gpt-5.5`; Playwright runtime fallback check verified a Hermes agent without saved provider/model loads runtime model defaults and updates from `hermes` to `hermes • openai/gpt-5.5`; Playwright background check verified the chat texture now uses the app's SVG hex-hive pattern rather than the diagonal diamond grid, then verified the hive tile size was reduced to `72px 41.569px`; embedded JSON check verified prose followed by `"threadPosts": [...]` renders as a pretty-printed JSON block.
+- Intended commit message: `Update dashboard chat and vault surfaces`
+
+## 2026-05-30 00:28:06 WITA - Add Aeon Autopilot Dashboard
+
+- Status: Pushed
+- Areas changed: Dashboard navigation, Aeon runtime UI, runtime schedule actions, changelog
+- Summary: Add a first-class Aeon Autopilot dashboard surface that gathers Aeon status, shared skills, schedules, GitHub Actions runs, outputs, setup actions, runtime contract content, readiness checks, file-map context, inventory summaries, and secret manifest content into one place instead of scattering them across Chat, Vault, and Scheduler.
+- Verification: `pnpm exec eslint src/features/dashboard/views/AeonAutopilotPanel.tsx --max-warnings=0`; `pnpm exec tsc --noEmit --pretty false --skipLibCheck`; `git diff --check`; Playwright smoke against the managed `http://localhost:5020/?view=aeon` dashboard at desktop and mobile viewports verified the AEON Autopilot, runtime contract, setup checklist, file map, and GitHub Actions manifest content with no page or console errors.
+- Intended commit message: `Update dashboard chat and vault surfaces`
+
 ## 2026-05-30 00:09:16 WITA - Retry Broken Portal Image Previews
 
 - Status: Pushed

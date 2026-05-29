@@ -879,7 +879,9 @@ export function useDashboardDerivedState(props: any) {
     {
       id: "more" as const,
       label: "More",
-      detail: notificationSummary?.unread
+      detail: activeView === "aeon"
+        ? "autopilot"
+        : notificationSummary?.unread
         ? `${notificationSummary.unread} alerts`
         : maintenanceReport?.ok === false
           ? "repairs available"
@@ -890,7 +892,7 @@ export function useDashboardDerivedState(props: any) {
   const activeNavItem = navItems.find((item) => (
     item.id === activeView
     || (item.id === "kanban" && isWorkView(activeView))
-    || (item.id === "more" && (activeView === "maintenance" || activeView === "memory" || activeView === "files" || activeView === "notifications" || activeView === "env" || activeView === "integrations" || activeView === "my-apps"))
+    || (item.id === "more" && (activeView === "maintenance" || activeView === "memory" || activeView === "files" || activeView === "notifications" || activeView === "env" || activeView === "integrations" || activeView === "my-apps" || activeView === "aeon"))
   ));
   const activeHeader = (() => {
     const detail = activeNavItem?.detail ?? "";
@@ -911,6 +913,7 @@ export function useDashboardDerivedState(props: any) {
       more: { label: "More", title: "Utilities and quieter surfaces" },
       env: { label: "Env", title: "Shared and agent-specific variables" },
       "my-apps": { label: "My Apps", title: "What you are hosting on the Tailnet" },
+      aeon: { label: "Aeon", title: "What runs unattended" },
     };
     const header = headers[activeView];
     return {

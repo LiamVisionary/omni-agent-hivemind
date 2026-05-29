@@ -214,6 +214,19 @@
   text-align: center;
 }
 
+.brainLoader.inline {
+  position: relative;
+  inset: auto;
+  z-index: 1;
+  width: min(100%, 320px);
+  align-content: center;
+  gap: 12px;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+  padding: 0;
+}
+
 .brainLoader > div:not(.brainLoaderComb, .brainLoadingRail) {
   display: grid;
   gap: 3px;
@@ -409,6 +422,36 @@
   line-height: 1.45;
 }
 
+.brainSkillsSearch {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.13);
+  padding: 12px 14px;
+}
+
+.brainSkillsSearch input {
+  width: 100%;
+  min-width: 0;
+  height: 38px;
+  border: 1px solid rgba(148, 163, 184, 0.18);
+  border-radius: 7px;
+  background: rgba(3, 7, 18, 0.64);
+  color: var(--foreground);
+  font-size: 13px;
+  outline: none;
+  padding: 0 12px;
+}
+
+.brainSkillsSearch input:focus {
+  border-color: rgba(45, 212, 191, 0.5);
+  box-shadow: 0 0 0 3px rgba(45, 212, 191, 0.1);
+}
+
+.brainSkillsSearch button {
+  flex: 0 0 auto;
+}
+
 .brainSkillsActions {
   display: flex;
   flex-wrap: wrap;
@@ -494,24 +537,6 @@
     linear-gradient(90deg, rgba(94, 234, 212, 0.06) 1px, transparent 1px),
     rgba(3, 7, 18, 0.54);
   background-size: 22px 22px;
-}
-
-.skillLoadingComb {
-  display: grid;
-  grid-template-columns: repeat(5, 28px);
-  gap: 7px;
-  place-content: center;
-  transform: rotate(-2deg);
-}
-
-.skillLoadingComb span {
-  width: 28px;
-  height: 24px;
-  clip-path: polygon(25% 0, 75% 0, 100% 50%, 75% 100%, 25% 100%, 0 50%);
-  background: rgba(45, 212, 191, 0.12);
-  outline: 1px solid rgba(94, 234, 212, 0.38);
-  animation: skillCellPulse 1.65s ease-in-out infinite;
-  animation-delay: calc(var(--cell-index) * 58ms);
 }
 
 .skillLoadingCopy {
@@ -621,18 +646,6 @@
   }
   50% {
     transform: translateX(38%);
-  }
-}
-
-@keyframes skillCellPulse {
-  0%,
-  100% {
-    background: rgba(45, 212, 191, 0.1);
-    transform: scale(0.94);
-  }
-  45% {
-    background: rgba(251, 191, 36, 0.28);
-    transform: scale(1.04);
   }
 }
 
@@ -822,6 +835,13 @@
   gap: 14px;
   align-items: center;
   padding: 18px;
+}
+
+.brainSkillsEmpty.searchEmpty {
+  grid-column: 1 / -1;
+  grid-template-columns: auto minmax(0, 1fr);
+  min-height: 132px;
+  border-top: 0;
 }
 
 .brainSkillsEmpty svg {
