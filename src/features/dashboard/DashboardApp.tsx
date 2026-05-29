@@ -1986,10 +1986,18 @@ export default function DashboardApp({ initialView, initialVaultPanelMode, initi
     && !showHivemindLinkConnectedBanner
     && Boolean(hivemindLinkStatus?.authUrl)
     && hivemindLinkStatus?.ok !== true;
+  const fleetHeader = activeView === "agents" ? {
+    machines: fleetViewData.machines.length,
+    agents: fleetViewData.machines.reduce((total, machine) => total + machine.agents.length, 0),
+    working: fleetViewData.machines.reduce((total, machine) => total + machine.agents.filter((agent) => agent.state === "working").length, 0),
+    urgent: fleetViewData.alerts.filter((alert) => alert.priority === "urgent" || alert.priority === "high" || alert.tone === "danger").length,
+    checkedLabel: fleetCheckedAt ? `Scanned ${formatRelativeTime(fleetCheckedAt)}` : tailscaleStatus,
+    tailnetLabel: tailscaleStatus,
+  } : undefined;
 
   return (
     <main className="shell commandShell">
-      <DashboardHeader {...{ Image, Tooltip, TooltipContent, TooltipProvider, TooltipTrigger, activeHeader, activeView, fleetCheckedAt, formatRelativeTime, isWorkView, kanbanBoard, navItems, notificationClass, notificationSummary, setActiveView, setKanbanLoading, viewIcon }} />
+      <DashboardHeader {...{ Image, Tooltip, TooltipContent, TooltipProvider, TooltipTrigger, activeHeader, activeView, fleetCheckedAt, fleetHeader, formatRelativeTime, isWorkView, kanbanBoard, navItems, notificationClass, notificationSummary, setActiveView, setKanbanLoading, viewIcon }} />
 
       <div className="commandMain">
       <AgentsPanel {...{ AgentCell, AgentTaskList, Bot, Button, CellMenu, Check, CircleAlert, Copy, CopyPlus, ExternalLink, FleetView, MachineCell, MessageSquare, PlugZap, Plus, QUIET_SNAPSHOT_HOLD_MS, RefreshCcw, Settings2, Trash2, WalletCards, activeView, addAgentToMachine, agentWorkById, agents, appVersion, beeRoleLabel, busyAgentId, cleanActivityTitle, copiedUpdateDetailKey, copyUpdateDetail, deleteAgent, fleetCheckedAt, fleetClass, fleetDiscoveryLoading, fleetSnapshots, fleetUpdateDetailByMachine, fleetUpdateStatusByMachine, fleetViewData, formatRelativeTime, friendlyEmptyTitle, runtimeSessionIdFromTask, hivemindLinkSignInPolling, hivemindLinkSignInPollingRef, hivemindLinkStatus, hydrateRuntimeSessionChat, isCollectorAutoUpdateable, isMeaningfulActive, localDashboardHasUnpublishedChanges, machineGroups, machineNeedsChatBridgeRepair, machineNeedsEnvHttpSyncRepair, machineVersionCopy, markNotificationRead, openMachineInitModal, openSetupModal, renameMachine, renderAgentKey, requestDuplicateAgent, runMachineUpdate, selectedAgent, setActiveView, setAgentRenameDraft, setAgentRenameEditing, setAgentRoleModalId, setAgentRuntimeAdvancedOpen, setAgentRuntimeFolderEditing, setAgentRuntimeFolderStatus, setAgentSettingsPanel, setHivemindLinkBannerDismissed, setHivemindLinkConnectedUntil, setHivemindLinkSignInPolling, setSelectedAgentId, showHivemindLinkConnectedBanner, showHivemindLinkSignInBanner, startAgentChat, startAgentWorkChat, tailscaleStatus, taskChatLeafKey, trackAgentTaskOnKanban, updateStatusByMachine }} />

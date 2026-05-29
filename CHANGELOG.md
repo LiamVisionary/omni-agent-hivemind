@@ -3,6 +3,14 @@
 This file records user-visible changes before they are committed. New work should
 be added here first, then marked `Committed` or `Pushed` after the git action.
 
+## 2026-05-30 01:44:05 WITA - Consolidate Fleet Header Masthead
+
+- Status: Pushed
+- Areas changed: Dashboard header, Fleet view masthead behavior, Fleet dashboard embedding, global header CSS
+- Summary: Move the Fleet hero headline, scan status, tailnet status, and fleet stats into the main dashboard header on desktop, while keeping the Fleet view masthead available for standalone/mobile presentation so the Fleet route no longer shows two stacked header identities.
+- Verification: `git diff --check -- src/app/globals.css src/features/dashboard/ChatMarkdown.tsx src/features/dashboard/DashboardApp.tsx src/features/dashboard/views/DashboardHeader.tsx`
+- Intended commit message: `Consolidate Fleet header masthead`
+
 ## 2026-05-30 01:45:10 WITA - Make Fleet Masthead Mobile-Only In Agents
 
 - Status: Pushed

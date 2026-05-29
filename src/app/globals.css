@@ -180,6 +180,11 @@ a {
   padding: 0 32px;
 }
 
+.fleetCommandTopbar {
+  min-height: 184px;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.16);
+}
+
 .commandTopbar::before {
   position: absolute;
   inset: 0;
@@ -206,6 +211,10 @@ a {
   grid-template-columns: minmax(260px, 0.85fr) auto minmax(0, 1.15fr);
   gap: clamp(14px, 2vw, 28px);
   align-items: center;
+}
+
+.fleetCommandTopbar .topbarMasthead {
+  height: 84px;
 }
 
 .topbarMasthead > * {
@@ -263,6 +272,75 @@ a {
   font-weight: 700;
   letter-spacing: -0.2px;
   line-height: normal;
+}
+
+.fleetTopbarHero {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 24px;
+  align-items: end;
+  width: min(1880px, 100%);
+  margin: 0 auto;
+  padding: 4px 36px 22px 126px;
+}
+
+.fleetTopbarHero h1 {
+  max-width: none;
+  margin: 0;
+  color: #f8fafc;
+  font-family: "Space Grotesk", system-ui, sans-serif;
+  font-size: clamp(42px, 5vw, 78px);
+  font-weight: 700;
+  letter-spacing: 0;
+  line-height: 0.9;
+}
+
+.fleetTopbarHero h1 span {
+  color: var(--honey);
+  font-style: italic;
+  font-weight: 500;
+}
+
+.fleetTopbarStats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 18px;
+  justify-content: flex-end;
+  padding-bottom: 6px;
+}
+
+.fleetTopbarStat {
+  display: grid;
+  min-width: 58px;
+  gap: 4px;
+  text-align: center;
+}
+
+.fleetTopbarStat strong {
+  color: #f8fafc;
+  font-family: "Space Grotesk", system-ui, sans-serif;
+  font-size: clamp(34px, 3.2vw, 48px);
+  font-weight: 700;
+  letter-spacing: 0;
+  line-height: 0.9;
+}
+
+.fleetTopbarStat span {
+  color: #8d99ae;
+  font-family: "JetBrains Mono", ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.14em;
+  line-height: normal;
+  text-transform: uppercase;
+}
+
+.fleetTopbarStat.is-cyan strong {
+  color: var(--accent-strong);
+}
+
+.fleetTopbarStat.is-danger strong {
+  color: var(--danger);
 }
 
 .eyebrow {
@@ -634,6 +712,27 @@ h1 {
     text-align: left;
   }
 
+  .fleetCommandTopbar {
+    min-height: 0;
+  }
+
+  .fleetCommandTopbar .topbarMasthead {
+    height: auto;
+  }
+
+  .fleetTopbarHero {
+    grid-template-columns: minmax(0, 1fr);
+    padding: 6px 0 4px;
+  }
+
+  .fleetTopbarHero h1 {
+    font-size: clamp(38px, 9vw, 62px);
+  }
+
+  .fleetTopbarStats {
+    justify-content: flex-start;
+  }
+
   .viewTab {
     min-width: 112px;
   }
@@ -691,6 +790,10 @@ h1 {
   }
 
   .topbarMasthead {
+    display: none;
+  }
+
+  .fleetTopbarHero {
     display: none;
   }
 

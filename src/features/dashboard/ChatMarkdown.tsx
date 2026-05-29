@@ -105,6 +105,11 @@ function prettyPrintJsonish(value: string) {
   let escaped = false;
   const unit = "  ";
   const newline = () => `\n${unit.repeat(Math.max(indent, 0))}`;
+  const trimInlineEnd = (current: string) => {
+    const lastNewline = Math.max(current.lastIndexOf("\n"), current.lastIndexOf("\r"));
+    if (lastNewline >= 0 && /^[ \t]*$/.test(current.slice(lastNewline + 1))) return current;
+    return current.replace(/[ \t]+$/, "");
+  };
 
   for (let index = 0; index < trimmed.length; index += 1) {
     const char = trimmed[index];
@@ -125,7 +130,7 @@ function prettyPrintJsonish(value: string) {
       continue;
     }
     if (char === "{" || char === "[") {
-      output = output.trimEnd();
+      output = output.endsWith(": ") ? output : trimInlineEnd(output);
       output += char;
       indent += 1;
       const next = trimmed.slice(index + 1).trimStart()[0];
@@ -139,7 +144,7 @@ function prettyPrintJsonish(value: string) {
       continue;
     }
     if (char === ",") {
-      output = output.trimEnd();
+      output = trimInlineEnd(output);
       output += `,${newline()}`;
       continue;
     }

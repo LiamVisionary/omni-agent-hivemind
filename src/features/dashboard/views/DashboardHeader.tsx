@@ -14,6 +14,14 @@ type DashboardHeaderProps = {
   activeHeader: { eyebrow: string; title: string };
   activeView: DashboardView;
   fleetCheckedAt?: number;
+  fleetHeader?: {
+    agents: number;
+    checkedLabel: string;
+    machines: number;
+    tailnetLabel: string;
+    urgent: number;
+    working: number;
+  };
   formatRelativeTime: (timestamp: number) => string;
   isWorkView: (view: DashboardView) => boolean;
   kanbanBoard?: KanbanBoard | null;
@@ -35,6 +43,7 @@ export function DashboardHeader(props: DashboardHeaderProps) {
     activeHeader,
     activeView,
     fleetCheckedAt,
+    fleetHeader,
     formatRelativeTime,
     isWorkView,
     kanbanBoard,
@@ -46,6 +55,7 @@ export function DashboardHeader(props: DashboardHeaderProps) {
     viewIcon,
   } = props;
   const [mobileRoutesOpen, setMobileRoutesOpen] = useState(false);
+  const showFleetHeader = activeView === "agents" && Boolean(fleetHeader);
   const primaryNavItems = (["agents", "kanban", "vault", "chat", "wallet", "more"] as DashboardView[])
     .map((id) => navItems.find((item) => item.id === id))
     .filter((item): item is (typeof navItems)[number] => Boolean(item));
@@ -66,7 +76,7 @@ export function DashboardHeader(props: DashboardHeaderProps) {
 
   return (
     <TooltipProvider delayDuration={120}>
-      <header className="commandTopbar" aria-label="Control room navigation">
+      <header className={`commandTopbar ${showFleetHeader ? "fleetCommandTopbar" : ""}`} aria-label="Control room navigation">
         <div id="mobile-route-drawer-shell" className={`mobileRouteShell ${mobileRoutesOpen ? "open" : ""}`}>
           <button
             type="button"
@@ -138,7 +148,7 @@ export function DashboardHeader(props: DashboardHeaderProps) {
             </button>
             <div className="brandCopy">
               <p className="eyebrow">{activeHeader.eyebrow}</p>
-              <strong>{activeHeader.title}</strong>
+              <strong>{showFleetHeader ? "The Swarm" : activeHeader.title}</strong>
             </div>
           </div>
 
@@ -181,7 +191,41 @@ export function DashboardHeader(props: DashboardHeaderProps) {
               })}
           </nav>
         </div>
+
+        {fleetHeader ? (
+          <div className="fleetTopbarHero" aria-label="Fleet status summary">
+            <div>
+              <p className="eyebrow">{fleetHeader.checkedLabel} · {fleetHeader.tailnetLabel}</p>
+              <h1>
+                The hive is <span>humming.</span>
+              </h1>
+            </div>
+            <div className="fleetTopbarStats">
+              <FleetTopbarStat value={fleetHeader.machines} label="machines" />
+              <FleetTopbarStat value={fleetHeader.agents} label="agents" />
+              <FleetTopbarStat value={fleetHeader.working} label="working" tone="cyan" />
+              <FleetTopbarStat value={fleetHeader.urgent} label="urgent" tone="danger" />
+            </div>
+          </div>
+        ) : null}
       </header>
     </TooltipProvider>
+  );
+}
+
+function FleetTopbarStat({
+  label,
+  tone,
+  value,
+}: {
+  label: string;
+  tone?: "cyan" | "danger";
+  value: number;
+}) {
+  return (
+    <div className={`fleetTopbarStat ${tone ? `is-${tone}` : ""}`}>
+      <strong>{value}</strong>
+      <span>{label}</span>
+    </div>
   );
 }
