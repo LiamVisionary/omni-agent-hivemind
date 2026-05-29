@@ -5,7 +5,7 @@ be added here first, then marked `Committed` or `Pushed` after the git action.
 
 ## 2026-05-29 15:56:13 WITA - Point Z-Image API At App Proxy
 
-- Status: Uncommitted
+- Status: Pushed
 - Areas changed: My Apps Z-Image launch URL, changelog
 - Summary: Pass Z-Image Studio its concrete Link `/peer/.../app-proxy/<port>` URL as the backend API base instead of the bare Link origin, so `/api/loras` and related calls go directly to the hosted Z-Image backend and do not fall through to Link's root 404 handler.
 - Verification: `pnpm exec eslint src/features/dashboard/views/MyAppsPanel.tsx --max-warnings=999`; Playwright against the real Z-Image Link URL with the app-proxy API base returned `200` for `/api/loras` and rendered local LoRAs including `Disney_IZT_ATK_V1_000000750.safetensors`.
