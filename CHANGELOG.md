@@ -7,9 +7,17 @@ be added here first, then marked `Committed` or `Pushed` after the git action.
 
 - Status: Pushed
 - Areas changed: Chat markdown renderer, chat text normalization, changelog
-- Summary: Preserve explicit ordered-list numbers from the assistant text when bullet detail blocks split a numbered sequence, only auto-promote colon-led plain text into bullets when there are multiple list-like lines, and render short field labels such as `Name:`, `Followers:`, `Bio:`, `Post context:`, and `Comment:` as spaced compact metadata chips while keeping values as normal text.
+- Summary: Preserve explicit ordered-list numbers from the assistant text when bullet detail blocks split a numbered sequence, only auto-promote colon-led plain text into bullets when there are multiple list-like lines, and render short field labels such as `Name:`, `Followers:`, `Bio:`, `Post context:`, and `Comment:` with subtle typographic emphasis while keeping values as normal text.
 - Verification: `pnpm exec eslint src/features/dashboard/ChatMarkdown.tsx src/features/chat/chat-composer.tsx --quiet`; `pnpm exec tsc --noEmit --pretty false --skipLibCheck`.
 - Intended commit message: `Refine chat markdown structure`
+
+## 2026-05-29 12:07:42 WITA - Simplify Chat Field Labels
+
+- Status: Pushed
+- Areas changed: Chat markdown renderer, changelog
+- Summary: Replace compact metadata-chip styling for inline chat field labels with a simpler text-only label treatment so labels and values are distinct without adding badge-like UI.
+- Verification: `pnpm exec eslint src/features/dashboard/ChatMarkdown.tsx src/features/chat/chat-composer.tsx --quiet`; `pnpm exec tsc --noEmit --pretty false --skipLibCheck`.
+- Intended commit message: `Simplify chat field labels`
 
 ## 2026-05-29 01:55:26 WITA - Add X Outreach Launchpad
 

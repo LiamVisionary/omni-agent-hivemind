@@ -53,20 +53,8 @@ const orderedIndexStyle = {
   whiteSpace: "nowrap",
 } as const;
 const fieldLabelStyle = {
-  display: "inline-flex",
-  alignItems: "center",
-  transform: "translateY(-0.08em)",
-  marginRight: "0.32rem",
-  border: "1px solid rgba(94, 234, 212, 0.24)",
-  borderRadius: "4px",
-  background: "rgba(20, 184, 166, 0.08)",
-  padding: "0.08rem 0.32rem",
-  color: "rgba(94, 234, 212, 0.92)",
-  fontSize: "0.68em",
-  fontWeight: 850,
-  letterSpacing: "0.08em",
-  lineHeight: 1.25,
-  textTransform: "uppercase",
+  color: "rgba(232, 238, 247, 0.98)",
+  fontWeight: 800,
   whiteSpace: "nowrap",
 } as const;
 const fieldPattern = /\b(Name|Followers|Bio|Why|Post|Post context|Comment|Suggested DM|Suggested comment|Best action|Action|Profile|Handle|Engagement|URL|Link):/gi;
@@ -138,9 +126,9 @@ function renderFieldLine(text: string) {
     parts.push(
       <strong
         key={`field-${index}`}
-        style={{ ...fieldLabelStyle, marginLeft: parts.length ? "0.65rem" : 0 }}
+        style={{ ...fieldLabelStyle, marginLeft: parts.length ? "0.45rem" : 0 }}
       >
-        {match[1]}
+        {match[1]}:
       </strong>,
     );
     cursor = index + match[0].length;
