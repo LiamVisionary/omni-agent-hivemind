@@ -102,7 +102,7 @@ func TestRewritePeerRootHTML(t *testing.T) {
 	if !strings.Contains(rewritten, `"currentPort":"8788"`) {
 		t.Fatalf("portal shim missing current app port:\n%s", rewritten)
 	}
-	for _, want := range []string{"MutationObserver", "HTMLImageElement", "data-preview-src", "rewriteSrcset"} {
+	for _, want := range []string{"MutationObserver", "HTMLImageElement", "data-preview-src", "rewriteSrcset", "wireImageErrorRetry", "__hive_bust"} {
 		if !strings.Contains(rewritten, want) {
 			t.Fatalf("portal shim missing media URL rewrite hook %q:\n%s", want, rewritten)
 		}

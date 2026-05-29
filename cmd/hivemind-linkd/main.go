@@ -513,6 +513,27 @@ func appPortalScript(hostPort string, appProxyPrefix string) string {
       return parts.join(" ");
     }).join(", ");
   }
+  function cacheBustedURL(value) {
+    const rewritten = rewriteString(value);
+    if (typeof rewritten !== "string" || rewritten === "" || rewritten.startsWith("data:") || rewritten.startsWith("blob:")) return rewritten;
+    try {
+      const url = new URL(rewritten, window.location.href);
+      url.searchParams.set("__hive_bust", String(Date.now()));
+      if (url.origin === window.location.origin) return url.pathname + url.search + url.hash;
+      return url.toString();
+    } catch {
+      return rewritten;
+    }
+  }
+  function wireImageErrorRetry(element) {
+    if (!element || element.tagName !== "IMG" || element.__hivemindPortalImageRetry) return;
+    element.__hivemindPortalImageRetry = true;
+    element.addEventListener("error", () => {
+      const current = element.getAttribute("src") || element.currentSrc || "";
+      const busted = cacheBustedURL(current);
+      if (busted && busted !== current) element.setAttribute("src", busted);
+    }, { once: true });
+  }
   function rewriteInput(input) {
     if (typeof input === "string") return rewriteString(input);
     if (input instanceof URL) return new URL(rewriteString(input.toString()), window.location.href);
@@ -585,6 +606,7 @@ func appPortalScript(hostPort string, appProxyPrefix string) string {
       const rewritten = rewriteSrcset(srcset);
       if (rewritten !== srcset) element.setAttribute("srcset", rewritten);
     }
+    wireImageErrorRetry(element);
   }
   const originalSetAttribute = Element.prototype.setAttribute;
   Element.prototype.setAttribute = function(name, value) {
