@@ -205,6 +205,16 @@ export function shouldPromotePlainLineToBullet(line: string) {
   return true;
 }
 
+function plainBulletRunLength(lines: string[], startIndex: number) {
+  let count = 0;
+  for (let index = startIndex; index < lines.length; index += 1) {
+    const trimmed = lines[index].trim();
+    if (!shouldPromotePlainLineToBullet(trimmed)) break;
+    count += 1;
+  }
+  return count;
+}
+
 export function structureAssistantPlainText(lines: string[]) {
   const output: string[] = [];
   const headingPattern = /^(Summary|Main idea|Key features|Why it matters|Takeaway|Result|Details|Next steps|Practical answer|Where .+ wins|The nuance|Bottom line|Exo vs\..+|.+\s+vs\.\s+.+)$/i;
@@ -231,7 +241,7 @@ export function structureAssistantPlainText(lines: string[]) {
     }
     const previous = output.at(-1)?.trim() ?? "";
     const next = lines[index + 1]?.trim() ?? "";
-    const afterColonList = previous.endsWith(":") && shouldPromotePlainLineToBullet(trimmed);
+    const afterColonList = previous.endsWith(":") && plainBulletRunLength(lines, index) >= 2;
     const continuingList = /^[-*]\s+/.test(previous) && shouldPromotePlainLineToBullet(trimmed) && !looksLikeAssistantHeading(next);
     if (afterColonList || continuingList) {
       output.push(`- ${trimmed}`);

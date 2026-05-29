@@ -52,6 +52,24 @@ const orderedIndexStyle = {
   fontVariantNumeric: "tabular-nums",
   whiteSpace: "nowrap",
 } as const;
+const fieldLabelStyle = {
+  display: "inline-flex",
+  alignItems: "center",
+  transform: "translateY(-0.08em)",
+  marginRight: "0.32rem",
+  border: "1px solid rgba(94, 234, 212, 0.24)",
+  borderRadius: "4px",
+  background: "rgba(20, 184, 166, 0.08)",
+  padding: "0.08rem 0.32rem",
+  color: "rgba(94, 234, 212, 0.92)",
+  fontSize: "0.68em",
+  fontWeight: 850,
+  letterSpacing: "0.08em",
+  lineHeight: 1.25,
+  textTransform: "uppercase",
+  whiteSpace: "nowrap",
+} as const;
+const fieldPattern = /\b(Name|Followers|Bio|Why|Post|Post context|Comment|Suggested DM|Suggested comment|Best action|Action|Profile|Handle|Engagement|URL|Link):/gi;
 
 function safeMarkdownHref(href: string) {
   const trimmed = href.trim();
@@ -109,6 +127,29 @@ function renderInlineMarkdown(text: string, options: { links?: "anchor" | "text"
   return parts;
 }
 
+function renderFieldLine(text: string) {
+  const matches = [...text.matchAll(fieldPattern)];
+  if (!matches.length) return renderInlineMarkdown(text);
+  const parts: ReactNode[] = [];
+  let cursor = 0;
+  for (const match of matches) {
+    const index = match.index ?? 0;
+    if (index > cursor) parts.push(...renderInlineMarkdown(text.slice(cursor, index)));
+    parts.push(
+      <strong
+        key={`field-${index}`}
+        style={{ ...fieldLabelStyle, marginLeft: parts.length ? "0.65rem" : 0 }}
+      >
+        {match[1]}
+      </strong>,
+    );
+    cursor = index + match[0].length;
+    if (text[cursor] === " ") cursor += 1;
+  }
+  if (cursor < text.length) parts.push(...renderInlineMarkdown(text.slice(cursor)));
+  return parts;
+}
+
 export function ChatInlineMarkdown({ text }: { text: string }) {
   return <>{renderInlineMarkdown(text.replace(/\s+/g, " "), { links: "text" })}</>;
 }
@@ -157,7 +198,7 @@ export function ChatMarkdown({ text, className, headingClassName }: { text: stri
           {items.map((item, itemIndex) => (
             <div className={chatClass("markdownBulletItem")} key={`${index}-${itemIndex}`} role="listitem" style={bulletItemStyle}>
               <span aria-hidden="true" className={chatClass("markdownBulletDot")} style={bulletDotStyle} />
-              <span>{renderInlineMarkdown(item)}</span>
+              <span>{renderFieldLine(item)}</span>
             </div>
           ))}
         </div>,
@@ -166,17 +207,18 @@ export function ChatMarkdown({ text, className, headingClassName }: { text: stri
       continue;
     }
     if (/^\s*\d+[.)]\s+/.test(line)) {
-      const items: string[] = [];
+      const items: Array<{ marker: string; text: string }> = [];
       while (index < lines.length && /^\s*\d+[.)]\s+/.test(lines[index])) {
-        items.push(lines[index].replace(/^\s*\d+[.)]\s+/, ""));
+        const ordered = /^\s*(\d+)[.)]\s+(.+)$/.exec(lines[index]);
+        if (ordered) items.push({ marker: `${ordered[1]}.`, text: ordered[2] });
         index += 1;
       }
       blocks.push(
         <div className={chatClass("markdownBulletList")} key={`ordered-${index}`} role="list" style={bulletListStyle}>
           {items.map((item, itemIndex) => (
             <div className={chatClass("markdownBulletItem")} key={`${index}-${itemIndex}`} role="listitem" style={orderedItemStyle}>
-              <span aria-hidden="true" style={orderedIndexStyle}>{itemIndex + 1}.</span>
-              <span>{renderInlineMarkdown(item)}</span>
+              <span aria-hidden="true" style={orderedIndexStyle}>{item.marker}</span>
+              <span>{renderFieldLine(item.text)}</span>
             </div>
           ))}
         </div>,
@@ -192,7 +234,7 @@ export function ChatMarkdown({ text, className, headingClassName }: { text: stri
       }
       blocks.push(
         <div className={chatClass("markdownIndentBlock")} key={`indent-${index}`} style={indentBlockStyle}>
-          {body.map((item, itemIndex) => <p key={`${index}-${itemIndex}`}>{renderInlineMarkdown(item)}</p>)}
+          {body.map((item, itemIndex) => <p key={`${index}-${itemIndex}`}>{renderFieldLine(item)}</p>)}
         </div>,
       );
       previousBlockKind = "indent";
@@ -211,7 +253,7 @@ export function ChatMarkdown({ text, className, headingClassName }: { text: stri
       paragraph.push(lines[index]);
       index += 1;
     }
-    blocks.push(<p key={`paragraph-${index}`}>{renderInlineMarkdown(paragraph.join("\n"))}</p>);
+    blocks.push(<p key={`paragraph-${index}`}>{renderFieldLine(paragraph.join("\n"))}</p>);
     previousBlockKind = "paragraph";
   }
 
