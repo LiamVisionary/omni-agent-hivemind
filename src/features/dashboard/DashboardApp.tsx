@@ -260,6 +260,7 @@ import {
   parseStoredChatFolders,
   parseStoredChatMessages,
   parseStoredDiscoveredMachines,
+  parseStoredFleetSnapshots,
   parseStoredHoneyLedgerEnabled,
   parseStoredHoneyTreasury,
   parseStoredMachineNameAliases,
@@ -452,6 +453,7 @@ const THEME_STORAGE_KEY = "hivemindos.theme.v1";
 const CHAT_MESSAGES_STORAGE_KEY = "hivemindos.chatMessages.v1";
 const CHAT_FOLDER_STORAGE_KEY = "hivemindos.chatFolders.v1";
 const MACHINE_NAME_ALIAS_STORAGE_KEY = "hivemindos.machineNameAliases.v1";
+const FLEET_SNAPSHOTS_STORAGE_KEY = "hivemindos.fleetSnapshots.v1";
 const CHAT_RESPONSE_STALL_TIMEOUT_MS = 130 * 1000;
 const DISCOVERED_MACHINES_STORAGE_KEY = "hivemindos.discoveredMachines.v1";
 const KANBAN_TOOL_OUTPUT_STALL_MS = 5 * 60 * 1000;
@@ -475,6 +477,7 @@ const STORAGE_SUFFIXES = {
   chatMessages: ".chatMessages.v1",
   chatFolders: ".chatFolders.v1",
   machineNameAliases: ".machineNameAliases.v1",
+  fleetSnapshots: ".fleetSnapshots.v1",
 };
 type DashboardAppProps = {
   initialView?: DashboardView;
@@ -821,6 +824,7 @@ export default function DashboardApp({ initialView, initialVaultPanelMode, initi
   const hivemindLinkStatusRef = useRef<HivemindLinkClientStatus | null>(null);
   const hivemindLinkConnectedTimeoutRef = useRef<number | null>(null);
   const hivemindLinkSignInPollingRef = useRef(false);
+  const chatHistoryRefreshKeyRef = useRef("");
   const voiceRecognitionRef = useRef<SpeechRecognitionLike | null>(null);
   const voiceStreamRef = useRef<MediaStream | null>(null);
   const voiceAudioContextRef = useRef<AudioContext | null>(null);
@@ -1141,6 +1145,7 @@ export default function DashboardApp({ initialView, initialVaultPanelMode, initi
     setHoneyTreasury(parseStoredHoneyTreasury());
     setChatCustomFolders(parseStoredChatFolders());
     setDiscoveredMachines(parseStoredDiscoveredMachines());
+    setFleetSnapshots(parseStoredFleetSnapshots());
     setMachineNameAliases(parseStoredMachineNameAliases());
     const storedTheme = readStoredValue(THEME_STORAGE_KEY, STORAGE_SUFFIXES.theme);
     setDashboardTheme(storedTheme === "hive-light" ? "hive-light" : "dark");
@@ -1291,6 +1296,16 @@ export default function DashboardApp({ initialView, initialVaultPanelMode, initi
   }, [discoveredMachines, hydrated]);
   useEffect(() => {
     if (!hydrated) return;
+    const compactSnapshots = Object.fromEntries(Object.entries(fleetSnapshots)
+      .filter(([, snapshot]) => snapshot?.tasks?.length > 0)
+      .map(([agentId, snapshot]) => [agentId, {
+        ...snapshot,
+        tasks: snapshot.tasks.slice(0, 12),
+      }]));
+    window.localStorage.setItem(FLEET_SNAPSHOTS_STORAGE_KEY, JSON.stringify(compactSnapshots));
+  }, [fleetSnapshots, hydrated]);
+  useEffect(() => {
+    if (!hydrated) return;
     window.localStorage.setItem(MACHINE_NAME_ALIAS_STORAGE_KEY, JSON.stringify(machineNameAliases));
   }, [hydrated, machineNameAliases]);
   useEffect(() => {
@@ -1399,8 +1414,8 @@ export default function DashboardApp({ initialView, initialVaultPanelMode, initi
       document.removeEventListener("keydown", closeChatContextMenuOnEscape);
     };
   }, [chatContextMenu]);
-  const pollFleetSnapshot = useCallback(async (signal: AbortSignal) => {
-      const snapshotAgents = agents.map((agent) => ({
+  const buildSnapshotAgents = useCallback(() => (
+    agents.map((agent) => ({
         id: agent.id,
         name: agent.name,
         runtime: agent.runtime,
@@ -1413,7 +1428,12 @@ export default function DashboardApp({ initialView, initialVaultPanelMode, initi
         localDataDir: agent.localDataDir,
         machineName: agent.machineName,
         telemetryUrl: agent.telemetryUrl,
-      }));
+      }))
+  ), [agents]);
+
+  const refreshFleetSnapshots = useCallback(async (signal: AbortSignal, mode: "full" | "history") => {
+      const snapshotAgents = buildSnapshotAgents();
+      if (snapshotAgents.length === 0) return false;
       const response = await fetch("/api/fleet/snapshot", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -1421,17 +1441,49 @@ export default function DashboardApp({ initialView, initialVaultPanelMode, initi
         body: JSON.stringify({
           agents: snapshotAgents,
           sharedVault: { controlRoomPath: sharedVault.controlRoomPath },
+          mode,
         }),
       }).catch(() => null);
-      if (!response?.ok) return;
+      if (!response?.ok) return false;
       const data = (await response.json().catch(() => null)) as {
         checkedAt?: number;
         snapshots?: AgentSnapshot[];
       } | null;
-      if (!data?.snapshots) return;
-      setFleetSnapshots((current) => mergeSnapshotRecord(current, data.snapshots ?? []));
+      if (!data?.snapshots) return false;
+      const snapshots = mode === "history"
+        ? (data.snapshots ?? []).filter((snapshot) => snapshot.tasks?.length > 0)
+        : data.snapshots ?? [];
+      if (snapshots.length === 0) return false;
+      setFleetSnapshots((current) => mergeSnapshotRecord(current, snapshots));
       setFleetCheckedAt(data.checkedAt ?? Date.now());
-  }, [agents, sharedVault.controlRoomPath]);
+      return true;
+  }, [buildSnapshotAgents, sharedVault.controlRoomPath]);
+
+  const pollFleetSnapshot = useCallback(async (signal: AbortSignal) => {
+      await refreshFleetSnapshots(signal, activeView === "chat" ? "history" : "full");
+  }, [activeView, refreshFleetSnapshots]);
+  useEffect(() => {
+    if (!hydrated || activeView !== "chat" || agents.length === 0) return;
+    const refreshKey = JSON.stringify({
+      controlRoomPath: sharedVault.controlRoomPath,
+      agents: agents.map((agent) => ({
+        id: agent.id,
+        runtime: agent.runtime,
+        localDataDir: agent.localDataDir,
+        telemetryUrl: agent.telemetryUrl,
+        agentId: agent.agentId,
+      })),
+    });
+    if (chatHistoryRefreshKeyRef.current === refreshKey) return;
+    chatHistoryRefreshKeyRef.current = refreshKey;
+    const controller = new AbortController();
+    void refreshFleetSnapshots(controller.signal, "history").then((loaded) => {
+      if (!loaded && chatHistoryRefreshKeyRef.current === refreshKey) {
+        chatHistoryRefreshKeyRef.current = "";
+      }
+    });
+    return () => controller.abort();
+  }, [activeView, agents, hydrated, refreshFleetSnapshots, sharedVault.controlRoomPath]);
   useVisibilityAwarePolling({
     enabled: hydrated && (activeView === "agents" || activeView === "chat"),
     intervalMs: activeView === "agents" ? 30_000 : 45_000,

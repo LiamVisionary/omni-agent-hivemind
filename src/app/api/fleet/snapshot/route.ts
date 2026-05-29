@@ -57,6 +57,10 @@ type SnapshotPayload = {
   snapshots: AgentSnapshot[];
 };
 
+type SnapshotReadOptions = {
+  historyOnly?: boolean;
+};
+
 const snapshotCache = new Map<string, { checkedAt: number; payload: SnapshotPayload }>();
 const snapshotInFlight = new Map<string, Promise<SnapshotPayload>>();
 
@@ -291,19 +295,41 @@ async function scanHermesStateDb(agent: AgentProfile, hermesDir: string): Promis
     limit 10;
   `], []);
 
-  const tasks = await Promise.all(sessions.map(async (session): Promise<FleetTask | null> => {
-    const messages = await execJson<Array<{
-      role: string;
-      content: string | null;
-      tool_name: string | null;
-      timestamp: number;
-    }>>("sqlite3", ["-json", dbPath, `
-      select role, substr(content,1,8000) as content, tool_name, timestamp
+  if (sessions.length === 0) return [];
+
+  const sessionIds = sessions.map((session) => session.id);
+  const sessionIdList = sessionIds.map((id) => `'${id.replaceAll("'", "''")}'`).join(",");
+  const messagesBySession = new Map<string, Array<{
+    role: string;
+    content: string | null;
+    tool_name: string | null;
+    timestamp: number;
+  }>>();
+  const allMessages = await execJson<Array<{
+    session_id: string;
+    role: string;
+    content: string | null;
+    tool_name: string | null;
+    timestamp: number;
+  }>>("sqlite3", ["-json", dbPath, `
+    select session_id, role, content, tool_name, timestamp
+    from (
+      select session_id, role, substr(content,1,8000) as content, tool_name, timestamp,
+        row_number() over (partition by session_id order by timestamp desc) as row_num
       from messages
-      where session_id = '${session.id.replaceAll("'", "''")}'
-      order by timestamp desc
-      limit 30;
-    `], []);
+      where session_id in (${sessionIdList})
+    )
+    where row_num <= 30
+    order by session_id, timestamp desc;
+  `], []);
+  for (const message of allMessages) {
+    const messages = messagesBySession.get(message.session_id) ?? [];
+    messages.push(message);
+    messagesBySession.set(message.session_id, messages);
+  }
+
+  const tasks = sessions.map((session): FleetTask | null => {
+    const messages = messagesBySession.get(session.id) ?? [];
     const readableMessages = messages.map((message) => ({
       ...message,
       content: readableChatContent(message.content),
@@ -334,7 +360,7 @@ async function scanHermesStateDb(agent: AgentProfile, hermesDir: string): Promis
       updatedAt: (latest?.timestamp ?? session.started_at) * 1000,
       messages: chatMessages,
     };
-  }));
+  });
 
   return tasks.filter((task): task is FleetTask => Boolean(task));
 }
@@ -490,8 +516,9 @@ async function processMatches(agent: AgentProfile, includeGenericHermes = false)
     .slice(0, 5);
 }
 
-function snapshotCacheKey(agents: AgentWithLocal[], sharedVault?: SharedVaultConfig) {
+function snapshotCacheKey(agents: AgentWithLocal[], sharedVault?: SharedVaultConfig, options: SnapshotReadOptions = {}) {
   return JSON.stringify({
+    mode: options.historyOnly ? "history" : "full",
     controlRoomPath: sharedVault?.controlRoomPath ?? "",
     agents: agents.map((agent) => ({
       id: agent.id,
@@ -506,7 +533,7 @@ function snapshotCacheKey(agents: AgentWithLocal[], sharedVault?: SharedVaultCon
   });
 }
 
-async function readSnapshots(agents: AgentWithLocal[], sharedVault?: SharedVaultConfig): Promise<SnapshotPayload> {
+async function readSnapshots(agents: AgentWithLocal[], sharedVault?: SharedVaultConfig, options: SnapshotReadOptions = {}): Promise<SnapshotPayload> {
   const controlRoomPath = resolve(expandHome(sharedVault?.controlRoomPath || ""));
   const dataDirs: Record<string, string> = controlRoomPath
     ? await parseControlRoomDataDirs(controlRoomPath).catch(() => ({} as Record<string, string>))
@@ -514,7 +541,7 @@ async function readSnapshots(agents: AgentWithLocal[], sharedVault?: SharedVault
   const firstHermesId = agents.find((agent) => agent.runtime === "hermes")?.id;
 
   const snapshots = await Promise.all(agents.map(async (agent): Promise<AgentSnapshot> => {
-    const remoteSnapshot = await readRemoteSnapshot(agent);
+    const remoteSnapshot = options.historyOnly ? null : await readRemoteSnapshot(agent);
     if (remoteSnapshot) return remoteSnapshot;
 
     const checkedAt = Date.now();
@@ -523,6 +550,24 @@ async function readSnapshots(agents: AgentWithLocal[], sharedVault?: SharedVault
       ?? dataDirs[agent.id];
     const hermesHomeDir = agent.runtime === "hermes" && agent.id === firstHermesId ? join(homedir(), ".hermes") : undefined;
     const dataDirsToScan = [...new Set([configuredDataDir, hermesHomeDir].filter(Boolean) as string[])];
+    if (options.historyOnly) {
+      const hermesDbTaskGroups = await Promise.all(dataDirsToScan.map((dir) => (
+        agent.runtime === "hermes" ? scanHermesStateDb(agent, dir) : Promise.resolve([])
+      )));
+      const tasks = hermesDbTaskGroups.flat()
+        .sort((a, b) => b.updatedAt - a.updatedAt)
+        .slice(0, 12);
+      return {
+        agentId: agent.id,
+        ok: tasks.length > 0,
+        runtimeReachable: false,
+        processRunning: false,
+        summary: tasks[0]?.title ?? "No Hermes chat history found yet.",
+        sources: tasks.length ? ["Hermes history"] : [],
+        tasks,
+        checkedAt,
+      };
+    }
     const hasReadableDataDir = (await Promise.all(dataDirsToScan.map(pathReadable))).some(Boolean);
     const [runtimeResult, taskBusTasks, dataDirTaskGroups, hermesDbTaskGroups, processes] = await Promise.all([
       checkRuntime(agent),
@@ -579,15 +624,17 @@ async function readSnapshots(agents: AgentWithLocal[], sharedVault?: SharedVault
 export async function POST(request: NextRequest) {
   let agents: AgentWithLocal[] = [];
   let sharedVault: SharedVaultConfig | undefined;
+  let options: SnapshotReadOptions = {};
   try {
-    const body = (await request.json()) as { agents?: AgentProfile[]; sharedVault?: SharedVaultConfig };
+    const body = (await request.json()) as { agents?: AgentProfile[]; sharedVault?: SharedVaultConfig; mode?: "full" | "history" };
     agents = Array.isArray(body.agents) ? body.agents as AgentWithLocal[] : [];
     sharedVault = body.sharedVault;
+    options = { historyOnly: body.mode === "history" };
   } catch {
     return Response.json({ ok: false, error: "Invalid JSON body" }, { status: 400 });
   }
 
-  const cacheKey = snapshotCacheKey(agents, sharedVault);
+  const cacheKey = snapshotCacheKey(agents, sharedVault, options);
   const now = Date.now();
   pruneSnapshotCache(now);
   const cached = snapshotCache.get(cacheKey);
@@ -597,7 +644,7 @@ export async function POST(request: NextRequest) {
 
   let inFlight = snapshotInFlight.get(cacheKey);
   if (!inFlight) {
-    inFlight = readSnapshots(agents, sharedVault)
+    inFlight = readSnapshots(agents, sharedVault, options)
       .then((payload) => {
         snapshotCache.set(cacheKey, { checkedAt: Date.now(), payload });
         return payload;

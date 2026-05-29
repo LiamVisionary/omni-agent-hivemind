@@ -3,7 +3,7 @@ import { beeRoleIconPath } from "@/lib/config/bee-role-icons";
 import { beeWorkerPreset } from "@/lib/config/bee-worker-presets";
 import { createDefaultAgentWallet, createDefaultHoneyTreasuryConfig, stripUnfundedWalletBalance } from "@/lib/utils/agent-wallet";
 import type { AgentWalletConfig, HoneyTreasuryConfig } from "@/lib/types/agent-wallet";
-import type { AgentSchedule, AgentTask, ChatCustomFolder, ChatMessage, DiscoveredMachine, HermesUpdateSkillLike, RuntimeIntegrationKey, RuntimeIntegrationStatus, RuntimeSetupDefinition, ScheduleDraft, StoredSharedVaultConfig, WorkerClassDraft } from "@/features/dashboard/dashboard-types";
+import type { AgentSchedule, AgentSnapshot, AgentTask, ChatCustomFolder, ChatMessage, DiscoveredMachine, HermesUpdateSkillLike, RuntimeIntegrationKey, RuntimeIntegrationStatus, RuntimeSetupDefinition, ScheduleDraft, StoredSharedVaultConfig, WorkerClassDraft } from "@/features/dashboard/dashboard-types";
 
 const STORAGE_KEY = "hivemindos.agentProfiles.v1";
 const VAULT_STORAGE_KEY = "hivemindos.sharedVault.v1";
@@ -15,6 +15,7 @@ const CHAT_MESSAGES_STORAGE_KEY = "hivemindos.chatMessages.v1";
 const CHAT_FOLDER_STORAGE_KEY = "hivemindos.chatFolders.v1";
 const MACHINE_NAME_ALIAS_STORAGE_KEY = "hivemindos.machineNameAliases.v1";
 const DISCOVERED_MACHINES_STORAGE_KEY = "hivemindos.discoveredMachines.v1";
+const FLEET_SNAPSHOTS_STORAGE_KEY = "hivemindos.fleetSnapshots.v1";
 const STORAGE_SUFFIXES = {
   agents: ".agentProfiles.v1",
   vault: ".sharedVault.v1",
@@ -25,6 +26,7 @@ const STORAGE_SUFFIXES = {
   chatMessages: ".chatMessages.v1",
   chatFolders: ".chatFolders.v1",
   machineNameAliases: ".machineNameAliases.v1",
+  fleetSnapshots: ".fleetSnapshots.v1",
 };
 const runtimeCapabilitiesByRuntime = RUNTIME_CAPABILITIES as Record<string, RuntimeCapabilities>;
 const runtimeKindsByRuntime = RUNTIME_KINDS as Record<string, AgentRuntimeKind | undefined>;
@@ -435,6 +437,31 @@ export function parseStoredDiscoveredMachines(): DiscoveredMachine[] {
     ));
   } catch {
     return [];
+  }
+}
+
+export function parseStoredFleetSnapshots(): Record<string, AgentSnapshot> {
+  if (typeof window === "undefined") return {};
+  const raw = readStoredValue(FLEET_SNAPSHOTS_STORAGE_KEY, STORAGE_SUFFIXES.fleetSnapshots);
+  if (!raw) return {};
+  try {
+    const parsed = JSON.parse(raw) as Record<string, AgentSnapshot>;
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return {};
+    return Object.fromEntries(Object.entries(parsed)
+      .filter(([agentId, snapshot]) => (
+        typeof agentId === "string"
+        && snapshot
+        && typeof snapshot === "object"
+        && typeof snapshot.agentId === "string"
+        && Array.isArray(snapshot.tasks)
+      ))
+      .map(([agentId, snapshot]) => [agentId, {
+        ...snapshot,
+        tasks: snapshot.tasks.slice(0, 12),
+        sources: Array.isArray(snapshot.sources) ? snapshot.sources : [],
+      }]));
+  } catch {
+    return {};
   }
 }
 

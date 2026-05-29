@@ -3,6 +3,22 @@
 This file records user-visible changes before they are committed. New work should
 be added here first, then marked `Committed` or `Pushed` after the git action.
 
+## 2026-05-29 14:33:15 WITA - Fix Chat Field And Lettered List Formatting
+
+- Status: Pushed
+- Areas changed: Chat markdown renderer, changelog
+- Summary: Keep inline chat field labels text-only while preserving readable spacing after colons, matching multi-word labels as whole phrases, avoiding accidental partial-label bolding such as `post:` inside `Related post:`, and render lettered lists such as `A.`, `B.`, and `C.` with the same aligned marker formatting as numbered lists.
+- Verification: `pnpm exec eslint src/features/dashboard/ChatMarkdown.tsx --quiet`; `pnpm exec tsc --noEmit --pretty false --skipLibCheck`.
+- Intended commit message: `Fix chat field and lettered list formatting`
+
+## 2026-05-29 13:18:01 WITA - Group Chat History By Projects
+
+- Status: Pushed
+- Areas changed: Dashboard chat history tree, changelog
+- Summary: Stop using agent runtime data directories such as `.hermes`, `.openclaw`, `.aeon`, and per-agent runtime folders as chat history folders. The chat sidebar now groups chats under real project/app directories when available and uses `Stray chats` only for sessions without a project directory.
+- Verification: `pnpm exec eslint src/features/dashboard/hooks/use-chat-tree-controller.tsx --max-warnings=999` passed with existing warnings; `pnpm exec tsc --noEmit --pretty false --skipLibCheck`; `git diff --check -- src/features/dashboard/hooks/use-chat-tree-controller.tsx CHANGELOG.md`; Playwright smoke on `http://127.0.0.1:5020/?view=chat` found no Next error page and no visible `.hermes`, `.openclaw`, or `ada-lovelace` chat folder labels in the fresh browser profile.
+- Intended commit message: `Group chat history by projects`
+
 ## 2026-05-29 11:50:03 WITA - Refine Chat Markdown Structure
 
 - Status: Pushed
@@ -30,9 +46,9 @@ be added here first, then marked `Committed` or `Pushed` after the git action.
 ## 2026-05-29 01:19:11 WITA - Speed Up Chat History Loading
 
 - Status: Pushed
-- Areas changed: Dashboard chat view loading, chat sidebar history indexing, machine group fallback, changelog
-- Summary: Load the chat panel with the main dashboard bundle, pre-index stored chat transcripts by agent so the sidebar no longer scans every saved chat for every machine/agent while rendering, and keep saved agents available in a fallback chat machine group before Tailnet discovery attaches them to live machines.
-- Verification: `pnpm exec eslint src/features/dashboard/DashboardApp.tsx src/features/dashboard/hooks/use-chat-tree-controller.tsx src/features/dashboard/hooks/use-dashboard-derived-state.tsx --max-warnings=999` passed with existing warnings; `pnpm exec tsc --noEmit --pretty false --skipLibCheck`; `git diff --check -- src/features/dashboard/DashboardApp.tsx src/features/dashboard/hooks/use-chat-tree-controller.tsx src/features/dashboard/hooks/use-dashboard-derived-state.tsx CHANGELOG.md`; Browser check on `http://127.0.0.1:5020/?view=chat` rendered the chat view without a Next error template or console errors.
+- Areas changed: Dashboard chat view loading, chat sidebar history indexing, chat transcript opening, machine group fallback, fleet snapshot cache, fleet snapshot API, changelog
+- Summary: Load the chat panel with the main dashboard bundle, pre-index stored chat transcripts by agent so the sidebar no longer scans every saved chat for every machine/agent while rendering, keep saved agents available in a fallback chat machine group before Tailnet discovery attaches them to live machines, hydrate cached fleet snapshots so Hermes/session history appears before the live collector scan returns, make chat-view snapshot refreshes use a fast history-only Hermes scan instead of waiting on remote health and process probes, run that history scan immediately when the chat view has saved agents instead of waiting for the generic fleet polling cadence, and open preview-only runtime sessions after the full transcript is available so a chat does not first show one seed message and then pop in the rest.
+- Verification: `pnpm exec eslint src/features/dashboard/DashboardApp.tsx src/features/dashboard/hooks/use-chat-tree-controller.tsx src/app/api/fleet/snapshot/route.ts src/features/dashboard/dashboard-storage.ts --max-warnings=999` passed with existing warnings; `pnpm exec tsc --noEmit --pretty false --skipLibCheck`; `git diff --check -- src/features/dashboard/DashboardApp.tsx src/features/dashboard/hooks/use-chat-tree-controller.tsx src/app/api/fleet/snapshot/route.ts src/features/dashboard/dashboard-storage.ts CHANGELOG.md`; `curl -X POST http://127.0.0.1:5020/api/fleet/snapshot` in history mode returned HTTP 200 in 0.034s with an empty-agent body.
 - Intended commit message: `Speed up chat history loading`
 
 ## 2026-05-29 01:12:42 WITA - Hydrate Link-Proxied Next Apps

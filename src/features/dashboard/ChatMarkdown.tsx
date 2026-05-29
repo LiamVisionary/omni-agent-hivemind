@@ -55,9 +55,10 @@ const orderedIndexStyle = {
 const fieldLabelStyle = {
   color: "rgba(232, 238, 247, 0.98)",
   fontWeight: 800,
+  marginRight: "0.22rem",
   whiteSpace: "nowrap",
 } as const;
-const fieldPattern = /\b(Name|Followers|Bio|Why|Post|Post context|Comment|Suggested DM|Suggested comment|Best action|Action|Profile|Handle|Engagement|URL|Link):/gi;
+const fieldPattern = /(^|\s)(Suggested comment|Suggested DM|Post context|Related post|Best action|Comment under Wake or related thread|Name|Followers|Bio|Why|Post|Comment|DM|Account|Action|Profile|Handle|Engagement|URL|Link):/g;
 
 function safeMarkdownHref(href: string) {
   const trimmed = href.trim();
@@ -122,13 +123,16 @@ function renderFieldLine(text: string) {
   let cursor = 0;
   for (const match of matches) {
     const index = match.index ?? 0;
-    if (index > cursor) parts.push(...renderInlineMarkdown(text.slice(cursor, index)));
+    const prefix = match[1] ?? "";
+    const label = match[2] ?? "";
+    const labelIndex = index + prefix.length;
+    if (labelIndex > cursor) parts.push(...renderInlineMarkdown(text.slice(cursor, labelIndex)));
     parts.push(
       <strong
-        key={`field-${index}`}
-        style={{ ...fieldLabelStyle, marginLeft: parts.length ? "0.45rem" : 0 }}
+        key={`field-${labelIndex}`}
+        style={{ ...fieldLabelStyle, marginLeft: parts.length && !prefix.includes("\n") ? "0.45rem" : 0 }}
       >
-        {match[1]}:
+        {label}:
       </strong>,
     );
     cursor = index + match[0].length;
@@ -176,7 +180,7 @@ export function ChatMarkdown({ text, className, headingClassName }: { text: stri
     }
     if (/^\s*[-*]\s+/.test(line)) {
       const items: string[] = [];
-      const nested = previousBlockKind === "ordered";
+      const nested = previousBlockKind === "ordered" || previousBlockKind === "lettered";
       while (index < lines.length && /^\s*[-*]\s+/.test(lines[index])) {
         items.push(lines[index].replace(/^\s*[-*]\s+/, ""));
         index += 1;
@@ -214,6 +218,26 @@ export function ChatMarkdown({ text, className, headingClassName }: { text: stri
       previousBlockKind = "ordered";
       continue;
     }
+    if (/^\s*[A-Z][.)]\s+/.test(line)) {
+      const items: Array<{ marker: string; text: string }> = [];
+      while (index < lines.length && /^\s*[A-Z][.)]\s+/.test(lines[index])) {
+        const lettered = /^\s*([A-Z])[.)]\s+(.+)$/.exec(lines[index]);
+        if (lettered) items.push({ marker: `${lettered[1]}.`, text: lettered[2] });
+        index += 1;
+      }
+      blocks.push(
+        <div className={chatClass("markdownBulletList")} key={`lettered-${index}`} role="list" style={bulletListStyle}>
+          {items.map((item, itemIndex) => (
+            <div className={chatClass("markdownBulletItem")} key={`${index}-${itemIndex}`} role="listitem" style={orderedItemStyle}>
+              <span aria-hidden="true" style={orderedIndexStyle}>{item.marker}</span>
+              <span>{renderFieldLine(item.text)}</span>
+            </div>
+          ))}
+        </div>,
+      );
+      previousBlockKind = "lettered";
+      continue;
+    }
     if (/^\s{2,}\S/.test(line)) {
       const body: string[] = [];
       while (index < lines.length && /^\s{2,}\S/.test(lines[index])) {
@@ -236,6 +260,7 @@ export function ChatMarkdown({ text, className, headingClassName }: { text: stri
       && !/^(#{1,3})\s+/.test(lines[index])
       && !/^\s*[-*]\s+/.test(lines[index])
       && !/^\s*\d+[.)]\s+/.test(lines[index])
+      && !/^\s*[A-Z][.)]\s+/.test(lines[index])
       && !/^\s{2,}\S/.test(lines[index])
     ) {
       paragraph.push(lines[index]);
