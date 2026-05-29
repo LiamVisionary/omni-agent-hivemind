@@ -96,6 +96,68 @@ function formatJsonBlock(value: string) {
   }
 }
 
+function prettyPrintJsonish(value: string) {
+  const trimmed = trimJsonCandidate(value);
+  if (!trimmed) return "";
+  let output = "";
+  let indent = 0;
+  let inString = false;
+  let escaped = false;
+  const unit = "  ";
+  const newline = () => `\n${unit.repeat(Math.max(indent, 0))}`;
+
+  for (let index = 0; index < trimmed.length; index += 1) {
+    const char = trimmed[index];
+    if (inString) {
+      output += char;
+      if (escaped) {
+        escaped = false;
+      } else if (char === "\\") {
+        escaped = true;
+      } else if (char === "\"") {
+        inString = false;
+      }
+      continue;
+    }
+    if (char === "\"") {
+      inString = true;
+      output += char;
+      continue;
+    }
+    if (char === "{" || char === "[") {
+      output = output.trimEnd();
+      output += char;
+      indent += 1;
+      const next = trimmed.slice(index + 1).trimStart()[0];
+      if (next && next !== "}" && next !== "]") output += newline();
+      continue;
+    }
+    if (char === "}" || char === "]") {
+      indent -= 1;
+      output = output.trimEnd();
+      output += newline() + char;
+      continue;
+    }
+    if (char === ",") {
+      output = output.trimEnd();
+      output += `,${newline()}`;
+      continue;
+    }
+    if (char === ":") {
+      output = output.trimEnd();
+      output += ": ";
+      continue;
+    }
+    if (/\s/.test(char)) {
+      if (output && !output.endsWith(" ") && !output.endsWith("\n")) output += " ";
+      continue;
+    }
+    output += char;
+  }
+
+  return output.trim();
+}
+
 function trimJsonCandidate(value: string) {
   return value.trim().replace(/^[,:\s]+/, "").replace(/;\s*$/, "");
 }
@@ -105,7 +167,11 @@ function formatJsonCandidate(value: string) {
   if (!trimmed) return "";
   const formatted = formatJsonBlock(trimmed);
   if (formatted) return formatted;
-  if (/^"[^"]+"\s*:/.test(trimmed)) return formatJsonBlock(`{${trimmed}}`);
+  if (/^"[^"]+"\s*:/.test(trimmed)) {
+    const wrapped = `{${trimmed}}`;
+    return formatJsonBlock(wrapped) || prettyPrintJsonish(wrapped);
+  }
+  if (jsonStartPattern.test(trimmed)) return prettyPrintJsonish(trimmed);
   return "";
 }
 
@@ -154,8 +220,10 @@ function collectJsonBlock(lines: string[], startIndex: number) {
 
   const raw = body.join("\n").trim().replace(/;\s*$/, "");
   const formatted = formatJsonBlock(raw);
-  if (!formatted) return null;
-  return { formatted, nextIndex: index };
+  if (formatted) return { formatted, nextIndex: index };
+  const jsonish = prettyPrintJsonish(raw);
+  if (!jsonish) return null;
+  return { formatted: jsonish, nextIndex: index };
 }
 
 function collectLooseJsonBlock(lines: string[], startIndex: number) {
