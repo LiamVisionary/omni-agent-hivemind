@@ -3,6 +3,14 @@
 This file records user-visible changes before they are committed. New work should
 be added here first, then marked `Committed` or `Pushed` after the git action.
 
+## 2026-05-29 15:46:14 WITA - Keep Embedded Link Apps Routed
+
+- Status: Uncommitted
+- Areas changed: Hivemind Link peer proxy, link proxy tests, changelog
+- Summary: Carry the app-proxy target through root-page redirects with an explicit same-origin query token, and recover that target from the root page referrer for assets and API calls so embedded Z-Image Studio iframes no longer depend on third-party cookies and no longer render as a blank white frame.
+- Verification: `go test ./cmd/hivemind-linkd`; rebuilt and restarted `com.hivemindos.linkd.agent`; Playwright iframe smoke against the real Z-Image Link URL showed the embedded frame redirecting to the root app URL with proxy context and rendering the Z-Image password screen instead of a blank view.
+- Intended commit message: `Keep embedded Link apps routed`
+
 ## 2026-05-29 14:33:15 WITA - Fix Chat Field And Lettered List Formatting
 
 - Status: Pushed

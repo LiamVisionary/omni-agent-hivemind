@@ -32,6 +32,22 @@ func TestAppProxyRefererTargetRejectsNonPeerReferer(t *testing.T) {
 	}
 }
 
+func TestAppProxyRefererTargetUsesRootContextQuery(t *testing.T) {
+	request := httptest.NewRequest("GET", "http://127.0.0.1:8788/_next/static/chunks/app.js", nil)
+	request.Header.Set("Referer", "http://127.0.0.1:8788/?"+appProxyContextQuery+"="+encodeAppProxyContext("100.84.93.114:8787", "/app-proxy/8788"))
+
+	hostPort, prefix, ok := appProxyRefererTarget(request)
+	if !ok {
+		t.Fatal("expected app-proxy referer query to produce a fallback target")
+	}
+	if hostPort != "100.84.93.114:8787" {
+		t.Fatalf("hostPort = %q, want %q", hostPort, "100.84.93.114:8787")
+	}
+	if prefix != "/app-proxy/8788" {
+		t.Fatalf("prefix = %q, want %q", prefix, "/app-proxy/8788")
+	}
+}
+
 func TestAppProxyCookieTarget(t *testing.T) {
 	request := httptest.NewRequest("GET", "http://127.0.0.1:8788/comfy/api/object_info", nil)
 	request.AddCookie(&http.Cookie{
@@ -78,15 +94,18 @@ func TestRewritePeerRootHTML(t *testing.T) {
 func TestAppProxyRedirectPath(t *testing.T) {
 	request := httptest.NewRequest("GET", "http://127.0.0.1:8788/peer/100.84.93.114%3A8787/app-proxy/8788/?tab=workbench", nil)
 	request.Header.Set("Accept", "text/html")
+	context := encodeAppProxyContext("100.84.93.114:8787", "/app-proxy/8788")
 
 	if !shouldRedirectAppProxyHTML(request, "/app-proxy/8788/", "/app-proxy/8788") {
 		t.Fatal("expected app-proxy HTML route to redirect to the app path")
 	}
-	if got := appProxyRedirectPath(request, "/app-proxy/8788/", "/app-proxy/8788"); got != "/?tab=workbench" {
-		t.Fatalf("redirect path = %q, want %q", got, "/?tab=workbench")
+	wantRoot := "/?" + appProxyContextQuery + "=" + context + "&tab=workbench"
+	if got := appProxyRedirectPath(request, "/app-proxy/8788/", "/app-proxy/8788"); got != wantRoot {
+		t.Fatalf("redirect path = %q, want %q", got, wantRoot)
 	}
-	if got := appProxyRedirectPath(request, "/app-proxy/8788/mobile/", "/app-proxy/8788"); got != "/mobile/?tab=workbench" {
-		t.Fatalf("mobile redirect path = %q, want %q", got, "/mobile/?tab=workbench")
+	wantMobile := "/mobile/?" + appProxyContextQuery + "=" + context + "&tab=workbench"
+	if got := appProxyRedirectPath(request, "/app-proxy/8788/mobile/", "/app-proxy/8788"); got != wantMobile {
+		t.Fatalf("mobile redirect path = %q, want %q", got, wantMobile)
 	}
 }
 

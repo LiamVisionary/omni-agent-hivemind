@@ -26,6 +26,7 @@ import (
 )
 
 const appProxyContextCookie = "hivemind_link_app_proxy"
+const appProxyContextQuery = "__hive_app_proxy"
 
 type config struct {
 	hostname   string
@@ -192,6 +193,9 @@ func appProxyRefererTarget(r *http.Request) (string, string, bool) {
 	if err != nil {
 		return "", "", false
 	}
+	if hostPort, appProxyPrefix, ok := decodeAppProxyContext(refererURL.Query().Get(appProxyContextQuery)); ok {
+		return hostPort, appProxyPrefix, true
+	}
 	rest := strings.TrimPrefix(refererURL.Path, "/peer/")
 	if rest == refererURL.Path {
 		return "", "", false
@@ -226,12 +230,11 @@ func encodeAppProxyContext(hostPort string, appProxyPrefix string) string {
 	return base64.RawURLEncoding.EncodeToString([]byte(hostPort + "|" + appProxyPrefix))
 }
 
-func appProxyCookieTarget(r *http.Request) (string, string, bool) {
-	cookie, err := r.Cookie(appProxyContextCookie)
-	if err != nil || strings.TrimSpace(cookie.Value) == "" {
+func decodeAppProxyContext(value string) (string, string, bool) {
+	if strings.TrimSpace(value) == "" {
 		return "", "", false
 	}
-	decoded, err := base64.RawURLEncoding.DecodeString(cookie.Value)
+	decoded, err := base64.RawURLEncoding.DecodeString(value)
 	if err != nil {
 		return "", "", false
 	}
@@ -242,7 +245,22 @@ func appProxyCookieTarget(r *http.Request) (string, string, bool) {
 	return parts[0], parts[1], true
 }
 
+func appProxyQueryTarget(r *http.Request) (string, string, bool) {
+	return decodeAppProxyContext(r.URL.Query().Get(appProxyContextQuery))
+}
+
+func appProxyCookieTarget(r *http.Request) (string, string, bool) {
+	cookie, err := r.Cookie(appProxyContextCookie)
+	if err != nil || strings.TrimSpace(cookie.Value) == "" {
+		return "", "", false
+	}
+	return decodeAppProxyContext(cookie.Value)
+}
+
 func appProxyFallbackTarget(r *http.Request) (string, string, bool, bool) {
+	if hostPort, appProxyPrefix, ok := appProxyQueryTarget(r); ok {
+		return hostPort, appProxyPrefix, true, true
+	}
 	if hostPort, appProxyPrefix, ok := appProxyRefererTarget(r); ok {
 		return hostPort, appProxyPrefix, true, true
 	}
@@ -272,7 +290,7 @@ func servePeerRefererFallback(ts *tsnet.Server) http.HandlerFunc {
 				out.URL.Scheme = "http"
 				out.URL.Host = hostPort
 				out.URL.Path = appProxyPrefix + r.URL.Path
-				out.URL.RawQuery = r.URL.RawQuery
+				out.URL.RawQuery = appProxyForwardRawQuery(r.URL.Query())
 				out.Host = hostPort
 				out.RequestURI = ""
 				out.Header.Del("Accept-Encoding")
@@ -314,10 +332,33 @@ func appProxyRedirectPath(r *http.Request, outPath string, appProxyPrefix string
 	if appPath == "" {
 		appPath = "/"
 	}
-	if r.URL.RawQuery != "" {
-		appPath += "?" + r.URL.RawQuery
+	values := r.URL.Query()
+	values.Set(appProxyContextQuery, encodeAppProxyContext(appProxyHostPortFromPath(r.URL.Path), appProxyPrefix))
+	if encoded := values.Encode(); encoded != "" {
+		appPath += "?" + encoded
 	}
 	return appPath
+}
+
+func appProxyHostPortFromPath(path string) string {
+	rest := strings.TrimPrefix(path, "/peer/")
+	parts := strings.SplitN(rest, "/", 2)
+	hostPort, err := url.PathUnescape(parts[0])
+	if err != nil {
+		return ""
+	}
+	return hostPort
+}
+
+func appProxyForwardRawQuery(values url.Values) string {
+	forward := make(url.Values, len(values))
+	for key, entries := range values {
+		if key == appProxyContextQuery {
+			continue
+		}
+		forward[key] = append([]string(nil), entries...)
+	}
+	return forward.Encode()
 }
 
 func rewritePeerHTMLResponse(res *http.Response, hostPort string, appProxyPrefix string) error {
