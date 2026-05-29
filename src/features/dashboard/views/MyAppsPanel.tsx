@@ -128,7 +128,7 @@ function appLaunchUrl(app: HostedApp) {
   try {
     const url = new URL(app.openUrl);
     if (!url.searchParams.get("api")) {
-      url.searchParams.set("api", url.origin);
+      url.searchParams.set("api", url.toString().replace(/\/$/, ""));
     }
     return url.toString();
   } catch {
