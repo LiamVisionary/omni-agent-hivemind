@@ -703,6 +703,13 @@
       "note": "Self-hosted SERVER_PORT and NANGO_SERVER_URL settings adapted into the remote setup script"
     },
     {
+      "source_repo": "NangoHQ/nango",
+      "source_path": "docker-compose.yaml",
+      "target_path": "src/lib/services/integrations/nango-host.ts",
+      "reuse_type": "config_adapted",
+      "note": "Postgres and Redis compose port bindings adapted into the remote setup script to avoid host port conflicts on integration hosts"
+    },
+    {
       "source_repo": "garrytan/gbrain",
       "source_path": "src/commands/init-mode-picker.ts",
       "target_path": "src/lib/types/agent-runtime.ts",

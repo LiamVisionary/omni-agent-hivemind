@@ -1893,7 +1893,7 @@ function nangoSetupScript(baseUrl) {
     "cd \"$NANGO_DIR\"",
     "if [ ! -f .env ]; then cp .env.example .env; fi",
     "if [ -f docker-compose.yaml ]; then",
-    "  sed -i.bak \"s/'6379:6379'/'${NANGO_REDIS_PORT:-16379}:6379'/\" docker-compose.yaml",
+    "  perl -0pi.bak -e 's/\\x27(?:\\$\\{NANGO_DB_PORT:-\\d+\\}|\\d+):5432\\x27/\\x2715432:5432\\x27/g; s/\\x27[^\\x27]*:6379\\x27/\\x2716379:6379\\x27/g' docker-compose.yaml",
     "fi",
     "set_env() {",
     "  key=\"$1\"",
@@ -1907,10 +1907,19 @@ function nangoSetupScript(baseUrl) {
     "    printf '%s=%s\\n' \"$key\" \"$value\" >> .env",
     "  fi",
     "}",
+    "remove_env() {",
+    "  key=\"$1\"",
+    "  if grep -q \"^${key}=\" .env; then",
+    "    tmp=\"$(mktemp)\"",
+    "    awk -v key=\"$key\" '$0 !~ \"^\" key \"=\" {print}' .env > \"$tmp\"",
+    "    cat \"$tmp\" > .env",
+    "    rm -f \"$tmp\"",
+    "  fi",
+    "}",
     `set_env NANGO_SERVER_URL ${shellQuote(normalized)}`,
     `set_env SERVER_PORT ${shellQuote(portValue)}`,
-    "set_env NANGO_DB_PORT 15432",
-    "set_env NANGO_REDIS_PORT 16379",
+    "remove_env NANGO_DB_PORT",
+    "remove_env NANGO_REDIS_PORT",
     "log 'Starting Nango containers'",
     "$DOCKER compose down --remove-orphans >/dev/null 2>&1 || true",
     "$DOCKER compose up -d",
@@ -1959,6 +1968,9 @@ async function setupNangoIntegrationHost(baseUrl) {
   const script = nangoSetupScript(normalized);
   const result = await collectorRunProcess("bash", ["-s"], script, 360_000);
   const health = await waitForNangoHealthFromCollector(normalized);
+  const error = health.ok
+    ? undefined
+    : health.error || (health.status ? `Nango health check returned HTTP ${health.status}.` : "Nango health check did not become ready after setup.");
   return {
     ok: health.ok,
     method: "collector-api",
@@ -1968,6 +1980,7 @@ async function setupNangoIntegrationHost(baseUrl) {
     stderr: result.stderr.slice(-20_000),
     health,
     command: script,
+    ...(error ? { error } : {}),
   };
 }
 

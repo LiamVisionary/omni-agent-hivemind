@@ -701,3 +701,72 @@ cached 0 public candidates in /Users/liam/Documents/github-assimilator-vault
 
 ### Candidates
 - hivemind-os|implemented|OpenAI-compatible runtime now builds Adaptive candidate context per concrete model.|src/app/api/chat/agent-runtime/route.ts
+## 2026-05-29T16:14:49.715843+00:00 - local-search
+
+- Request: Integrate AEON aaronjmars/aeon into HivemindOS dashboard UI: scheduler autopilot, skills marketplace, GitHub Actions runs, outputs, setup wizard, A2A status
+- Source: local-index
+- Query: `Integrate AEON aaronjmars/aeon into HivemindOS dashboard UI: scheduler autopilot, skills marketplace, GitHub Actions runs, outputs, setup wizard, A2A status`
+- Decision: retrieved
+- Reason: Retrieved local/private-visible index hits.
+- Note: 1. score=12.06 LiamVisionary/skills [repo-summary]
+   url: https://github.com/LiamVisionary/skills
+   note: /Users/liam/Documents/github-assimilator-vault/Repos/LiamVisionary-skills.md
+   LiamVisionary/skills All versions of all skills that are on clawhub.com archived
+2. score=4.04 LiamVisionary/claude-watch [repo-summary]
+   url: https://github.com/LiamVisionary/claude-watch
+   note: /Users/liam/Documents/github-assimilator-vault/Repos/LiamVisionary-claude-watch.md
+   LiamVisionary/claude-watch Turn any tutorial or lecture video into structured study notes — scene-aware frames, persistent library, Claude-vision OCR.
+3. score=0.70 LiamVisionary/maps-agency [repo-summary]
+   url: https://github.com/LiamVisionary/maps-agency
+   note: /Users/liam/Documents/github-assimilator-vault/Repos/LiamVisionary-maps-agency.md
+   LiamVisionary/maps-agency 7-agent solo web design agency: scouts narrow-niche local businesses on Google Maps, diagnoses, builds Lovable mockups, films Higgsfield videos, pitches by channel, books Zooms — single API key, file-system shared
+4. score=0.44 LiamVisionary/coaching-scheduler [repo-summary]
+   url: https://github.com/LiamVisionary/coaching-scheduler
+   note: /Users/liam/Documents/github-assimilator-vault/Repos/LiamVisionary-coaching-scheduler.md
+   LiamVisionary/coaching-scheduler TypeScript
+5. score=0.35 LiamVisionary/claw-code [repo-summary]
+   url: https://github.com/LiamVisionary/claw-code
+   note: /Users/liam/Documents/github-assimilator-vault/Repos/LiamVisionary-claw-code.md
+   LiamVisionary/claw-code The repo is finally unlocked. enjoy the party! The fastest repo in history to surpass 100K stars ⭐. Join Discord: https://discord.gg/5TUQKqFWd Built in Rust using oh-my-codex.
+6. score=0.35 nativelaunch/expolaunch-template [repo-summary]
+   url: https://github.com/nativelaunch/expolaunch-template
+   note: /Users/liam/Documents/github-assimilator-vault/Repos/nativelaunch-expolaunch-template.md
+   nativelaunch/expolaunch-template NativeLaunch Starter – Expo SDK 55 + React Native template with Supabase, RevenueCat, OneSignal, UniWind + HeroUI Native. TypeScript Expo React React Native
+7. score=0.35 nativelaunch/nativelaunch-monorepo-template [repo-summary]
+   url: https://github.com/nativelaunch/nativelaunch-monorepo-template
+   note: /Users/liam/Documents/github-assimilator-vault/Repos/nativelaunch-nativelaunch-monorepo-template.md
+   nativelaunch/nativelaunch-monorepo-template NativeLaunch Monorepo – Expo SDK 55 + React Native + Turborepo + UniWind + HeroUI Native. Monorepo template with shared packages. TypeScript Expo React React Native
+
+## 2026-05-29T16:14:52.056651+00:00 - public-search
+
+- Request: Integrate AEON aaronjmars/aeon into HivemindOS dashboard UI: scheduler autopilot, skills marketplace, GitHub Actions runs, outputs, setup wizard, A2A status
+- Source: public-github
+- Query: `Integrate AEON aaronjmars/aeon into HivemindOS dashboard UI: scheduler autopilot, skills marketplace, GitHub Actions runs, outputs, setup wizard, A2A status`
+- Decision: retrieved
+- Reason: Retrieved 0 public candidates from GitHub search.
+## 2026-05-29T16:14:52.098572+00:00 - prebuild-gate
+
+- Request: Integrate AEON aaronjmars/aeon into HivemindOS dashboard UI: scheduler autopilot, skills marketplace, GitHub Actions runs, outputs, setup wizard, A2A status
+- Source: public-github
+- Query: `Integrate AEON aaronjmars/aeon into HivemindOS dashboard UI: scheduler autopilot, skills marketplace, GitHub Actions runs, outputs, setup wizard, A2A status`
+- Decision: blocked
+- Reason: Public search returned no usable candidates; broaden queries before implementing.
+- Note: /Users/liam/Documents/code/projects/hivemind-os/ASSIMILATION_LOG.md
+/Users/liam/Documents/code/projects/hivemind-os/ASSIMILATION_LOG.jsonl
+cached 0 public candidates in /Users/liam/Documents/github-assimilator-vault
+
+## 2026-05-29T16:15:35.799297+00:00 - triage
+
+- Request: Integrate AEON into HivemindOS dashboard UI
+- Source: public-github
+- Selected backbone: aaronjmars/aeon
+
+### Candidates
+- aaronjmars/aeon
+  - Decision: selected
+  - Reason: upstream AEON implementation, same domain, MIT, provides dashboard/config/API patterns for skills, secrets, workflows, onboarding
+  - Path: `dashboard,aeon.yml,skills.json`
+- lincc-frameworks/lf-workflow-dash
+  - Decision: donor
+  - Reason: MIT GitHub Actions workflow monitoring dashboard; useful only for cross-repo workflow dashboard ideas, not AEON-specific
+  - Path: `workflow dashboard`

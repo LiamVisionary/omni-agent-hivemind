@@ -1,10 +1,11 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 import { Check, Search } from "lucide-react";
 import { BeeIcon } from "@/components/fleet/bee-icon";
 import { CloseIconButton } from "@/components/ui/close-icon-button";
+import { renderAgentKey } from "@/features/fleet/fleet-identity";
 import { beeWorkerPreset } from "@/lib/config/bee-worker-presets";
 import { beeWorkerClassLabel } from "@/lib/services/orchestration/bee-roles";
 import type { AgentProfile, AgentRuntime } from "@/lib/types/agent-runtime";
@@ -116,11 +117,6 @@ export function AgentSelectionModal({
   const [query, setQuery] = useState("");
   const [selectedMachine, setSelectedMachine] = useState("all");
   const [expandedAgentId, setExpandedAgentId] = useState(selectedAgentId ?? agents[0]?.id ?? "");
-  const [mounted, setMounted] = useState(false);
-  useEffect(() => setMounted(true), []);
-  useEffect(() => {
-    if (open) setExpandedAgentId(selectedAgentId ?? agents[0]?.id ?? "");
-  }, [agents, open, selectedAgentId]);
   const machineOptions = useMemo(() => {
     const counts = new Map<string, number>();
     for (const agent of agents) {
@@ -134,20 +130,19 @@ export function AgentSelectionModal({
         .map(([label, count]) => ({ id: label, label, count })),
     ];
   }, [agents]);
-  useEffect(() => {
-    if (!machineOptions.some((machine) => machine.id === selectedMachine)) setSelectedMachine("all");
-  }, [machineOptions, selectedMachine]);
+  const activeSelectedMachine = machineOptions.some((machine) => machine.id === selectedMachine) ? selectedMachine : "all";
+  const activeExpandedAgentId = expandedAgentId || selectedAgentId || agents[0]?.id || "";
   const rankedAgents = useMemo(() => {
     const normalizedQuery = normalize(query);
     return agents
-      .filter((agent) => selectedMachine === "all" || agentMachineName(agent) === selectedMachine)
+      .filter((agent) => activeSelectedMachine === "all" || agentMachineName(agent) === activeSelectedMachine)
       .map((agent) => agentSearchRecord(agent, runtimeModelsByRuntime))
       .map((record) => ({ ...record, score: scoreAgent(record, normalizedQuery) }))
       .filter((record) => !normalizedQuery || record.score > 0)
       .sort((left, right) => right.score - left.score || left.agent.name.localeCompare(right.agent.name));
-  }, [agents, query, runtimeModelsByRuntime, selectedMachine]);
+  }, [activeSelectedMachine, agents, query, runtimeModelsByRuntime]);
 
-  if (!open || !mounted) return null;
+  if (!open || typeof document === "undefined") return null;
 
   return createPortal((
     <div className={styles.backdrop} role="presentation" onMouseDown={(event) => {
@@ -177,7 +172,7 @@ export function AgentSelectionModal({
               <button
                 key={machine.id}
                 type="button"
-                className={selectedMachine === machine.id ? styles.activeMachineFilter : ""}
+                className={activeSelectedMachine === machine.id ? styles.activeMachineFilter : ""}
                 onClick={() => setSelectedMachine(machine.id)}
               >
                 <span>{machine.label}</span>
@@ -188,14 +183,14 @@ export function AgentSelectionModal({
         </header>
 
         <div className={styles.grid}>
-          {rankedAgents.length ? rankedAgents.map(({ agent, classLabel, provider, model, skills, prompt, summary }) => {
-            const expanded = expandedAgentId === agent.id;
+          {rankedAgents.length ? rankedAgents.map(({ agent, classLabel, provider, model, skills, prompt, summary }, agentIndex) => {
+            const expanded = activeExpandedAgentId === agent.id;
             const selected = selectedAgentId === agent.id;
             const customWorker = agent.customWorkerClass
               ?? agent.customWorkerClasses?.find((workerClass) => workerClass.id === agent.selectedCustomWorkerClassId);
             return (
               <article
-                key={agent.id}
+                key={renderAgentKey(agent, agentIndex)}
                 className={[
                   styles.card,
                   selected ? styles.selected : "",

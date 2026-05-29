@@ -129,15 +129,36 @@ async function setupNangoHostViaCollector(collectorUrl: string, config: NangoHos
   if (response.status === 404) {
     throw new Error("That machine is reachable through the HivemindOS agent bridge, but the agent bridge does not have the Nango setup endpoint yet. Run the machine update once from Fleet, then try setup again.");
   }
-  if (!response.ok || payload?.ok === false) {
-    throw new Error(payload?.error ?? `Remote agent bridge returned HTTP ${response.status}.`);
+  if (payload?.ok === false && payload.health) {
+    return normalizeCollectorSetupResult(payload, base);
+  }
+  if (!response.ok) {
+    throw new Error(payload?.error ?? setupPayloadError(payload) ?? `Remote agent bridge returned HTTP ${response.status}.`);
   }
   if (!payload) throw new Error("Remote agent bridge returned an empty setup response.");
+  return normalizeCollectorSetupResult(payload, base);
+}
+
+function normalizeCollectorSetupResult(payload: NangoHostSetupResult, collectorUrl: string): NangoHostSetupResult {
   return {
     ...payload,
     method: "collector-api",
-    target: payload.target || new URL(base).hostname,
+    target: payload.target || new URL(collectorUrl).hostname,
+    stdout: payload.stdout || "",
+    stderr: payload.stderr || "",
+    command: payload.command || "",
   };
+}
+
+function setupPayloadError(payload: (Partial<NangoHostSetupResult> & { error?: string }) | null) {
+  if (!payload) return undefined;
+  if (payload.health?.error) return payload.health.error;
+  if (payload.health?.status) return `Nango health check returned HTTP ${payload.health.status}.`;
+  const stderr = payload.stderr?.trim();
+  if (stderr) return stderr.slice(-1200);
+  const stdout = payload.stdout?.trim();
+  if (stdout) return stdout.slice(-1200);
+  return undefined;
 }
 
 async function resolveStorage(): Promise<Storage> {
@@ -195,8 +216,8 @@ function setupCommands(config: NangoHostConfig) {
     `ssh ${host}`,
     "git clone https://github.com/NangoHQ/nango.git ~/nango",
     "cd ~/nango && cp .env.example .env",
-    "cd ~/nango && sed -i.bak \"s/'6379:6379'/'${NANGO_REDIS_PORT:-16379}:6379'/\" docker-compose.yaml",
-    `printf 'NANGO_SERVER_URL=${config.baseUrl}\\nSERVER_PORT=3003\\nNANGO_DB_PORT=15432\\nNANGO_REDIS_PORT=16379\\n' >> .env`,
+    "cd ~/nango && perl -0pi.bak -e 's/\\x27(?:\\$\\{NANGO_DB_PORT:-\\d+\\}|\\d+):5432\\x27/\\x2715432:5432\\x27/g; s/\\x27[^\\x27]*:6379\\x27/\\x2716379:6379\\x27/g' docker-compose.yaml",
+    `printf 'NANGO_SERVER_URL=${config.baseUrl}\\nSERVER_PORT=3003\\n' >> .env`,
     "cd ~/nango && docker compose down --remove-orphans",
     "cd ~/nango && docker compose up -d",
   ];
@@ -250,7 +271,7 @@ function nangoSetupScript(config: NangoHostConfig) {
     "cd \"$NANGO_DIR\"",
     "if [ ! -f .env ]; then cp .env.example .env; fi",
     "if [ -f docker-compose.yaml ]; then",
-    "  sed -i.bak \"s/'6379:6379'/'${NANGO_REDIS_PORT:-16379}:6379'/\" docker-compose.yaml",
+    "  perl -0pi.bak -e 's/\\x27(?:\\$\\{NANGO_DB_PORT:-\\d+\\}|\\d+):5432\\x27/\\x2715432:5432\\x27/g; s/\\x27[^\\x27]*:6379\\x27/\\x2716379:6379\\x27/g' docker-compose.yaml",
     "fi",
     "set_env() {",
     "  key=\"$1\"",
@@ -264,10 +285,19 @@ function nangoSetupScript(config: NangoHostConfig) {
     "    printf '%s=%s\\n' \"$key\" \"$value\" >> .env",
     "  fi",
     "}",
+    "remove_env() {",
+    "  key=\"$1\"",
+    "  if grep -q \"^${key}=\" .env; then",
+    "    tmp=\"$(mktemp)\"",
+    "    awk -v key=\"$key\" '$0 !~ \"^\" key \"=\" {print}' .env > \"$tmp\"",
+    "    cat \"$tmp\" > .env",
+    "    rm -f \"$tmp\"",
+    "  fi",
+    "}",
     `set_env NANGO_SERVER_URL ${shellSingleQuote(baseUrl)}`,
     `set_env SERVER_PORT ${shellSingleQuote(new URL(baseUrl).port || "3003")}`,
-    "set_env NANGO_DB_PORT 15432",
-    "set_env NANGO_REDIS_PORT 16379",
+    "remove_env NANGO_DB_PORT",
+    "remove_env NANGO_REDIS_PORT",
     "log 'Starting Nango containers'",
     "$DOCKER compose down --remove-orphans >/dev/null 2>&1 || true",
     "$DOCKER compose up -d",

@@ -11,6 +11,22 @@ be added here first, then marked `Committed` or `Pushed` after the git action.
 - Verification: `go test ./cmd/hivemind-linkd`; `git diff --check -- cmd/hivemind-linkd/main.go cmd/hivemind-linkd/main_test.go CHANGELOG.md`; rebuilt, re-signed, and restarted `com.hivemindos.linkd.agent`; Link health returned `{"ok":true,"service":"hivemind-linkd"}`; Playwright against the real remote ComfyUI Mobile portal verified the injected shim contains the image retry hook, a deliberately broken `/comfy/view` image refetched with `__hive_bust`, and the uploaded `HivemindOS.png` preview reports non-zero natural dimensions through the app proxy.
 - Intended commit message: `Retry broken portal image previews`
 
+## 2026-05-29 23:07:20 WITA - Preserve Nango Setup Failure Details
+
+- Status: Pushed
+- Areas changed: Nango setup service, telemetry collector Nango setup endpoint, Nango integration types, changelog
+- Summary: Preserve failed collector setup payloads instead of replacing them with a generic `Remote agent bridge returned HTTP 502` message, and include the Nango health failure reason in collector setup responses.
+- Verification: `node --check scripts/agent-telemetry-collector.mjs`; `pnpm exec eslint src/lib/services/integrations/nango-host.ts src/features/integrations/NangoIntegrationsView.tsx --max-warnings=0`; `pnpm exec eslint scripts/agent-telemetry-collector.mjs --max-warnings=999`; `pnpm exec tsc --noEmit --pretty false --skipLibCheck`; `git diff --check -- src/lib/types/integrations.ts src/lib/services/integrations/nango-host.ts src/features/integrations/NangoIntegrationsView.tsx scripts/agent-telemetry-collector.mjs CHANGELOG.md`.
+- Intended commit message: `Preserve Nango setup failure details`
+
+## 2026-05-29 22:01:55 WITA - Patch Nango Compose Host Ports
+
+- Status: Pushed
+- Areas changed: Nango setup service, telemetry collector Nango setup endpoint, GitHub assimilation manifest, changelog
+- Summary: Patch Nango's Docker Compose host port bindings directly to `15432:5432` and `16379:6379` before startup, remove stale `NANGO_DB_PORT` and `NANGO_REDIS_PORT` setup env writes, and keep compose cleanup before retrying so an existing Postgres on host `5432` no longer blocks setup.
+- Verification: `node --check scripts/agent-telemetry-collector.mjs`; `pnpm exec eslint src/lib/services/integrations/nango-host.ts --max-warnings=0`; `pnpm exec eslint scripts/agent-telemetry-collector.mjs --max-warnings=999`; `pnpm exec tsc --noEmit --pretty false --skipLibCheck`; `python3 -m json.tool ASSIMILATION.json >/dev/null`; `git diff --check -- src/lib/services/integrations/nango-host.ts scripts/agent-telemetry-collector.mjs ASSIMILATION.json CHANGELOG.md`; smoke-tested the compose rewrite from `${NANGO_DB_PORT:-5432}:5432` and `6379:6379` to `15432:5432` and `16379:6379`.
+- Intended commit message: `Patch Nango compose host ports`
+
 ## 2026-05-29 21:45:54 WITA - Preserve Binary App Upload Bodies
 
 - Status: Pushed
@@ -18,6 +34,14 @@ be added here first, then marked `Committed` or `Pushed` after the git action.
 - Summary: Preserve raw request bytes when forwarding proxied app HTTP bodies so multipart image uploads to remote ComfyUI/Z-Image apps are not decoded as UTF-8 text and corrupted before preview.
 - Verification: `node --check scripts/agent-telemetry-collector.mjs`; `pnpm exec eslint scripts/agent-telemetry-collector.mjs --max-warnings=999`; `git diff --check -- scripts/agent-telemetry-collector.mjs CHANGELOG.md`; updated Tailnet collector `100.84.93.114:8787` to commit `1c83c6a`; uploaded `/Users/liam/Downloads/HivemindOS.png` through `/peer/100.84.93.114%3A8787/app-proxy/8788/comfy/upload/image`; fetched it back through `/comfy/view?type=input`; verified the PNG header is intact and `cmp` matched the original local file byte-for-byte.
 - Intended commit message: `Preserve binary app upload bodies`
+
+## 2026-05-29 20:13:09 WITA - Fix Agent Picker Duplicate Keys
+
+- Status: Pushed
+- Areas changed: Agent selection modal, changelog
+- Summary: Use the fleet agent render-key helper for agent picker cards so duplicate runtime agent ids from local discovery no longer trigger React duplicate-key warnings.
+- Verification: `pnpm exec eslint src/components/agents/AgentSelectionModal.tsx --max-warnings=999`; `pnpm exec tsc --noEmit --pretty false --skipLibCheck`; `git diff --check -- src/components/agents/AgentSelectionModal.tsx CHANGELOG.md`.
+- Intended commit message: `Fix agent picker duplicate keys`
 
 ## 2026-05-29 17:18:37 WITA - Route Portal Media URLs Explicitly
 

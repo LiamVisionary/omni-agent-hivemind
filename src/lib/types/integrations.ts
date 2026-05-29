@@ -58,4 +58,5 @@ export type NangoHostSetupResult = {
   stderr: string;
   health: NangoHostHealth;
   command: string;
+  error?: string;
 };
