@@ -35,6 +35,7 @@ export interface FleetViewProps {
   loading?: boolean;
   checkedLabel?: string;
   tailnetLabel?: string;
+  mastheadMode?: "all" | "mobile" | "none";
   /** Optional override hooks so the parent app can wire actions to real APIs. */
   onAddAgent?: (m: FleetMachine) => void;
   onAddMachine?: () => void;
@@ -60,6 +61,7 @@ export function FleetView({
   loading = false,
   checkedLabel,
   tailnetLabel = "tailnet private",
+  mastheadMode = "all",
   onAddAgent,
   onAddMachine,
   updateStatusByMachine,
@@ -84,6 +86,7 @@ export function FleetView({
   const [selectedAlert, setSelectedAlert] = React.useState<FleetAlert | null>(null);
   const initialLoading = loading && machines.length === 0;
   const refreshing = loading && !initialLoading;
+  const showMasthead = mastheadMode !== "none";
 
   React.useEffect(() => {
     const t = setInterval(() => setDispatchIdx((i) => ticker.length ? (i + 1) % ticker.length : 0), 2200);
@@ -162,7 +165,7 @@ export function FleetView({
           width: "100%", height: "100%",
           background: "var(--background)", color: "var(--foreground)",
           fontFamily: "var(--f-display), var(--font-sans, system-ui)",
-          display: "grid", gridTemplateRows: "auto 1fr",
+          display: "grid", gridTemplateRows: showMasthead ? "auto 1fr" : "1fr",
         }}
       >
         {/* Decorative backdrop — radial honey/cyan glow + hex texture */}
@@ -194,58 +197,60 @@ export function FleetView({
         </svg>
 
         {/* ===== MASTHEAD ===== */}
-        <header
-          className="relative z-10"
-          style={{ padding: "22px 36px 16px", borderBottom: "1px solid rgba(148,163,184,0.16)" }}
-        >
-          <div className={`${styles.topbar} grid items-center`}>
-            <div className="flex items-center" style={{ gap: 14 }}>
-              <HexTile size={42} tone="honey"><BeeIcon role="queen" size={32} /></HexTile>
-              <div>
-                <div className={styles.monoCap} style={{ color: "var(--hex-honey-border)" }}>
-                  Hivemind Dispatch · Fleet
-                </div>
-                <div className="font-bold" style={{ fontFamily: "var(--f-display)", fontSize: 18, letterSpacing: 0 }}>
-                  The Swarm
+        {showMasthead ? (
+          <header
+            className={`${styles.masthead} ${mastheadMode === "mobile" ? styles.mobileOnlyMasthead : ""} relative z-10`}
+            style={{ padding: "22px 36px 16px", borderBottom: "1px solid rgba(148,163,184,0.16)" }}
+          >
+            <div className={`${styles.topbar} grid items-center`}>
+              <div className="flex items-center" style={{ gap: 14 }}>
+                <HexTile size={42} tone="honey"><BeeIcon role="queen" size={32} /></HexTile>
+                <div>
+                  <div className={styles.monoCap} style={{ color: "var(--hex-honey-border)" }}>
+                    Hivemind Dispatch · Fleet
+                  </div>
+                  <div className="font-bold" style={{ fontFamily: "var(--f-display)", fontSize: 18, letterSpacing: 0 }}>
+                    The Swarm
+                  </div>
                 </div>
               </div>
+              <div
+                className="text-center uppercase"
+                style={{ fontFamily: "var(--f-mono)", fontSize: 11, color: "var(--muted)", letterSpacing: 0.1 }}
+              >
+                {checkedLabel ?? today} · <span style={{ color: "var(--accent-strong)" }}>{tailnetLabel}</span>
+              </div>
+              <div /> {/* reserved for the host app's user menu */}
             </div>
-            <div
-              className="text-center uppercase"
-              style={{ fontFamily: "var(--f-mono)", fontSize: 11, color: "var(--muted)", letterSpacing: 0.1 }}
-            >
-              {checkedLabel ?? today} · <span style={{ color: "var(--accent-strong)" }}>{tailnetLabel}</span>
-            </div>
-            <div /> {/* reserved for the host app's user menu */}
-          </div>
 
-          <div className={`${styles.heroRow} mt-4 grid items-end`}>
-            <h1
-              className="m-0 font-bold"
-              style={{
-                fontFamily: "var(--f-display)",
-                fontSize: "clamp(40px, 5.5vw, 80px)",
-                lineHeight: 0.9,
-                letterSpacing: 0,
-              }}
-            >
-              The hive is{" "}
-              <span style={{ fontStyle: "italic", color: "var(--hex-honey-border)", fontWeight: 500 }}>
-                humming.
-              </span>
-            </h1>
-            <div className="flex" style={{ gap: 18, paddingBottom: 6 }}>
-              <BigStat n={machines.length} label="machines" />
-              <BigStat n={totalAgents} label="agents" />
-              <BigStat n={working} label="working" tone="cyan" />
-              <BigStat
-                n={highPriorityAlerts.length}
-                label="urgent"
-                tone="danger"
-              />
+            <div className={`${styles.heroRow} mt-4 grid items-end`}>
+              <h1
+                className="m-0 font-bold"
+                style={{
+                  fontFamily: "var(--f-display)",
+                  fontSize: "clamp(40px, 5.5vw, 80px)",
+                  lineHeight: 0.9,
+                  letterSpacing: 0,
+                }}
+              >
+                The hive is{" "}
+                <span style={{ fontStyle: "italic", color: "var(--hex-honey-border)", fontWeight: 500 }}>
+                  humming.
+                </span>
+              </h1>
+              <div className="flex" style={{ gap: 18, paddingBottom: 6 }}>
+                <BigStat n={machines.length} label="machines" />
+                <BigStat n={totalAgents} label="agents" />
+                <BigStat n={working} label="working" tone="cyan" />
+                <BigStat
+                  n={highPriorityAlerts.length}
+                  label="urgent"
+                  tone="danger"
+                />
+              </div>
             </div>
-          </div>
-        </header>
+          </header>
+        ) : null}
 
         {/* ===== BODY ===== */}
         <div

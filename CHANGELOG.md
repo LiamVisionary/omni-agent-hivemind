@@ -3,6 +3,14 @@
 This file records user-visible changes before they are committed. New work should
 be added here first, then marked `Committed` or `Pushed` after the git action.
 
+## 2026-05-30 01:45:10 WITA - Make Fleet Masthead Mobile-Only In Agents
+
+- Status: Pushed
+- Areas changed: Fleet view masthead controls, fleet CSS, Agents dashboard panel, changelog
+- Summary: Add a masthead display mode to the fleet view and use the mobile-only masthead inside the Agents panel so desktop can keep the tighter embedded dashboard layout while mobile still has the fleet identity header.
+- Verification: `git diff --check -- src/components/fleet/FleetView.tsx src/components/fleet/fleet-tokens.module.css src/features/dashboard/views/AgentsPanel.tsx`
+- Intended commit message: `Make fleet masthead mobile-only in agents`
+
 ## 2026-05-30 01:44:15 WITA - Preserve JSON-Like Chat Payload Formatting
 
 - Status: Pushed

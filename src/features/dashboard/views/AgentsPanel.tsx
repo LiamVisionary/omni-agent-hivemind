@@ -124,6 +124,7 @@ export function AgentsPanel(props: AgentsPanelProps) {
           loading={fleetDiscoveryLoading}
           checkedLabel={fleetCheckedAt ? `Scanned ${formatRelativeTime(fleetCheckedAt)}` : tailscaleStatus}
           tailnetLabel={tailscaleStatus}
+          mastheadMode="mobile"
           onAddAgent={(machine) => {
             const group = machineGroups.find((item) => item.key === machine.id);
             if (group) addAgentToMachine(group);

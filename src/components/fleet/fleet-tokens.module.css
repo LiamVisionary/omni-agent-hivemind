@@ -336,6 +336,14 @@
   text-transform: uppercase;
 }
 
+.masthead {
+  display: block;
+}
+
+.mobileOnlyMasthead {
+  display: none;
+}
+
 .topbar {
   grid-template-columns: auto 1fr auto;
   gap: 24px;
@@ -437,5 +445,11 @@
   .stageFrame {
     max-width: 100%;
     min-height: min(560px, 80vw);
+  }
+}
+
+@media (max-width: 720px) {
+  .mobileOnlyMasthead {
+    display: block;
   }
 }
