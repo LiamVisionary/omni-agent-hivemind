@@ -149,6 +149,7 @@ func servePeerProxy(ts *tsnet.Server) http.HandlerFunc {
 		if len(parts) == 2 {
 			outPath += parts[1]
 		}
+		outRawPath := peerRawOutPath(r.URL.EscapedPath())
 		appProxyPrefix := ""
 		if appProxyMatch := regexp.MustCompile(`^(/app-proxy/\d+)(?:/.*)?$`).FindStringSubmatch(outPath); len(appProxyMatch) == 2 {
 			appProxyPrefix = appProxyMatch[1]
@@ -165,6 +166,7 @@ func servePeerProxy(ts *tsnet.Server) http.HandlerFunc {
 				out.URL.Scheme = "http"
 				out.URL.Host = hostPort
 				out.URL.Path = outPath
+				out.URL.RawPath = outRawPath
 				out.Host = hostPort
 				out.RequestURI = ""
 				out.Header.Del("Accept-Encoding")
@@ -291,6 +293,7 @@ func servePeerRefererFallback(ts *tsnet.Server) http.HandlerFunc {
 				out.URL.Scheme = "http"
 				out.URL.Host = hostPort
 				out.URL.Path = appProxyPrefix + r.URL.Path
+				out.URL.RawPath = appProxyPrefix + r.URL.EscapedPath()
 				out.URL.RawQuery = appProxyForwardRawQuery(r.URL.Query())
 				out.Host = hostPort
 				out.RequestURI = ""
@@ -353,6 +356,18 @@ func appProxyHostPortFromPath(path string) string {
 		return ""
 	}
 	return hostPort
+}
+
+func peerRawOutPath(escapedPath string) string {
+	rest := strings.TrimPrefix(escapedPath, "/peer/")
+	if rest == escapedPath {
+		return ""
+	}
+	parts := strings.SplitN(rest, "/", 2)
+	if len(parts) != 2 {
+		return "/"
+	}
+	return "/" + parts[1]
 }
 
 func appProxyForwardRawQuery(values url.Values) string {

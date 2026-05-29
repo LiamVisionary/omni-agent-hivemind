@@ -3,6 +3,14 @@
 This file records user-visible changes before they are committed. New work should
 be added here first, then marked `Committed` or `Pushed` after the git action.
 
+## 2026-05-29 16:43:54 WITA - Preserve Encoded Workflow Paths Through Link
+
+- Status: Uncommitted
+- Areas changed: Hivemind Link app portal proxy, link proxy tests, changelog
+- Summary: Preserve encoded path segments such as `%2F` when forwarding app-proxy requests so ComfyUI Mobile can load saved workflow files from `/api/userdata/workflows%2F...json` instead of Link decoding them into a different route before they reach Comfy.
+- Verification: `go test ./cmd/hivemind-linkd`; rebuilt, re-signed, and restarted `com.hivemindos.linkd.agent`; Link health returned `{"ok":true,"service":"hivemind-linkd"}`; direct curl for `/comfy/api/userdata/workflows%2FBig%20Love%20Klein%20image%20edit%20-%20attached%20workflow.json` through `/peer/.../app-proxy/...` now returns `200 application/json` instead of `404`; Playwright against the real Z-Image ComfyUI Mobile route loaded the first My Workflows item, fetched the encoded workflow path with `200`, rendered the workflow node list, and updated `mobile%2Frecent_workflows.json` with `200`.
+- Intended commit message: `Preserve encoded app proxy paths`
+
 ## 2026-05-29 16:14:25 WITA - Make Remote Apps Use Portal Routing
 
 - Status: Pushed

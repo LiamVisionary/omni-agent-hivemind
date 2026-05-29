@@ -158,3 +158,12 @@ func TestAppProxyRedirectRejectsStaticAssets(t *testing.T) {
 		t.Fatal("expected static app-proxy asset to stay proxied")
 	}
 }
+
+func TestPeerRawOutPathPreservesEncodedSlash(t *testing.T) {
+	rawPath := peerRawOutPath("/peer/100.84.93.114%3A8787/app-proxy/8788/comfy/api/userdata/workflows%2FBig%20Love.json")
+
+	want := "/app-proxy/8788/comfy/api/userdata/workflows%2FBig%20Love.json"
+	if rawPath != want {
+		t.Fatalf("raw path = %q, want %q", rawPath, want)
+	}
+}
