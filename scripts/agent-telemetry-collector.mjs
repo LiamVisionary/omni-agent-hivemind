@@ -3366,7 +3366,7 @@ function proxyAppWebSocket(request, socket, head) {
     for (let index = 0; index < request.rawHeaders.length; index += 2) {
       const key = request.rawHeaders[index];
       const value = request.rawHeaders[index + 1];
-      if (!key || key.toLowerCase() === "host") continue;
+      if (!key || ["host", "origin"].includes(key.toLowerCase())) continue;
       lines.push(`${key}: ${value}`);
     }
     lines.push(`Host: ${target.host}`);
@@ -3387,7 +3387,7 @@ async function proxyAppHttp(request, response, targetUrl) {
   const target = new URL(targetUrl);
   const headers = {};
   for (const [key, value] of Object.entries(request.headers)) {
-    if (!value || ["host", "connection", "content-length", "accept-encoding"].includes(key.toLowerCase())) continue;
+    if (!value || ["host", "connection", "content-length", "accept-encoding", "origin"].includes(key.toLowerCase())) continue;
     headers[key] = Array.isArray(value) ? value.join(", ") : value;
   }
   headers.host = target.host;

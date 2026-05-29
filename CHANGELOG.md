@@ -3,6 +3,14 @@
 This file records user-visible changes before they are committed. New work should
 be added here first, then marked `Committed` or `Pushed` after the git action.
 
+## 2026-05-29 16:14:25 WITA - Make Remote Apps Use Portal Routing
+
+- Status: Uncommitted
+- Areas changed: Hivemind Link app portal proxy, telemetry collector app proxy, link proxy tests, changelog
+- Summary: Inject a same-origin app portal shim into proxied app HTML so root-relative, relative asset, and localhost HTTP, XHR, WebSocket, EventSource, sendBeacon, popup, and anchor URLs are rewritten through the correct `/peer/<collector>/app-proxy/<port>/...` route, and strip browser `Origin` headers so remote apps like ComfyUI do not reject portal asset/API requests as cross-origin.
+- Verification: `go test ./cmd/hivemind-linkd`; `node --check scripts/agent-telemetry-collector.mjs`; `pnpm exec eslint scripts/agent-telemetry-collector.mjs --max-warnings=999`; `git diff --check -- cmd/hivemind-linkd/main.go cmd/hivemind-linkd/main_test.go scripts/agent-telemetry-collector.mjs CHANGELOG.md`; rebuilt, re-signed, and restarted `com.hivemindos.linkd.agent`; Link health returned `{"ok":true,"service":"hivemind-linkd"}`; Playwright against the real Z-Image ComfyUI Mobile route loaded `/mobile/assets/...`, `/comfy/api/object_info`, `/comfy/api/queue`, `/api/loras`, and `/comfy/api/history` through `/peer/.../app-proxy/...` and rendered the ComfyUI Mobile screen instead of the endless opening loader.
+- Intended commit message: `Route remote app browser calls through portal`
+
 ## 2026-05-29 15:56:13 WITA - Point Z-Image API At App Proxy
 
 - Status: Pushed

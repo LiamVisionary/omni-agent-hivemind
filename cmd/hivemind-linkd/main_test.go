@@ -68,7 +68,7 @@ func TestAppProxyCookieTarget(t *testing.T) {
 }
 
 func TestRewritePeerRootHTML(t *testing.T) {
-	html := `<script type="module" src="/mobile/assets/index.js"></script><link rel="stylesheet" href='/mobile/assets/index.css'><script src="/_next/static/chunks/app.js" async=""></script><script>self.__next_f.push([1,":HL[\"/_next/static/chunks/app.css\",\"style\"]"])</script>`
+	html := `<script type="module" src="/mobile/assets/index.js"></script><link rel="stylesheet" href='./assets/index.css'><link rel="stylesheet" href='user.css'><script src="/_next/static/chunks/app.js" async=""></script><script>self.__next_f.push([1,":HL[\"/_next/static/chunks/app.css\",\"style\"]"])</script>`
 	rewritten := rewritePeerRootHTML(html, "100.84.93.114:8787", "/app-proxy/8788")
 
 	if rewritten == html {
@@ -78,9 +78,13 @@ func TestRewritePeerRootHTML(t *testing.T) {
 	if !strings.Contains(rewritten, wantScript) {
 		t.Fatalf("rewritten HTML missing %q:\n%s", wantScript, rewritten)
 	}
-	wantStyle := `href='/peer/100.84.93.114%3A8787/app-proxy/8788/mobile/assets/index.css'`
+	wantStyle := `href='/peer/100.84.93.114%3A8787/app-proxy/8788/assets/index.css'`
 	if !strings.Contains(rewritten, wantStyle) {
 		t.Fatalf("rewritten HTML missing %q:\n%s", wantStyle, rewritten)
+	}
+	wantBareStyle := `href='/peer/100.84.93.114%3A8787/app-proxy/8788/user.css'`
+	if !strings.Contains(rewritten, wantBareStyle) {
+		t.Fatalf("rewritten HTML missing %q:\n%s", wantBareStyle, rewritten)
 	}
 	wantFlight := `\"/peer/100.84.93.114%3A8787/app-proxy/8788/_next/static/chunks/app.css`
 	if !strings.Contains(rewritten, wantFlight) {
@@ -88,6 +92,43 @@ func TestRewritePeerRootHTML(t *testing.T) {
 	}
 	if strings.Contains(rewritten, `/_next/static/chunks/app.js" async=""`) {
 		t.Fatalf("rewritten HTML should remove async from Next chunk scripts:\n%s", rewritten)
+	}
+	if !strings.Contains(rewritten, `id="hivemind-app-portal-shim"`) {
+		t.Fatalf("rewritten HTML missing portal shim:\n%s", rewritten)
+	}
+	if !strings.Contains(rewritten, `"peerPrefix":"/peer/100.84.93.114%3A8787"`) {
+		t.Fatalf("portal shim missing peer prefix:\n%s", rewritten)
+	}
+	if !strings.Contains(rewritten, `"currentPort":"8788"`) {
+		t.Fatalf("portal shim missing current app port:\n%s", rewritten)
+	}
+}
+
+func TestInjectAppPortalScriptAvoidsDuplicate(t *testing.T) {
+	html := `<html><head><script id="hivemind-app-portal-shim"></script></head><body>ok</body></html>`
+	rewritten := injectAppPortalScript(html, "100.84.93.114:8787", "/app-proxy/8788")
+
+	if count := strings.Count(rewritten, `id="hivemind-app-portal-shim"`); count != 1 {
+		t.Fatalf("portal shim count = %d, want 1:\n%s", count, rewritten)
+	}
+}
+
+func TestRewritePeerHTMLResponseRemovesFrameBlockingHeaders(t *testing.T) {
+	recorder := httptest.NewRecorder()
+	recorder.Header().Set("Content-Type", "text/html")
+	recorder.Header().Set("Content-Security-Policy", "default-src 'self'")
+	recorder.Header().Set("X-Frame-Options", "DENY")
+	recorder.WriteString(`<html><body>ok</body></html>`)
+
+	response := recorder.Result()
+	if err := rewritePeerHTMLResponse(response, "100.84.93.114:8787", "/app-proxy/8788"); err != nil {
+		t.Fatal(err)
+	}
+	if got := response.Header.Get("Content-Security-Policy"); got != "" {
+		t.Fatalf("Content-Security-Policy = %q, want empty", got)
+	}
+	if got := response.Header.Get("X-Frame-Options"); got != "" {
+		t.Fatalf("X-Frame-Options = %q, want empty", got)
 	}
 }
 

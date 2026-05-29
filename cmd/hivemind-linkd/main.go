@@ -168,6 +168,7 @@ func servePeerProxy(ts *tsnet.Server) http.HandlerFunc {
 				out.Host = hostPort
 				out.RequestURI = ""
 				out.Header.Del("Accept-Encoding")
+				out.Header.Del("Origin")
 			},
 			ModifyResponse: func(res *http.Response) error {
 				if appProxyPrefix == "" {
@@ -294,6 +295,10 @@ func servePeerRefererFallback(ts *tsnet.Server) http.HandlerFunc {
 				out.Host = hostPort
 				out.RequestURI = ""
 				out.Header.Del("Accept-Encoding")
+				out.Header.Del("Origin")
+			},
+			ModifyResponse: func(res *http.Response) error {
+				return rewritePeerHTMLResponse(res, hostPort, appProxyPrefix)
 			},
 			Transport: transport,
 			ErrorHandler: func(w http.ResponseWriter, _ *http.Request, err error) {
@@ -362,6 +367,9 @@ func appProxyForwardRawQuery(values url.Values) string {
 }
 
 func rewritePeerHTMLResponse(res *http.Response, hostPort string, appProxyPrefix string) error {
+	res.Header.Del("Content-Security-Policy")
+	res.Header.Del("Content-Security-Policy-Report-Only")
+	res.Header.Del("X-Frame-Options")
 	contentType := strings.ToLower(res.Header.Get("content-type"))
 	if !strings.Contains(contentType, "text/html") {
 		return nil
@@ -400,12 +408,144 @@ func rewritePeerRootHTML(html string, hostPort string, appProxyPrefix string) st
 	for _, replacement := range replacements {
 		html = strings.ReplaceAll(html, replacement.old, replacement.new)
 	}
+	html = rewritePeerRelativeHTMLAttrs(html, prefix)
 	html = regexp.MustCompile(`(<script src=["'][^"']*/_next/static/chunks/[^"']+["']) async=""`).ReplaceAllString(html, "$1")
+	html = injectAppPortalScript(html, hostPort, appProxyPrefix)
 	return html
+}
+
+func rewritePeerRelativeHTMLAttrs(html string, prefix string) string {
+	attrPattern := regexp.MustCompile(`(?i)(\s(?:src|href|action|poster)=)(["'])([^"'#/][^"']*)`)
+	return attrPattern.ReplaceAllStringFunc(html, func(match string) string {
+		parts := attrPattern.FindStringSubmatch(match)
+		if len(parts) != 4 {
+			return match
+		}
+		value := parts[3]
+		if strings.Contains(value, ":") || strings.HasPrefix(value, "data:") || strings.HasPrefix(value, "mailto:") || strings.HasPrefix(value, "tel:") {
+			return match
+		}
+		value = strings.TrimPrefix(value, "./")
+		return parts[1] + parts[2] + prefix + "/" + value + parts[2]
+	})
 }
 
 func escapePeerPathSegment(value string) string {
 	return strings.ReplaceAll(url.PathEscape(value), ":", "%3A")
+}
+
+func injectAppPortalScript(html string, hostPort string, appProxyPrefix string) string {
+	if strings.Contains(html, "hivemind-app-portal-shim") || !validateAppProxyTarget(hostPort, appProxyPrefix) {
+		return html
+	}
+	script := appPortalScript(hostPort, appProxyPrefix)
+	lower := strings.ToLower(html)
+	for _, marker := range []string{"</head>", "</body>"} {
+		if index := strings.Index(lower, marker); index >= 0 {
+			return html[:index] + script + html[index:]
+		}
+	}
+	return script + html
+}
+
+func appPortalScript(hostPort string, appProxyPrefix string) string {
+	currentPort := strings.TrimPrefix(appProxyPrefix, "/app-proxy/")
+	contextJSON, _ := json.Marshal(map[string]string{
+		"peerPrefix":  "/peer/" + escapePeerPathSegment(hostPort),
+		"appPrefix":   appProxyPrefix,
+		"currentPort": currentPort,
+	})
+	return `<script id="hivemind-app-portal-shim">` + `
+(() => {
+  const ctx = ` + string(contextJSON) + `;
+  const localHosts = new Set(["localhost", "127.0.0.1", "0.0.0.0", "::1", "[::1]"]);
+  const appProxyForPort = (port) => ctx.peerPrefix + "/app-proxy/" + port;
+  const defaultPort = (protocol) => protocol === "https:" || protocol === "wss:" ? "443" : "80";
+  const isRootRelative = (value) => /^\/(?!\/)/.test(value);
+  const isHttpLike = (protocol) => ["http:", "https:", "ws:", "wss:"].includes(protocol);
+  const localPortFromUrl = (url) => url.port || defaultPort(url.protocol);
+  function rewriteString(value) {
+    if (typeof value !== "string" || value === "" || value.startsWith("data:") || value.startsWith("blob:")) return value;
+    let url;
+    try {
+      url = new URL(value, window.location.href);
+    } catch {
+      return value;
+    }
+    if (!isHttpLike(url.protocol)) return value;
+    const rootRelative = isRootRelative(value);
+    const sameOrigin = url.origin === window.location.origin;
+    const localHost = localHosts.has(url.hostname);
+    if (!rootRelative && !sameOrigin && !localHost) return value;
+    let port = ctx.currentPort;
+    if (!rootRelative && localHost && !value.startsWith(window.location.origin)) {
+      port = localPortFromUrl(url);
+    }
+    const target = appProxyForPort(port) + url.pathname + url.search + url.hash;
+    if (url.protocol === "ws:" || url.protocol === "wss:") {
+      return (window.location.protocol === "https:" ? "wss://" : "ws://") + window.location.host + target;
+    }
+    return target;
+  }
+  function rewriteInput(input) {
+    if (typeof input === "string") return rewriteString(input);
+    if (input instanceof URL) return new URL(rewriteString(input.toString()), window.location.href);
+    if (typeof Request !== "undefined" && input instanceof Request) {
+      const rewritten = rewriteString(input.url);
+      return rewritten === input.url ? input : new Request(rewritten, input);
+    }
+    return input;
+  }
+  const originalFetch = window.fetch;
+  if (originalFetch) {
+    window.fetch = function(input, init) {
+      return originalFetch.call(this, rewriteInput(input), init);
+    };
+  }
+  const originalOpen = XMLHttpRequest.prototype.open;
+  XMLHttpRequest.prototype.open = function(method, url, ...rest) {
+    return originalOpen.call(this, method, rewriteString(String(url)), ...rest);
+  };
+  const OriginalWebSocket = window.WebSocket;
+  if (OriginalWebSocket) {
+    window.WebSocket = new Proxy(OriginalWebSocket, {
+      construct(target, args) {
+        args[0] = rewriteString(String(args[0]));
+        return Reflect.construct(target, args);
+      },
+      apply(target, thisArg, args) {
+        args[0] = rewriteString(String(args[0]));
+        return Reflect.apply(target, thisArg, args);
+      },
+    });
+  }
+  const OriginalEventSource = window.EventSource;
+  if (OriginalEventSource) {
+    window.EventSource = new Proxy(OriginalEventSource, {
+      construct(target, args) {
+        args[0] = rewriteString(String(args[0]));
+        return Reflect.construct(target, args);
+      },
+    });
+  }
+  if (navigator.sendBeacon) {
+    const originalSendBeacon = navigator.sendBeacon.bind(navigator);
+    navigator.sendBeacon = (url, data) => originalSendBeacon(rewriteString(String(url)), data);
+  }
+  const originalWindowOpen = window.open;
+  if (originalWindowOpen) {
+    window.open = function(url, target, features) {
+      return originalWindowOpen.call(window, url ? rewriteString(String(url)) : url, target, features);
+    };
+  }
+  document.addEventListener("click", (event) => {
+    const anchor = event.target && event.target.closest ? event.target.closest("a[href]") : null;
+    if (!anchor) return;
+    const rewritten = rewriteString(anchor.getAttribute("href") || "");
+    if (rewritten !== anchor.getAttribute("href")) anchor.setAttribute("href", rewritten);
+  }, true);
+})();
+` + `</script>`
 }
 
 func serveControl(ctx context.Context, addr string, lc *local.Client, ts *tsnet.Server) (*http.Server, error) {
