@@ -5,10 +5,10 @@ be added here first, then marked `Committed` or `Pushed` after the git action.
 
 ## 2026-05-29 21:45:54 WITA - Preserve Binary App Upload Bodies
 
-- Status: Uncommitted
+- Status: Pushed
 - Areas changed: telemetry collector app proxy, changelog
 - Summary: Preserve raw request bytes when forwarding proxied app HTTP bodies so multipart image uploads to remote ComfyUI/Z-Image apps are not decoded as UTF-8 text and corrupted before preview.
-- Verification: `node --check scripts/agent-telemetry-collector.mjs`; `pnpm exec eslint scripts/agent-telemetry-collector.mjs --max-warnings=999`; `git diff --check -- scripts/agent-telemetry-collector.mjs CHANGELOG.md`.
+- Verification: `node --check scripts/agent-telemetry-collector.mjs`; `pnpm exec eslint scripts/agent-telemetry-collector.mjs --max-warnings=999`; `git diff --check -- scripts/agent-telemetry-collector.mjs CHANGELOG.md`; updated Tailnet collector `100.84.93.114:8787` to commit `1c83c6a`; uploaded `/Users/liam/Downloads/HivemindOS.png` through `/peer/100.84.93.114%3A8787/app-proxy/8788/comfy/upload/image`; fetched it back through `/comfy/view?type=input`; verified the PNG header is intact and `cmp` matched the original local file byte-for-byte.
 - Intended commit message: `Preserve binary app upload bodies`
 
 ## 2026-05-29 17:18:37 WITA - Route Portal Media URLs Explicitly
