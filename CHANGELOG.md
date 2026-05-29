@@ -5,7 +5,7 @@ be added here first, then marked `Committed` or `Pushed` after the git action.
 
 ## 2026-05-30 00:09:16 WITA - Retry Broken Portal Image Previews
 
-- Status: Uncommitted
+- Status: Pushed
 - Areas changed: Hivemind Link app portal proxy, link proxy tests, changelog
 - Summary: Add a one-time cache-busting retry for proxied app images that fail to render, so stale broken ComfyUI/Z-Image preview URLs can refetch through the Tailnet portal after uploads.
 - Verification: `go test ./cmd/hivemind-linkd`; `git diff --check -- cmd/hivemind-linkd/main.go cmd/hivemind-linkd/main_test.go CHANGELOG.md`; rebuilt, re-signed, and restarted `com.hivemindos.linkd.agent`; Link health returned `{"ok":true,"service":"hivemind-linkd"}`; Playwright against the real remote ComfyUI Mobile portal verified the injected shim contains the image retry hook, a deliberately broken `/comfy/view` image refetched with `__hive_bust`, and the uploaded `HivemindOS.png` preview reports non-zero natural dimensions through the app proxy.
