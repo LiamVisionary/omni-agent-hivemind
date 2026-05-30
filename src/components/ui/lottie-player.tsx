@@ -1,16 +1,8 @@
 "use client";
 
-import dynamic from "next/dynamic";
+import { DotLottieReact } from "@lottiefiles/dotlottie-react";
 
 import { cn } from "@/lib/utils/cn";
-
-const DotLottieReact = dynamic(
-  () => import("@lottiefiles/dotlottie-react").then((mod) => mod.DotLottieReact),
-  {
-    ssr: false,
-    loading: () => null,
-  },
-);
 
 type LottiePlayerProps = {
   src: string;

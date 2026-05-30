@@ -92,6 +92,11 @@ export type RemoteBrainSkillInput = {
   githubUrl?: string;
 };
 
+export type UploadedBrainSkillFile = {
+  path: string;
+  content: string;
+};
+
 type GitHubSkillSource = {
   owner: string;
   repo: string;
@@ -1010,6 +1015,47 @@ export async function writeBrainSkill(input: {
     provider: "written",
     providerLabel: "Written skills",
     writtenAt: new Date().toISOString(),
+  }, null, 2), "utf8");
+
+  const after = await getBrainSkillInventory(input.vaultPath);
+  await writeSkillsReadme(after);
+  return after;
+}
+
+export async function importUploadedBrainSkill(input: {
+  vaultPath?: string;
+  files: UploadedBrainSkillFile[];
+  name?: string;
+}): Promise<BrainSkillInventory> {
+  const files = input.files
+    .map((file) => ({ path: file.path.replace(/\\/g, "/").replace(/^\/+/, ""), content: file.content }))
+    .filter((file) => file.path && typeof file.content === "string");
+  if (!files.length) throw new Error("Choose a skill folder or files to import.");
+  const skillFile = files.find((file) => /(^|\/)SKILL\.md$/i.test(file.path)) ?? files.find((file) => /\.skill$/i.test(file.path));
+  if (!skillFile) throw new Error("Imported skill must include SKILL.md.");
+
+  const before = await getBrainSkillInventory(input.vaultPath);
+  await mkdir(before.skillsFolder, { recursive: true });
+  const sharedBySlug = new Map(before.shared.map((item) => [item.slug, item]));
+  const slugSource = input.name || skillNameFromMarkdown(skillFile.content) || basename(dirname(skillFile.path)) || "uploaded-skill";
+  const destinationSlug = await nextDestinationSlug(before.skillsFolder, sanitizeSlug(slugSource), "shared", sharedBySlug);
+  const destinationDir = join(before.skillsFolder, destinationSlug);
+  await rm(destinationDir, { recursive: true, force: true });
+  await mkdir(destinationDir, { recursive: true });
+
+  const commonPrefix = skillFile.path.includes("/") ? dirname(skillFile.path) : "";
+  for (const file of files) {
+    const relativePath = commonPrefix && file.path.startsWith(`${commonPrefix}/`) ? file.path.slice(commonPrefix.length + 1) : basename(file.path);
+    if (!relativePath || relativePath.includes("..") || relativePath.startsWith(".")) continue;
+    const target = join(destinationDir, relativePath);
+    await mkdir(dirname(target), { recursive: true });
+    await writeFile(target, file.content.endsWith("\n") ? file.content : `${file.content}\n`, "utf8");
+  }
+  await writeFile(join(destinationDir, SOURCE_METADATA_FILE), JSON.stringify({
+    provider: "upload",
+    providerLabel: "Uploaded folder",
+    importedAt: new Date().toISOString(),
+    sourceFiles: files.map((file) => file.path).slice(0, 80),
   }, null, 2), "utf8");
 
   const after = await getBrainSkillInventory(input.vaultPath);

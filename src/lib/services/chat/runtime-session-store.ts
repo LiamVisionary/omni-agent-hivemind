@@ -1,0 +1,205 @@
+import { mkdir, readFile, readdir, writeFile } from "fs/promises";
+import { homedir } from "os";
+import { join } from "path";
+import type { AgentProfile } from "@/lib/types/agent-runtime";
+
+export type RuntimeChatSessionMessage = {
+  index: number;
+  role: string;
+  content: string;
+  createdAt: number;
+  type?: string;
+  raw?: unknown;
+};
+
+export type RuntimeChatSessionRecord = {
+  id: string;
+  sessionId: string;
+  runtime: string;
+  source: "hivemindos-chat";
+  agentId: string;
+  agentName: string;
+  chatStorageKey?: string;
+  startedAt: number;
+  updatedAt: number;
+  endedAt?: number;
+  endReason?: string;
+  messages: RuntimeChatSessionMessage[];
+};
+
+type StartRuntimeChatSessionOptions = {
+  sessionId: string;
+  agent: AgentProfile;
+  chatStorageKey?: string;
+  userContent: string;
+  startedAt?: number;
+};
+
+type RuntimeSessionQuery = {
+  sessionId?: string;
+  runtime?: string;
+  agentId?: string;
+  chatStorageKey?: string;
+  sinceMs?: number;
+};
+
+const SESSION_DIR = join(homedir(), ".hivemindos", "chat-runtime-sessions");
+
+function safeFileName(value: string) {
+  return value.replace(/[^A-Za-z0-9._-]+/g, "_").slice(0, 160) || "session";
+}
+
+function sessionPath(sessionId: string) {
+  return join(SESSION_DIR, `${safeFileName(sessionId)}.json`);
+}
+
+function stringifyContent(value: unknown): string {
+  if (typeof value === "string") return value;
+  if (!Array.isArray(value)) return "";
+  return value.map((part) => {
+    if (!part || typeof part !== "object") return "";
+    const entry = part as { type?: string; text?: string; image_url?: { url?: string }; file?: { filename?: string } };
+    if (entry.type === "text") return entry.text ?? "";
+    if (entry.type === "image_url") return entry.image_url?.url ? "[image attachment]" : "";
+    if (entry.type === "file") return entry.file?.filename ? `[file attachment: ${entry.file.filename}]` : "[file attachment]";
+    return "";
+  }).filter(Boolean).join("\n");
+}
+
+async function ensureSessionDir() {
+  await mkdir(SESSION_DIR, { recursive: true });
+}
+
+async function readSessionFile(path: string): Promise<RuntimeChatSessionRecord | null> {
+  const raw = await readFile(path, "utf8").catch(() => "");
+  if (!raw) return null;
+  try {
+    const parsed = JSON.parse(raw) as RuntimeChatSessionRecord;
+    if (!parsed?.sessionId || !Array.isArray(parsed.messages)) return null;
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+
+async function writeSession(session: RuntimeChatSessionRecord) {
+  await ensureSessionDir();
+  await writeFile(sessionPath(session.sessionId), `${JSON.stringify(session, null, 2)}\n`, "utf8");
+}
+
+export function createRuntimeChatSessionId(agent: AgentProfile, fallback?: string) {
+  const trimmed = fallback?.trim();
+  if (trimmed) return trimmed;
+  return [
+    "hive-chat",
+    safeFileName(agent.runtime || "runtime"),
+    safeFileName(agent.id || agent.agentId || agent.name || "agent"),
+    Date.now().toString(36),
+    Math.random().toString(36).slice(2, 8),
+  ].join("-");
+}
+
+export async function startRuntimeChatSession(options: StartRuntimeChatSessionOptions) {
+  const startedAt = options.startedAt ?? Date.now();
+  const existing = await readSessionFile(sessionPath(options.sessionId));
+  const userContent = stringifyContent(options.userContent);
+  const session: RuntimeChatSessionRecord = existing ?? {
+    id: options.sessionId,
+    sessionId: options.sessionId,
+    runtime: options.agent.runtime || "unknown",
+    source: "hivemindos-chat",
+    agentId: options.agent.id || options.agent.agentId || "",
+    agentName: options.agent.name || options.agent.id || options.agent.runtime || "Agent",
+    chatStorageKey: options.chatStorageKey,
+    startedAt,
+    updatedAt: startedAt,
+    messages: [],
+  };
+  session.runtime = options.agent.runtime || session.runtime;
+  session.agentId = options.agent.id || options.agent.agentId || session.agentId;
+  session.agentName = options.agent.name || session.agentName;
+  session.chatStorageKey = options.chatStorageKey || session.chatStorageKey;
+  session.updatedAt = Date.now();
+  session.endedAt = undefined;
+  session.endReason = undefined;
+  if (userContent && !session.messages.some((message) => message.role === "user" && message.content === userContent)) {
+    session.messages.push({
+      index: session.messages.length,
+      role: "user",
+      content: userContent,
+      createdAt: startedAt,
+    });
+  }
+  await writeSession(session);
+  return session;
+}
+
+export async function appendRuntimeChatSessionText(sessionId: string, role: "assistant" | "tool" | "system", content: string, raw?: unknown) {
+  if (!content) return;
+  const session = await readSessionFile(sessionPath(sessionId));
+  if (!session) return;
+  const now = Date.now();
+  const last = session.messages.at(-1);
+  if (role === "assistant" && last?.role === "assistant" && !last.type) {
+    last.content += content;
+    last.createdAt = last.createdAt || now;
+    last.raw = raw ?? last.raw;
+  } else {
+    session.messages.push({
+      index: session.messages.length,
+      role,
+      content,
+      createdAt: now,
+      raw,
+    });
+  }
+  session.updatedAt = now;
+  await writeSession(session);
+}
+
+export async function appendRuntimeChatSessionEvent(sessionId: string, label: string, detail?: string, raw?: unknown) {
+  const session = await readSessionFile(sessionPath(sessionId));
+  if (!session) return;
+  const now = Date.now();
+  const content = [label.trim(), detail?.trim()].filter(Boolean).join("\n");
+  if (!content) return;
+  session.messages.push({
+    index: session.messages.length,
+    role: "tool",
+    content,
+    createdAt: now,
+    type: "process",
+    raw,
+  });
+  session.updatedAt = now;
+  await writeSession(session);
+}
+
+export async function finishRuntimeChatSession(sessionId: string, endReason = "completed") {
+  const session = await readSessionFile(sessionPath(sessionId));
+  if (!session) return;
+  const now = Date.now();
+  session.updatedAt = now;
+  session.endedAt = now;
+  session.endReason = endReason;
+  await writeSession(session);
+}
+
+export async function readRuntimeChatSession(query: RuntimeSessionQuery) {
+  await ensureSessionDir();
+  if (query.sessionId) {
+    const exact = await readSessionFile(sessionPath(query.sessionId));
+    if (exact) return exact;
+  }
+  const names = await readdir(SESSION_DIR).catch(() => []);
+  const sessions = (await Promise.all(
+    names.filter((name) => name.endsWith(".json")).map((name) => readSessionFile(join(SESSION_DIR, name))),
+  )).filter((session): session is RuntimeChatSessionRecord => Boolean(session));
+  const sinceMs = Number(query.sinceMs || 0);
+  return sessions
+    .filter((session) => !query.runtime || session.runtime === query.runtime)
+    .filter((session) => !query.agentId || session.agentId === query.agentId)
+    .filter((session) => !query.chatStorageKey || session.chatStorageKey === query.chatStorageKey)
+    .filter((session) => !sinceMs || session.startedAt >= sinceMs || session.updatedAt >= sinceMs)
+    .sort((left, right) => right.updatedAt - left.updatedAt)[0] ?? null;
+}

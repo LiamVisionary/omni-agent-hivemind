@@ -204,6 +204,48 @@ export function useSchedulerController(props: any) {
     }));
   }
 
+  function aeonCronFromEvery(every: string) {
+    const cleaned = every.trim();
+    if (cleaned === "manual") return "manual";
+    if (/^[\d*/,-]+\s+[\d*/,-]+\s+[\d*/,-]+\s+[\d*/,-]+\s+[\d*/,-]+$/.test(cleaned)) return cleaned;
+    const ms = scheduleIntervalMs(cleaned);
+    if (ms === 15 * 60_000) return "*/15 * * * *";
+    if (ms === 60 * 60_000) return "0 * * * *";
+    if (ms === 24 * 60 * 60_000) return "0 9 * * *";
+    if (ms && ms < 60 * 60_000 && ms % 60_000 === 0) return `*/${Math.max(1, Math.round(ms / 60_000))} * * * *`;
+    if (ms && ms % (60 * 60_000) === 0 && ms < 24 * 60 * 60_000) return `0 */${Math.max(1, Math.round(ms / (60 * 60_000)))} * * *`;
+    return cleaned || "manual";
+  }
+
+  async function configureAeonSchedule(agent: AgentProfile, schedule: AgentSchedule) {
+    const skill = schedule.skills[0] || schedule.steps.flatMap((step) => step.skills)[0];
+    if (!skill) {
+      setScheduleImportStatus("AEON automations need one attached skill. Add a skill, then save again.");
+      return null;
+    }
+    const brief = schedulerPlainPrompt(schedule) || `Run ${skill}.`;
+    const cron = aeonCronFromEvery(schedule.every);
+    const configCalls = [
+      { action: "schedule", value: cron },
+      { action: "var", value: brief },
+      { action: "model", value: schedule.model ?? "" },
+      { action: schedule.enabled ? "enable" : "disable", value: schedule.enabled },
+    ];
+    for (const payload of configCalls) {
+      const response = await fetch("/api/runtimes/aeon/skills/config", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ agent, skill, ...payload }),
+      }).catch(() => null);
+      const data = await response?.json().catch(() => null) as { ok?: boolean; error?: string } | null;
+      if (!response?.ok || data?.ok === false) {
+        setScheduleImportStatus(data?.error ?? `Could not configure ${skill} in AEON.`);
+        return null;
+      }
+    }
+    return { skill, cron };
+  }
+
   function resetScheduleDraft(agentId = scheduleDraft.agentId) {
     setScheduleDraft({
       name: "",
@@ -256,7 +298,7 @@ export function useSchedulerController(props: any) {
     setSchedulerDraftOpen(true);
   }
 
-  function createSchedule(event: FormEvent<HTMLFormElement>) {
+  async function createSchedule(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const agent = displayAgents.find((item) => item.id === scheduleDraft.agentId) ?? selectedAgent;
     if (!agent) return;
@@ -288,8 +330,8 @@ export function useSchedulerController(props: any) {
       updatedAt: now,
       lastRunAt: editedSchedule?.lastRunAt,
       nextRunAt: editedSchedule?.nextRunAt,
-      externalSource: editedSchedule?.externalSource,
-      externalJobId: editedSchedule?.externalJobId,
+      externalSource: agent.runtime === "aeon" ? "aeon" : editedSchedule?.externalSource,
+      externalJobId: agent.runtime === "aeon" ? (scheduleDraft.skills[0] || editedSchedule?.externalJobId) : editedSchedule?.externalJobId,
       lastStatus: editedSchedule?.lastStatus,
       lastSummary: editedSchedule?.lastSummary,
       usePastRuns: scheduleDraft.usePastRuns,
@@ -297,6 +339,14 @@ export function useSchedulerController(props: any) {
       sharedSchedulePath: editedSchedule?.sharedSchedulePath,
       sharedRunFolder: editedSchedule?.sharedRunFolder,
     };
+    if (agent.runtime === "aeon") {
+      const configured = await configureAeonSchedule(agent, next);
+      if (!configured) return;
+      next.externalSource = "aeon";
+      next.externalJobId = configured.skill;
+      next.every = configured.cron;
+      next.lastSummary = `Configured AEON automation for ${configured.skill}.`;
+    }
     setSchedules((current) => editedSchedule
       ? current.map((schedule) => schedule.id === editedSchedule.id ? next : schedule)
       : [next, ...current]);
@@ -1290,7 +1340,7 @@ export function useSchedulerController(props: any) {
     };
   }, [displayAgents, editingScheduleId, scheduleDraft, selectedAgent]);
 
-  function saveScheduleFromModal(task: NewTaskPayload) {
+  async function saveScheduleFromModal(task: NewTaskPayload) {
     const agent = displayAgents.find((item) => item.name === task.target.bee)
       ?? displayAgents.find((item) => item.machineName === task.target.machine)
       ?? displayAgents.find((item) => item.machineName && displayMachineName(item.machineName) === task.target.machine)
@@ -1328,8 +1378,8 @@ export function useSchedulerController(props: any) {
       createdAt: editedSchedule?.createdAt ?? now,
       updatedAt: now,
       lastRunAt: editedSchedule?.lastRunAt,
-      externalSource: editedSchedule?.externalSource,
-      externalJobId: editedSchedule?.externalJobId,
+      externalSource: agent.runtime === "aeon" ? "aeon" : editedSchedule?.externalSource,
+      externalJobId: agent.runtime === "aeon" ? (skills[0] || editedSchedule?.externalJobId) : editedSchedule?.externalJobId,
       lastStatus: editedSchedule?.lastStatus,
       lastSummary: editedSchedule?.lastSummary,
       usePastRuns: task.usePastRuns,
@@ -1337,6 +1387,14 @@ export function useSchedulerController(props: any) {
       sharedSchedulePath: editedSchedule?.sharedSchedulePath,
       sharedRunFolder: editedSchedule?.sharedRunFolder,
     };
+    if (agent.runtime === "aeon") {
+      const configured = await configureAeonSchedule(agent, next);
+      if (!configured) return;
+      next.externalSource = "aeon";
+      next.externalJobId = configured.skill;
+      next.every = configured.cron;
+      next.lastSummary = `Configured AEON automation for ${configured.skill}.`;
+    }
     setSchedules((current) => editedSchedule
       ? current.map((schedule) => schedule.id === editedSchedule.id ? next : schedule)
       : [next, ...current]);

@@ -41,6 +41,14 @@
 - Prefer wrapping, taller rows/cards, or responsive layout adjustments over hiding content.
 - Do not use free-text inputs for configuration values, filesystem paths, model IDs, runtime/provider settings, or similar structured choices in the primary UI. Prefer dropdowns, pickers, segmented controls, buttons, browse flows, or discovered options. If arbitrary text is genuinely required, put it inside a clearly labeled expandable Advanced section and keep the default path input-free.
 
+## Directory Browsing
+
+- When adding any UI that browses for a directory, reuse the existing machine-aware browsing flow instead of building a new picker.
+- The default helper is `chooseDirectoryForMachine` from the dashboard controller surface. It intentionally opens the native local folder picker for This Mac and the in-app Hivemind Link directory browser for remote machines.
+- If a feature must show the in-app directory browser directly, use `loadMachineDirectories` with a `KanbanMachineTarget`; do not call `/api/machines/directories` ad hoc from feature UI.
+- Machine targets must preserve the distinction between local and remote collectors: This Mac may use the loopback/local collector URL, but remote machines must pass their direct Tailnet collector URL, usually `http://<machine.ip>:8787`, not a local Hivemind Link proxy URL. A loopback collector URL makes the shared helper treat the target as local.
+- Machine picker values must be unique by at least machine key plus collector URL. Do not key only by display name or machine key when local and remote machines can both appear in the same control.
+
 ## Shared Skills
 
 - The shared skill shelf lives at `Skills/` inside the configured shared notes vault/folder.

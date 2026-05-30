@@ -19,6 +19,7 @@ const DASHBOARD_VIEWS = new Set<DashboardView>([
   "more",
   "env",
   "my-apps",
+  "phone",
   "aeon",
 ]);
 const DASHBOARD_VAULT_PANEL_MODES = new Set<DashboardVaultPanelMode>([

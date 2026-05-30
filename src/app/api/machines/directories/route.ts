@@ -33,6 +33,11 @@ function normalizeCollectorUrl(url?: string | null) {
   if (!trimmed) return "";
   try {
     const parsed = new URL(trimmed);
+    const peerPrefix = "/peer/";
+    if (parsed.pathname.startsWith(peerPrefix)) {
+      const peer = decodeURIComponent(parsed.pathname.slice(peerPrefix.length)).replace(/\/+$/, "");
+      if (peer) return `http://${peer}`;
+    }
     return `${parsed.protocol}//${parsed.host}`;
   } catch {
     return "";

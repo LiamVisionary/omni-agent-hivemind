@@ -61,7 +61,7 @@ export function SchedulerPanel(props: any) {
             ...machineGroups.map((machine) => machine.name),
             "dashboard",
           ]))}
-          beeOptions={displayAgents.map((agent) => agent.name)}
+          beeOptions={Array.from(new Set(displayAgents.map((agent) => agent.name)))}
           onBrowseFolder={browseSchedulerFolder}
           onClose={() => {
             setSchedulerDraftOpen(false);

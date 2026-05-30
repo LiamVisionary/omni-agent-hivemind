@@ -17,6 +17,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"strings"
 	"syscall"
 	"time"
@@ -43,6 +44,14 @@ func defaultHostname() string {
 	if err != nil || strings.TrimSpace(host) == "" {
 		host = "machine"
 	}
+	return linkHostnameFromHost(host)
+}
+
+func linkHostnameFromHost(host string) string {
+	host = strings.TrimSuffix(host, ".local")
+	if runtime.GOOS == "darwin" {
+		host = regexp.MustCompile(`-\d+$`).ReplaceAllString(host, "")
+	}
 	clean := regexp.MustCompile(`[^a-zA-Z0-9-]+`).ReplaceAllString(strings.ToLower(host), "-")
 	clean = strings.Trim(clean, "-")
 	if clean == "" {
@@ -51,12 +60,12 @@ func defaultHostname() string {
 	return "hivemindos-" + clean
 }
 
-func defaultStateDir(hostname string) string {
+func defaultStateDir(_ string) string {
 	home, err := os.UserHomeDir()
 	if err != nil || home == "" {
-		return filepath.Join(".hivemindos", "link", hostname)
+		return filepath.Join(".hivemindos", "link", "default")
 	}
-	return filepath.Join(home, ".hivemindos", "link", hostname)
+	return filepath.Join(home, ".hivemindos", "link", "default")
 }
 
 func env(key, fallback string) string {

@@ -715,6 +715,8 @@ function PickerField({ label, value, options, onChange }: {
   label: string; value: string; options: string[];
   onChange: (v: string) => void;
 }) {
+  const uniqueOptions = Array.from(new Set(options));
+
   return (
     <label style={{ display: "grid", gap: 4 }}>
       <span className={styles.monoCap} style={{ color: "var(--tm-fg-4)" }}>{label}</span>
@@ -723,7 +725,7 @@ function PickerField({ label, value, options, onChange }: {
         border: "1px solid var(--tm-line-2)", background: "var(--tm-bg-2)",
         color: "var(--tm-fg)", fontFamily: "var(--tm-f-mono)", fontSize: 12, outline: "none",
       }}>
-        {options.map((o) => <option key={o} value={o}>{o}</option>)}
+        {uniqueOptions.map((o) => <option key={o} value={o}>{o}</option>)}
       </select>
     </label>
   );

@@ -29,6 +29,28 @@ Known runtimes are defined in `src/lib/types/agent-runtime.ts`:
 - The collector bridges Hermes and other local runtime sessions when a remote machine owns the agent.
 - Chat history and folders are cached in browser storage and supported by `/api/chat/folders`.
 
+### Collector And Link URLs
+
+Hermes agents discovered through Fleet usually store a collector URL in
+`agent.telemetryUrl`. In system Tailnet mode that may be a direct remote
+collector such as `http://100.x.y.z:8787`. In Hivemind Link mode, remote agents
+use the local Link sidecar proxy:
+
+```text
+http://127.0.0.1:8788/peer/100.x.y.z%3A8787
+```
+
+That URL is still remote. Preserve the `/peer/...` prefix and port `8788` when
+sending chat, reading sessions, browsing files, or checking capabilities. Only
+plain local collector URLs such as `http://127.0.0.1:8787` should be
+canonicalized to the active local collector port from
+`~/.hivemindos/collector.env`.
+
+If a remote Hermes agent fails immediately with "does not have the Hermes chat
+bridge" or a fast `404`, check whether a Link `/peer/...` URL was accidentally
+rewritten to the collector port. The healthy path keeps `/peer/...` on
+`127.0.0.1:8788` and appends collector endpoints under that prefix.
+
 ## Capabilities
 
 - Runtime/provider/model selection where supported.

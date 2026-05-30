@@ -1,4 +1,5 @@
 import { NextRequest } from "next/server";
+import { resolveObsidianVaultPath } from "@/lib/services/obsidian/vault-path";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -7,19 +8,69 @@ function collectorBase(url?: string | null) {
   return (url?.trim() || "http://127.0.0.1:8787").replace(/\/+$/, "");
 }
 
-export async function GET(request: NextRequest) {
-  const collectorUrl = collectorBase(request.nextUrl.searchParams.get("collectorUrl"));
+async function getJson(url: string): Promise<{ ok: boolean; status: number; body: any }> {
   try {
-    const response = await fetch(`${collectorUrl}/syncthing/status`, {
-      cache: "no-store",
-      signal: AbortSignal.timeout(10_000),
-    });
-    const payload = await response.json().catch(() => null);
-    return Response.json(payload ?? { ok: response.ok }, { status: response.ok ? 200 : response.status });
-  } catch (error) {
-    return Response.json({
-      ok: false,
-      error: error instanceof Error ? error.message : "Could not reach agent bridge Syncthing status.",
-    }, { status: 502 });
+    const r = await fetch(url, { cache: "no-store", signal: AbortSignal.timeout(10_000) });
+    const body = await r.json().catch(() => null);
+    return { ok: r.ok, status: r.status, body };
+  } catch {
+    return { ok: false, status: 502, body: null };
   }
+}
+
+// Syncthing status for the vault, fronted for both the dashboard's Phone panel
+// and the mobile app's "Sync with phone" section. Combines device-connection
+// status with the vault FOLDER's sync completion so callers can tell not just
+// "is a peer online" but "is the vault actually in sync with the phone". The
+// reported `completion` is the laggiest paired peer (i.e. the phone if it's
+// behind), so `completion < 100` means out of sync. Proxies the collector
+// bridge (which holds the Syncthing API key); never throws.
+export async function GET(request: NextRequest) {
+  const base = collectorBase(request.nextUrl.searchParams.get("collectorUrl"));
+  let vaultPath = "";
+  try {
+    vaultPath = resolveObsidianVaultPath(request.nextUrl.searchParams.get("vaultPath") ?? undefined);
+  } catch {
+    vaultPath = "";
+  }
+
+  const [status, folderStatus] = await Promise.all([
+    getJson(`${base}/syncthing/status`),
+    vaultPath
+      ? getJson(`${base}/syncthing/folder-status?path=${encodeURIComponent(vaultPath)}`)
+      : Promise.resolve({ ok: false, status: 0, body: null }),
+  ]);
+
+  if (!status.ok && !folderStatus.ok) {
+    return Response.json(
+      { ok: false, error: "Could not reach agent bridge Syncthing status." },
+      { status: 502 }
+    );
+  }
+
+  // Laggiest paired-peer completion for the vault folder = the out-of-sync
+  // signal. Fall back to the folder's local aggregate when no peers report.
+  const folder = Array.isArray(folderStatus.body?.folders) ? folderStatus.body.folders[0] : undefined;
+  const peerCompletions: number[] = (Array.isArray(folder?.devices) ? folder.devices : [])
+    .map((d: any) => d?.completion)
+    .filter((n: any): n is number => typeof n === "number");
+  const completion =
+    peerCompletions.length > 0
+      ? Math.min(...peerCompletions)
+      : typeof folder?.completion === "number"
+        ? folder.completion
+        : undefined;
+
+  const basePayload = status.body && typeof status.body === "object" ? status.body : {};
+  return Response.json({
+    ...basePayload,
+    ok: true,
+    ...(typeof completion === "number" ? { completion } : {}),
+    ...(folder
+      ? {
+          vaultFolder: folder,
+          folderState: folder.paused ? "paused" : completion === 100 ? "idle" : "syncing",
+        }
+      : {}),
+  });
 }

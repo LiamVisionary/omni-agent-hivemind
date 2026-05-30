@@ -3,9 +3,32 @@ package main
 import (
 	"net/http"
 	"net/http/httptest"
+	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
+
+func TestDefaultStateDirIsHostnameIndependent(t *testing.T) {
+	got := defaultStateDir("hivemindos-example-host")
+	want := filepath.Join(".hivemindos", "link", "default")
+	if !strings.HasSuffix(got, want) {
+		t.Fatalf("defaultStateDir suffix = %q, want %q", got, want)
+	}
+	if strings.Contains(got, "example-host") {
+		t.Fatalf("defaultStateDir should not include mutable hostname: %q", got)
+	}
+}
+
+func TestLinkHostnameFromHostStripsMacOSConflictSuffix(t *testing.T) {
+	if runtime.GOOS != "darwin" {
+		t.Skip("macOS hostname conflict suffixes are only stripped on Darwin")
+	}
+	got := linkHostnameFromHost("Liams-MacBook-Pro-6.local")
+	if got != "hivemindos-liams-macbook-pro" {
+		t.Fatalf("linkHostnameFromHost = %q, want %q", got, "hivemindos-liams-macbook-pro")
+	}
+}
 
 func TestAppProxyRefererTarget(t *testing.T) {
 	request := httptest.NewRequest("GET", "http://127.0.0.1:8788/_next/static/chunks/app.js", nil)

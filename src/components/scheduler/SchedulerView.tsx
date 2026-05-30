@@ -9,10 +9,12 @@ import { Composer } from "./composer";
 import { HexTile } from "./hex-tile";
 import { Jobs } from "./jobs";
 import { Timeline } from "./timeline";
+import type { TimelineRange } from "./timeline";
 import { SCH_JOBS, SCH_TEMPLATES, type SchedulerJob } from "./scheduler-data";
 import styles from "./scheduler-tokens.module.css";
 
 export type SchedulerRunPhase = "running" | "assigned" | "thinking" | "executing" | "wrapping" | "done";
+type ScheduleRuntimeFilter = "all" | "aeon";
 
 export type SchedulerRunState = SchedulerRunPhase | {
   phase: SchedulerRunPhase;
@@ -33,10 +35,17 @@ interface SchedulerViewProps {
 export function SchedulerView({
   jobs: initialJobs = SCH_JOBS, runStates = {}, onToggleJob, onRunNow, onEditJob, onNewJob, toolbar, status,
 }: SchedulerViewProps = {}) {
-  const jobs = initialJobs;
   const [selectedId, setSelectedId] = React.useState<string>(initialJobs[0]?.id ?? "");
+  const [timelineRange, setTimelineRange] = React.useState<TimelineRange>("24h");
+  const [runtimeFilter, setRuntimeFilter] = React.useState<ScheduleRuntimeFilter>("all");
+  const jobs = React.useMemo(() => (
+    runtimeFilter === "aeon"
+      ? initialJobs.filter((job) => job.runtime.trim().toLowerCase() === "aeon")
+      : initialJobs
+  ), [initialJobs, runtimeFilter]);
   const selected = jobs.find((j) => j.id === selectedId) ?? jobs[0];
   const effectiveSelectedId = selected?.id ?? "";
+  const timelineLabel = timelineRange === "24h" ? "next 24 hours" : timelineRange === "week" ? "next 7 days" : "next 30 days";
   const today = new Date().toLocaleDateString("en-US", {
     weekday: "long", month: "short", day: "numeric", year: "numeric",
   });
@@ -117,25 +126,64 @@ export function SchedulerView({
             minWidth: 0, minHeight: 0,
             padding: "20px 28px 28px", gap: 16, gridTemplateRows: "auto 1fr",
           }}>
-            <div className="flex justify-between items-baseline">
+            <div className="grid items-center" style={{ gridTemplateColumns: "minmax(0, 1fr) auto minmax(0, 1fr)", gap: 12 }}>
               <div className={styles.monoCap} style={{ color: "var(--hex-active-border)" }}>
                 <span className={`${styles.dot} ${styles.dotLive}`} style={{ color: "#2dd4bf" }} />
-                &nbsp; next 24 hours
+                &nbsp; {timelineLabel}
               </div>
-              <div className="flex" style={{ gap: 6 }}>
-                {["24h", "week", "month"].map((v, i) => (
-                  <button key={v} aria-pressed={i === 0} className="uppercase cursor-pointer"
+              <div className="flex justify-center" style={{ gap: 6 }}>
+                {([
+                  ["all", "All"],
+                  ["aeon", "Aeon"],
+                ] as const).map(([value, label]) => {
+                  const active = runtimeFilter === value;
+                  return (
+                    <button
+                      key={value}
+                      type="button"
+                      data-scheduler-filter={value}
+                      aria-label={`Show ${label} schedules`}
+                      aria-pressed={active}
+                      className="uppercase cursor-pointer"
+                      onClick={() => setRuntimeFilter(value)}
+                      style={{
+                        fontFamily: "var(--f-mono)", fontSize: 10, padding: "5px 12px", borderRadius: 999,
+                        background: active ? "rgba(255,212,90,0.13)" : "rgba(148,163,184,0.04)",
+                        color: active ? "var(--foreground)" : "var(--muted)",
+                        border: `1px solid ${active ? "rgba(255,212,90,0.42)" : "rgba(148,163,184,0.16)"}`,
+                        letterSpacing: 0.1,
+                      }}
+                    >
+                      {label}
+                    </button>
+                  );
+                })}
+              </div>
+              <div className="flex justify-end" style={{ gap: 6 }}>
+                {(["24h", "week", "month"] as TimelineRange[]).map((value) => {
+                  const active = timelineRange === value;
+                  return (
+                  <button
+                    key={value}
+                    type="button"
+                    aria-pressed={active}
+                    className="uppercase cursor-pointer"
+                    onClick={() => setTimelineRange(value)}
                     style={{
                       fontFamily: "var(--f-mono)", fontSize: 10, padding: "5px 10px", borderRadius: 999,
-                      background: i === 0 ? "rgba(45,212,191,0.12)" : "transparent",
-                      color: i === 0 ? "var(--foreground)" : "var(--muted)",
-                      border: `1px solid ${i === 0 ? "rgba(94,234,212,0.42)" : "rgba(148,163,184,0.16)"}`,
+                      background: active ? "rgba(45,212,191,0.12)" : "transparent",
+                      color: active ? "var(--foreground)" : "var(--muted)",
+                      border: `1px solid ${active ? "rgba(94,234,212,0.42)" : "rgba(148,163,184,0.16)"}`,
                       letterSpacing: 0.1,
-                    }}>{v}</button>
-                ))}
+                    }}
+                  >
+                    {value}
+                  </button>
+                  );
+                })}
               </div>
             </div>
-            <Timeline jobs={jobs} selectedId={effectiveSelectedId} onSelect={setSelectedId} />
+            <Timeline jobs={jobs} selectedId={effectiveSelectedId} range={timelineRange} onSelect={setSelectedId} />
           </section>
 
           <Composer job={selected} templates={SCH_TEMPLATES}
@@ -143,7 +191,7 @@ export function SchedulerView({
             onRunNow={() => onRunNow?.(selected)}
             onEdit={() => onEditJob?.(selected)} />
         </div> : (
-          <div className="relative z-10 grid place-items-center" style={{ minHeight: 460, padding: 28 }}>
+          <div className="relative z-10 grid place-items-center" style={{ minHeight: 0, height: "100%", padding: 28 }}>
             <div className="grid place-items-center text-center" style={{
               gap: 10, maxWidth: 420, padding: 28, borderRadius: 14,
               border: "1px dashed var(--hex-add-stroke)",

@@ -122,7 +122,7 @@ export function AgentsPanel(props: AgentsPanelProps) {
           ticker={fleetViewData.ticker}
           edges={fleetViewData.edges}
           loading={fleetDiscoveryLoading}
-          checkedLabel={fleetCheckedAt ? `Scanned ${formatRelativeTime(fleetCheckedAt)}` : tailscaleStatus}
+          checkedLabel={fleetCheckedAt ? `Scanned ${formatRelativeTime(fleetCheckedAt)}` : "Fleet scan pending"}
           tailnetLabel={tailscaleStatus}
           mastheadMode="mobile"
           onAddAgent={(machine) => {

@@ -345,6 +345,37 @@ install_syncthing_if_missing() {
   command -v syncthing >/dev/null 2>&1 && ok "Syncthing installed"
 }
 
+install_unison_if_missing() {
+  if command -v unison >/dev/null 2>&1; then
+    ok "Unison found: $(unison -version 2>/dev/null | head -1)"
+    return
+  fi
+  if ! setup_is_interactive; then
+    warn "Unison is missing; skipping optional AEON Obsidian folder mirror install in non-interactive setup"
+    return
+  fi
+  if ! prompt_yes_no "Unison is missing. Install it for bidirectional AEON repo <-> Obsidian folder mirroring?" "yes"; then
+    warn "Skipping Unison install; AEON Obsidian folder mirroring can be enabled later"
+    return
+  fi
+  warn "Unison is missing; trying to install it for AEON Obsidian folder mirroring"
+  if [[ "$(uname -s)" == "Darwin" ]] && { command -v brew >/dev/null 2>&1 || ensure_homebrew; }; then
+    brew install unison
+  elif command -v apt-get >/dev/null 2>&1 && command -v sudo >/dev/null 2>&1; then
+    sudo apt-get update
+    sudo apt-get install -y unison
+  elif command -v dnf >/dev/null 2>&1 && command -v sudo >/dev/null 2>&1; then
+    sudo dnf install -y unison
+  elif command -v yum >/dev/null 2>&1 && command -v sudo >/dev/null 2>&1; then
+    sudo yum install -y unison
+  else
+    missing+=("Install Unison for AEON Obsidian folder mirroring")
+    fail "Unison is missing"
+    return
+  fi
+  command -v unison >/dev/null 2>&1 && ok "Unison installed"
+}
+
 start_syncthing_if_available() {
   command -v syncthing >/dev/null 2>&1 || return
   syncthing_responds() {
@@ -1343,6 +1374,7 @@ fi
 
 install_obsidian_if_missing
 install_gpg_if_missing
+install_unison_if_missing
 
 if (( ${#missing[@]} > 0 )); then
   echo
@@ -1423,6 +1455,7 @@ mkdir -p \
   "$shared_vault_path/Memory" \
   "$shared_vault_path/Projects" \
   "$shared_vault_path/Operations" \
+  "$shared_vault_path/Agents" \
   "$shared_vault_path/Skills" \
   "$shared_vault_path/$synthesis_folder/raw" \
   "$shared_vault_path/$synthesis_folder/wiki/.drafts" \
@@ -1534,6 +1567,11 @@ else
     hermes_restart_mode="ask"
   fi
   HIVE_SETUP_NETWORK_MANAGED="true" HIVE_SETUP_TAILNET_SYNC_ENABLED="$tailnet_sync_enabled" HIVE_LINK_ENABLED="$hivemind_link_enabled" AGENT_TELEMETRY_PORT="$COLLECTOR_PORT" AGENT_TELEMETRY_HERMES_RESTART="${AGENT_TELEMETRY_HERMES_RESTART:-$hermes_restart_mode}" ./scripts/install-telemetry-collector.sh
+  # Install + supervise the Claw backend so the Claw Code Mobile app works on a
+  # machine that only ran HivemindOS setup (its coding agent runs here, reached
+  # by the app over the tailnet). Non-fatal: a failure just leaves the app's
+  # remote-agent features unavailable until it's retried.
+  ./scripts/install-claw-backend.sh || warn "Claw backend install failed — the Claw Code Mobile app's remote-agent features will be unavailable until it succeeds"
   if [[ -f "$HOME/.hivemindos/collector.env" ]]; then
     # shellcheck disable=SC1091
     source "$HOME/.hivemindos/collector.env" >/dev/null 2>&1 || true

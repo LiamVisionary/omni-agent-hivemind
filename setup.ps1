@@ -175,6 +175,20 @@ function Ensure-Syncthing([bool]$TailnetSyncEnabled) {
   }
 }
 
+function Ensure-Unison {
+  if (-not (Test-Command unison)) {
+    if (Ask-YesNo "Unison is missing. Install it for bidirectional AEON repo <-> Obsidian folder mirroring?" $true) {
+      Install-WingetPackage "Unison" "Unison.Unison" | Out-Null
+      Refresh-Path
+    }
+  }
+  if (Test-Command unison) {
+    Ok "Unison found: $(unison -version 2>$null | Select-Object -First 1)"
+  } else {
+    Warn "Unison is unavailable; AEON Obsidian folder mirroring can be enabled later."
+  }
+}
+
 function Ensure-Obsidian {
   $obsidianCommand = Test-Command obsidian
   $obsidianApp = Test-Path (Join-Path $env:LOCALAPPDATA "Obsidian\Obsidian.exe")
@@ -288,6 +302,7 @@ Ensure-Node
 Ensure-Pnpm
 $tailnetSyncEnabled = Ensure-Tailscale
 Ensure-Syncthing $tailnetSyncEnabled
+Ensure-Unison
 Ensure-Obsidian
 Ensure-Gpg
 Ensure-HiveEnvAdd

@@ -1,12 +1,24 @@
 import { constants } from "fs";
-import { access, readdir, readFile, stat } from "fs/promises";
+import { access, mkdir, readdir, readFile, stat, writeFile } from "fs/promises";
 import { execFile, spawn } from "child_process";
 import { promisify } from "util";
 import { homedir } from "os";
 import { basename, dirname, join, resolve } from "path";
 import type { AgentProfile } from "@/lib/types/agent-runtime";
 import { getSharedBrainSkills, syncSharedBrainSkillsToAeon } from "@/lib/services/obsidian/brain-skills";
-import type { RuntimeAdapter, RuntimeRun, RuntimeSchedule, RuntimeScheduleAction, RuntimeSkill } from "./types";
+import type {
+  RuntimeAdapter,
+  RuntimeAnalytics,
+  RuntimeMemorySnapshot,
+  RuntimeRepoSyncStatus,
+  RuntimeRun,
+  RuntimeRunLog,
+  RuntimeSchedule,
+  RuntimeScheduleAction,
+  RuntimeSecretStatus,
+  RuntimeSkill,
+  RuntimeSkillConfigAction,
+} from "./types";
 
 const execFileAsync = promisify(execFile);
 const DEFAULT_BRANCH = "main";
@@ -18,6 +30,19 @@ const DEFAULT_AEON_SECRET_KEYS = [
   "BANKR_LLM_KEY",
   "GH_GLOBAL",
 ];
+const SECRET_LABELS: Record<string, string> = {
+  ANTHROPIC_API_KEY: "Claude API",
+  CLAUDE_CODE_OAUTH_TOKEN: "Claude Code OAuth",
+  BANKR_LLM_KEY: "Bankr LLM gateway",
+  GH_GLOBAL: "GitHub automation",
+  TELEGRAM_BOT_TOKEN: "Telegram notifications",
+  DISCORD_WEBHOOK_URL: "Discord notifications",
+  SLACK_WEBHOOK_URL: "Slack notifications",
+  RESEND_API_KEY: "Email notifications",
+  NEYNAR_API_KEY: "Farcaster distribution",
+  OPENAI_API_KEY: "OpenAI-compatible skills",
+  OPENROUTER_API_KEY: "OpenRouter skills",
+};
 
 type AeonSkillConfig = {
   enabled: boolean;
@@ -44,7 +69,7 @@ function aeonRoot(profile?: AgentProfile) {
     || clean(profile?.localDataDir)
     || clean(process.env.AEON_LOCAL_PATH)
     || clean(process.env.AEON_HOME);
-  return configured ? resolve(expandHome(configured)) : "";
+  return resolve(expandHome(configured || "~/.aeon"));
 }
 
 function aeonRepo(profile?: AgentProfile) {
@@ -62,6 +87,11 @@ async function canRead(path: string) {
 async function readLocalFile(root: string, path: string) {
   if (!root) return "";
   return readFile(join(root, path), "utf8").catch(() => "");
+}
+
+async function countLocalSkillFolders(root: string) {
+  const entries = await readdir(join(root, "skills"), { withFileTypes: true }).catch(() => []);
+  return entries.filter((entry) => entry.isDirectory()).length;
 }
 
 function parseInlineFields(raw: string) {
@@ -147,12 +177,20 @@ export function parseAeonConfig(raw: string): AeonConfig {
 }
 
 function updateAeonSkillEnabled(raw: string, skill: string, enabled: boolean) {
+  return updateAeonSkillField(raw, skill, "enabled", enabled ? "true" : "false");
+}
+
+function updateAeonSkillField(raw: string, skill: string, field: "enabled" | "schedule" | "var" | "model", value: string) {
   const escaped = skill.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  const inlineRe = new RegExp(`^(\\s{2}${escaped}:\\s*\\{[^\\n]*enabled:\\s*)(true|false)([^\\n]*\\})`, "m");
-  if (inlineRe.test(raw)) return raw.replace(inlineRe, `$1${enabled ? "true" : "false"}$3`);
-  const blockRe = new RegExp(`^(\\s{2}${escaped}:\\s*\\n(?:(?:\\s{4}[^\\n]*\\n)*?)\\s{4}enabled:\\s*)(true|false)`, "m");
-  if (blockRe.test(raw)) return raw.replace(blockRe, `$1${enabled ? "true" : "false"}`);
-  return raw;
+  const serialized = field === "enabled" ? value : JSON.stringify(value);
+  const inlineRe = new RegExp(`^(\\s{2}${escaped}:\\s*\\{[^\\n]*${field}:\\s*)(true|false|\"[^\"]*\"|'[^']*'|[^,}\\n]*)([^\\n]*\\})`, "m");
+  if (inlineRe.test(raw)) return raw.replace(inlineRe, `$1${serialized}$3`);
+  const blockRe = new RegExp(`^(\\s{2}${escaped}:\\s*\\n(?:(?:\\s{4}[^\\n]*\\n)*?)\\s{4}${field}:\\s*)([^\\n#]*)`, "m");
+  if (blockRe.test(raw)) return raw.replace(blockRe, `$1${serialized}`);
+  const sectionRe = new RegExp(`^(\\s{2}${escaped}:\\s*\\n)`, "m");
+  if (sectionRe.test(raw)) return raw.replace(sectionRe, `$1    ${field}: ${serialized}\n`);
+  if (/^skills:\s*$/m.test(raw)) return raw.replace(/^skills:\s*$/m, `skills:\n  ${skill}:\n    enabled: true\n    ${field}: ${serialized}`);
+  return `${raw.trimEnd()}\n\nskills:\n  ${skill}:\n    enabled: true\n    ${field}: ${serialized}\n`;
 }
 
 async function skillDescription(root: string, slug: string) {
@@ -165,6 +203,37 @@ async function skillDescription(root: string, slug: string) {
     .split(/\n\s*\n/)
     .map((part) => part.replace(/^#+\s*/, "").trim())
     .find(Boolean) ?? "";
+}
+
+function yamlStringField(raw: string, key: string) {
+  const match = raw.match(new RegExp(`^\\s*${key}:\\s*([\"']?)(.*?)\\1\\s*$`, "m"));
+  return match?.[2]?.trim() ?? "";
+}
+
+async function skillAutomationYaml(root: string, slug: string) {
+  const candidates = [
+    join("skills", slug, "agents", "openai.yaml"),
+    join("skills", slug, "agents", "openai.yml"),
+    join("skills", slug, "agents", "aeon.yaml"),
+    join("skills", slug, "agents", "aeon.yml"),
+  ];
+  for (const candidate of candidates) {
+    const raw = await readLocalFile(root, candidate);
+    if (raw.trim()) return { path: candidate, raw };
+  }
+  return null;
+}
+
+async function automationPromptForSkill(root: string, slug: string, fallback?: string | boolean) {
+  const yaml = await skillAutomationYaml(root, slug);
+  const yamlPrompt = yaml ? yamlStringField(yaml.raw, "default_prompt") : "";
+  const yamlDescription = yaml ? yamlStringField(yaml.raw, "short_description") : "";
+  const fallbackText = typeof fallback === "string" ? fallback.trim() : "";
+  const description = await skillDescription(root, slug).catch(() => "");
+  return {
+    yaml,
+    prompt: yamlPrompt || yamlDescription || fallbackText || description || `Run ${titleFromSlug(slug)}.`,
+  };
 }
 
 async function localSkills(root: string, config: AeonConfig): Promise<RuntimeSkill[]> {
@@ -182,7 +251,7 @@ async function localSkills(root: string, config: AeonConfig): Promise<RuntimeSki
             name: skill.name || titleFromSlug(slug),
             description: skill.description || "",
             category: skill.category,
-            enabled: cfg?.enabled ?? false,
+            enabled: cfg?.enabled,
             schedule: cfg?.schedule || skill.schedule,
             var: cfg?.var || skill.var,
             model: cfg?.model,
@@ -201,18 +270,20 @@ async function localSkills(root: string, config: AeonConfig): Promise<RuntimeSki
   const entries = await readdir(skillRoot, { withFileTypes: true }).catch(() => []);
   const folderSkills = await Promise.all(entries.filter((entry) => entry.isDirectory()).map(async (entry) => {
     const cfg = config.skills[entry.name];
+    const yaml = await skillAutomationYaml(root, entry.name);
     return {
       slug: entry.name,
       name: titleFromSlug(entry.name),
       description: await skillDescription(root, entry.name),
-      enabled: cfg?.enabled ?? false,
+      enabled: cfg?.enabled,
       schedule: cfg?.schedule,
       var: cfg?.var,
       model: cfg?.model,
       source: "aeon-skill-folder",
+      automationYaml: yaml?.path,
     };
   }));
-  return mergeSkills(skills, folderSkills);
+  return mergeSkills(folderSkills, skills);
 }
 
 async function sharedBrainSkills(profile: AgentProfile, config: AeonConfig, vaultPath?: string): Promise<RuntimeSkill[]> {
@@ -220,11 +291,12 @@ async function sharedBrainSkills(profile: AgentProfile, config: AeonConfig, vaul
   const inventory = await getSharedBrainSkills(vaultPath).catch(() => null);
   return (inventory?.shared ?? []).map((skill) => {
     const cfg = config.skills[skill.slug];
+    const configured = Boolean(cfg);
     return {
       slug: skill.slug,
       name: skill.name,
       description: skill.description,
-      enabled: cfg?.enabled ?? false,
+      enabled: configured ? cfg?.enabled : undefined,
       schedule: cfg?.schedule,
       var: cfg?.var,
       model: cfg?.model || config.model,
@@ -393,6 +465,58 @@ async function aeonEnvValues(profile: AgentProfile | undefined) {
   };
 }
 
+async function hiveSharedEnvValues() {
+  try {
+    const { stdout } = await execFileAsync(join(process.cwd(), "scripts", "hive-env-add"), [
+      "--export-json",
+      "--scope",
+      "agent",
+      "--runtime",
+      "generic",
+    ], {
+      timeout: 12_000,
+      maxBuffer: 1_000_000,
+    });
+    const parsed = JSON.parse(stdout) as { values?: Record<string, string> };
+    return parsed.values && typeof parsed.values === "object" ? parsed.values : {};
+  } catch {
+    return {};
+  }
+}
+
+function envKeysFromText(text: string) {
+  const matches = text.match(/\b[A-Z][A-Z0-9_]{5,}\b/g) ?? [];
+  return [...new Set(matches.filter((key) => /_(API_KEY|TOKEN|SECRET|WEBHOOK_URL|KEY|URL)$/.test(key) || SECRET_LABELS[key]))];
+}
+
+async function requiredSecretKeys(profile: AgentProfile, context: { vaultPath?: string }) {
+  const { config } = await readConfig(profile);
+  const root = aeonRoot(profile);
+  const skills = await Promise.all([
+    root ? localSkills(root, config).catch(() => []) : Promise.resolve([]),
+    sharedBrainSkills(profile, config, context.vaultPath).catch(() => []),
+  ]).then((groups) => mergeSkills(...groups));
+  const usedBy = new Map<string, Set<string>>();
+  for (const key of [...DEFAULT_AEON_SECRET_KEYS, ...Object.keys(SECRET_LABELS)]) {
+    usedBy.set(key, new Set());
+  }
+  for (const skill of skills) {
+    const haystack = [skill.name, skill.slug, skill.description, skill.var, skill.model, skill.category].filter(Boolean).join("\n");
+    for (const key of envKeysFromText(haystack)) {
+      if (!usedBy.has(key)) usedBy.set(key, new Set());
+      usedBy.get(key)?.add(skill.name || skill.slug);
+    }
+  }
+  return [...usedBy.entries()]
+    .filter(([key, users]) => DEFAULT_AEON_SECRET_KEYS.includes(key) || users.size > 0 || SECRET_LABELS[key])
+    .map(([key, users]) => ({
+      key,
+      label: SECRET_LABELS[key] || key.replace(/_/g, " ").toLowerCase(),
+      usedIn: [...users].sort(),
+    }))
+    .sort((left, right) => left.key.localeCompare(right.key));
+}
+
 async function syncEnvToGitHubSecrets(profile: AgentProfile, keys: string[] | undefined) {
   const repo = aeonRepo(profile);
   if (!repo) throw new Error("Configure Aeon Repo before syncing env to GitHub secrets.");
@@ -424,6 +548,13 @@ async function syncEnvToGitHubSecrets(profile: AgentProfile, keys: string[] | un
   return { repo, synced, skipped, sources };
 }
 
+async function listGitHubSecretNames(profile: AgentProfile) {
+  const repo = aeonRepo(profile);
+  if (!repo) return new Set<string>();
+  const output = await gh(["secret", "list", "-R", repo, "--json", "name", "-q", ".[].name"], aeonRoot(profile) || undefined).catch(() => "");
+  return new Set(output.split(/\r?\n/).map((line) => line.trim()).filter(Boolean));
+}
+
 function repoArgs(profile?: AgentProfile) {
   const repo = aeonRepo(profile);
   return repo ? ["-R", repo] : [];
@@ -446,9 +577,43 @@ async function setSkillEnabled(profile: AgentProfile | undefined, skill: string,
   const raw = await readFile(path, "utf8");
   const updated = updateAeonSkillEnabled(raw, skill, enabled);
   if (updated === raw) return { ok: false, error: `Could not find Aeon skill ${skill} in aeon.yml.` };
-  const { writeFile } = await import("fs/promises");
   await writeFile(path, updated, "utf8");
   return { ok: true, result: { skill, enabled } };
+}
+
+async function setSkillConfig(profile: AgentProfile, skill: string, action: RuntimeSkillConfigAction, value: string | boolean) {
+  if (action === "enable" || action === "disable") return setSkillEnabled(profile, skill, action === "enable");
+  const root = aeonRoot(profile);
+  if (!root) return { ok: false, error: "Configure an Aeon local path before editing aeon.yml." };
+  if (action === "automate") {
+    const path = join(root, "aeon.yml");
+    const raw = await readFile(path, "utf8").catch(() => "skills:\n");
+    const { yaml, prompt } = await automationPromptForSkill(root, skill, value);
+    let updated = updateAeonSkillField(raw, skill, "schedule", "manual");
+    updated = updateAeonSkillField(updated, skill, "var", prompt);
+    updated = updateAeonSkillField(updated, skill, "model", "");
+    updated = updateAeonSkillField(updated, skill, "enabled", "false");
+    await mkdir(dirname(path), { recursive: true });
+    await writeFile(path, updated, "utf8");
+    return {
+      ok: true,
+      result: {
+        skill,
+        enabled: false,
+        schedule: "manual",
+        var: prompt,
+        model: "",
+        automationYaml: yaml?.path,
+      },
+    };
+  }
+  const field = action === "schedule" || action === "var" || action === "model" ? action : null;
+  if (!field) return { ok: false, error: `Unsupported Aeon skill config action: ${action}` };
+  const path = join(root, "aeon.yml");
+  const raw = await readFile(path, "utf8").catch(() => "skills:\n");
+  await mkdir(dirname(path), { recursive: true });
+  await writeFile(path, updateAeonSkillField(raw, skill, field, String(value ?? "")), "utf8");
+  return { ok: true, result: { skill, [field]: String(value ?? "") } };
 }
 
 function runStatus(status?: string, conclusion?: string | null): RuntimeRun["status"] {
@@ -456,6 +621,172 @@ function runStatus(status?: string, conclusion?: string | null): RuntimeRun["sta
   if (status === "in_progress") return "active";
   if (status === "completed") return conclusion === "success" ? "completed" : "failed";
   return "unknown";
+}
+
+function cleanLog(value: string) {
+  return value
+    .replace(/\x1b\[[0-9;]*m/g, "")
+    .replace(/^\d{4}-\d{2}-\d{2}T[\d:.]+Z\s?/gm, "")
+    .trim();
+}
+
+async function getRunLog(profile: AgentProfile, runId: string): Promise<RuntimeRunLog> {
+  if (!/^\d+$/.test(runId)) throw new Error("Invalid Aeon run id.");
+  const repo = repoArgs(profile);
+  const view = await gh(["run", "view", runId, ...repo, "--json", "displayTitle,status,conclusion,url,jobs"], aeonRoot(profile) || undefined).catch(() => "{}");
+  const metadata = JSON.parse(view || "{}") as { displayTitle?: string; status?: string; conclusion?: string | null; url?: string; jobs?: Array<{ name?: string; steps?: Array<{ name?: string; conclusion?: string; status?: string }> }> };
+  const logs = await gh(["run", "view", runId, ...repo, "--log"], aeonRoot(profile) || undefined).catch(() => "");
+  const failedSteps = (metadata.jobs ?? []).flatMap((job) => (job.steps ?? [])
+    .filter((step) => step.conclusion === "failure")
+    .map((step) => `${job.name || "job"} / ${step.name || "step"}`));
+  const summary = [
+    metadata.displayTitle || `Aeon run ${runId}`,
+    `${metadata.status || "unknown"}${metadata.conclusion ? ` · ${metadata.conclusion}` : ""}`,
+    failedSteps.length ? `Failed: ${failedSteps.join(", ")}` : "",
+  ].filter(Boolean).join("\n");
+  return { id: runId, summary, logs: cleanLog(logs), url: metadata.url };
+}
+
+function skillSlugFromRunName(name: string, skills: RuntimeSkill[]) {
+  const normalized = name.toLowerCase();
+  return skills.find((skill) => normalized.includes(skill.slug.toLowerCase()) || normalized.includes(skill.name.toLowerCase()))?.slug || "unknown";
+}
+
+async function getAnalytics(profile: AgentProfile, context: { vaultPath?: string }): Promise<RuntimeAnalytics> {
+  const [runs, skills] = await Promise.all([
+    aeonAdapter.listRuns?.(profile, context as never) ?? Promise.resolve([]),
+    aeonAdapter.listSkills?.(profile, context as never) ?? Promise.resolve([]),
+  ]);
+  const skillBySlug = new Map(skills.map((skill) => [skill.slug, skill]));
+  const metrics = new Map<string, { total: number; success: number; failure: number; active: number; lastRun?: string; lastConclusion?: string | null }>();
+  for (const run of runs) {
+    const slug = skillSlugFromRunName(run.name, skills);
+    const current = metrics.get(slug) ?? { total: 0, success: 0, failure: 0, active: 0 };
+    current.total += 1;
+    if (run.status === "completed") current.success += 1;
+    if (run.status === "failed") current.failure += 1;
+    if (run.status === "active" || run.status === "queued") current.active += 1;
+    if (!current.lastRun || String(run.createdAt || "") > current.lastRun) {
+      current.lastRun = run.createdAt;
+      current.lastConclusion = run.conclusion;
+    }
+    metrics.set(slug, current);
+  }
+  const success = runs.filter((run) => run.status === "completed").length;
+  const failure = runs.filter((run) => run.status === "failed").length;
+  const active = runs.filter((run) => run.status === "active" || run.status === "queued").length;
+  const skillMetrics = [...metrics.entries()].map(([slug, item]) => ({
+    slug,
+    name: skillBySlug.get(slug)?.name || titleFromSlug(slug),
+    ...item,
+    successRate: item.total ? Math.round((item.success / item.total) * 100) : 0,
+  })).sort((left, right) => right.total - left.total);
+  const insights: RuntimeAnalytics["insights"] = [];
+  for (const item of skillMetrics) {
+    if (item.total >= 2 && item.successRate < 50) insights.push({ type: "warning", message: `${item.name} is below 50% success across ${item.total} recent runs.` });
+  }
+  const idleEnabled = skills.filter((skill) => skill.enabled && !metrics.has(skill.slug));
+  if (idleEnabled.length) insights.push({ type: "info", message: `${idleEnabled.length} enabled skill${idleEnabled.length === 1 ? "" : "s"} have no recent GitHub Actions evidence.` });
+  if (runs.length && failure === 0) insights.push({ type: "success", message: "No failed AEON runs in the recent window." });
+  return {
+    summary: {
+      totalRuns: runs.length,
+      success,
+      failure,
+      active,
+      successRate: runs.length ? Math.round((success / runs.length) * 100) : 0,
+      uniqueSkills: skillMetrics.filter((item) => item.slug !== "unknown").length,
+    },
+    skills: skillMetrics,
+    insights,
+  };
+}
+
+async function listMemoryFiles(root: string, subdir: string) {
+  const dir = join(root, "memory", subdir);
+  const entries = await readdir(dir, { withFileTypes: true }).catch(() => []);
+  return Promise.all(entries.filter((entry) => entry.isFile() && /\.(md|txt|json)$/i.test(entry.name)).map(async (entry) => {
+    const path = join(dir, entry.name);
+    const raw = await readFile(path, "utf8").catch(() => "");
+    const stats = await stat(path).catch(() => null);
+    return {
+      slug: entry.name.replace(/\.(md|txt|json)$/i, ""),
+      title: raw.match(/^#\s+(.+)$/m)?.[1]?.trim() || titleFromSlug(entry.name.replace(/\.(md|txt|json)$/i, "")),
+      excerpt: raw.replace(/^#\s+.+$/m, "").trim().slice(0, 600),
+      path: path.replace(root, "").replace(/^\//, ""),
+      updatedAt: stats?.mtime.toISOString(),
+    };
+  }));
+}
+
+async function getMemory(profile: AgentProfile): Promise<RuntimeMemorySnapshot> {
+  const root = aeonRoot(profile);
+  if (!root) return { root: "", topics: [], logs: [], issues: [] };
+  const [index, topics, logs, issues] = await Promise.all([
+    readLocalFile(root, join("memory", "MEMORY.md")),
+    listMemoryFiles(root, "topics"),
+    listMemoryFiles(root, "logs"),
+    listMemoryFiles(root, "issues"),
+  ]);
+  return { root, index, topics, logs, issues };
+}
+
+async function getSecretStatus(profile: AgentProfile, context: { vaultPath?: string }): Promise<RuntimeSecretStatus> {
+  const [required, ghSecrets, sharedValues, localValues] = await Promise.all([
+    requiredSecretKeys(profile, context),
+    listGitHubSecretNames(profile),
+    hiveSharedEnvValues(),
+    aeonEnvValues(profile),
+  ]);
+  return {
+    repo: aeonRepo(profile),
+    keys: required.map((item) => ({
+      ...item,
+      isSet: ghSecrets.has(item.key),
+      availableInSharedEnv: Boolean(sharedValues[item.key]),
+      availableLocally: Boolean(localValues.values[item.key]),
+      guidance: `Add ${item.key} to shared env or the AEON GitHub repo secrets.`,
+    })),
+  };
+}
+
+async function repoSyncStatus(profile: AgentProfile): Promise<RuntimeRepoSyncStatus> {
+  const root = aeonRoot(profile);
+  const repo = aeonRepo(profile);
+  const branch = aeonBranch(profile);
+  if (!root) return { root: "", repo, branch, hasChanges: false, changedFiles: [], behind: 0, ahead: 0 };
+  const status = await execFileAsync("git", ["status", "--porcelain"], { cwd: root, timeout: 12_000, maxBuffer: 1_000_000 }).then(({ stdout }) => stdout).catch(() => "");
+  const changedFiles = status.split(/\r?\n/).map((line) => line.slice(3).trim()).filter(Boolean);
+  const aheadBehind = await execFileAsync("git", ["rev-list", "--left-right", "--count", `origin/${branch}...HEAD`], { cwd: root, timeout: 12_000, maxBuffer: 1_000_000 })
+    .then(({ stdout }) => stdout.trim().split(/\s+/).map((value) => Number(value) || 0))
+    .catch(() => [0, 0]);
+  const lastMessage = await execFileAsync("git", ["log", "-1", "--pretty=%s"], { cwd: root, timeout: 12_000, maxBuffer: 200_000 }).then(({ stdout }) => stdout.trim()).catch(() => "");
+  return {
+    root,
+    repo,
+    branch,
+    hasChanges: changedFiles.length > 0,
+    changedFiles,
+    behind: aheadBehind[0] ?? 0,
+    ahead: aheadBehind[1] ?? 0,
+    lastMessage,
+  };
+}
+
+async function repoSyncAction(profile: AgentProfile, action: "pull" | "push") {
+  const root = aeonRoot(profile);
+  if (!root) return { ok: false, error: "Configure an Aeon local path before syncing the repo." };
+  if (action === "pull") {
+    await execFileAsync("git", ["pull", "--ff-only"], { cwd: root, timeout: 60_000, maxBuffer: 2_000_000 });
+    return { ok: true, status: await repoSyncStatus(profile), message: "Pulled AEON repo." };
+  }
+  await execFileAsync("git", ["add", "aeon.yml", "skills.json", "skills", "memory"], { cwd: root, timeout: 30_000, maxBuffer: 2_000_000 }).catch(() => undefined);
+  const status = await repoSyncStatus(profile);
+  if (status.hasChanges) {
+    await execFileAsync("git", ["commit", "-m", "Update AEON dashboard configuration"], { cwd: root, timeout: 60_000, maxBuffer: 2_000_000 }).catch(() => undefined);
+  }
+  await execFileAsync("git", ["push", "origin", aeonBranch(profile)], { cwd: root, timeout: 90_000, maxBuffer: 2_000_000 });
+  return { ok: true, status: await repoSyncStatus(profile), message: "Pushed AEON repo." };
 }
 
 export const aeonAdapter: RuntimeAdapter = {
@@ -481,12 +812,13 @@ export const aeonAdapter: RuntimeAdapter = {
   async getStatus(profile) {
     const root = aeonRoot(profile);
     const repo = aeonRepo(profile);
-    const [hasConfig, hasA2a] = await Promise.all([
+    const [hasConfig, hasA2a, localSkillCount] = await Promise.all([
       root ? canRead(join(root, "aeon.yml")) : Promise.resolve(false),
       fetch(`${(clean(profile.a2aUrl) || clean(profile.gatewayUrl) || DEFAULT_A2A_URL).replace(/\/+$/, "")}/.well-known/agent.json`, {
         cache: "no-store",
         signal: AbortSignal.timeout(1_500),
       }).then((response) => response.ok).catch(() => false),
+      root ? countLocalSkillFolders(root) : Promise.resolve(0),
     ]);
     return {
       ok: Boolean(hasConfig || repo || hasA2a),
@@ -496,6 +828,7 @@ export const aeonAdapter: RuntimeAdapter = {
       repo,
       hasConfig,
       a2aReachable: hasA2a,
+      localSkillCount,
     };
   },
   async listSkills(profile, context) {
@@ -505,7 +838,10 @@ export const aeonAdapter: RuntimeAdapter = {
       root ? localSkills(root, config) : Promise.resolve([]),
       fetchA2aSkills(profile).catch(() => []),
     ]);
-    return mergeSkills(shared, local, a2a);
+    const configuredSlugs = new Set(Object.keys(config.skills));
+    const runtimeLocal = local.filter((skill) => skill.source !== "shared-brain");
+    const configuredShared = shared.filter((skill) => configuredSlugs.has(skill.slug));
+    return mergeSkills(configuredShared, runtimeLocal, a2a);
   },
   async syncSkills(profile, context) {
     return syncSharedBrainSkillsToAeon({
@@ -531,6 +867,13 @@ export const aeonAdapter: RuntimeAdapter = {
       return { ok: false, error: error instanceof Error ? error.message : "Aeon schedule action failed." };
     }
   },
+  async updateSkillConfig(profile, skill, action, value) {
+    try {
+      return await setSkillConfig(profile, skill, action, value);
+    } catch (error) {
+      return { ok: false, error: error instanceof Error ? error.message : "Aeon skill update failed." };
+    }
+  },
   async listRuns(profile) {
     const output = await gh([
       "run",
@@ -554,6 +897,28 @@ export const aeonAdapter: RuntimeAdapter = {
       updatedAt: typeof run.updatedAt === "string" ? run.updatedAt : undefined,
       url: typeof run.url === "string" ? run.url : undefined,
     }));
+  },
+  async getRunLog(profile, runId) {
+    return getRunLog(profile, runId);
+  },
+  async getAnalytics(profile, context) {
+    return getAnalytics(profile, context);
+  },
+  async getMemory(profile) {
+    return getMemory(profile);
+  },
+  async getSecretStatus(profile, context) {
+    return getSecretStatus(profile, context);
+  },
+  async getRepoSyncStatus(profile) {
+    return repoSyncStatus(profile);
+  },
+  async runRepoSyncAction(profile, action) {
+    try {
+      return await repoSyncAction(profile, action);
+    } catch (error) {
+      return { ok: false, error: error instanceof Error ? error.message : "Aeon repo sync failed." };
+    }
   },
   async listOutputs(profile) {
     const root = aeonRoot(profile);

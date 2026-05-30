@@ -292,6 +292,23 @@
   line-height: 0;
 }
 
+.graphAgentCellContent {
+  width: 100%;
+  max-width: calc(100% - 12px);
+}
+
+.graphAgentName {
+  display: block;
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+  text-align: center;
+  overflow-wrap: anywhere;
+  word-break: normal;
+  white-space: normal;
+  hyphens: auto;
+}
+
 .listEntity {
   display: flex;
   align-items: center;
@@ -364,6 +381,31 @@
 
 .stageColumn {
   padding: 18px 20px;
+}
+
+.stageToolbar {
+  display: grid;
+  grid-template-columns: minmax(130px, auto) minmax(0, 1fr) auto;
+  gap: 14px;
+  align-items: center;
+  margin-bottom: 10px;
+}
+
+.stageStatus {
+  min-width: 0;
+  color: var(--muted);
+  font-family: var(--f-mono);
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.1em;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+  text-align: center;
+  text-transform: uppercase;
+}
+
+.stageStatus span {
+  color: var(--accent-strong);
 }
 
 .stageFrame {
@@ -445,6 +487,16 @@
   .stageFrame {
     max-width: 100%;
     min-height: min(560px, 80vw);
+  }
+
+  .stageToolbar {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  .stageStatus {
+    grid-column: 1 / -1;
+    grid-row: 2;
+    text-align: left;
   }
 }
 

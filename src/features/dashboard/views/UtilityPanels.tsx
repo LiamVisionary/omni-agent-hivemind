@@ -1,6 +1,6 @@
 "use client";
 
-import type { ComponentType, Dispatch, ElementType, SetStateAction } from "react";
+import { useEffect, useMemo, useState, type ComponentType, type Dispatch, type ElementType, type SetStateAction } from "react";
 import { createPortal } from "react-dom";
 import { CloseIconButton } from "@/components/ui/close-icon-button";
 import type { AgentProfile, AgentRuntime, SharedVaultConfig } from "@/lib/types/agent-runtime";
@@ -21,6 +21,7 @@ import type {
   RuntimeFileRoot,
   RuntimeModelSelection,
 } from "@/features/dashboard/dashboard-types";
+import type { RuntimeSecretStatus } from "@/lib/services/runtime-adapters/types";
 
 type ClassNameBuilder = (...names: Array<string | false | null | undefined>) => string;
 type EnvDraft = { key: string; value: string };
@@ -147,6 +148,26 @@ type UtilityPanelsProps = {
 export function UtilityPanels(props: UtilityPanelsProps) {
   const { AgentEnvCard, Activity, Button, Check, ChevronDown, ChevronLeft, Download, EnvValueRow, FileText, FileUp, FolderOpen, LoaderCircle, MorePanel, NotificationsPanel, Pencil, Plus, RefreshCcw, RotateCcw, ShieldCheck, Sparkles, URL, Upload, activeView, addAgentEnvValue, addSharedEnvValue, agentEnvDrafts, agentSpecificEnvCount, displayAgents, fleetClass, formatRelativeTime, generateSharedEnvSecret, hiveEnvLoading, hiveEnvRestoring, hiveEnvSavingKey, hiveEnvStatus, hiveEnvSyncing, importSharedEnvEntries, listRuntimeFiles, maintenanceBusy, maintenanceMessage, maintenanceReport, markAllNotificationsRead, markNotificationRead, memoryTelemetry, memoryTelemetryLoading, notificationCursor, notificationGroups, notificationSummary, notifications, notificationsLoading, notificationsStatus, openRuntimeFile, promoteRuntimeEnvValue, refreshHiveEnv, refreshMaintenanceReport, refreshMemoryTelemetry, refreshNotifications, refreshRuntimeFileRoots, renderAgentKey, restoreSharedEnvBackup, revealedEnvValues, runMaintenanceAction, runtimeEnvSources, runtimeFileDraft, runtimeFileOpen, runtimeFilePath, runtimeFileRootKey, runtimeFileRoots, runtimeFileStatus, runtimeFiles, runtimeModelSelectionsByRuntime, saveAgentEnvValue, saveRuntimeFile, saveSharedEnvValue, selectedRuntimeEnvSource, setActiveView, setAgentEnvDrafts, setHiveEnvRuntimeSourceId, setRuntimeFileDraft, setRuntimeFileOpen, setRuntimeFilePath, setRuntimeFileRootKey, setSharedEnvAddMenuOpen, setSharedEnvDraft, setSharedEnvEditable, setSharedEnvImportOpen, setSharedEnvImportText, sharedBackupStatus, sharedEnvAddMenuOpen, sharedEnvCount, sharedEnvDraft, sharedEnvEditable, sharedEnvImport, sharedEnvImportChangedCount, sharedEnvImportDiff, sharedEnvImportNewCount, sharedEnvImportOpen, sharedEnvImportSameCount, sharedEnvImportText, sharedEnvImporting, sharedEnvSource, sharedVault, syncSharedEnvMachines, toggleEnvValue, updateNotificationSettings, vaultClass, walletClass } = props;
   const portalTarget = typeof document === "undefined" ? null : document.body;
+  const aeonAgent = useMemo(() => displayAgents.find((agent) => agent.runtime === "aeon") ?? null, [displayAgents]);
+  const [aeonSecretStatus, setAeonSecretStatus] = useState<RuntimeSecretStatus | null>(null);
+  useEffect(() => {
+    if (activeView !== "env" || !aeonAgent) return;
+    let cancelled = false;
+    fetch("/api/runtimes/aeon/secrets/status", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ agent: aeonAgent, vaultPath: sharedVault.vaultPath }),
+    })
+      .then((response) => response.ok ? response.json() : null)
+      .then((data) => {
+        if (!cancelled && data?.secrets) setAeonSecretStatus(data.secrets);
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, [activeView, aeonAgent, sharedVault.vaultPath]);
+  const missingAeonSecrets = (aeonSecretStatus?.keys ?? []).filter((secret) => !secret.isSet);
   return (<>
       {activeView === "more" ? (
         <MorePanel
@@ -315,6 +336,89 @@ export function UtilityPanels(props: UtilityPanelsProps) {
 	              ) : null}
 	            </div>
 	          </section>
+
+	          {aeonAgent && missingAeonSecrets.length ? (
+	            <section className="relative grid gap-3 rounded-md border border-[rgba(251,191,36,0.20)] bg-[rgba(251,191,36,0.06)] p-4">
+	              <div className="flex flex-wrap items-start justify-between gap-3">
+	                <div>
+	                  <p className="eyebrow">Detected unset secrets</p>
+	                  <h3 className="m-0 text-base font-bold">AEON keys to reconcile</h3>
+	                  <p className="m-0 mt-1 text-xs text-[var(--muted)]">
+	                    These keys are referenced by AEON skills or channels but are not set in the AEON GitHub repo yet.
+	                  </p>
+	                </div>
+	                <Button
+	                  type="button"
+	                  size="sm"
+	                  variant="secondary"
+	                  onClick={() => {
+	                    const keys = missingAeonSecrets
+	                      .filter((secret) => sharedEnvSource?.values?.[secret.key])
+	                      .map((secret) => secret.key);
+	                    if (keys.length) {
+	                      void fetch("/api/runtimes/aeon/env/sync", {
+	                        method: "POST",
+	                        headers: { "Content-Type": "application/json" },
+	                        body: JSON.stringify({ agent: aeonAgent, keys }),
+	                      });
+	                    }
+	                    setActiveView("aeon");
+	                  }}
+	                >
+	                  <Upload aria-hidden="true" />
+	                  Import matching keys in AEON
+	                </Button>
+	              </div>
+	              <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-3">
+	                {missingAeonSecrets.map((secret) => (
+	                  <div key={secret.key} className="rounded-md border border-[rgba(148,163,184,0.14)] bg-[rgba(10,14,21,0.48)] p-3">
+	                    <div className="flex flex-wrap items-center justify-between gap-2">
+	                      <code className="text-xs text-[var(--foreground)]">{secret.key}</code>
+	                      <span className="rounded-full border border-[rgba(148,163,184,0.18)] px-2 py-1 text-[10px] text-[var(--muted)]">
+	                        {sharedEnvSource?.values?.[secret.key] ? "shared env has value" : "needs setup"}
+	                      </span>
+	                    </div>
+	                    <p className="m-0 mt-2 text-xs leading-5 text-[var(--muted)]">
+	                      Used in the following skills: {secret.usedIn.length ? secret.usedIn.slice(0, 4).join(", ") : "AEON core or notification channel"}.
+	                    </p>
+	                    {sharedEnvSource?.values?.[secret.key] ? (
+	                      <Button
+	                        type="button"
+	                        size="sm"
+	                        variant="secondary"
+	                        className="mt-3"
+	                        onClick={() => {
+	                          void fetch("/api/runtimes/aeon/env/sync", {
+	                            method: "POST",
+	                            headers: { "Content-Type": "application/json" },
+	                            body: JSON.stringify({ agent: aeonAgent, keys: [secret.key] }),
+	                          });
+	                          setActiveView("aeon");
+	                        }}
+	                      >
+	                        <Upload aria-hidden="true" />
+	                        Copy from shared env
+	                      </Button>
+	                    ) : (
+	                      <Button
+	                        type="button"
+	                        size="sm"
+	                        variant="ghost"
+	                        className="mt-3"
+	                        onClick={() => {
+	                          setSharedEnvEditable(true);
+	                          setSharedEnvDraft({ key: secret.key, value: "" });
+	                        }}
+	                      >
+	                        <Plus aria-hidden="true" />
+	                        Add here
+	                      </Button>
+	                    )}
+	                  </div>
+	                ))}
+	              </div>
+	            </section>
+	          ) : null}
 
 	          {sharedEnvImportOpen && portalTarget ? createPortal((
 	            <div className="fixed inset-0 z-50 grid place-items-center bg-black/70 px-4 py-8" role="dialog" aria-modal="true" aria-label="Add from .env">

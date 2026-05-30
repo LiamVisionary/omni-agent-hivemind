@@ -2,6 +2,8 @@
 "use client";
 
 import * as React from "react";
+import { ChevronDown } from "lucide-react";
+import { ChatMarkdown } from "@/features/dashboard/ChatMarkdown";
 import { BeeIcon } from "./bee-icon";
 import type { SchedulerRunState } from "./SchedulerView";
 import type { CadenceTemplate, SchedulerJob } from "./scheduler-data";
@@ -53,12 +55,54 @@ function runStateLabel(runState?: SchedulerRunState) {
   return "running";
 }
 
+const SCHEDULE_PREVIEW_LIMIT = 280;
+
+function normalizeScheduleMarkdown(value: string) {
+  return value
+    .replace(/\r\n/g, "\n")
+    .replace(/[ \t]+-\s+(?=([`"']?[A-Z0-9][^-\n]{0,90}:|`[^`]+`|[A-Z][a-z]))/g, "\n- ")
+    .split("\n")
+    .map((line) => line.trim())
+    .join("\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
+function previewScheduleMarkdown(markdown: string) {
+  const paragraph: string[] = [];
+  for (const line of markdown.split("\n")) {
+    const trimmed = line.trim();
+    if (!trimmed) {
+      if (paragraph.length) break;
+      continue;
+    }
+    if (paragraph.length && /^[-*]\s+/.test(trimmed)) break;
+    paragraph.push(trimmed);
+    if (/^[-*]\s+/.test(trimmed)) break;
+  }
+
+  const preview = (paragraph.join(" ") || markdown)
+    .replace(/^[-*]\s+/, "")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  if (preview.length <= SCHEDULE_PREVIEW_LIMIT) return preview;
+  const clipped = preview.slice(0, SCHEDULE_PREVIEW_LIMIT).replace(/\s+\S*$/, "").trim();
+  return `${clipped || preview.slice(0, SCHEDULE_PREVIEW_LIMIT).trim()}...`;
+}
+
 export function Composer({ job, templates, runState, onRunNow, onEdit }: ComposerProps) {
   const [activeTpl, setActiveTpl] = React.useState<CadenceTemplate["id"]>("cron");
+  const [descriptionState, setDescriptionState] = React.useState({ jobId: "", expanded: false });
   const phase = runStatePhase(runState);
   const running = Boolean(phase && phase !== "done");
   const done = phase === "done";
   const runLabel = runStateLabel(runState);
+  const descriptionMarkdown = normalizeScheduleMarkdown(job.description);
+  const descriptionPreview = previewScheduleMarkdown(descriptionMarkdown);
+  const canToggleDescription = descriptionPreview !== descriptionMarkdown;
+  const descriptionExpanded = descriptionState.jobId === job.id && descriptionState.expanded;
+
   return (
     <aside className="flex flex-col overflow-auto"
       style={{
@@ -71,9 +115,26 @@ export function Composer({ job, templates, runState, onRunNow, onEdit }: Compose
         <div className="font-bold leading-tight" style={{
           margin: "4px 0 0", fontFamily: "var(--f-display)", fontSize: 22, letterSpacing: 0,
         }}>{job.name}</div>
-        <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 8, lineHeight: 1.5 }}>
-          {job.description}
-        </div>
+        {descriptionMarkdown ? (
+          <div className={styles.scheduleDescription}>
+            <ChatMarkdown
+              text={descriptionExpanded ? descriptionMarkdown : descriptionPreview}
+              className={styles.scheduleDescriptionMarkdown}
+              headingClassName={styles.scheduleDescriptionHeading}
+            />
+            {canToggleDescription ? (
+              <button
+                type="button"
+                aria-expanded={descriptionExpanded}
+                className={styles.scheduleDescriptionToggle}
+                onClick={() => setDescriptionState({ jobId: job.id, expanded: !descriptionExpanded })}
+              >
+                <ChevronDown aria-hidden="true" className={descriptionExpanded ? styles.scheduleDescriptionCaretOpen : undefined} size={14} />
+                <span>{descriptionExpanded ? "Collapse" : "Expand"}</span>
+              </button>
+            ) : null}
+          </div>
+        ) : null}
       </div>
 
       {/* Next run tile */}

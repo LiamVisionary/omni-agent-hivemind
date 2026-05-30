@@ -8,6 +8,7 @@ import { BeeIcon } from "./bee-icon";
 import { HexTile, type HexTone } from "./hex-tile";
 import { axialToPixel, HEX_H, HEX_W, hexSpiral } from "./hex-math";
 import { isFleetMachineMobile, type AgentState, type FleetAgent, type FleetMachine } from "./fleet-data";
+import styles from "./fleet-tokens.module.css";
 
 const STATE_TONE: Record<AgentState, HexTone> = {
   working: "active",
@@ -205,7 +206,7 @@ export function MachineCluster({
               }}
             >
               <div
-                className="grid justify-items-center text-center"
+                className={`grid justify-items-center text-center ${!isMachine ? styles.graphAgentCellContent : ""}`}
                 style={{
                   width: isMachine ? "100%" : undefined,
                   height: isMachine ? "100%" : undefined,
@@ -228,17 +229,16 @@ export function MachineCluster({
                     <BeeIcon role={agent!.beeRole === "queen" ? "queen" : "worker"} workerClass={agent!.workerClass} size={34}
                       dim={agent!.state === "ready" && !isAgentSelected} />
                     <span
-                      className="font-semibold"
+                      className={`${styles.graphAgentName} font-semibold`}
                       style={{
                         fontFamily: "var(--f-mono)",
-                        fontSize: 8.5,
+                        fontSize: 7.8,
                         letterSpacing: 0.04,
-                        lineHeight: 1,
+                        lineHeight: 1.05,
                         color: isAgentSelected ? "var(--hex-honey-border)" : "var(--foreground)",
-                        maxWidth: HEX_W - 12,
                       }}
                     >
-                      {agent!.name.split("-")[0]}
+                      {agent!.name}
                     </span>
                   </>
                 )}

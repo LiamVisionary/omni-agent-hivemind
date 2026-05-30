@@ -165,6 +165,13 @@ local URLs like `http://127.0.0.1:8788/peer/100.x.y.z%3A8787/...`. The sidecar
 then dials the remote collector through `tsnet`, so the operating system does
 not need a Tailnet route.
 
+Do not treat those `/peer/...` URLs as local collector URLs. In Link mode the
+local collector itself may run on another localhost port, recorded in
+`~/.hivemindos/collector.env`, but `/peer/...` must stay on the Link sidecar at
+`127.0.0.1:8788`. If it is rewritten to the collector port, remote machine chat
+will fail immediately with a misleading "does not have the Hermes chat bridge"
+or `404` response even when the remote collector is healthy.
+
 ## Collector Access
 
 Each agent machine can run:

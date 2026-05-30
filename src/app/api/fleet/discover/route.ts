@@ -251,7 +251,15 @@ function normalizedMachineId(value?: string) {
   return /^hivemind-machine-[a-f0-9]{32}$/i.test(trimmed) ? trimmed.toLowerCase() : "";
 }
 
+function machinePhysicalIdentityKey(device: Device) {
+  const base = physicalMachineBase(device);
+  if (!base || isMobileDevice(device)) return "";
+  return isHivemindLinkDevice(device) ? `physical:${base}` : "";
+}
+
 function machineIdentityKey(machine: { device: Device; collector: string; machineId?: string }) {
+  const physicalKey = machinePhysicalIdentityKey(machine.device);
+  if (physicalKey) return physicalKey;
   const machineId = machine.collector === "ready" ? normalizedMachineId(machine.machineId) : "";
   return machineId || deviceIdentityKey(machine.device);
 }

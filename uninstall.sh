@@ -197,6 +197,27 @@ if ask "Stop and remove the HivemindOS Link sidecar service?" "yes"; then
   fi
 fi
 
+if ask "Stop and remove the Claw backend service?" "yes"; then
+  if [[ "$(uname -s)" == "Darwin" ]]; then
+    plist="$HOME/Library/LaunchAgents/com.hivemindos.claw-backend.plist"
+    if [[ -f "$plist" ]]; then
+      launchctl bootout "gui/$(id -u)/com.hivemindos.claw-backend" >/dev/null 2>&1 || launchctl unload "$plist" >/dev/null 2>&1 || true
+      rm -f "$plist"
+      ok "Removed Claw backend LaunchAgent"
+    fi
+  elif run_if_exists systemctl; then
+    systemctl --user disable --now hivemindos-claw-backend.service >/dev/null 2>&1 || true
+    rm -f "$HOME/.config/systemd/user/hivemindos-claw-backend.service"
+    systemctl --user daemon-reload >/dev/null 2>&1 || true
+    ok "Removed Claw backend systemd service"
+  fi
+fi
+
+if ask "Remove the Claw backend install dir ~/.hivemindos/claw (includes its database + agent workspaces)?" "no"; then
+  rm -rf "$HOME/.hivemindos/claw"
+  ok "Removed ~/.hivemindos/claw"
+fi
+
 if ask "Remove the built hivemind-linkd binary from this checkout?" "yes"; then
   rm -f "$ROOT/bin/hivemind-linkd"
   ok "Removed $ROOT/bin/hivemind-linkd"
@@ -346,6 +367,7 @@ if ask "Remove empty canonical HivemindOS vault folders created by setup?" "no";
     "$vault_path/Operations" \
     "$vault_path/Archive/Processed Requests" \
     "$vault_path/Archive" \
+    "$vault_path/Agents" \
     "$vault_path/Projects" \
     "$vault_path/Memory/Distillations" \
     "$vault_path/Memory/Imported Sources" \
@@ -410,6 +432,18 @@ if ask "Uninstall Syncthing itself from this machine?" "no"; then
     sudo dnf remove -y syncthing || true
   elif run_if_exists yum && run_if_exists sudo; then
     sudo yum remove -y syncthing || true
+  fi
+fi
+
+if ask "Uninstall Unison itself from this machine?" "no"; then
+  if [[ "$(uname -s)" == "Darwin" ]] && run_if_exists brew; then
+    brew uninstall unison || true
+  elif run_if_exists apt-get && run_if_exists sudo; then
+    sudo apt-get remove -y unison || true
+  elif run_if_exists dnf && run_if_exists sudo; then
+    sudo dnf remove -y unison || true
+  elif run_if_exists yum && run_if_exists sudo; then
+    sudo yum remove -y unison || true
   fi
 fi
 

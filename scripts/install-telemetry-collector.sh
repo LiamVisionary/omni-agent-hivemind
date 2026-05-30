@@ -17,6 +17,7 @@ LINK_BIN="${HIVE_LINK_BIN:-$APP_DIR/bin/hivemind-linkd}"
 LINK_LABEL="${HIVE_LINK_LABEL:-com.hivemindos.linkd.agent}"
 LINK_LEGACY_LABEL="com.hivemindos.linkd"
 LINK_CONTROL="${HIVE_LINK_CONTROL:-127.0.0.1:${HIVE_LINK_CONTROL_PORT:-8788}}"
+LINK_STATE_DIR="${HIVE_LINK_STATE_DIR:-$HOME/.hivemindos/link/default}"
 LINK_CONTROL_STATUS_URL="http://$LINK_CONTROL/status"
 LINK_CONTROL_HEALTH_URL="http://$LINK_CONTROL/health"
 NODE_BIN="$(command -v node)"
@@ -105,7 +106,9 @@ install_go_if_missing() {
 build_hivemind_linkd_if_enabled() {
   [[ "$LINK_ENABLED" == "true" ]] || return 1
   if [[ -x "$LINK_BIN" ]]; then
-    return 0
+    if [[ "$LINK_BIN" -nt "$APP_DIR/cmd/hivemind-linkd/main.go" && "$LINK_BIN" -nt "$APP_DIR/go.mod" && "$LINK_BIN" -nt "$APP_DIR/go.sum" ]]; then
+      return 0
+    fi
   fi
   install_go_if_missing || return 1
   "$APP_DIR/scripts/build-hivemind-linkd.sh" >/dev/null
@@ -675,7 +678,7 @@ stop_hivemind_link_service() {
 }
 
 reset_hivemind_link_state() {
-  local state_path="${HIVE_LINK_STATE_DIR:-$HOME/.hivemindos/link}"
+  local state_path="$LINK_STATE_DIR"
   local backup_path=""
   stop_hivemind_link_service
   if [[ -e "$state_path" ]]; then
@@ -686,6 +689,39 @@ reset_hivemind_link_state() {
   if [[ "$(uname -s)" == "Darwin" ]]; then
     : > "$HOME/Library/Logs/hivemindos-linkd.log" 2>/dev/null || true
     : > "$HOME/Library/Logs/hivemindos-linkd.err.log" 2>/dev/null || true
+  fi
+}
+
+hivemind_link_hostname_slug() {
+  local raw
+  raw="$(hostname 2>/dev/null || printf "machine")"
+  raw="${raw%.local}"
+  printf "%s" "$raw" | tr '[:upper:]' '[:lower:]' | sed -E 's/[^a-z0-9-]+/-/g; s/^-+//; s/-+$//'
+}
+
+prepare_hivemind_link_state_dir() {
+  [[ "$LINK_ACTIVE" == "true" ]] || return
+  [[ -n "$LINK_STATE_DIR" ]] || return
+  if [[ -s "$LINK_STATE_DIR/tailscaled.state" ]]; then
+    return
+  fi
+
+  local slug legacy_state legacy_parent candidate
+  slug="$(hivemind_link_hostname_slug)"
+  legacy_parent="$HOME/.hivemindos/link"
+  legacy_state="$legacy_parent/hivemindos-${slug}"
+  if [[ -s "$legacy_state/tailscaled.state" ]]; then
+    mkdir -p "$(dirname "$LINK_STATE_DIR")"
+    cp -pR "$legacy_state" "$LINK_STATE_DIR"
+    echo "Migrated Hivemind Link state to stable path: $LINK_STATE_DIR"
+    return
+  fi
+
+  candidate="$(find "$legacy_parent" -mindepth 1 -maxdepth 1 -type d -name 'hivemindos-*' -exec sh -c 'for d do s="$d/tailscaled.state"; [ -s "$s" ] && [ "$(wc -c < "$s")" -gt 1000 ] && printf "%s\t%s\n" "$(stat -f %m "$s" 2>/dev/null || stat -c %Y "$s" 2>/dev/null || echo 0)" "$d"; done; exit 0' sh {} + 2>/dev/null | sort -rn | awk 'NR==1 {print $2}' || true)"
+  if [[ -n "$candidate" ]]; then
+    mkdir -p "$(dirname "$LINK_STATE_DIR")"
+    cp -pR "$candidate" "$LINK_STATE_DIR"
+    echo "Migrated existing Hivemind Link state to stable path: $LINK_STATE_DIR"
   fi
 }
 
@@ -967,6 +1003,7 @@ PLIST
   launchctl_quiet 5 bootstrap "gui/$(id -u)" "$PLIST" || launchctl_quiet 5 load "$PLIST" || true
   launchctl_quiet 5 kickstart -k "gui/$(id -u)/com.agent-control-room.telemetry" || true
   if [[ "$LINK_ACTIVE" == "true" ]]; then
+    prepare_hivemind_link_state_dir
     LINK_PLIST="$HOME/Library/LaunchAgents/$LINK_LABEL.plist"
     LEGACY_LINK_PLIST="$HOME/Library/LaunchAgents/$LINK_LEGACY_LABEL.plist"
     launchctl_bounded 5 bootout "gui/$(id -u)/$LINK_LEGACY_LABEL" >/dev/null 2>&1 || launchctl_bounded 5 unload "$LEGACY_LINK_PLIST" >/dev/null 2>&1 || true
@@ -986,6 +1023,7 @@ PLIST
     <key>HIVE_LINK_TARGET</key><string>http://127.0.0.1:$PORT</string>
     <key>HIVE_LINK_LISTEN</key><string>:$LINK_TAILNET_PORT</string>
     <key>HIVE_LINK_CONTROL</key><string>$LINK_CONTROL</string>
+    <key>HIVE_LINK_STATE_DIR</key><string>$LINK_STATE_DIR</string>
   </dict>
   <key>RunAtLoad</key><true/>
   <key>KeepAlive</key><true/>
@@ -1049,6 +1087,7 @@ SERVICE
   systemctl --user enable agent-telemetry.service
   systemctl --user restart agent-telemetry.service
   if [[ "$LINK_ACTIVE" == "true" ]]; then
+    prepare_hivemind_link_state_dir
     LINK_SERVICE="$HOME/.config/systemd/user/hivemindos-linkd.service"
     cat > "$LINK_SERVICE" <<SERVICE
 [Unit]
@@ -1059,6 +1098,7 @@ After=agent-telemetry.service
 Environment=HIVE_LINK_TARGET=http://127.0.0.1:$PORT
 Environment=HIVE_LINK_LISTEN=:$LINK_TAILNET_PORT
 Environment=HIVE_LINK_CONTROL=$LINK_CONTROL
+Environment=HIVE_LINK_STATE_DIR=$LINK_STATE_DIR
 ExecStart=$LINK_BIN
 Restart=always
 
@@ -1076,6 +1116,7 @@ mkdir -p "$HOME/.hivemindos"
   printf "AGENT_TELEMETRY_PORT=%q\n" "$PORT"
   printf "HIVE_LINK_TAILNET_PORT=%q\n" "$LINK_TAILNET_PORT"
   printf "HIVE_LINK_CONTROL=%q\n" "$LINK_CONTROL"
+  printf "HIVE_LINK_STATE_DIR=%q\n" "$LINK_STATE_DIR"
   printf "HIVE_LINK_LABEL=%q\n" "$LINK_LABEL"
   printf "HIVE_LINK_CONTROL_URL=%q\n" "http://$LINK_CONTROL"
 } > "$HOME/.hivemindos/collector.env"

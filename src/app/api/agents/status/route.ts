@@ -33,8 +33,16 @@ export async function POST(request: NextRequest) {
 
   const adapter = getRuntimeAdapter(profile.runtime);
   if (adapter?.getStatus) {
-    const status = await adapter.getStatus(profile, { requestUrl: request.url, agents: [profile] });
-    return Response.json({ ok: true, runtime: profile.runtime, status });
+    try {
+      const status = await adapter.getStatus(profile, { requestUrl: request.url, agents: [profile] });
+      return Response.json({ ok: true, runtime: profile.runtime, status });
+    } catch (error) {
+      return Response.json({
+        ok: false,
+        runtime: profile.runtime,
+        error: error instanceof Error ? error.message : "Status check failed",
+      });
+    }
   }
 
   const statusUrl = getRuntimeUrl(profile, profile.statusPath || "/health");

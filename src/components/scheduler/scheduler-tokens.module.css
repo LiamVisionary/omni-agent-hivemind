@@ -65,6 +65,93 @@
   border: 1px solid rgba(94,234,212,0.5);
   animation: sch-check-pop 420ms cubic-bezier(.2, 1.5, .4, 1);
 }
+.scheduleDescription {
+  display: grid;
+  gap: 8px;
+  margin-top: 10px;
+  padding: 10px 11px 9px;
+  border: 1px solid rgba(148,163,184,0.14);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--panel-bg-soft) 88%, transparent);
+}
+.scheduleDescriptionMarkdown {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.55;
+}
+.scheduleDescriptionMarkdown p,
+.scheduleDescriptionMarkdown ul,
+.scheduleDescriptionMarkdown ol,
+.scheduleDescriptionMarkdown pre {
+  margin: 0;
+}
+.scheduleDescriptionMarkdown p + p,
+.scheduleDescriptionMarkdown div + p,
+.scheduleDescriptionMarkdown p + div {
+  margin-top: 2px;
+}
+.scheduleDescriptionMarkdown code {
+  border: 1px solid rgba(148,163,184,0.18);
+  border-radius: 5px;
+  background: rgba(148,163,184,0.10);
+  color: var(--foreground);
+  padding: 0.06rem 0.28rem;
+  font-family: var(--f-mono);
+  font-size: 0.92em;
+}
+.scheduleDescriptionMarkdown a {
+  color: var(--hex-active-border);
+  text-decoration: none;
+}
+.scheduleDescriptionMarkdown a:hover {
+  text-decoration: underline;
+}
+.scheduleDescriptionMarkdown :global(.markdownBulletList) {
+  gap: 6px !important;
+  margin: 2px 0 !important;
+}
+.scheduleDescriptionMarkdown :global(.markdownBulletItem) {
+  grid-template-columns: 0.45rem minmax(0, 1fr) !important;
+  gap: 0.55rem !important;
+  border-radius: 7px !important;
+  padding: 0.46rem 0.55rem !important;
+  background: rgba(148,163,184,0.055) !important;
+}
+.scheduleDescriptionMarkdown :global(.markdownBulletDot) {
+  width: 0.3rem !important;
+  height: 0.3rem !important;
+  transform: translateY(0.5rem) !important;
+}
+.scheduleDescriptionHeading {
+  color: var(--foreground);
+  font-size: 12px;
+  font-weight: 800;
+}
+.scheduleDescriptionToggle {
+  display: inline-flex;
+  width: fit-content;
+  align-items: center;
+  gap: 5px;
+  border: 0;
+  background: transparent;
+  color: var(--hex-active-border);
+  cursor: pointer;
+  font-family: var(--f-mono);
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  padding: 0;
+  text-transform: uppercase;
+}
+.scheduleDescriptionToggle svg {
+  transition: transform 160ms ease;
+}
+.scheduleDescriptionCaretOpen {
+  transform: rotate(180deg);
+}
 @keyframes sch-spin {
   to { transform: rotate(360deg); }
 }

@@ -400,6 +400,7 @@ export function useChatTreeController(props: any) {
         const folderPath = projectDirectoryPath(machine.version?.appDir);
         let fallbackFolder: ChatTreeFolder | undefined;
         const strayFolder = () => ensureFolder("Stray chats");
+        const machineChatFolder = () => ensureFolder("Machine chats");
         const defaultFolder = () => {
           if (!folderPath) return strayFolder();
           fallbackFolder ??= ensureFolder(workspaceLabelFromPath(folderPath), () => startAgentChat(agent.id, {
@@ -431,7 +432,12 @@ export function useChatTreeController(props: any) {
           ...chat,
           subtitle: chat.subtitle === agent.id ? agent.name : chat.subtitle,
         }));
-        if (savedChats.length) defaultFolder().chats.push(...savedChats);
+        for (const savedChat of savedChats) {
+          const targetFolder = savedChat.key.startsWith(`machine-${machine.key}-`)
+            ? machineChatFolder()
+            : defaultFolder();
+          targetFolder.chats.push(savedChat);
+        }
 
         const selectedStorageKey = chatMessageStorageKey(agent.id, selectedChatLeafKey);
         const selectedLeafMessages = selectedStorageKey !== agent.id
@@ -447,7 +453,9 @@ export function useChatTreeController(props: any) {
           && !selectedLeafVisible
         ) {
           const targetProjectPath = projectDirectoryPath(selectedChatDirectoryPath);
-          const targetFolder = targetProjectPath
+          const targetFolder = selectedChatLeafKey.startsWith(`machine-${machine.key}-`)
+            ? machineChatFolder()
+            : targetProjectPath
             ? ensureFolder(workspaceLabelFromPath(targetProjectPath), undefined, targetProjectPath, true)
             : defaultFolder();
           targetFolder.chats.unshift({
@@ -524,7 +532,7 @@ export function useChatTreeController(props: any) {
         onStartChat: chatAgents.length > 0
           ? () => startAgentChat(chatAgents[0].id, {
             fresh: true,
-            workingDirectoryPath: projectDirectoryPath(machine.version?.appDir),
+            workingDirectoryPath: "",
             chatLeafKey: `machine-${machine.key}-${chatAgents[0].id}`,
           })
           : undefined,

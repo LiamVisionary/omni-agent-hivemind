@@ -356,10 +356,13 @@ export function FleetView({
             className={`${styles.stageColumn} flex flex-col overflow-hidden`}
             style={{ minHeight: 0 }}
           >
-            <div className="flex items-center justify-between" style={{ marginBottom: 10 }}>
+            <div className={styles.stageToolbar}>
               <div className={styles.monoCap} style={{ color: "var(--accent-strong)" }}>
                 <span className={`${styles.dot} ${styles.dotLive}`} style={{ color: "var(--accent)" }} />
                 &nbsp; {refreshing ? "scanning constellation" : "live constellation"}
+              </div>
+              <div className={styles.stageStatus}>
+                {today} · <span>{checkedLabel ?? "Fleet scan pending"}</span> · <span>{tailnetLabel}</span>
               </div>
               <div className="flex" style={{ gap: 6 }}>
                 {(["graph", "map", "list"] as ViewMode[]).map((v) => (

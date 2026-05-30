@@ -1,11 +1,11 @@
-import { Activity, AppWindow, Bell, Bot, FolderOpen, KeyRound, PlugZap, ShieldCheck } from "lucide-react";
+import { Activity, AppWindow, Bell, Bot, FolderOpen, KeyRound, PhoneCall, PlugZap, ShieldCheck } from "lucide-react";
 
 import fleetStyles from "@/app/fleet.module.css";
 import { createStyleClass } from "@/features/dashboard/style-classes";
 
 const fleetClass = createStyleClass(fleetStyles);
 
-type MorePanelTarget = "integrations" | "env" | "maintenance" | "files" | "notifications" | "memory" | "my-apps" | "aeon";
+type MorePanelTarget = "integrations" | "env" | "maintenance" | "files" | "notifications" | "memory" | "my-apps" | "phone" | "aeon";
 
 export type MorePanelProps = {
   sharedEnvCount: number;
@@ -65,6 +65,13 @@ export function MorePanel({
       eyebrow: "Tailnet apps",
       title: "My Apps",
       body: "Open web apps hosted across your Tailscale machines.",
+    },
+    {
+      id: "phone" as const,
+      icon: <PhoneCall aria-hidden="true" />,
+      eyebrow: "Call prompts",
+      title: "Phone",
+      body: "Manage the spoken prompts your iPhone calls you with.",
     },
     {
       id: "memory" as const,

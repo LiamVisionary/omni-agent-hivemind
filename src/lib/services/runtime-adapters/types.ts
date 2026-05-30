@@ -7,6 +7,7 @@ export type RuntimeAdapterContext = {
 };
 
 export type RuntimeScheduleAction = "run-now" | "enable" | "disable";
+export type RuntimeSkillConfigAction = "enable" | "disable" | "schedule" | "var" | "model" | "automate";
 
 export type RuntimeSchedule = {
   id: string;
@@ -37,6 +38,38 @@ export type RuntimeRun = {
   conclusion?: string | null;
 };
 
+export type RuntimeRunLog = {
+  id: string;
+  summary: string;
+  logs: string;
+  url?: string;
+};
+
+export type RuntimeSkillMetrics = {
+  slug: string;
+  name: string;
+  total: number;
+  success: number;
+  failure: number;
+  active: number;
+  successRate: number;
+  lastRun?: string;
+  lastConclusion?: string | null;
+};
+
+export type RuntimeAnalytics = {
+  summary: {
+    totalRuns: number;
+    success: number;
+    failure: number;
+    active: number;
+    successRate: number;
+    uniqueSkills: number;
+  };
+  skills: RuntimeSkillMetrics[];
+  insights: Array<{ type: "warning" | "info" | "success"; message: string }>;
+};
+
 export type RuntimeSkill = {
   slug: string;
   name: string;
@@ -50,6 +83,7 @@ export type RuntimeSkill = {
   path?: string;
   checksum?: string;
   providerLabel?: string;
+  automationYaml?: string;
 };
 
 export type RuntimeEnvSyncResult = {
@@ -57,6 +91,38 @@ export type RuntimeEnvSyncResult = {
   synced: Array<{ key: string }>;
   skipped: Array<{ key: string; reason: string }>;
   sources: string[];
+};
+
+export type RuntimeSecretStatus = {
+  repo: string;
+  keys: Array<{
+    key: string;
+    label: string;
+    isSet: boolean;
+    availableInSharedEnv: boolean;
+    availableLocally: boolean;
+    usedIn: string[];
+    guidance?: string;
+  }>;
+};
+
+export type RuntimeMemorySnapshot = {
+  root: string;
+  index?: string;
+  topics: Array<{ slug: string; title: string; excerpt: string; path: string; updatedAt?: string }>;
+  logs: Array<{ slug: string; title: string; excerpt: string; path: string; updatedAt?: string }>;
+  issues: Array<{ slug: string; title: string; excerpt: string; path: string; updatedAt?: string }>;
+};
+
+export type RuntimeRepoSyncStatus = {
+  root: string;
+  repo: string;
+  branch: string;
+  hasChanges: boolean;
+  changedFiles: string[];
+  behind: number;
+  ahead: number;
+  lastMessage?: string;
 };
 
 export type RuntimeModelOption = {
@@ -108,4 +174,21 @@ export type RuntimeAdapter = {
   ) => Promise<{ ok: boolean; error?: string; message?: string; result?: unknown }>;
   listRuns?: (profile: AgentProfile, context: RuntimeAdapterContext) => Promise<RuntimeRun[]>;
   listOutputs?: (profile: AgentProfile, context: RuntimeAdapterContext) => Promise<unknown[]>;
+  getRunLog?: (profile: AgentProfile, runId: string, context: RuntimeAdapterContext) => Promise<RuntimeRunLog>;
+  getAnalytics?: (profile: AgentProfile, context: RuntimeAdapterContext) => Promise<RuntimeAnalytics>;
+  getMemory?: (profile: AgentProfile, context: RuntimeAdapterContext) => Promise<RuntimeMemorySnapshot>;
+  getSecretStatus?: (profile: AgentProfile, context: RuntimeAdapterContext) => Promise<RuntimeSecretStatus>;
+  updateSkillConfig?: (
+    profile: AgentProfile,
+    skill: string,
+    action: RuntimeSkillConfigAction,
+    value: string | boolean,
+    context: RuntimeAdapterContext,
+  ) => Promise<{ ok: boolean; error?: string; result?: unknown }>;
+  getRepoSyncStatus?: (profile: AgentProfile, context: RuntimeAdapterContext) => Promise<RuntimeRepoSyncStatus>;
+  runRepoSyncAction?: (
+    profile: AgentProfile,
+    action: "pull" | "push",
+    context: RuntimeAdapterContext,
+  ) => Promise<{ ok: boolean; error?: string; status?: RuntimeRepoSyncStatus; message?: string }>;
 };

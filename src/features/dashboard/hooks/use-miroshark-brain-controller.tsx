@@ -7,6 +7,38 @@
 import { useCallback, useEffect, useMemo } from "react";
 import { parseRuntimeSsePayload, responseErrorMessage, runtimeErrorMessage } from "./runtime-stream-errors";
 
+function isLoopbackDirectoryCollector(collectorUrl?: string) {
+  const trimmed = collectorUrl?.trim();
+  if (!trimmed) return false;
+  try {
+    const hostname = new URL(trimmed).hostname.toLowerCase();
+    return hostname === "localhost" || hostname === "127.0.0.1" || hostname === "::1" || hostname === "[::1]";
+  } catch {
+    return false;
+  }
+}
+
+function directoryCollectorUrl(collectorUrl?: string) {
+  const trimmed = collectorUrl?.trim();
+  if (!trimmed) return "";
+  try {
+    const parsed = new URL(trimmed);
+    const peerPrefix = "/peer/";
+    if (isLoopbackDirectoryCollector(trimmed) && parsed.pathname.startsWith(peerPrefix)) {
+      const peer = decodeURIComponent(parsed.pathname.slice(peerPrefix.length)).replace(/\/+$/, "");
+      return peer ? `http://${peer}` : trimmed;
+    }
+  } catch {
+    return trimmed;
+  }
+  return trimmed;
+}
+
+function directoryMachineTarget(machine: KanbanMachineTarget) {
+  const collectorUrl = directoryCollectorUrl(machine.collectorUrl);
+  return collectorUrl === machine.collectorUrl ? machine : { ...machine, collectorUrl };
+}
+
 export function useMirosharkBrainController(props: any) {
   const { BRAIN_GRAPH_CLIENT_CACHE_MS, MIROSHARK_TEMPLATE_INPUTS, SWARM_LAUNCH_PRESETS, activeView, agents, appVersion, asRecord, brainGraph, brainGraphLoadedAtRef, brainGraphVaultPathRef, brainSkills, compactValue, composeMirosharkTemplateScenario, createDefaultAgentWallet, defaultMirosharkTemplateInputs, formatRelativeTime, getMiroSharkPosts, getMiroSharkRunStatus, getMiroSharkTemplates, hermesUpdateDetail, hermesUpdateRequiredDetail, honeyLedgerEnabled, isEmptyIntegrationPayload, isLoopbackCollector, isMiroSharkRunTerminal, isUnpublishedSimulationPayload, mirosharkAnalysisAgentId, mirosharkArchiveRuns, mirosharkExperimentEvent, mirosharkHandle, mirosharkMetadata, mirosharkPlatform, mirosharkRounds, mirosharkRun, mirosharkRunPending, mirosharkScenario, mirosharkSelectedTemplateId, mirosharkStat, mirosharkStatus, mirosharkTemplateInputs, mirosharkUserName, mirosharkWorkspaceMode, notificationCountRef, notificationCursorRef, numericRecordValue, payloadArray, payloadCount, payloadData, payloadPreview, selectedAgentId, selectedMirosharkRunId, setBrainGraph, setBrainGraphLoading, setBrainGraphStatus, setBrainSkillAeonSyncing, setBrainSkillImportProvider, setBrainSkillImportSuccess, setBrainSkills, setBrainSkillsLoading, setBrainSkillsStatus, setHermesUpdateRequiredDetail, setMachineDirectoryBrowser, setMirosharkActionPending, setMirosharkAnalysisPending, setMirosharkAnalysisResult, setMirosharkAnalysisStatus, setMirosharkArchiveLoading, setMirosharkArchiveRuns, setMirosharkArchiveStatus, setMirosharkExperimentPending, setMirosharkExperimentStatus, setMirosharkHelperPending, setMirosharkHelperStatus, setMirosharkMetadata, setMirosharkPlatform, setMirosharkRounds, setMirosharkRun, setMirosharkRunPending, setMirosharkScenario, setMirosharkSelectedTemplateId, setMirosharkStatus, setMirosharkTemplateInputs, setMirosharkWorkbenchTab, setMirosharkWorkspaceMode, setNotificationCursor, setNotificationSummary, setNotifications, setNotificationsLoading, setNotificationsStatus, setRecentDirectories, setSelectedBrainNodeId, setSelectedMirosharkRunId, setSkillBrowserGithubInstalling, setSkillBrowserGithubOpen, setSkillBrowserGithubUrl, setSkillBrowserImporting, setSkillBrowserLoading, setSkillBrowserOpen, setSkillBrowserSearch, setSkillBrowserSkills, setSkillBrowserStatus, setSkillBrowserView, setSkillBrowserWriting, setSkillBrowserWrittenContent, sharedVault, skillBrowserGithubUrl, skillBrowserWrittenContent, skillRequiresHermesUpdate, swarmEventItem, swarmMarketEventItem, swarmMarketFromItems, swarmMarketPriceEventItem, swarmRunState, swarmTemplateIdFromMirosharkTemplate, swarmTemplateIdFromSurface, walletsByAgent } = props;
   const refreshMirosharkMetadata = useCallback(async () => {
@@ -386,19 +418,23 @@ export function useMirosharkBrainController(props: any) {
     path = "~",
     onChoose?: (directory: LinkedDirectory) => void,
   ) => {
+    const directoryMachine = directoryMachineTarget(machine);
+    const sameMachineTarget = (left?: KanbanMachineTarget | null, right?: KanbanMachineTarget | null) => (
+      Boolean(left && right && left.key === right.key && (left.collectorUrl || "") === (right.collectorUrl || ""))
+    );
     setMachineDirectoryBrowser((current) => ({
       open: true,
-      machine,
+      machine: directoryMachine,
       path,
-      parentPath: current?.machine.key === machine.key ? current.parentPath : "",
-      directories: current?.machine.key === machine.key ? current.directories : [],
+      parentPath: sameMachineTarget(current?.machine, directoryMachine) ? current?.parentPath : "",
+      directories: sameMachineTarget(current?.machine, directoryMachine) ? current?.directories ?? [] : [],
       selectedDirectory: null,
       loading: true,
       error: "",
       onChoose,
     }));
     const params = new URLSearchParams({ path });
-    if (machine.collectorUrl) params.set("collectorUrl", machine.collectorUrl);
+    if (directoryMachine.collectorUrl) params.set("collectorUrl", directoryMachine.collectorUrl);
     const response = await fetch(`/api/machines/directories?${params.toString()}`).catch(() => null);
     const data = await response?.json().catch(() => null) as {
       ok?: boolean;
@@ -408,7 +444,7 @@ export function useMirosharkBrainController(props: any) {
       error?: string;
     } | null;
     setMachineDirectoryBrowser((current) => {
-      if (!current || current.machine.key !== machine.key) return current;
+      if (!current || !sameMachineTarget(current.machine, directoryMachine)) return current;
       if (!response?.ok || !data?.ok) {
         return { ...current, loading: false, error: data?.error ?? "Could not list directories." };
       }
@@ -430,7 +466,8 @@ export function useMirosharkBrainController(props: any) {
     onChoose: (directory: LinkedDirectory) => void,
   ) {
     if (!machine) return;
-    const isLocalMachine = isLoopbackCollector(machine.collectorUrl)
+    const directoryMachine = directoryMachineTarget(machine);
+    const isLocalMachine = isLoopbackCollector(directoryMachine.collectorUrl)
       || (false);
     if (isLocalMachine) {
       const response = await fetch("/api/agents/browse-folder", {
@@ -446,13 +483,13 @@ export function useMirosharkBrainController(props: any) {
         id: `${path}-${crypto.randomUUID()}`,
         name,
         path,
-        machineName: machine.name,
-        machineKey: machine.key,
+        machineName: directoryMachine.name,
+        machineKey: directoryMachine.key,
         lastUsedAt: Date.now(),
       });
       return;
     }
-    await loadMachineDirectories(machine, "~", onChoose);
+    await loadMachineDirectories(directoryMachine, "~", onChoose);
   }
 
   const refreshHermesUpdateRequirement = useCallback(async () => {

@@ -5,9 +5,10 @@
 import { createPortal } from "react-dom";
 import { CloseIconButton } from "@/components/ui/close-icon-button";
 import { GuidedProviderSetup } from "./GuidedProviderSetup";
+import { InlineRenameControl } from "@/features/dashboard/views/shared/InlineRenameControl";
 
 export function AgentSettingsModal(props: any) {
-  const { BEE_WORKER_PRESET_LIST, BrainCircuit, Button, Check, ChevronRight, Copy, Cpu, Eye, FolderOpen, HERMES_UPDATE_INTEGRATION_KEYS, Image, KanbanSquare, LoaderCircle, MessageSquare, Minus, Pencil, PlugZap, Plus, RUNTIME_LABELS, RefreshCcw, Repeat2, Search, Send, Settings2, ShieldCheck, Sparkles, Upload, addHermesModelFromDraft, agentCreateDraft, agentCreateMachine, agentRenameDraft, agentRenameEditing, agentRuntimeAdvancedOpen, agentRuntimeFolderBrowsing, agentRuntimeFolderEditing, agentRuntimeFolderStatus, agentSettingsCustomWorker, agentSettingsCustomWorkers, agentSettingsDescription, agentSettingsIntegrationTarget, agentSettingsPanel, agentSettingsPreferredSkills, agentSettingsProvider, agentSettingsRuntime, agentSettingsSelectedCustomWorkerId, agentSettingsSkillProfile, agentSettingsTitle, agentSettingsWorkerClass, agentSettingsWorkerImage, agentSettingsWorkerLabel, agentSettingsWorkerPreset, agentWorkerClassView, applyCustomWorkerClass, beeRoleIconPath, browseAgentRuntimeFolder, closeAgentSettingsModal, createAgentFromModal, customWorkerDraft, customWorkerImageError, customWorkerImageInputRef, customWorkerSkillSearch, filteredCustomWorkerSkills, fleetClass, hermesUpdateRequired, openAgentSkillBrowser, openCustomWorkerClassCreator, providerIconPath, providerIconRenderMode, refreshRuntimeIntegrations, removeAgentPreferredSkill, roleModalAgent, runRuntimeIntegrationAction, runtimeAvailability, runtimeBackgroundPrompt, runtimeCapabilities, runtimeIconFallback, runtimeIconPath, runtimeIconRenderMode, runtimeIntegrationBusy, runtimeIntegrationMessage, runtimeIntegrationStatus, runtimeModelDraft, runtimeModelProviders, runtimeModelSelection, runtimeModelSetupMode, runtimeSessionQuery, runtimeSessionResults, runtimeSetupDefinition, runtimeSetupKey, runtimeUpdateConfirmKey, searchRuntimeSessionsForAgent, selectAgentWorkerClass, selectCustomWorkerClass, selectedRuntimeModelId, selectedRuntimeModels, selectedRuntimeProvider, setAgentCreateDraft, setAgentRenameDraft, setAgentRenameEditing, setAgentRuntimeAdvancedOpen, setAgentRuntimeFolderEditing, setAgentRuntimeFolderStatus, setAgentSettingsPanel, setAgentWorkerClassView, setCustomWorkerDraft, setCustomWorkerSkillSearch, setRuntimeBackgroundPrompt, setRuntimeModelDraft, setRuntimeModelSetupMode, setRuntimeSessionQuery, setRuntimeSetupKey, setRuntimeUpdateConfirmKey, sharedVault, startAgentChat, toggleCustomWorkerSkill, updateAgentProfile, updateAgentRuntimeModel, updateAgentSkillProfile, uploadCustomWorkerImage, workerCapabilityBadges } = props;
+  const { BEE_WORKER_PRESET_LIST, BrainCircuit, Button, Check, ChevronRight, Copy, Cpu, Eye, FolderOpen, HERMES_UPDATE_INTEGRATION_KEYS, Image, KanbanSquare, LoaderCircle, MessageSquare, Minus, Pencil, PlugZap, Plus, RUNTIME_LABELS, RefreshCcw, Repeat2, Search, Send, Settings2, ShieldCheck, Sparkles, Upload, addHermesModelFromDraft, agentCreateDraft, agentCreateMachine, agentRenameDraft, agentRenameEditing, agentRuntimeAdvancedOpen, agentRuntimeFolderBrowsing, agentRuntimeFolderEditing, agentRuntimeFolderStatus, agentSettingsCustomWorker, agentSettingsCustomWorkers, agentSettingsDescription, agentSettingsIntegrationTarget, agentSettingsPanel, agentSettingsPreferredSkills, agentSettingsProvider, agentSettingsRuntime, agentSettingsSelectedCustomWorkerId, agentSettingsSkillProfile, agentSettingsTitle, agentSettingsWorkerClass, agentSettingsWorkerImage, agentSettingsWorkerLabel, agentSettingsWorkerPreset, agentWorkerClassView, applyCustomWorkerClass, beeRoleIconPath, browseAgentRuntimeFolder, closeAgentSettingsModal, createAgentFromModal, customWorkerDraft, customWorkerImageError, customWorkerImageInputRef, customWorkerSkillSearch, filteredCustomWorkerSkills, fleetClass, hermesUpdateRequired, openAgentSkillBrowser, openCustomWorkerClassCreator, providerIconPath, providerIconRenderMode, refreshRuntimeIntegrations, removeAgentPreferredSkill, roleModalAgent, runRuntimeIntegrationAction, runtimeAvailability, runtimeBackgroundPrompt, runtimeCapabilities, runtimeIconFallback, runtimeIconPath, runtimeIconRenderMode, runtimeIntegrationBusy, runtimeIntegrationMessage, runtimeIntegrationStatus, runtimeModelDraft, runtimeModelProviders, runtimeModelSelection, runtimeModelSetupMode, runtimeSessionQuery, runtimeSessionResults, runtimeSetupDefinition, runtimeSetupKey, runtimeUpdateConfirmKey, searchRuntimeSessionsForAgent, selectAgentWorkerClass, selectCustomWorkerClass, selectedRuntimeModelId, selectedRuntimeModels, selectedRuntimeProvider, setActiveView, setAgentCreateDraft, setAgentRenameDraft, setAgentRenameEditing, setAgentRuntimeAdvancedOpen, setAgentRuntimeFolderEditing, setAgentRuntimeFolderStatus, setAgentSettingsPanel, setAgentWorkerClassView, setCustomWorkerDraft, setCustomWorkerSkillSearch, setRuntimeBackgroundPrompt, setRuntimeModelDraft, setRuntimeModelSetupMode, setRuntimeSessionQuery, setRuntimeSetupKey, setRuntimeUpdateConfirmKey, sharedVault, startAgentChat, toggleCustomWorkerSkill, updateAgentProfile, updateAgentRuntimeModel, updateAgentSkillProfile, uploadCustomWorkerImage, workerCapabilityBadges } = props;
   const portalTarget = typeof document === "undefined" ? null : document.body;
   const openRouterSelected = (selectedRuntimeProvider?.slug || agentSettingsProvider) === "openrouter";
   const adaptiveSelected = openRouterSelected && selectedRuntimeModelId === "adaptive";
@@ -28,10 +29,11 @@ export function AgentSettingsModal(props: any) {
   };
 
   const updateSettingsRuntime = (runtime: AgentRuntime) => {
-    if (runtimeAvailability?.[runtime]?.installed === false) return;
+    if (runtime !== "aeon" && runtimeAvailability?.[runtime]?.installed === false) return;
     const sameRuntime = runtime === agentSettingsRuntime;
     const currentProvider = agentCreateMachine ? agentCreateDraft.provider : roleModalAgent?.provider;
     const currentModel = agentCreateMachine ? agentCreateDraft.model : roleModalAgent?.model;
+    const aeonWorkerPreset = BEE_WORKER_PRESET_LIST.find((preset) => preset.id === "ops");
     const runtimeProvider = runtimeModelProviders.find((provider) => provider.slug === currentProvider);
     const provider = runtime === "hermes"
       ? sameRuntime ? currentProvider || "openai-codex" : "openai-codex"
@@ -53,12 +55,33 @@ export function AgentSettingsModal(props: any) {
         runtime,
         provider,
         model,
+        name: current.name.trim() && current.name !== `${RUNTIME_LABELS[current.runtime] ?? current.runtime} on ${agentCreateMachine.name}`
+          ? current.name
+          : `${RUNTIME_LABELS[runtime] ?? runtime} on ${agentCreateMachine.name}`,
+        ...(runtime === "aeon" && aeonWorkerPreset ? {
+          workerClass: aeonWorkerPreset.id,
+          skillProfilePrompt: aeonWorkerPreset.taskProfile,
+          preferredSkillSlugs: aeonWorkerPreset.skillSlugs,
+          aeonLocalPath: current.aeonLocalPath || "~/.aeon",
+          aeonRepo: current.aeonRepo || "",
+          aeonBranch: current.aeonBranch || "main",
+          aeonMode: current.aeonMode || "github",
+          a2aUrl: current.a2aUrl || "http://127.0.0.1:41241",
+        } : {}),
       }));
     } else if (roleModalAgent) {
       updateAgentProfile(roleModalAgent.id, {
         runtime,
         provider,
         model,
+        ...(runtime === "aeon" ? {
+          agentId: roleModalAgent.agentId || "local-aeon",
+          localDataDir: roleModalAgent.localDataDir || "~/.aeon",
+          aeonLocalPath: roleModalAgent.aeonLocalPath || roleModalAgent.localDataDir || "~/.aeon",
+          aeonBranch: roleModalAgent.aeonBranch || "main",
+          aeonMode: roleModalAgent.aeonMode || "github",
+          a2aUrl: roleModalAgent.a2aUrl || "http://127.0.0.1:41241",
+        } : {}),
       });
     }
   };
@@ -81,11 +104,44 @@ export function AgentSettingsModal(props: any) {
     .replace(/\s+bee$/i, "")
     .trim();
   const modelSelectableRuntime = Boolean(runtimeCapabilities(agentSettingsIntegrationTarget ?? roleModalAgent)?.modelSelection);
-  const runtimeModelPanelAvailable = runtimeModelProviders.length > 0
+  const runtimeModelPanelAvailable = agentSettingsRuntime !== "aeon" && (runtimeModelProviders.length > 0
     || modelSelectableRuntime
     || runtimeIntegrationBusy === "status"
-    || Boolean(runtimeIntegrationMessage);
+    || Boolean(runtimeIntegrationMessage));
   const runtimeCanAddModels = agentSettingsRuntime === "hermes";
+  const aeonAvailability = runtimeAvailability?.aeon;
+  const aeonDetected = agentSettingsRuntime === "aeon" && aeonAvailability?.installed === true;
+  const aeonNeedsSetup = agentSettingsRuntime === "aeon" && !aeonDetected;
+  const isAeonSettings = agentSettingsRuntime === "aeon";
+  const hideRuntimeSection = !agentCreateMachine && agentSettingsRuntime === "aeon";
+  const runtimeFolderValue = roleModalAgent
+    ? isAeonSettings
+      ? roleModalAgent.aeonLocalPath || roleModalAgent.localDataDir || ""
+      : roleModalAgent.localDataDir || ""
+    : "";
+  const aeonSettings = {
+    mode: agentCreateMachine ? agentCreateDraft.aeonMode || "github" : roleModalAgent?.aeonMode || "github",
+    repo: agentCreateMachine ? agentCreateDraft.aeonRepo || "" : roleModalAgent?.aeonRepo || "",
+    branch: agentCreateMachine ? agentCreateDraft.aeonBranch || "main" : roleModalAgent?.aeonBranch || "main",
+    path: agentCreateMachine ? agentCreateDraft.aeonLocalPath || "~/.aeon" : roleModalAgent?.aeonLocalPath || roleModalAgent?.localDataDir || "",
+    a2aUrl: agentCreateMachine ? agentCreateDraft.a2aUrl || "http://127.0.0.1:41241" : roleModalAgent?.a2aUrl || roleModalAgent?.gatewayUrl || "http://127.0.0.1:41241",
+  };
+  const updateAeonSettings = (patch: Record<string, unknown>) => {
+    if (agentCreateMachine) {
+      setAgentCreateDraft((current) => ({ ...current, ...patch }));
+      return;
+    }
+    if (!roleModalAgent) return;
+    updateAgentProfile(roleModalAgent.id, patch);
+  };
+  const agentSettingsPanels = agentCreateMachine
+    ? agentSettingsRuntime === "aeon"
+      ? (["role", "memory"] as const)
+      : (["role", "memory", "security"] as const)
+    : isAeonSettings
+      ? (["memory"] as const)
+      : (["role", "memory", "tools", "security"] as const);
+  const activeAgentSettingsPanel = isAeonSettings && !agentCreateMachine ? "memory" : agentSettingsPanel;
 
   if (!portalTarget) return null;
 
@@ -113,104 +169,134 @@ export function AgentSettingsModal(props: any) {
                       autoFocus
                     />
                   </div>
-                ) : agentRenameEditing && roleModalAgent ? (
-                  <form
-                    className={fleetClass("agentNameEdit")}
-                    onSubmit={(event) => {
-                      event.preventDefault();
-                      const nextName = agentRenameDraft.trim();
-                      if (!nextName) return;
+                ) : roleModalAgent ? (
+                  <InlineRenameControl
+                    value={roleModalAgent.name}
+                    draft={agentRenameDraft}
+                    editing={agentRenameEditing}
+                    inputId="agent-settings-title"
+                    inputAriaLabel="Agent name"
+                    editAriaLabel="Rename agent"
+                    saveAriaLabel="Save agent name"
+                    cancelAriaLabel="Cancel agent name edit"
+                    formClassName={fleetClass("agentNameEdit")}
+                    onDraftChange={setAgentRenameDraft}
+                    onStartEditing={() => {
+                      setAgentRenameDraft(roleModalAgent.name);
+                      setAgentRenameEditing(true);
+                    }}
+                    onCancel={() => {
+                      setAgentRenameDraft(roleModalAgent.name);
+                      setAgentRenameEditing(false);
+                    }}
+                    onSubmit={(nextName) => {
                       updateAgentProfile(roleModalAgent.id, { name: nextName });
                       setAgentRenameEditing(false);
                     }}
-                  >
-                    <input
-                      id="agent-settings-title"
-                      value={agentRenameDraft}
-                      onChange={(event) => setAgentRenameDraft(event.target.value)}
-                      aria-label="Agent name"
-                      autoFocus
-                    />
-                    <button type="submit" aria-label="Save agent name" disabled={!agentRenameDraft.trim()}>
-                      <Check aria-hidden="true" />
-                    </button>
-                    <CloseIconButton
-                      size="sm"
-                      type="button"
-                      aria-label="Cancel agent name edit"
-                      onClick={() => {
-                        setAgentRenameDraft(roleModalAgent.name);
-                        setAgentRenameEditing(false);
-                      }}
-                    />
-                  </form>
-                ) : roleModalAgent ? (
-                  <div className={fleetClass("agentNameDisplay")}>
-                    <div className={fleetClass("agentIdentityBlock")}>
-                      <div className={fleetClass("agentNameTitleRow")}>
-                        <h2 id="agent-settings-title">{roleModalAgent.name}</h2>
-                        <button
-                          type="button"
-                          aria-label="Rename agent"
-                          onClick={() => {
-                            setAgentRenameDraft(roleModalAgent.name);
-                            setAgentRenameEditing(true);
-                          }}
-                        >
-                          <Pencil aria-hidden="true" />
-                        </button>
+                    renderDisplay={({ value, editButton }) => (
+                      <div className={fleetClass("agentNameDisplay")}>
+                        <div className={fleetClass("agentIdentityBlock")}>
+                          <div className={fleetClass("agentNameTitleRow")}>
+                            <h2 id="agent-settings-title">{value}</h2>
+                            {editButton}
+                          </div>
+                          {agentSettingsWorkerSubtitle ? <span className={fleetClass("agentRoleBadge")}>{agentSettingsWorkerSubtitle}</span> : null}
+                        </div>
                       </div>
-                      {agentSettingsWorkerSubtitle ? <span className={fleetClass("agentRoleBadge")}>{agentSettingsWorkerSubtitle}</span> : null}
-                    </div>
-                  </div>
+                    )}
+                  />
                 ) : null}
                 <p className={fleetClass("agentSettingsDescription")}>{agentSettingsDescription}</p>
               </div>
               <CloseIconButton aria-label="Close agent settings" onClick={closeAgentSettingsModal} />
             </div>
 
-            <div className={fleetClass("agentSettingsTabs")} role="tablist" aria-label="Agent settings sections">
-              {(agentCreateMachine ? (["role", "memory", "security"] as const) : (["role", "memory", "tools", "security"] as const)).map((panel) => (
-                <button
-                  type="button"
-                  key={panel}
-                  className={agentSettingsPanel === panel ? fleetClass("activeSegment") : ""}
-                  onClick={() => setAgentSettingsPanel(panel)}
-                >
-                  {panel === "role" ? "Role" : panel === "memory" ? "Memory" : panel === "tools" ? "Tools" : "Security"}
-                </button>
-              ))}
-            </div>
+            {agentSettingsPanels.length > 1 ? (
+              <div className={fleetClass("agentSettingsTabs")} role="tablist" aria-label="Agent settings sections">
+                {agentSettingsPanels.map((panel) => (
+                  <button
+                    type="button"
+                    key={panel}
+                    className={activeAgentSettingsPanel === panel ? fleetClass("activeSegment") : ""}
+                    onClick={() => setAgentSettingsPanel(panel)}
+                  >
+                    {panel === "role" ? "Role" : panel === "memory" ? "Memory" : panel === "tools" ? "Tools" : "Security"}
+                  </button>
+                ))}
+              </div>
+            ) : null}
 
-            {agentSettingsPanel === "role" ? (
+            {activeAgentSettingsPanel === "role" ? (
               <div className={fleetClass("agentSettingsGrid")}>
-                <div className={fleetClass("agentSettingsField", "agentRuntimeSelectField")}>
-                  <span>Runtime</span>
-                  <div className={fleetClass("agentRuntimeSegments")} role="group" aria-label="Runtime">
-                    {Object.entries(RUNTIME_LABELS).map(([runtime, label]) => {
-                      const selected = runtime === (agentCreateMachine ? agentCreateDraft.runtime : roleModalAgent?.runtime ?? "hermes");
-                      const unavailable = runtimeAvailability?.[runtime]?.installed === false;
-                      const title = unavailable ? `${label} is not installed.` : runtimeAvailability?.[runtime]?.detail;
-                      return (
-                        <span className={fleetClass("runtimeSegmentShell")} key={runtime} title={title}>
-                          <button
-                            type="button"
-                            aria-pressed={selected}
-                            aria-describedby={unavailable ? `runtime-${runtime}-unavailable` : undefined}
-                            className={selected ? fleetClass("selectedRuntimeSegment") : ""}
-                            disabled={unavailable}
-                            onClick={() => updateSettingsRuntime(runtime as AgentRuntime)}
-                          >
-                            {renderRuntimeMark(runtime, label)}
-                            <strong>{label}</strong>
-                          </button>
-                          {unavailable ? <span id={`runtime-${runtime}-unavailable`} className="sr-only">{`${label} is not installed.`}</span> : null}
-                        </span>
-                      );
-                    })}
+                {!hideRuntimeSection ? (
+                  <div className={fleetClass("agentSettingsField", "agentRuntimeSelectField")}>
+                    <span>Runtime</span>
+                    <div className={fleetClass("agentRuntimeSegments")} role="group" aria-label="Runtime">
+                      {Object.entries(RUNTIME_LABELS).map(([runtime, label]) => {
+                        const selected = runtime === (agentCreateMachine ? agentCreateDraft.runtime : roleModalAgent?.runtime ?? "hermes");
+                        const unavailable = runtimeAvailability?.[runtime]?.installed === false;
+                        const selectableUnavailable = unavailable && runtime !== "aeon";
+                        const title = runtime === "aeon" && unavailable ? "Aeon needs setup. Select it to create a background Autopilot profile." : unavailable ? `${label} is not installed.` : runtimeAvailability?.[runtime]?.detail;
+                        return (
+                          <span className={fleetClass("runtimeSegmentShell")} key={runtime} title={title}>
+                            <button
+                              type="button"
+                              aria-pressed={selected}
+                              aria-describedby={unavailable ? `runtime-${runtime}-unavailable` : undefined}
+                              className={selected ? fleetClass("selectedRuntimeSegment") : ""}
+                              disabled={selectableUnavailable}
+                              onClick={() => updateSettingsRuntime(runtime as AgentRuntime)}
+                            >
+                              {renderRuntimeMark(runtime, label)}
+                              <strong>{label}</strong>
+                              {runtime === "aeon" ? <small className={fleetClass("runtimeSegmentSubcopy")}>{unavailable ? "Needs setup" : "Autopilot"}</small> : null}
+                            </button>
+                            {unavailable ? <span id={`runtime-${runtime}-unavailable`} className="sr-only">{runtime === "aeon" ? "Aeon needs setup." : `${label} is not installed.`}</span> : null}
+                          </span>
+                        );
+                      })}
+                    </div>
                   </div>
-                </div>
-                {runtimeModelPanelAvailable ? (
+                ) : null}
+                {!hideRuntimeSection && agentSettingsRuntime === "aeon" ? (
+                  <div className={fleetClass("agentRuntimeAeonPanel")}>
+                    <div className={fleetClass("agentRuntimeAeonHeader")}>
+                      {renderRuntimeMark("aeon", "Aeon")}
+                      <div>
+                        <strong>Aeon Autopilot profile</strong>
+                        <p>Aeon runs unattended skills through schedules and GitHub Actions. Models live on each Aeon skill, so this profile skips provider/model selection.</p>
+                      </div>
+                    </div>
+                    <div className={fleetClass("agentRuntimeAeonChecklist")}>
+                      <span><Check aria-hidden="true" /> Background runtime</span>
+                      <span><Repeat2 aria-hidden="true" /> Schedules and runs</span>
+                      <span><BrainCircuit aria-hidden="true" /> Shared skills sync</span>
+                      <span><Upload aria-hidden="true" /> GitHub secret sync</span>
+                    </div>
+                    <div className={fleetClass("agentRuntimeAeonStatus")}>
+                      <strong>{aeonNeedsSetup ? "Needs setup" : "Detected"}</strong>
+                      <p>{aeonAvailability?.detail || "HivemindOS will create a profile pointed at ~/.aeon and send you to the Autopilot dashboard to connect aeon.yml, GitHub repo, A2A, and outputs."}</p>
+                    </div>
+                    <div className={fleetClass("agentRuntimeAeonActions")}>
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="secondary"
+                        onClick={() => {
+                          setActiveView?.("aeon");
+                          closeAgentSettingsModal();
+                        }}
+                      >
+                        <Sparkles aria-hidden="true" />
+                        Open Autopilot
+                      </Button>
+                      <Button type="button" size="sm" variant="ghost" onClick={() => setAgentSettingsPanel("memory")}>
+                        <BrainCircuit aria-hidden="true" />
+                        Memory
+                      </Button>
+                    </div>
+                  </div>
+                ) : !hideRuntimeSection && runtimeModelPanelAvailable ? (
                   <div className={fleetClass("agentRuntimeModelPanel")}>
                     <div className={fleetClass("agentRuntimeCardGroup")}>
                       <div className={fleetClass("agentRuntimeGroupHeader")}>
@@ -440,7 +526,7 @@ export function AgentSettingsModal(props: any) {
                     ) : null}
                   </div>
                 ) : null}
-                {!agentCreateMachine && roleModalAgent ? (
+                {!hideRuntimeSection && !agentCreateMachine && roleModalAgent ? (
                   <div className={fleetClass("agentRuntimeSummary")}>
                     <PlugZap aria-hidden="true" />
                     <div>
@@ -452,7 +538,7 @@ export function AgentSettingsModal(props: any) {
                     </button>
                   </div>
                 ) : null}
-                {agentRuntimeAdvancedOpen && !agentCreateMachine && roleModalAgent ? (
+                {!hideRuntimeSection && agentRuntimeAdvancedOpen && !agentCreateMachine && roleModalAgent ? (
                   <div className={fleetClass("agentRuntimeAdvanced")}>
                     <label className={fleetClass("agentSettingsField")}>
                       <span>Chat URL / gateway</span>
@@ -479,6 +565,7 @@ export function AgentSettingsModal(props: any) {
                     </label>
                   </div>
                 ) : null}
+                {!isAeonSettings ? (
                 <div className={fleetClass("agentSettingsField", "agentWorkerClassPicker")}>
                   <span>Worker class</span>
                   {agentWorkerClassView === "presets" ? (
@@ -642,11 +729,61 @@ export function AgentSettingsModal(props: any) {
                     </div>
                   )}
                 </div>
+                ) : null}
               </div>
             ) : null}
 
-            {agentSettingsPanel === "memory" ? (
+            {activeAgentSettingsPanel === "memory" ? (
               <div className={fleetClass("agentSettingsGrid", "agentMemoryPanel")}>
+                {isAeonSettings ? (
+                  <div className="grid gap-3 rounded-md border border-[rgba(94,234,212,0.14)] bg-[rgba(20,184,166,0.06)] p-3 md:grid-cols-2">
+                    <label className={fleetClass("agentSettingsField")}>
+                      <span>AEON mode</span>
+                      <select
+                        value={aeonSettings.mode}
+                        onChange={(event) => updateAeonSettings({ aeonMode: event.target.value })}
+                      >
+                        <option value="github">GitHub Actions</option>
+                        <option value="local">Local repo</option>
+                        <option value="a2a">A2A gateway</option>
+                      </select>
+                    </label>
+                    <label className={fleetClass("agentSettingsField")}>
+                      <span>GitHub repo</span>
+                      <input
+                        value={aeonSettings.repo}
+                        onChange={(event) => updateAeonSettings({ aeonRepo: event.target.value })}
+                        placeholder="owner/repo"
+                      />
+                    </label>
+                    <label className={fleetClass("agentSettingsField")}>
+                      <span>Branch</span>
+                      <input
+                        value={aeonSettings.branch}
+                        onChange={(event) => updateAeonSettings({ aeonBranch: event.target.value })}
+                        placeholder="main"
+                      />
+                    </label>
+                    <label className={fleetClass("agentSettingsField")}>
+                      <span>A2A / gateway URL</span>
+                      <input
+                        value={aeonSettings.a2aUrl}
+                        onChange={(event) => updateAeonSettings({ a2aUrl: event.target.value, gatewayUrl: event.target.value })}
+                        placeholder="http://127.0.0.1:41241"
+                      />
+                    </label>
+                    {agentCreateMachine ? (
+                      <label className={fleetClass("agentSettingsField")}>
+                        <span>AEON repo path</span>
+                        <input
+                          value={aeonSettings.path}
+                          onChange={(event) => updateAeonSettings({ aeonLocalPath: event.target.value })}
+                          placeholder="~/.aeon or ~/my-aeon-repo"
+                        />
+                      </label>
+                    ) : null}
+                  </div>
+                ) : null}
                 <label className={fleetClass("agentSettingsField", "toggleRow")}>
                   <input
                     type="checkbox"
@@ -667,13 +804,13 @@ export function AgentSettingsModal(props: any) {
                     <p>{sharedVault.enabled ? `Shared brain: ${sharedVault.vaultPath || "auto-detected vault"}. Memory, Kanban, notifications, and HivemindOS context are shared from there.` : "Shared brain is off. Turn it on from the Vault view to give agents one common memory space."}</p>
                   </div>
                 ) : null}
-                {!agentCreateMachine && roleModalAgent ? (
-                  <div className={fleetClass("agentMemoryFolderRow")}>
-                    <div>
-                      <span>Runtime folder</span>
-                      <strong>{roleModalAgent.localDataDir?.trim() || "Managed by runtime"}</strong>
-                      <p>{roleModalAgent.useSharedVault !== false ? "Only change this if this agent needs a custom local workspace." : "Used as this agent's local memory and workspace folder."}</p>
-                    </div>
+	                {!agentCreateMachine && roleModalAgent ? (
+	                  <div className={fleetClass("agentMemoryFolderRow")}>
+	                    <div>
+	                      <span>{isAeonSettings ? "AEON repo folder" : "Runtime folder"}</span>
+	                      <strong>{runtimeFolderValue.trim() || "Managed by runtime"}</strong>
+	                      <p>{isAeonSettings ? "This is the local AEON repo that the dashboard reads and mirrors into Obsidian." : roleModalAgent.useSharedVault !== false ? "Only change this if this agent needs a custom local workspace." : "Used as this agent's local memory and workspace folder."}</p>
+	                    </div>
                     <div className={fleetClass("agentMemoryFolderActions")}>
                       <button type="button" aria-label="Browse for runtime folder" onClick={() => void browseAgentRuntimeFolder()} disabled={agentRuntimeFolderBrowsing}>
                         <FolderOpen aria-hidden="true" />
@@ -684,18 +821,20 @@ export function AgentSettingsModal(props: any) {
                     </div>
                   </div>
                 ) : null}
-                {agentRuntimeFolderEditing && roleModalAgent ? (
-                  <label className={fleetClass("agentSettingsField", "agentMemoryPathEditor")}>
-                    <span>Runtime folder path</span>
-                    <div>
-                      <input
-                        value={roleModalAgent.localDataDir ?? ""}
-                        onChange={(event) => {
-                          updateAgentProfile(roleModalAgent.id, { localDataDir: event.target.value });
-                          setAgentRuntimeFolderStatus("");
-                        }}
-                        placeholder="Leave blank to use the runtime default"
-                      />
+	                {agentRuntimeFolderEditing && roleModalAgent ? (
+	                  <label className={fleetClass("agentSettingsField", "agentMemoryPathEditor")}>
+	                    <span>{isAeonSettings ? "AEON repo path" : "Runtime folder path"}</span>
+	                    <div>
+	                      <input
+	                        value={runtimeFolderValue}
+	                        onChange={(event) => {
+	                          updateAgentProfile(roleModalAgent.id, isAeonSettings
+	                            ? { aeonLocalPath: event.target.value, localDataDir: event.target.value }
+	                            : { localDataDir: event.target.value });
+	                          setAgentRuntimeFolderStatus("");
+	                        }}
+	                        placeholder={isAeonSettings ? "~/.aeon or ~/my-aeon-repo" : "Leave blank to use the runtime default"}
+	                      />
                       <button type="button" aria-label="Done editing runtime folder path" onClick={() => setAgentRuntimeFolderEditing(false)}>
                         <Check aria-hidden="true" />
                       </button>
@@ -706,7 +845,7 @@ export function AgentSettingsModal(props: any) {
               </div>
             ) : null}
 
-            {agentSettingsPanel === "tools" && roleModalAgent ? (
+            {activeAgentSettingsPanel === "tools" && roleModalAgent ? (
               <div className={fleetClass("agentRuntimeToolsPanel")}>
                 <div className={fleetClass("agentRuntimeToolsHeader")}>
                   <div>
@@ -946,7 +1085,7 @@ export function AgentSettingsModal(props: any) {
               </div>
             ) : null}
 
-            {agentSettingsPanel === "security" ? (
+            {activeAgentSettingsPanel === "security" ? (
               <div className={fleetClass("agentSecurityGrid")}>
                 <article><ShieldCheck aria-hidden="true" /><div><strong>Prompt guard</strong><p>Blocks obvious prompt-injection and dangerous local-action requests before they reach connected runtimes. Checks run locally in the dashboard.</p></div></article>
                 <article><Eye aria-hidden="true" /><div><strong>Output redaction</strong><p>Secrets and obvious credential leaks are redacted from streamed responses before the dashboard renders them.</p></div></article>
@@ -957,7 +1096,7 @@ export function AgentSettingsModal(props: any) {
             <div className={fleetClass("setupModalActions")}>
               <Button type="button" disabled={runtimeIntegrationBusy === "create-agent"} onClick={agentCreateMachine ? () => void createAgentFromModal() : closeAgentSettingsModal}>
                 <Check aria-hidden="true" />
-                {agentCreateMachine ? runtimeIntegrationBusy === "create-agent" ? "Creating..." : "Add agent" : "Done"}
+                {agentCreateMachine ? runtimeIntegrationBusy === "create-agent" ? "Creating..." : agentCreateDraft.runtime === "aeon" ? "Connect Autopilot" : "Add agent" : "Done"}
               </Button>
               {agentCreateMachine && runtimeIntegrationMessage ? <p className={fleetClass("agentRuntimeToolStatus")}>{runtimeIntegrationMessage}</p> : null}
             </div>

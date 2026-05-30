@@ -85,6 +85,18 @@ When no system Tailscale route exists, the dashboard reaches remote collectors
 through the local sidecar's `/peer/<host:port>/...` proxy instead of dialing
 Tailnet IPs directly.
 
+Keep these URL shapes distinct:
+
+- Local collector: `http://127.0.0.1:<collector-port>/...`
+- Local Hivemind Link sidecar: `http://127.0.0.1:8788/status`
+- Remote collector through Link: `http://127.0.0.1:8788/peer/<tailnet-host%3A8787>/...`
+
+Only the local collector port may move, for example from `8787` to `8789` when
+`8787` is already occupied. The active local collector port is recorded in
+`~/.hivemindos/collector.env`. Do not rewrite Link `/peer/...` URLs to that
+collector port: `/peer/...` belongs to `hivemind-linkd` on `8788`, and rewriting
+it makes remote chat look like a missing Hermes chat bridge with a fast `404`.
+
 If the embedded node needs authorization, setup prints a Tailscale sign-in URL.
 No HivemindOS server proxies model or collector traffic.
 

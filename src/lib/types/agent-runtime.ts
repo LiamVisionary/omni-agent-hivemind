@@ -71,6 +71,8 @@ export interface AgentProfile {
   runtimeKind?: AgentRuntimeKind;
   runtimeCapabilities?: RuntimeCapabilities;
   aeonRepo?: string;
+  aeonRepoName?: string;
+  aeonLogoUrl?: string;
   aeonBranch?: string;
   aeonLocalPath?: string;
   a2aUrl?: string;
@@ -284,7 +286,9 @@ export function createAgentProfile(runtime: AgentRuntime, index = 1): AgentProfi
 
 export function getRuntimeUrl(profile: AgentProfile, path?: string): string {
   if (profile.runtime === "openclaw") return profile.gatewayUrl;
-  const base = profile.gatewayUrl.replace(/\/+$/, "");
-  const suffix = path || profile.chatPath || "/chat";
+  if (path && /^https?:\/\//i.test(path)) return path;
+  const defaults = RUNTIME_DEFAULTS[profile.runtime] ?? RUNTIME_DEFAULTS.hermes;
+  const base = (profile.gatewayUrl?.trim() || defaults.gatewayUrl || "").replace(/\/+$/, "");
+  const suffix = path || profile.chatPath || defaults.chatPath || "/chat";
   return `${base}${suffix.startsWith("/") ? suffix : `/${suffix}`}`;
 }

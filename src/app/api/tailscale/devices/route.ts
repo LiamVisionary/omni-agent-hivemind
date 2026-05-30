@@ -91,6 +91,8 @@ function isSameTailscalePeer(left?: TailscalePeer, right?: TailscalePeer) {
 }
 
 function deviceIdentityKey(device: ReturnType<typeof simplifyDevice>) {
+  const physicalKey = devicePhysicalIdentityKey(device);
+  if (physicalKey) return physicalKey;
   const dnsName = normalizeName(dnsLabel(device.dnsName));
   const name = normalizeName(device.name) || dnsName;
   if (name.startsWith("hivemindos")) return dnsName || name;
@@ -105,6 +107,12 @@ function isHivemindLinkDevice(device: ReturnType<typeof simplifyDevice>) {
 
 function isMobileDevice(device: ReturnType<typeof simplifyDevice>) {
   return /^(ios|android)$/i.test(device.os);
+}
+
+function devicePhysicalIdentityKey(device: ReturnType<typeof simplifyDevice>) {
+  const base = physicalMachineBase(device);
+  if (!base || isMobileDevice(device)) return "";
+  return isHivemindLinkDevice(device) ? `physical:${base}` : "";
 }
 
 function isMacDevice(device: ReturnType<typeof simplifyDevice>) {

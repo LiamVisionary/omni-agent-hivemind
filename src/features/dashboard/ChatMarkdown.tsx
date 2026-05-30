@@ -378,14 +378,22 @@ export function ChatMarkdown({ text, className, headingClassName }: { text: stri
     }
     if (line.trim().startsWith("```")) {
       const code: string[] = [];
+      const fenceLanguage = line.trim().slice(3).trim().toLowerCase();
       index += 1;
       while (index < lines.length && !lines[index].trim().startsWith("```")) {
         code.push(lines[index]);
         index += 1;
       }
       index += 1;
-      blocks.push(<pre key={`code-${index}`}><code>{code.join("\n")}</code></pre>);
-      previousBlockKind = "code";
+      const codeText = code.join("\n");
+      const shouldFormatDataFence = /json|jsonc|data/.test(fenceLanguage)
+        || jsonStartPattern.test(codeText)
+        || jsonPropertyPattern.test(codeText);
+      const formattedDataFence = shouldFormatDataFence ? formatJsonCandidate(codeText) : "";
+      blocks.push(formattedDataFence
+        ? renderDataBlock(formattedDataFence, `code-json-${index}`)
+        : <pre key={`code-${index}`}><code>{codeText}</code></pre>);
+      previousBlockKind = formattedDataFence ? "json" : "code";
       continue;
     }
     if (jsonStartPattern.test(line)) {

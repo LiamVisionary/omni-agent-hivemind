@@ -13,16 +13,6 @@ type DashboardHeaderProps = {
   TooltipTrigger: ElementType;
   activeHeader: { eyebrow: string; title: string };
   activeView: DashboardView;
-  fleetCheckedAt?: number;
-  fleetHeader?: {
-    agents: number;
-    checkedLabel: string;
-    machines: number;
-    tailnetLabel: string;
-    urgent: number;
-    working: number;
-  };
-  formatRelativeTime: (timestamp: number) => string;
   isWorkView: (view: DashboardView) => boolean;
   kanbanBoard?: KanbanBoard | null;
   navItems: Array<{ id: DashboardView; label: string; detail: string }>;
@@ -42,9 +32,6 @@ export function DashboardHeader(props: DashboardHeaderProps) {
     TooltipTrigger,
     activeHeader,
     activeView,
-    fleetCheckedAt,
-    fleetHeader,
-    formatRelativeTime,
     isWorkView,
     kanbanBoard,
     navItems,
@@ -55,13 +42,18 @@ export function DashboardHeader(props: DashboardHeaderProps) {
     viewIcon,
   } = props;
   const [mobileRoutesOpen, setMobileRoutesOpen] = useState(false);
-  const showFleetHeader = activeView === "agents" && Boolean(fleetHeader);
+  const showFleetHeader = activeView === "agents";
+  const topbarClassName = [
+    "commandTopbar",
+    showFleetHeader ? "fleetCommandTopbar" : "",
+    activeView === "chat" ? "chatCommandTopbar" : "",
+  ].filter(Boolean).join(" ");
   const primaryNavItems = (["agents", "kanban", "vault", "chat", "wallet", "more"] as DashboardView[])
     .map((id) => navItems.find((item) => item.id === id))
     .filter((item): item is (typeof navItems)[number] => Boolean(item));
   const isActiveRoute = (id: DashboardView) => id === activeView
     || (id === "kanban" && isWorkView(activeView))
-    || (id === "more" && (activeView === "maintenance" || activeView === "memory" || activeView === "files" || activeView === "notifications" || activeView === "env" || activeView === "integrations" || activeView === "my-apps"));
+    || (id === "more" && (activeView === "maintenance" || activeView === "memory" || activeView === "files" || activeView === "notifications" || activeView === "env" || activeView === "integrations" || activeView === "my-apps" || activeView === "phone"));
   const activeNavLabel = navItems.find((item) => item.id === activeView)?.label
     ?? primaryNavItems.find((item) => isActiveRoute(item.id))?.label
     ?? activeHeader.title;
@@ -76,7 +68,7 @@ export function DashboardHeader(props: DashboardHeaderProps) {
 
   return (
     <TooltipProvider delayDuration={120}>
-      <header className={`commandTopbar ${showFleetHeader ? "fleetCommandTopbar" : ""}`} aria-label="Control room navigation">
+      <header className={topbarClassName} aria-label="Control room navigation">
         <div id="mobile-route-drawer-shell" className={`mobileRouteShell ${mobileRoutesOpen ? "open" : ""}`}>
           <button
             type="button"
@@ -148,14 +140,14 @@ export function DashboardHeader(props: DashboardHeaderProps) {
             </button>
             <div className="brandCopy">
               <p className="eyebrow">{activeHeader.eyebrow}</p>
-              <strong>{showFleetHeader ? "The Swarm" : activeHeader.title}</strong>
+              {showFleetHeader ? (
+                <strong className="topbarHeadline fleetInlineHeadline">
+                  The hive is <span>humming.</span>
+                </strong>
+              ) : (
+                <strong className="topbarHeadline">{renderHeaderPhrase(activeHeader.title, activeView)}</strong>
+              )}
             </div>
-          </div>
-
-          <div className="topbarSignal" aria-label="Brain sync status">
-            {new Date().toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric", year: "numeric" })}
-            <span>· brain ·</span>
-            <span>synced {fleetCheckedAt ? formatRelativeTime(fleetCheckedAt) : "38s ago"}</span>
           </div>
 
           <nav className="viewTabs" aria-label="Dashboard views">
@@ -191,41 +183,23 @@ export function DashboardHeader(props: DashboardHeaderProps) {
               })}
           </nav>
         </div>
-
-        {fleetHeader ? (
-          <div className="fleetTopbarHero" aria-label="Fleet status summary">
-            <div>
-              <p className="eyebrow">{fleetHeader.checkedLabel} · {fleetHeader.tailnetLabel}</p>
-              <h1>
-                The hive is <span>humming.</span>
-              </h1>
-            </div>
-            <div className="fleetTopbarStats">
-              <FleetTopbarStat value={fleetHeader.machines} label="machines" />
-              <FleetTopbarStat value={fleetHeader.agents} label="agents" />
-              <FleetTopbarStat value={fleetHeader.working} label="working" tone="cyan" />
-              <FleetTopbarStat value={fleetHeader.urgent} label="urgent" tone="danger" />
-            </div>
-          </div>
-        ) : null}
       </header>
     </TooltipProvider>
   );
 }
 
-function FleetTopbarStat({
-  label,
-  tone,
-  value,
-}: {
-  label: string;
-  tone?: "cyan" | "danger";
-  value: number;
-}) {
+function renderHeaderPhrase(title: string, activeView: DashboardView) {
+  if (activeView === "chat" && title.startsWith("Talking with ")) {
+    const name = title.slice("Talking with ".length);
+    return <>Talking with <span>{name}</span></>;
+  }
+
+  const lastSpace = title.trimEnd().lastIndexOf(" ");
+  if (lastSpace < 0) return <span>{title}</span>;
+
   return (
-    <div className={`fleetTopbarStat ${tone ? `is-${tone}` : ""}`}>
-      <strong>{value}</strong>
-      <span>{label}</span>
-    </div>
+    <>
+      {title.slice(0, lastSpace)} <span>{title.slice(lastSpace + 1)}</span>
+    </>
   );
 }

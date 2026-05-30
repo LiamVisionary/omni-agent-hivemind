@@ -3,8 +3,10 @@ import type { FleetAgent, FleetMachine } from "@/components/fleet";
 import { createStyleClass } from "@/features/dashboard/style-classes";
 import type { AgentSnapshot, AppVersion, BrainGraphNode, DiscoveredMachine, MachineGroup } from "@/features/dashboard/dashboard-types";
 import {
+  isHivemindMachineName,
   isLocalLinkDuplicateOfSelf,
   isLoopbackCollector,
+  isMobileMachineOs,
   machineHivemindBase,
   machineIdentityFromParts,
   machinePhysicalBase,
@@ -233,6 +235,10 @@ export function mergeMachineSnapshots(previous: AgentSnapshot[] = [], incoming: 
 }
 
 export function discoveredMachineIdentity(machine: DiscoveredMachine) {
+  const physicalBase = machinePhysicalBase(machine.device.name, machine.device.dnsName);
+  if (physicalBase && isHivemindMachineName(machine.device.name, machine.device.dnsName) && !isMobileMachineOs(machine.device.os)) {
+    return `physical:${physicalBase}`;
+  }
   const machineId = machine.collector === "ready" ? machine.machineId?.trim().toLowerCase() : "";
   if (machineId && /^hivemind-machine-[a-f0-9]{32}$/.test(machineId)) return machineId;
   return machineIdentityFromParts({

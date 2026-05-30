@@ -96,7 +96,15 @@ export async function setupNangoHost(input: SetupNangoHostInput = {}): Promise<N
   const config = normalizeConfig({ ...(await readNangoHostConfig(storage)), ...input });
   await writeConfig(storage.file, config);
   if (input.collectorUrl?.trim() && config.mode !== "local") {
-    return setupNangoHostViaCollector(input.collectorUrl, config);
+    const result = await setupNangoHostViaCollector(input.collectorUrl, config);
+    if (result.ok && result.baseUrl !== config.baseUrl) {
+      await writeConfig(storage.file, {
+        ...config,
+        baseUrl: result.baseUrl,
+        updatedAt: new Date().toISOString(),
+      });
+    }
+    return result;
   }
   const target = setupTarget(config, input.target);
   const script = nangoSetupScript(config);
@@ -129,6 +137,22 @@ async function setupNangoHostViaCollector(collectorUrl: string, config: NangoHos
   if (response.status === 404) {
     throw new Error("That machine is reachable through the HivemindOS agent bridge, but the agent bridge does not have the Nango setup endpoint yet. Run the machine update once from Fleet, then try setup again.");
   }
+  if (payload?.ok === false && payload.health?.error && isConnectionRefused(payload.health.error)) {
+    const proxyBaseUrl = collectorProxyNangoBaseUrl(base, config.baseUrl);
+    const proxyHealth = await checkNangoHealth(proxyBaseUrl);
+    if (proxyHealth.ok) {
+      return normalizeCollectorSetupResult({
+        ...payload,
+        ok: true,
+        baseUrl: proxyBaseUrl,
+        health: proxyHealth,
+        stderr: [
+          payload.stderr,
+          "Nango is running through the HivemindOS app proxy. Direct Tailnet port access is not open on this host.",
+        ].filter(Boolean).join("\n\n"),
+      }, base);
+    }
+  }
   if (payload?.ok === false && payload.health) {
     return normalizeCollectorSetupResult(payload, base);
   }
@@ -159,6 +183,15 @@ function setupPayloadError(payload: (Partial<NangoHostSetupResult> & { error?: s
   const stdout = payload.stdout?.trim();
   if (stdout) return stdout.slice(-1200);
   return undefined;
+}
+
+function isConnectionRefused(message: string) {
+  return /fetch failed|ECONNREFUSED|connection refused|couldn't connect/i.test(message);
+}
+
+function collectorProxyNangoBaseUrl(collectorUrl: string, baseUrl: string) {
+  const port = new URL(normalizeNangoHost(baseUrl)).port || "3003";
+  return normalizeNangoHost(`${collectorUrl.replace(/\/+$/, "")}/app-proxy/${port}`);
 }
 
 async function resolveStorage(): Promise<Storage> {

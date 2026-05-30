@@ -350,6 +350,24 @@ export function isAutomationChatTranscript(messages: ChatMessage[] = []) {
   return false;
 }
 
+export function compactChatMessagesForStorage(messagesByAgent: Record<string, ChatMessage[]>) {
+  return Object.fromEntries(Object.entries(messagesByAgent)
+    .map(([agentId, messages]) => [
+      agentId,
+      messages
+        .filter((message) => message.role !== "system" && (message.content.trim() || message.attachments?.length))
+        .slice(-120),
+    ])
+    .filter(([, messages]) => Array.isArray(messages) && messages.length > 0 && !isAutomationChatTranscript(messages)));
+}
+
+export function chatMessagesStorageStats(messagesByAgent: Record<string, ChatMessage[]>) {
+  return {
+    agentCount: Object.keys(messagesByAgent).length,
+    messageCount: Object.values(messagesByAgent).reduce((count, messages) => count + messages.length, 0),
+  };
+}
+
 export function parseStoredChatMessages(): Record<string, ChatMessage[]> {
   if (typeof window === "undefined") return {};
   const raw = readStoredValue(CHAT_MESSAGES_STORAGE_KEY, STORAGE_SUFFIXES.chatMessages);

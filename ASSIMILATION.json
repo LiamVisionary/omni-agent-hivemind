@@ -1,5 +1,5 @@
 {
-  "created_at": "2026-05-25T11:21:09.005960+00:00",
+  "created_at": "2026-05-30T07:58:42.627995+00:00",
   "custom_code_assessment": "balanced",
   "entries": [
     {
@@ -883,6 +883,27 @@
       "target_path": "src/app/fleet.module.css",
       "reuse_type": "style_adapted",
       "note": "compact filter-control grouping and active chip treatment adapted to the dashboard CSS module"
+    },
+    {
+      "source_repo": "uixmat/onborda",
+      "source_path": "src/OnbordaContext.tsx",
+      "target_path": "src/features/integrations/NangoIntegrationsView.tsx",
+      "reuse_type": "adapted_code",
+      "note": "step-state controls adapted into the Nango setup flow"
+    },
+    {
+      "source_repo": "uixmat/onborda",
+      "source_path": "src/types/index.ts",
+      "target_path": "src/features/integrations/NangoIntegrationsView.tsx",
+      "reuse_type": "adapted_code",
+      "note": "typed wizard step model adapted for setup view states"
+    },
+    {
+      "source_repo": "uixmat/onborda",
+      "source_path": "src/Onborda.tsx",
+      "target_path": "src/features/integrations/NangoIntegrationsView.tsx",
+      "reuse_type": "adapted_code",
+      "note": "next/back onboarding progression adapted for host/method/setup/app views"
     }
   ]
 }

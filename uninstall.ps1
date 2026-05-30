@@ -280,6 +280,10 @@ if (Ask-YesNo "Uninstall Syncthing itself from this machine?" $false) {
   Uninstall-WingetPackage "Syncthing" "Syncthing.Syncthing"
 }
 
+if (Ask-YesNo "Uninstall Unison itself from this machine?" $false) {
+  Uninstall-WingetPackage "Unison" "Unison.Unison"
+}
+
 if (Ask-YesNo "Uninstall Tailscale itself from this machine?" $false) {
   Uninstall-WingetPackage "Tailscale" "Tailscale.Tailscale"
 }

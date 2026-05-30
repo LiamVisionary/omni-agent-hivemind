@@ -6,7 +6,7 @@ import type { Dispatch, SetStateAction } from "react";
 import type { BeeWorkerPreset } from "@/lib/config/bee-worker-presets";
 import type { AgentProfile, AgentRuntime } from "@/lib/types/agent-runtime";
 import type { AgentCreateDraft, AgentSettingsPanel, AgentWorkerClassView, RuntimeModelDraft, RuntimeModelSetupMode } from "@/features/dashboard/agent-settings-types";
-import type { DiscoveredMachine, MachineGroup, RuntimeEnvSyncResponse, RuntimeIntegrationStatus, RuntimeModelSelection, RuntimeSessionSearchResult, WorkerClassDraft } from "@/features/dashboard/dashboard-types";
+import type { DashboardView, DiscoveredMachine, MachineGroup, RuntimeEnvSyncResponse, RuntimeIntegrationStatus, RuntimeModelSelection, RuntimeSessionSearchResult, WorkerClassDraft } from "@/features/dashboard/dashboard-types";
 
 type UseAgentControllerProps = {
   RUNTIME_LABELS: Record<string, string>;
@@ -26,6 +26,7 @@ type UseAgentControllerProps = {
   runtimeCount: (agents: AgentProfile[], runtime: AgentRuntime) => number;
   runtimeSessionQuery: string;
   selectedAgent: AgentProfile | null;
+  setActiveView: Dispatch<SetStateAction<DashboardView>>;
   setAeonEnvSyncStatus: Dispatch<SetStateAction<string>>;
   setAeonEnvSyncing: Dispatch<SetStateAction<boolean>>;
   setAgentCreateDraft: Dispatch<SetStateAction<AgentCreateDraft>>;
@@ -66,7 +67,7 @@ function runtimeIntegrationTargetKey(agent?: AgentProfile | null) {
 }
 
 export function useAgentController(props: UseAgentControllerProps) {
-  const { RUNTIME_LABELS, aeonEnvKeys, agentCreateDraft, agentCreateMachine, agents, beeWorkerPreset, collectorKey, createAgentProfile, defaultWorkerClassDraft, displayAgents, hermesUpdateDetail, normalizeAgentProfile, openSetupModal, roleModalAgent, runtimeCount, runtimeSessionQuery, selectedAgent, setAeonEnvSyncStatus, setAeonEnvSyncing, setAgentCreateDraft, setAgentCreateMachineKey, setAgentRenameDraft, setAgentRenameEditing, setAgentRoleModalId, setAgentRuntimeAdvancedOpen, setAgentRuntimeFolderBrowsing, setAgentRuntimeFolderEditing, setAgentRuntimeFolderStatus, setAgentSettingsPanel, setAgentWorkerClassView, setAgents, setCustomWorkerDraft, setCustomWorkerImageError, setCustomWorkerSkillSearch, setDiscoveredMachines, setHermesUpdateRequiredDetail, setRuntimeBackgroundPrompt, setRuntimeIntegrationBusy, setRuntimeIntegrationMessage, setRuntimeIntegrationStatus, setRuntimeModelDraft, setRuntimeModelSelectionsByRuntime, setRuntimeModelSetupMode, setRuntimeSessionQuery, setRuntimeSessionResults, setSelectedAgentId } = props;
+  const { RUNTIME_LABELS, aeonEnvKeys, agentCreateDraft, agentCreateMachine, agents, beeWorkerPreset, collectorKey, createAgentProfile, defaultWorkerClassDraft, displayAgents, hermesUpdateDetail, normalizeAgentProfile, openSetupModal, roleModalAgent, runtimeCount, runtimeSessionQuery, selectedAgent, setActiveView, setAeonEnvSyncStatus, setAeonEnvSyncing, setAgentCreateDraft, setAgentCreateMachineKey, setAgentRenameDraft, setAgentRenameEditing, setAgentRoleModalId, setAgentRuntimeAdvancedOpen, setAgentRuntimeFolderBrowsing, setAgentRuntimeFolderEditing, setAgentRuntimeFolderStatus, setAgentSettingsPanel, setAgentWorkerClassView, setAgents, setCustomWorkerDraft, setCustomWorkerImageError, setCustomWorkerSkillSearch, setDiscoveredMachines, setHermesUpdateRequiredDetail, setRuntimeBackgroundPrompt, setRuntimeIntegrationBusy, setRuntimeIntegrationMessage, setRuntimeIntegrationStatus, setRuntimeModelDraft, setRuntimeModelSelectionsByRuntime, setRuntimeModelSetupMode, setRuntimeSessionQuery, setRuntimeSessionResults, setSelectedAgentId } = props;
   function updateAgent(patch: Partial<AgentProfile>) {
     if (!selectedAgent) return;
     setAgents((current) => current.map((agent) => (
@@ -155,6 +156,11 @@ export function useAgentController(props: UseAgentControllerProps) {
       skillProfilePrompt: beeWorkerPreset("general").taskProfile,
       preferredSkillSlugs: beeWorkerPreset("general").skillSlugs,
       useSharedVault: true,
+      aeonLocalPath: runtime === "aeon" ? "~/.aeon" : undefined,
+      aeonRepo: runtime === "aeon" ? "" : undefined,
+      aeonBranch: runtime === "aeon" ? "main" : undefined,
+      aeonMode: runtime === "aeon" ? "github" : undefined,
+      a2aUrl: runtime === "aeon" ? "http://127.0.0.1:41241" : undefined,
     });
   }
 
@@ -188,7 +194,9 @@ export function useAgentController(props: UseAgentControllerProps) {
       });
       const data = await response.json().catch(() => null) as { path?: string; cancelled?: boolean; error?: string } | null;
       if (data?.path) {
-        updateAgentProfile(roleModalAgent.id, { localDataDir: data.path });
+        updateAgentProfile(roleModalAgent.id, roleModalAgent.runtime === "aeon"
+          ? { localDataDir: data.path, aeonLocalPath: data.path }
+          : { localDataDir: data.path });
         setAgentRuntimeFolderEditing(false);
       } else if (!data?.cancelled) {
         setAgentRuntimeFolderEditing(true);
@@ -274,11 +282,17 @@ export function useAgentController(props: UseAgentControllerProps) {
       name: agentCreateDraft.name.trim() || `${RUNTIME_LABELS[runtime] ?? runtime} on ${agentCreateMachine.name}`,
       telemetryUrl: agentCreateMachine.collectorUrl,
       machineName: agentCreateMachine.name,
-      agentId: runtime === "openclaw" ? "main" : "",
+      agentId: runtime === "openclaw" ? "main" : runtime === "aeon" ? "local-aeon" : "",
       provider: agentCreateDraft.provider,
       model: agentCreateDraft.model,
       adaptiveOpenRouter: agentCreateDraft.adaptiveOpenRouter,
-      localDataDir: "",
+      localDataDir: runtime === "aeon" ? agentCreateDraft.aeonLocalPath || "~/.aeon" : "",
+      aeonLocalPath: runtime === "aeon" ? agentCreateDraft.aeonLocalPath || "~/.aeon" : undefined,
+      aeonRepo: runtime === "aeon" ? agentCreateDraft.aeonRepo || "" : undefined,
+      aeonBranch: runtime === "aeon" ? agentCreateDraft.aeonBranch || "main" : undefined,
+      aeonMode: runtime === "aeon" ? agentCreateDraft.aeonMode || "github" : undefined,
+      a2aUrl: runtime === "aeon" ? agentCreateDraft.a2aUrl || "http://127.0.0.1:41241" : undefined,
+      gatewayUrl: runtime === "aeon" ? agentCreateDraft.a2aUrl || "http://127.0.0.1:41241" : undefined,
       beeRole: "worker",
       workerClass: agentCreateDraft.workerClass,
       customWorkerClass: agentCreateDraft.customWorkerClass,
@@ -323,6 +337,10 @@ export function useAgentController(props: UseAgentControllerProps) {
     )));
     setSelectedAgentId(next.id);
     closeAgentSettingsModal();
+    if (runtime === "aeon") {
+      window.sessionStorage.setItem("hivemindos.aeon.openDetailAgentId", next.id);
+      setActiveView("aeon");
+    }
   }
 
 

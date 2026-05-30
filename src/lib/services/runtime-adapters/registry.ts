@@ -27,9 +27,15 @@ export function runtimeHasAdapter(runtime: string): runtime is AgentRuntime {
 export type {
   RuntimeAdapter,
   RuntimeAdapterContext,
+  RuntimeAnalytics,
   RuntimeEnvSyncResult,
+  RuntimeMemorySnapshot,
+  RuntimeRepoSyncStatus,
   RuntimeRun,
+  RuntimeRunLog,
   RuntimeSchedule,
   RuntimeScheduleAction,
+  RuntimeSecretStatus,
+  RuntimeSkillConfigAction,
   RuntimeSkill,
 } from "./types";

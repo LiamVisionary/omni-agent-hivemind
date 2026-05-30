@@ -1,7 +1,7 @@
 import { NextRequest } from "next/server";
 import { execFile } from "child_process";
 import { readFile, stat } from "fs/promises";
-import { homedir } from "os";
+import { homedir, hostname, networkInterfaces } from "os";
 import { join, resolve } from "path";
 import { promisify } from "util";
 import type { AgentProfile, SharedVaultConfig } from "@/lib/types/agent-runtime";
@@ -15,6 +15,13 @@ import { getRuntimeAdapter } from "@/lib/services/runtime-adapters/registry";
 import { recordHoneyUsage } from "@/lib/services/wallet/honey-ledger";
 import { recordTelemetryBatch } from "@/lib/services/telemetry/local-telemetry";
 import { normalizeRuntimeStreamEvent, RUNTIME_STREAM_EVENT_TYPES } from "@/lib/services/runtime-stream-events";
+import {
+  appendRuntimeChatSessionEvent,
+  appendRuntimeChatSessionText,
+  createRuntimeChatSessionId,
+  finishRuntimeChatSession,
+  startRuntimeChatSession,
+} from "@/lib/services/chat/runtime-session-store";
 
 export const runtime = "nodejs";
 export const maxDuration = 600;
@@ -39,6 +46,7 @@ type AgentMode = "plan" | "act";
 const INTERACTIVE_RUNTIME_LOCK_MS = 130_000;
 const RUNTIME_FETCH_TIMEOUT_MS = 10 * 60 * 1000;
 const HIVE_ENV_FILE = join(homedir(), ".hivemindos", ".env");
+const LOCAL_COLLECTOR_ENV_FILE = join(homedir(), ".hivemindos", "collector.env");
 const HERMES_ENV_FILE = join(homedir(), ".hermes", ".env");
 const interactiveRuntimeLocks = new Map<string, number>();
 const execFileAsync = promisify(execFile);
@@ -607,14 +615,47 @@ function runtimeStreamErrorMessage(profile: AgentProfile, error: unknown) {
   return reason || "Runtime stream failed";
 }
 
-function collectorChatProfile(profile: AgentProfile): AgentProfile | null {
+async function collectorChatProfile(profile: AgentProfile): Promise<AgentProfile | null> {
   if (profile.runtime !== "hermes") return null;
   if (!profile.telemetryUrl?.trim()) return null;
   return {
     ...profile,
-    gatewayUrl: profile.telemetryUrl,
+    gatewayUrl: await canonicalLocalCollectorUrl(profile),
     chatPath: "/chat",
   };
+}
+
+async function canonicalLocalCollectorUrl(profile: AgentProfile) {
+  const rawUrl = profile.telemetryUrl?.trim() ?? "";
+  try {
+    const parsed = new URL(rawUrl);
+    if (parsed.pathname.startsWith("/peer/")) return rawUrl.replace(/\/$/, "");
+    const isLocalProfile = userFacingMachineName(profile) === "This Mac"
+      || [hostname(), `${hostname()}.local`].includes(profile.machineName?.trim() ?? "");
+    if (!localInterfaceHosts().has(parsed.hostname) && !isLocalProfile) return rawUrl;
+    parsed.hostname = "127.0.0.1";
+    const localPort = await localCollectorPort();
+    if (localPort) parsed.port = localPort;
+    return parsed.toString().replace(/\/$/, "");
+  } catch {
+    return rawUrl;
+  }
+}
+
+async function localCollectorPort() {
+  const envText = await readFile(LOCAL_COLLECTOR_ENV_FILE, "utf8").catch(() => "");
+  const port = envText.match(/^AGENT_TELEMETRY_PORT=(\d+)$/m)?.[1]?.trim();
+  return port && /^\d+$/.test(port) ? port : "";
+}
+
+function localInterfaceHosts() {
+  const hosts = new Set(["localhost", "127.0.0.1", "::1"]);
+  for (const interfaces of Object.values(networkInterfaces())) {
+    for (const item of interfaces ?? []) {
+      if (item.address) hosts.add(item.address);
+    }
+  }
+  return hosts;
 }
 
 async function streamHttpRuntime(
@@ -634,12 +675,12 @@ async function streamHttpRuntime(
     return Response.json({ error: inputCheck.reason ?? "Message blocked by security policy" }, { status: 400 });
   }
   if (isOpenAICompatibleRuntime(profile)) {
-    return streamOpenAICompatibleRuntime(profile, messages, userText, sharedVault, agentMode, workingDirectory, wallet, honeyLedgerEnabled, telemetry);
+    return streamOpenAICompatibleRuntime(profile, messages, userText, sharedVault, agentMode, workingDirectory, wallet, honeyLedgerEnabled, runtimeSessionId, telemetry);
   }
   if (isOpenRouterProvider(profile)) {
     try {
       const openRouterProfile = await openRouterCompatibleProfile(profile);
-      return streamOpenAICompatibleRuntime(openRouterProfile, messages, userText, sharedVault, agentMode, workingDirectory, wallet, honeyLedgerEnabled, telemetry);
+      return streamOpenAICompatibleRuntime(openRouterProfile, messages, userText, sharedVault, agentMode, workingDirectory, wallet, honeyLedgerEnabled, runtimeSessionId, telemetry);
     } catch (error) {
       return Response.json({ error: error instanceof Error ? error.message : "OpenRouter model selection failed." }, { status: 502 });
     }
@@ -748,6 +789,8 @@ async function streamHttpRuntime(
       errorMessage: error instanceof Error ? error.message : String(error),
       fetchElapsedMs: Date.now() - fetchStartedAt,
     });
+    await appendRuntimeChatSessionEvent(runtimeSessionId, "Runtime fetch failed", runtimeFetchError(profile, url, error)).catch(() => undefined);
+    await finishRuntimeChatSession(runtimeSessionId, "failed").catch(() => undefined);
     return Response.json(
       {
         error: runtimeFetchError(profile, url, error),
@@ -774,6 +817,8 @@ async function streamHttpRuntime(
       fetchElapsedMs: Date.now() - fetchStartedAt,
     });
     releaseInteractiveRuntime(lockKey);
+    await appendRuntimeChatSessionEvent(runtimeSessionId, "Runtime upstream error", message).catch(() => undefined);
+    await finishRuntimeChatSession(runtimeSessionId, "failed").catch(() => undefined);
     return new Response(
       ssePayload({ error: message }) + "data: [DONE]\n\n",
       { headers: { "Content-Type": "text/event-stream", "Cache-Control": "no-cache" } },
@@ -801,6 +846,8 @@ async function streamHttpRuntime(
     }
     const chunk = outputCheck.text;
     const event = await recordChatHoney(runtimeProfile, userText, chunk, honeyLedgerEnabled);
+    await appendRuntimeChatSessionText(runtimeSessionId, "assistant", chunk || JSON.stringify(json), json).catch(() => undefined);
+    await finishRuntimeChatSession(runtimeSessionId, "completed").catch(() => undefined);
     releaseInteractiveRuntime(lockKey);
     return new Response(
       ssePayload({ choices: [{ delta: { content: chunk || JSON.stringify(json) } }] })
@@ -834,10 +881,23 @@ async function streamHttpRuntime(
           // The browser may have already closed the SSE stream.
         }
       };
+      let sessionWrite = Promise.resolve();
+      const queueSessionWrite = (operation: () => Promise<void>) => {
+        if (!runtimeSessionId) return;
+        sessionWrite = sessionWrite.then(operation, operation).catch(() => undefined);
+      };
+      if (runtimeSessionId) {
+        safeEnqueue(ssePayload({
+          session: { id: runtimeSessionId, runtime: runtimeProfile.runtime, source: "hivemindos-chat", startedAt: fetchStartedAt },
+        }));
+      }
       const reader = upstream.body?.getReader();
       if (!reader) {
         safeEnqueue(ssePayload({ error: "Runtime response body is empty" }));
         safeEnqueue("data: [DONE]\n\n");
+        queueSessionWrite(() => appendRuntimeChatSessionEvent(runtimeSessionId, "Runtime response body is empty"));
+        queueSessionWrite(() => finishRuntimeChatSession(runtimeSessionId, "failed"));
+        await sessionWrite.catch(() => undefined);
         releaseInteractiveRuntime(lockKey);
         safeClose();
         return;
@@ -846,6 +906,10 @@ async function streamHttpRuntime(
       let buffer = "";
       let fullText = "";
       let sawFirstChunk = false;
+      let commentEventCount = 0;
+      let dataEventCount = 0;
+      let textDeltaCount = 0;
+      let processEventCount = 0;
       recordRuntimeTelemetry(telemetry, "agent_runtime.http.stream.start", {
         ...telemetryPayloadForProfile(runtimeProfile),
         url,
@@ -875,10 +939,22 @@ async function streamHttpRuntime(
             const dataLine = eventText.split("\n").find((line) => line.startsWith("data:"));
             if (!dataLine) {
               if (eventText.trim().startsWith(":")) {
+                commentEventCount += 1;
+                recordRuntimeTelemetry(telemetry, "agent_runtime.http.stream.comment", {
+                  ...telemetryPayloadForProfile(runtimeProfile),
+                  url,
+                  model: runtimeProfile.model || null,
+                  adaptiveOpenRouter: Boolean(adaptiveResolvedModel),
+                  commentEventCount,
+                  preview: eventText.replace(/^:\s?/gm, "").trim().slice(0, 240),
+                  streamElapsedMs: Date.now() - fetchStartedAt,
+                });
+                queueSessionWrite(() => appendRuntimeChatSessionEvent(runtimeSessionId, "Runtime stream comment", eventText.replace(/^:\s?/gm, "").trim()));
                 safeEnqueue(`${eventText}\n\n`);
               }
               continue;
             }
+            dataEventCount += 1;
             const raw = dataLine.replace(/^data:\s*/, "");
             if (raw === "[DONE]") continue;
             try {
@@ -889,13 +965,47 @@ async function streamHttpRuntime(
                 continue;
               }
               const chunk = outputCheck.text;
-              if (chunk) fullText += chunk;
+              if (chunk) {
+                fullText += chunk;
+                textDeltaCount += 1;
+                queueSessionWrite(() => appendRuntimeChatSessionText(runtimeSessionId, "assistant", chunk, parsed));
+                if (textDeltaCount === 1 || textDeltaCount % 20 === 0) {
+                  recordRuntimeTelemetry(telemetry, "agent_runtime.http.stream.text_delta", {
+                    ...telemetryPayloadForProfile(runtimeProfile),
+                    url,
+                    model: runtimeProfile.model || null,
+                    adaptiveOpenRouter: Boolean(adaptiveResolvedModel),
+                    textDeltaCount,
+                    outputLength: fullText.length,
+                    streamElapsedMs: Date.now() - fetchStartedAt,
+                  });
+                }
+              } else {
+                processEventCount += 1;
+                queueSessionWrite(() => appendRuntimeChatSessionEvent(
+                  runtimeSessionId,
+                  typeof parsed?.type === "string" ? parsed.type : typeof parsed?.event?.type === "string" ? parsed.event.type : "Runtime event",
+                  typeof parsed?.message === "string" ? parsed.message : undefined,
+                  parsed,
+                ));
+                recordRuntimeTelemetry(telemetry, "agent_runtime.http.stream.process_event", {
+                  ...telemetryPayloadForProfile(runtimeProfile),
+                  url,
+                  model: runtimeProfile.model || null,
+                  adaptiveOpenRouter: Boolean(adaptiveResolvedModel),
+                  processEventCount,
+                  eventType: typeof parsed?.type === "string" ? parsed.type : typeof parsed?.event?.type === "string" ? parsed.event.type : null,
+                  keys: parsed && typeof parsed === "object" ? Object.keys(parsed).slice(0, 12) : [],
+                  streamElapsedMs: Date.now() - fetchStartedAt,
+                });
+              }
               safeEnqueue(chunk
                 ? ssePayload({ choices: [{ delta: { content: chunk } }] })
                 : ssePayload(parsed));
             } catch {
               const outputCheck = proxyOutput(raw);
               if (outputCheck.verdict !== "block") fullText += outputCheck.text;
+              if (outputCheck.verdict !== "block") queueSessionWrite(() => appendRuntimeChatSessionText(runtimeSessionId, "assistant", outputCheck.text));
               safeEnqueue(outputCheck.verdict === "block"
                 ? ssePayload({ error: outputCheck.reason ?? "Response blocked by security policy" })
                 : ssePayload({ choices: [{ delta: { content: outputCheck.text } }] }));
@@ -908,6 +1018,7 @@ async function streamHttpRuntime(
           if (summary) {
             fullText = summary;
             safeEnqueue(ssePayload({ choices: [{ delta: { content: summary } }] }));
+            queueSessionWrite(() => appendRuntimeChatSessionText(runtimeSessionId, "assistant", summary));
             recordRuntimeTelemetry(telemetry, "agent_runtime.http.workspace_completed", {
               ...telemetryPayloadForProfile(runtimeProfile),
               url,
@@ -927,11 +1038,18 @@ async function streamHttpRuntime(
           adaptiveOpenRouter: Boolean(adaptiveResolvedModel),
           outputLength: fullText.length,
           sawFirstChunk,
+          commentEventCount,
+          dataEventCount,
+          textDeltaCount,
+          processEventCount,
           streamElapsedMs: Date.now() - fetchStartedAt,
         });
+        queueSessionWrite(() => finishRuntimeChatSession(runtimeSessionId, "completed"));
         safeEnqueue("data: [DONE]\n\n");
       } catch (error) {
         const message = runtimeStreamErrorMessage(profile, error);
+        queueSessionWrite(() => appendRuntimeChatSessionEvent(runtimeSessionId, "Runtime stream failed", message));
+        queueSessionWrite(() => finishRuntimeChatSession(runtimeSessionId, "failed"));
         recordRuntimeTelemetry(telemetry, "agent_runtime.http.stream.failed", {
           ...telemetryPayloadForProfile(runtimeProfile),
           url,
@@ -943,6 +1061,7 @@ async function streamHttpRuntime(
         safeEnqueue(ssePayload({ error: message }));
         safeEnqueue("data: [DONE]\n\n");
       } finally {
+        await sessionWrite.catch(() => undefined);
         releaseInteractiveRuntime(lockKey);
         safeClose();
       }
@@ -952,8 +1071,9 @@ async function streamHttpRuntime(
   return new Response(readable, {
     headers: {
       "Content-Type": "text/event-stream",
-      "Cache-Control": "no-cache",
+      "Cache-Control": "no-cache, no-transform",
       Connection: "keep-alive",
+      "X-Accel-Buffering": "no",
     },
   });
 }
@@ -967,6 +1087,7 @@ async function streamOpenAICompatibleRuntime(
   workingDirectory?: string,
   wallet?: AgentWalletConfig,
   honeyLedgerEnabled = false,
+  runtimeSessionId = "",
   telemetry?: RuntimeRouteTelemetry,
 ) {
   const inputCheck = proxyInput(userText);
@@ -1048,6 +1169,8 @@ async function streamOpenAICompatibleRuntime(
       if (adaptiveOpenRouter && attemptedModels.length < candidateModels.length) {
         continue;
       }
+      await appendRuntimeChatSessionEvent(runtimeSessionId, "OpenAI-compatible fetch failed", runtimeFetchError(profile, url, error)).catch(() => undefined);
+      await finishRuntimeChatSession(runtimeSessionId, "failed").catch(() => undefined);
       releaseInteractiveRuntime(lockKey);
       return Response.json({ error: runtimeFetchError(profile, url, error) }, { status: 502 });
     }
@@ -1068,6 +1191,8 @@ async function streamOpenAICompatibleRuntime(
     if (adaptiveOpenRouter && retryableAdaptiveOpenRouterStatus(upstream.status) && attemptedModels.length < candidateModels.length) {
       continue;
     }
+    await appendRuntimeChatSessionEvent(runtimeSessionId, "OpenAI-compatible upstream error", providerErrorMessage(errorText, upstream.status, model)).catch(() => undefined);
+    await finishRuntimeChatSession(runtimeSessionId, "failed").catch(() => undefined);
     releaseInteractiveRuntime(lockKey);
     return new Response(
       ssePayload({ error: adaptiveOpenRouter && retryableAdaptiveOpenRouterStatus(upstream.status)
@@ -1078,6 +1203,8 @@ async function streamOpenAICompatibleRuntime(
   }
 
   if (!upstream?.ok) {
+    await appendRuntimeChatSessionEvent(runtimeSessionId, "OpenAI-compatible upstream error", lastFetchError ? "Network issue while trying provider models." : finalAdaptiveOpenRouterError(lastStatus || 502, attemptedModels)).catch(() => undefined);
+    await finishRuntimeChatSession(runtimeSessionId, "failed").catch(() => undefined);
     releaseInteractiveRuntime(lockKey);
     return new Response(
       ssePayload({ error: lastFetchError
@@ -1088,6 +1215,8 @@ async function streamOpenAICompatibleRuntime(
   }
 
   if (!upstream.body) {
+    await appendRuntimeChatSessionEvent(runtimeSessionId, "OpenAI-compatible response body is empty").catch(() => undefined);
+    await finishRuntimeChatSession(runtimeSessionId, "failed").catch(() => undefined);
     releaseInteractiveRuntime(lockKey);
     return new Response(
       ssePayload({ error: "OpenAI-compatible runtime response body is empty" }) + "data: [DONE]\n\n",
@@ -1101,6 +1230,13 @@ async function streamOpenAICompatibleRuntime(
     const outputCheck = proxyOutput(extractChunk(json));
     const chunk = outputCheck.text || JSON.stringify(json);
     const event = outputCheck.verdict === "block" ? null : await recordChatHoney(profile, userText, chunk, honeyLedgerEnabled);
+    if (outputCheck.verdict === "block") {
+      await appendRuntimeChatSessionEvent(runtimeSessionId, "OpenAI-compatible response blocked", outputCheck.reason ?? "Response blocked by security policy").catch(() => undefined);
+      await finishRuntimeChatSession(runtimeSessionId, "failed").catch(() => undefined);
+    } else {
+      await appendRuntimeChatSessionText(runtimeSessionId, "assistant", chunk, json).catch(() => undefined);
+      await finishRuntimeChatSession(runtimeSessionId, "completed").catch(() => undefined);
+    }
     releaseInteractiveRuntime(lockKey);
     return new Response(
       ssePayload(outputCheck.verdict === "block"
@@ -1117,6 +1253,16 @@ async function streamOpenAICompatibleRuntime(
   const readable = new ReadableStream({
     async start(controller) {
       const reader = upstream.body?.getReader();
+      let sessionWrite = Promise.resolve();
+      const queueSessionWrite = (operation: () => Promise<void>) => {
+        if (!runtimeSessionId) return;
+        sessionWrite = sessionWrite.then(operation, operation).catch(() => undefined);
+      };
+      if (runtimeSessionId) {
+        controller.enqueue(encoder.encode(ssePayload({
+          session: { id: runtimeSessionId, runtime: profile.runtime, source: "hivemindos-chat", startedAt: fetchStartedAt },
+        })));
+      }
       let buffer = "";
       let fullText = "";
       try {
@@ -1139,12 +1285,15 @@ async function streamOpenAICompatibleRuntime(
                 continue;
               }
               if (outputCheck.text) fullText += outputCheck.text;
+              if (outputCheck.text) queueSessionWrite(() => appendRuntimeChatSessionText(runtimeSessionId, "assistant", outputCheck.text, parsed));
+              if (!outputCheck.text) queueSessionWrite(() => appendRuntimeChatSessionEvent(runtimeSessionId, "Runtime event", String(parsed?.type ?? parsed?.event?.type ?? "").trim(), parsed));
               controller.enqueue(encoder.encode(outputCheck.text
                 ? ssePayload({ choices: [{ delta: { content: outputCheck.text } }] })
                 : ssePayload(parsed)));
             } catch {
               controller.enqueue(encoder.encode(ssePayload({ choices: [{ delta: { content: raw } }] })));
               fullText += raw;
+              queueSessionWrite(() => appendRuntimeChatSessionText(runtimeSessionId, "assistant", raw));
             }
           }
         }
@@ -1159,10 +1308,15 @@ async function streamOpenAICompatibleRuntime(
           outputLength: fullText.length,
           elapsedMs: Date.now() - fetchStartedAt,
         });
+        queueSessionWrite(() => finishRuntimeChatSession(runtimeSessionId, "completed"));
       } catch (error) {
-        controller.enqueue(encoder.encode(ssePayload({ error: error instanceof Error ? error.message : "OpenAI-compatible stream failed" })));
+        const message = error instanceof Error ? error.message : "OpenAI-compatible stream failed";
+        queueSessionWrite(() => appendRuntimeChatSessionEvent(runtimeSessionId, "Runtime stream failed", message));
+        queueSessionWrite(() => finishRuntimeChatSession(runtimeSessionId, "failed"));
+        controller.enqueue(encoder.encode(ssePayload({ error: message })));
         controller.enqueue(encoder.encode("data: [DONE]\n\n"));
       } finally {
+        await sessionWrite.catch(() => undefined);
         releaseInteractiveRuntime(lockKey);
         controller.close();
       }
@@ -1172,8 +1326,9 @@ async function streamOpenAICompatibleRuntime(
   return new Response(readable, {
     headers: {
       "Content-Type": "text/event-stream",
-      "Cache-Control": "no-cache",
+      "Cache-Control": "no-cache, no-transform",
       Connection: "keep-alive",
+      "X-Accel-Buffering": "no",
     },
   });
 }
@@ -1187,6 +1342,8 @@ export async function POST(request: NextRequest) {
   let wallet: AgentWalletConfig | undefined;
   let honeyLedgerEnabled = false;
   let runtimeSessionId = "";
+  let chatStorageKey = "";
+  let clientRunId = "";
   let agentMode: AgentMode = "act";
   try {
     const body = (await request.json()) as {
@@ -1199,6 +1356,8 @@ export async function POST(request: NextRequest) {
       agentMode?: string;
       runtimeSessionId?: string;
       hermesSessionId?: string;
+      chatStorageKey?: string;
+      clientRunId?: string;
     };
     if (!body.agent || !Array.isArray(body.messages)) throw new Error("Missing agent or messages");
     profile = body.agent;
@@ -1213,6 +1372,8 @@ export async function POST(request: NextRequest) {
       : typeof body.hermesSessionId === "string"
         ? body.hermesSessionId
         : "";
+    chatStorageKey = typeof body.chatStorageKey === "string" ? body.chatStorageKey : "";
+    clientRunId = typeof body.clientRunId === "string" ? body.clientRunId : "";
   } catch {
     await recordRouteTelemetry(request, "agent_runtime.request.invalid", { elapsedMs: Date.now() - routeStartedAt });
     return Response.json({ error: "Expected { agent, messages }" }, { status: 400 });
@@ -1249,6 +1410,14 @@ export async function POST(request: NextRequest) {
     return Response.json({ error: promptCheck.reason ?? "Message blocked by security policy" }, { status: 400 });
   }
   const vault = activeSharedVault(profile, sharedVault);
+  runtimeSessionId = createRuntimeChatSessionId(profile, runtimeSessionId || clientRunId);
+  await startRuntimeChatSession({
+    sessionId: runtimeSessionId,
+    agent: profile,
+    chatStorageKey,
+    userContent: userPrompt,
+    startedAt: routeStartedAt,
+  }).catch(() => undefined);
   const runtimeContexts = [buildAgentProfileContext(profile), buildAgentModeContext(agentMode), buildWorkingDirectoryContext(workingDirectory), buildVaultContext(vault), buildWalletToolContext(wallet)].filter(Boolean).join("\n\n");
   const textWithVaultContext = runtimeContexts
     ? `${runtimeContexts}\n\nUser message:\n${userPrompt}`
@@ -1263,6 +1432,8 @@ export async function POST(request: NextRequest) {
         ...telemetryPayloadForProfile(profile),
         elapsedMs: Date.now() - routeStartedAt,
       });
+      await appendRuntimeChatSessionEvent(runtimeSessionId, "Runtime chat unavailable", `${adapter.label} is configured as a ${adapter.kind} runtime here.`).catch(() => undefined);
+      await finishRuntimeChatSession(runtimeSessionId, "failed").catch(() => undefined);
       return Response.json({
         error: `${adapter.label} is configured as a ${adapter.kind} runtime here and does not expose interactive chat. Use Scheduler, skills, or runs for this runtime.`,
       }, { status: 400 });
@@ -1273,11 +1444,13 @@ export async function POST(request: NextRequest) {
         ...telemetryPayloadForProfile(profile),
         elapsedMs: Date.now() - routeStartedAt,
       });
+      await appendRuntimeChatSessionEvent(runtimeSessionId, "Runtime chat bridge unavailable", `${userFacingMachineName(profile)} needs setup/update.`).catch(() => undefined);
+      await finishRuntimeChatSession(runtimeSessionId, "failed").catch(() => undefined);
       return Response.json({
         error: `${userFacingMachineName(profile)} is connected, but its local agent bridge does not have the Hermes chat bridge installed yet. Run setup/update on that machine after these dashboard changes are available there.`,
       }, { status: 400 });
     }
-    const effectiveProfile = collectorChatProfile(profile) ?? profile;
+    const effectiveProfile = await collectorChatProfile(profile) ?? profile;
     const profileError = validateHttpRuntimeProfile(effectiveProfile);
     if (profileError) {
       await recordRouteTelemetry(request, "agent_runtime.validation_failed", {
@@ -1286,6 +1459,8 @@ export async function POST(request: NextRequest) {
         ...telemetryPayloadForProfile(effectiveProfile),
         elapsedMs: Date.now() - routeStartedAt,
       });
+      await appendRuntimeChatSessionEvent(runtimeSessionId, "Runtime profile invalid", profileError).catch(() => undefined);
+      await finishRuntimeChatSession(runtimeSessionId, "failed").catch(() => undefined);
       return Response.json({ error: profileError }, { status: 400 });
     }
     await recordRouteTelemetry(request, "agent_runtime.dispatch.http", {
@@ -1308,6 +1483,8 @@ export async function POST(request: NextRequest) {
       ...telemetryPayloadForProfile(profile),
       elapsedMs: Date.now() - routeStartedAt,
     });
+    await appendRuntimeChatSessionEvent(runtimeSessionId, "OpenClaw gateway unavailable", "Missing OpenClaw gateway URL or token.").catch(() => undefined);
+    await finishRuntimeChatSession(runtimeSessionId, "failed").catch(() => undefined);
     return Response.json({ error: "Missing OpenClaw gateway URL or token" }, { status: 400 });
   }
   await recordRouteTelemetry(request, "agent_runtime.dispatch.openclaw", {
@@ -1321,6 +1498,13 @@ export async function POST(request: NextRequest) {
   const encoder = new TextEncoder();
   const readable = new ReadableStream({
     async start(controller) {
+      let sessionWrite = Promise.resolve();
+      const queueSessionWrite = (operation: () => Promise<void>) => {
+        sessionWrite = sessionWrite.then(operation, operation).catch(() => undefined);
+      };
+      controller.enqueue(encoder.encode(ssePayload({
+        session: { id: runtimeSessionId, runtime: profile.runtime, source: "hivemindos-chat", startedAt: routeStartedAt },
+      })));
       const heartbeat = setInterval(() => {
         try {
           controller.enqueue(encoder.encode(": keepalive\n\n"));
@@ -1353,6 +1537,7 @@ export async function POST(request: NextRequest) {
                 elapsedMs: Date.now() - routeStartedAt,
               });
             }
+            queueSessionWrite(() => appendRuntimeChatSessionText(runtimeSessionId, "assistant", chunk));
             controller.enqueue(encoder.encode(ssePayload({ choices: [{ delta: { content: chunk } }] })));
           },
           undefined,
@@ -1364,6 +1549,12 @@ export async function POST(request: NextRequest) {
               toolName: typeof toolData.name === "string" ? toolData.name : typeof toolData.tool === "string" ? toolData.tool : null,
               elapsedMs: Date.now() - routeStartedAt,
             });
+            queueSessionWrite(() => appendRuntimeChatSessionEvent(
+              runtimeSessionId,
+              typeof toolData.name === "string" ? toolData.name : typeof toolData.tool === "string" ? toolData.tool : "Tool call",
+              typeof toolData.message === "string" ? toolData.message : undefined,
+              toolData,
+            ));
             controller.enqueue(encoder.encode(ssePayload({ tool_call: toolData })));
           },
           (status) => {
@@ -1374,6 +1565,12 @@ export async function POST(request: NextRequest) {
               statusType: status.type,
               elapsedMs: Date.now() - routeStartedAt,
             });
+            queueSessionWrite(() => appendRuntimeChatSessionEvent(
+              runtimeSessionId,
+              typeof status.data?.message === "string" ? status.data.message : status.type ?? "Runtime status",
+              typeof status.data?.detail === "string" ? status.data.detail : typeof status.data?.phase === "string" ? status.data.phase : undefined,
+              status,
+            ));
             controller.enqueue(encoder.encode(ssePayload({ status })));
           },
         );
@@ -1387,9 +1584,12 @@ export async function POST(request: NextRequest) {
           toolEventCount,
           elapsedMs: Date.now() - routeStartedAt,
         });
+        queueSessionWrite(() => finishRuntimeChatSession(runtimeSessionId, "completed"));
         controller.enqueue(encoder.encode("data: [DONE]\n\n"));
       } catch (error) {
         const message = error instanceof Error ? error.message : "Agent runtime error";
+        queueSessionWrite(() => appendRuntimeChatSessionEvent(runtimeSessionId, "OpenClaw runtime failed", message));
+        queueSessionWrite(() => finishRuntimeChatSession(runtimeSessionId, "failed"));
         await recordRouteTelemetry(request, "agent_runtime.openclaw.failed", {
           ...telemetryPayloadForProfile(profile),
           errorName: error instanceof Error ? error.name : "unknown",
@@ -1398,6 +1598,7 @@ export async function POST(request: NextRequest) {
         });
         controller.enqueue(encoder.encode(ssePayload({ error: message })));
       } finally {
+        await sessionWrite.catch(() => undefined);
         clearInterval(heartbeat);
         controller.close();
       }

@@ -11,6 +11,9 @@ import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 
 import { acknowledgeTransfer, createTransfer, listTransfers } from "./hive-transfer.mjs";
+import bonjourService from "bonjour-service";
+
+const { Bonjour } = bonjourService;
 
 const execFileAsync = promisify(execFile);
 const port = Number(process.env.AGENT_TELEMETRY_PORT || 8787);
@@ -986,6 +989,19 @@ function streamingChatContent(value) {
   return readableChatContent(value);
 }
 
+function streamingChatProcessPayload(value) {
+  if (!value || typeof value !== "object") return null;
+  const record = value;
+  const event = record.event && typeof record.event === "object" ? record.event : null;
+  const type = String(event?.type ?? record.type ?? "").trim();
+  if (type && !/^chat\.(text|done|session)$/i.test(type)) return value;
+  if (record.status && typeof record.status === "object") return value;
+  if (record.tool_call && typeof record.tool_call === "object") return value;
+  if (Array.isArray(record.tool_calls) && record.tool_calls.length) return value;
+  if (record.reasoning || record.thinking) return value;
+  return null;
+}
+
 async function execJson(cmd, args, fallback) {
   const { stdout } = await execFileAsync(cmd, args, { timeout: 5000, maxBuffer: 1_200_000 }).catch(() => ({ stdout: "" }));
   if (!stdout.trim()) return fallback;
@@ -1291,6 +1307,96 @@ async function syncthingStatus() {
     version: version?.version,
     connections,
   };
+}
+
+function folderMatchesPath(folder, targetPath) {
+  if (!targetPath) return false;
+  const folderPath = resolve(expandHome(String(folder?.path || "").trim()) || "");
+  const target = resolve(expandHome(String(targetPath).trim()) || "");
+  if (!folderPath || !target) return false;
+  return folderPath === target || folderPath.startsWith(`${target}/`) || target.startsWith(`${folderPath}/`);
+}
+
+// Reports per-folder completion (% complete + need bytes) and per-paired-device
+// completion. `path` narrows to the vault folder if multiple Syncthing folders exist.
+async function syncthingFolderStatus(input = {}) {
+  const install = await syncthingInstalled();
+  if (!install.installed) {
+    return { ok: false, installed: false, running: false, error: "Syncthing is not installed on this machine." };
+  }
+  const running = await waitForSyncthing();
+  if (!running) {
+    return { ok: false, installed: true, running: false, error: "Syncthing local API is not reachable." };
+  }
+  const [config, system] = await Promise.all([
+    syncthingFetch("/rest/config"),
+    syncthingFetch("/rest/system/status").catch(() => null),
+  ]);
+  const myID = system?.myID || config?.myID;
+  const targetPath = input.path ? expandHome(String(input.path).trim()) : "";
+  const requestedFolderId = input.folderId ? safeFolderId(input.folderId) : "";
+  const allFolders = Array.isArray(config?.folders) ? config.folders : [];
+  const matched = allFolders.filter((folder) => {
+    if (requestedFolderId) return folder.id === requestedFolderId;
+    if (targetPath) return folderMatchesPath(folder, targetPath);
+    return true;
+  });
+  const folders = (matched.length ? matched : allFolders);
+
+  const deviceNames = new Map();
+  for (const device of Array.isArray(config?.devices) ? config.devices : []) {
+    if (device?.deviceID) deviceNames.set(device.deviceID, device.name || device.deviceID.slice(0, 7));
+  }
+
+  const reported = await Promise.all(folders.map(async (folder) => {
+    const folderId = folder.id;
+    const aggregate = await syncthingFetch(`/rest/db/completion?folder=${encodeURIComponent(folderId)}`).catch(() => null);
+    const peerIds = (Array.isArray(folder.devices) ? folder.devices : [])
+      .map((device) => device.deviceID)
+      .filter((deviceID) => deviceID && deviceID !== myID);
+    const devices = await Promise.all(peerIds.map(async (deviceID) => {
+      const completion = await syncthingFetch(`/rest/db/completion?folder=${encodeURIComponent(folderId)}&device=${encodeURIComponent(deviceID)}`).catch(() => null);
+      return {
+        deviceID,
+        name: deviceNames.get(deviceID) || deviceID.slice(0, 7),
+        completion: typeof completion?.completion === "number" ? completion.completion : null,
+        needBytes: typeof completion?.needBytes === "number" ? completion.needBytes : null,
+        needItems: typeof completion?.needItems === "number" ? completion.needItems : null,
+      };
+    }));
+    return {
+      folderId,
+      label: folder.label || folderId,
+      path: folder.path,
+      paused: Boolean(folder.paused),
+      completion: typeof aggregate?.completion === "number" ? aggregate.completion : null,
+      needBytes: typeof aggregate?.needBytes === "number" ? aggregate.needBytes : null,
+      needItems: typeof aggregate?.needItems === "number" ? aggregate.needItems : null,
+      devices,
+    };
+  }));
+
+  return { ok: true, installed: true, running: true, host: hostname(), folders: reported };
+}
+
+async function syncthingRescan(input = {}) {
+  const install = await syncthingInstalled();
+  if (!install.installed) {
+    return { ok: false, installed: false, running: false, error: "Syncthing is not installed on this machine." };
+  }
+  const running = await waitForSyncthing();
+  if (!running) {
+    return { ok: false, installed: true, running: false, error: "Syncthing local API is not reachable." };
+  }
+  let folderId = input.folderId ? safeFolderId(input.folderId) : "";
+  if (!folderId && input.path) {
+    const config = await syncthingFetch("/rest/config").catch(() => null);
+    const folder = (Array.isArray(config?.folders) ? config.folders : []).find((entry) => folderMatchesPath(entry, input.path));
+    folderId = folder?.id || "";
+  }
+  const scanPath = folderId ? `/rest/db/scan?folder=${encodeURIComponent(folderId)}` : "/rest/db/scan";
+  await syncthingFetch(scanPath, { method: "POST", timeoutMs: 15_000 });
+  return { ok: true, folderId: folderId || null, rescanned: true };
 }
 
 function mergeDevice(existing, defaults, peer) {
@@ -3019,6 +3125,7 @@ async function proxyHermesApiChat(body, response, text, hermesHome) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), chatTimeoutMs);
   let sessionTimer = null;
+  let heartbeatTimer = null;
   let emittedSession = false;
   let sessionLookupInFlight = false;
 
@@ -3028,6 +3135,7 @@ async function proxyHermesApiChat(body, response, text, hermesHome) {
       "content-type": "text/event-stream",
       "cache-control": "no-cache",
       connection: "keep-alive",
+      "x-accel-buffering": "no",
       "x-hermes-stream-source": "api-server",
     });
   };
@@ -3059,6 +3167,10 @@ async function proxyHermesApiChat(body, response, text, hermesHome) {
     response.on("close", () => controller.abort());
     ensureHeaders();
     response.write(": waiting for Hermes API stream\n\n");
+    heartbeatTimer = setInterval(() => {
+      if (response.writableEnded || response.destroyed) return;
+      response.write(": Hermes API stream still working\n\n");
+    }, 15_000);
     sessionTimer = setInterval(() => {
       void emitSession().catch(() => undefined);
     }, 1_000);
@@ -3127,6 +3239,12 @@ async function proxyHermesApiChat(body, response, text, hermesHome) {
             wroteContent = true;
             ensureHeaders();
             response.write(ssePayload({ choices: [{ delta: { content } }] }));
+          } else {
+            const processPayload = streamingChatProcessPayload(parsed);
+            if (processPayload) {
+              ensureHeaders();
+              response.write(ssePayload(processPayload));
+            }
           }
         } catch {
           // Ignore non-JSON SSE comments or custom tool events for the dashboard chat surface.
@@ -3157,6 +3275,7 @@ async function proxyHermesApiChat(body, response, text, hermesHome) {
   } finally {
     clearTimeout(timer);
     if (sessionTimer) clearInterval(sessionTimer);
+    if (heartbeatTimer) clearInterval(heartbeatTimer);
   }
 }
 
@@ -3878,6 +3997,35 @@ const telemetryServer = createServer(async (request, response) => {
     jsonResponse(response, status.ok ? 200 : 503, status);
     return;
   }
+  if (pathname === "/syncthing/folder-status") {
+    try {
+      const result = await syncthingFolderStatus({
+        path: requestUrl.searchParams.get("path") || undefined,
+        folderId: requestUrl.searchParams.get("folderId") || undefined,
+      });
+      jsonResponse(response, result.ok ? 200 : 503, result);
+    } catch (error) {
+      jsonResponse(response, 503, {
+        ok: false,
+        error: error instanceof Error ? error.message : "Could not read Syncthing folder status.",
+      });
+    }
+    return;
+  }
+  if (pathname === "/syncthing/rescan" && request.method === "POST") {
+    try {
+      const rawBody = await readBody(request);
+      const body = rawBody ? JSON.parse(rawBody) : {};
+      const result = await syncthingRescan(body);
+      jsonResponse(response, result.ok ? 200 : 503, result);
+    } catch (error) {
+      jsonResponse(response, 400, {
+        ok: false,
+        error: error instanceof Error ? error.message : "Could not trigger a Syncthing rescan.",
+      });
+    }
+    return;
+  }
   if (pathname === "/syncthing/configure" && request.method === "POST") {
     try {
       const rawBody = await readBody(request);
@@ -3954,7 +4102,51 @@ telemetryServer.on("upgrade", (request, socket, head) => {
   socket.destroy();
 });
 
+// Advertise the HivemindOS dashboard on the LAN via Bonjour/mDNS so a companion
+// phone on the same Wi-Fi can auto-find this machine (no typed address). The TXT
+// carries the MagicDNS suffix so the phone can prefer the stable tailnet name
+// over the LAN IP. Best-effort; never blocks or crashes the collector.
+async function advertiseHubMdns() {
+  if (process.env.HIVEMINDOS_MDNS_DISABLE === "1") return;
+  try {
+    const dashboardPort = Number(process.env.HIVEMINDOS_DASHBOARD_PORT || 5020);
+    let magicDnsSuffix = "";
+    let magicDnsName = ""; // the full stable tailnet name (Self.DNSName)
+    try {
+      const { stdout } = await promisify(execFile)("tailscale", ["status", "--json"], {
+        timeout: 5000,
+        maxBuffer: 1_500_000,
+      });
+      const st = JSON.parse(stdout);
+      magicDnsSuffix = st?.MagicDNSSuffix || "";
+      magicDnsName = (st?.Self?.DNSName || "").replace(/\.$/, "");
+    } catch {
+      /* tailscale not present / not up — advertise without the suffix */
+    }
+    const machineId = await stableMachineId().catch(() => "");
+    const bonjour = new Bonjour();
+    bonjour.publish({
+      name: `HivemindOS ${hostname()}`,
+      type: "hivemindos",
+      protocol: "tcp",
+      port: dashboardPort,
+      txt: {
+        dashboard_port: String(dashboardPort),
+        machine_hostname: hostname(),
+        machine_id: machineId,
+        magic_dns_suffix: magicDnsSuffix,
+        // Full tailnet name (preferred by the phone — stable + correctly cased).
+        magic_dns_name: magicDnsName,
+      },
+    });
+    console.log(`advertising _hivemindos._tcp on :${dashboardPort} (mDNS)`);
+  } catch (err) {
+    console.warn("mDNS advertise failed:", err instanceof Error ? err.message : err);
+  }
+}
+
 telemetryServer.listen(port, host, () => {
   console.log(`agent telemetry collector listening on ${host}:${port}`);
   void initializeSkillAutoSync();
+  void advertiseHubMdns();
 });

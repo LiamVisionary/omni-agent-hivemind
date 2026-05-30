@@ -8,7 +8,7 @@ import { useCallback, useEffect, useState } from "react";
 import { parseRuntimeSsePayload, responseErrorMessage, runtimeErrorMessage } from "./runtime-stream-errors";
 
 export function useStatusChatInputController(props: any) {
-  const { AbortController, CHAT_RESPONSE_STALL_TIMEOUT_MS, Uint8Array, appendMessage, attachmentSummary, brainDragMovedRef, brainDragRef, brainGraph, brainPan, busy, chatAttachments, chatAutoScrollRef, chatDirectories, chatMessageStorageKey, chatSetupIssue, chooseDirectoryForMachine, collectorKey, createDefaultAgentWallet, discoveredMachines, honeyLedgerEnabled, hydrated, isManualAgentChatMessage, kanbanBoardSlug, kanbanReadyPickupInFlightRef, kanbanStorageBody, linkedDirectoryLabel, localKanbanMachineTarget, machineGroups, messageContentParts, messages, orchestrateReadyKanbanTask, quickAddMachineTarget, quickAddMachineTargets, readComposerFiles, recordRecentDirectory, recording, refreshHoneyLedger, refreshKanbanOnce, selectedAgent, selectedBrainNodeId, selectedChatDirectoryPath, selectedChatLeafKey, selectedChatRuntimeSessionId, selectedKanbanAgent, selectedKanbanTask, setAttachmentError, setAttachmentMenuOpen, setBrainGraph, setBrainGraphStatus, setBrainPan, setBusy, setBusyAgentId, setChatAttachments, setChatDirectories, setControlRoomStatus, setHasStreamingChunk, setKanbanBoard, setKanbanError, setKanbanSteerAttachmentError, setKanbanSteerAttachmentMenuOpen, setKanbanSteerAttachments, setKanbanSteerDirectories, setKanbanSteerDraft, setKanbanStorage, setMessagesByAgent, setQuickAddAttachmentError, setQuickAddAttachmentMenuOpen, setQuickAddAttachments, setQuickAddDirectories, setQuickAddDrafts, setRecentDirectoriesExpanded, setRecording, setSelectedBrainNodeId, setSelectedChatPreview, setSelectedChatRuntimeSessionId, setStatus, setStatusAgentId, setText, setVaultStatus, setVaultSyncPending, setVaultSyncStatus, setVoiceBands, setVoiceTarget, setVoiceTranscript, sharedVault, speechRecognitionConstructor, syncthingAutoPairRef, tailscaleDevices, text, updateSharedVault, updateTask, upsertTask, voiceAnimationRef, voiceAudioContextRef, voiceRecognitionRef, voiceStreamRef, voiceTarget, voiceTranscriptRef, walletsByAgent } = props;
+  const { AbortController, CHAT_RESPONSE_STALL_TIMEOUT_MS, Uint8Array, appendMessage, attachmentSummary, brainDragMovedRef, brainDragRef, brainGraph, brainPan, busy, chatAttachments, chatAutoScrollRef, chatDirectories, chatMessageStorageKey, chatRuntimeSessionIdsByKey, chatSetupIssue, chooseDirectoryForMachine, clearActiveChatRun, collectorKey, createDefaultAgentWallet, discoveredMachines, honeyLedgerEnabled, hydrated, isManualAgentChatMessage, kanbanBoardSlug, kanbanReadyPickupInFlightRef, kanbanStorageBody, linkedDirectoryLabel, localKanbanMachineTarget, machineGroups, messageContentParts, messages, orchestrateReadyKanbanTask, quickAddMachineTarget, quickAddMachineTargets, readComposerFiles, recordActiveChatRun, recordRecentDirectory, recording, refreshHoneyLedger, refreshKanbanOnce, selectedAgent, selectedBrainNodeId, selectedChatDirectoryPath, selectedChatLeafKey, selectedChatRuntimeSessionId, selectedChatTargetRef, selectedKanbanAgent, selectedKanbanTask, setAttachmentError, setAttachmentMenuOpen, setBrainGraph, setBrainGraphStatus, setBrainPan, setChatAttachments, setChatDirectories, setChatProcessByKey, setControlRoomStatus, setChatRuntimeSessionIdsByKey, setChatStreamingByKey, setKanbanBoard, setKanbanError, setKanbanSteerAttachmentError, setKanbanSteerAttachmentMenuOpen, setKanbanSteerAttachments, setKanbanSteerDirectories, setKanbanSteerDraft, setKanbanStorage, setMessagesByAgent, setQuickAddAttachmentError, setQuickAddAttachmentMenuOpen, setQuickAddAttachments, setQuickAddDirectories, setQuickAddDrafts, setRecentDirectoriesExpanded, setRecording, setSelectedBrainNodeId, setSelectedChatPreview, setSelectedChatRuntimeSessionId, setStatus, setStatusAgentId, setText, setVaultStatus, setVaultSyncPending, setVaultSyncStatus, setVoiceBands, setVoiceTarget, setVoiceTranscript, sharedVault, speechRecognitionConstructor, syncthingAutoPairRef, tailscaleDevices, text, updateSharedVault, updateTask, upsertTask, voiceAnimationRef, voiceAudioContextRef, voiceRecognitionRef, voiceStreamRef, voiceTarget, voiceTranscriptRef, walletsByAgent } = props;
   const [chatKanbanGeneration, setChatKanbanGeneration] = useState(null);
 
   function runtimePromptFromPayload(parsed: any) {
@@ -38,6 +38,137 @@ export function useStatusChatInputController(props: any) {
       choices,
       allowFreeText: source?.allowFreeText !== false,
     };
+  }
+
+  function startChatStream(storageKey: string, agentId: string, leafKey: string, requestLabel?: string) {
+    setChatStreamingByKey((current) => {
+      return { ...current, [storageKey]: { agentId, leafKey, hasChunk: false } };
+    });
+    setChatProcessByKey?.((current) => ({
+      ...current,
+      [storageKey]: [{ at: Date.now(), label: "Queued chat request", detail: "Preparing the runtime bridge." }],
+    }));
+    recordActiveChatRun?.({
+      storageKey,
+      agentId,
+      leafKey,
+      startedAt: Date.now(),
+      updatedAt: Date.now(),
+      requestLabel,
+      status: "active",
+    });
+  }
+
+  function markChatStreamChunk(storageKey: string) {
+    setChatStreamingByKey((current) => {
+      if (!current[storageKey]?.hasChunk) {
+        return { ...current, [storageKey]: { ...current[storageKey], hasChunk: true } };
+      }
+      return current;
+    });
+  }
+
+  function finishChatStream(storageKey: string) {
+    setChatStreamingByKey((current) => {
+      const next = { ...current };
+      delete next[storageKey];
+      return next;
+    });
+  }
+
+  function appendChatProcess(storageKey: string, label: string, detail?: string) {
+    const cleanLabel = label.trim();
+    if (!cleanLabel) return;
+    setChatProcessByKey?.((current) => {
+      const existing = current[storageKey] ?? [];
+      const last = existing[existing.length - 1];
+      if (last?.label === cleanLabel && last?.detail === detail) {
+        return {
+          ...current,
+          [storageKey]: [...existing.slice(0, -1), { ...last, at: Date.now() }],
+        };
+      }
+      return {
+        ...current,
+        [storageKey]: [...existing, { at: Date.now(), label: cleanLabel, detail }].slice(-80),
+      };
+    });
+  }
+
+  function processLabelFromComment(eventText: string) {
+    return eventText
+      .split("\n")
+      .map((line) => line.replace(/^:\s?/, "").trim())
+      .filter(Boolean)
+      .join(" ");
+  }
+
+  function processLabelFromRuntimeEvent(parsed: any) {
+    const event = parsed?.event && typeof parsed.event === "object" ? parsed.event : null;
+    const type = String(event?.type ?? parsed?.type ?? "").trim();
+    const source = event ?? parsed;
+    const message = String(source?.message ?? source?.label ?? source?.title ?? source?.name ?? source?.content ?? source?.delta ?? "").trim();
+    const toolName = String(source?.tool ?? source?.toolName ?? source?.name ?? source?.command ?? "").trim();
+    if (/^chat\.(text|session|done)$/.test(type)) return null;
+    if (/thinking|reasoning/i.test(type)) {
+      return { label: type.includes("reason") ? "Reasoning" : "Thinking", detail: message || undefined };
+    }
+    if (/tool\.(generating|start|started|pending)/i.test(type)) {
+      return { label: toolName ? `Starting ${toolName}` : "Starting tool", detail: message || undefined };
+    }
+    if (/tool\.(progress|running)/i.test(type)) {
+      return { label: toolName ? `${toolName} running` : "Tool running", detail: message || undefined };
+    }
+    if (/tool\.(done|completed|failed|error)/i.test(type)) {
+      return { label: toolName ? `${toolName} finished` : "Tool finished", detail: message || undefined };
+    }
+    if (parsed?.tool_call && typeof parsed.tool_call === "object") {
+      const tool = parsed.tool_call;
+      const label = String(tool.name ?? tool.tool ?? tool.command ?? "Tool call").trim();
+      const detail = String(tool.message ?? tool.summary ?? tool.result ?? "").trim();
+      return { label, detail: detail || undefined };
+    }
+    if (parsed?.status && typeof parsed.status === "object") {
+      const status = parsed.status;
+      const label = String(status.message ?? status.label ?? status.type ?? "Runtime status").trim();
+      const detail = String(status.detail ?? status.phase ?? "").trim();
+      return { label, detail: detail || undefined };
+    }
+    if (type && !/^chat\.text$/i.test(type)) {
+      return { label: message || type.replace(/^chat\./, "").replace(/[._-]+/g, " "), detail: message && message !== type ? type : undefined };
+    }
+    return null;
+  }
+
+  function compactProcessDetail(value: unknown, maxLength = 180) {
+    return String(value ?? "")
+      .replace(/\s+/g, " ")
+      .trim()
+      .slice(0, maxLength);
+  }
+
+  function processLabelFromSessionMessage(message: any) {
+    const role = String(message?.role ?? "").trim().toLowerCase();
+    const content = String(message?.content ?? "").trim();
+    if (!content) return null;
+    if (role === "user") return null;
+    if (role === "assistant") {
+      return { label: "Assistant wrote in session", detail: compactProcessDetail(content) };
+    }
+    if (role === "tool") {
+      if (/\[Command interrupted\]/i.test(content)) return { label: "Command interrupted" };
+      if (/Tool execution skipped/i.test(content)) return { label: "Tool execution skipped", detail: compactProcessDetail(content) };
+      if (/\bexit\s+\d+\b/i.test(content)) return { label: "Command finished", detail: compactProcessDetail(content) };
+      if (/Image loaded into your context/i.test(content)) return { label: "Image inspected", detail: compactProcessDetail(content.replace(/^Image loaded into your context\s*[—-]\s*/i, "")) };
+      if (/^\s*\d+\|/m.test(content)) return { label: "File content read", detail: compactProcessDetail(content) };
+      if (/^---\s*\nname:/i.test(content)) return { label: "Skill context loaded", detail: compactProcessDetail(content.match(/^name:\s*(.+)$/mi)?.[1] ?? content) };
+      return { label: "Tool output", detail: compactProcessDetail(content) };
+    }
+    return { label: `${role || "Session"} message`, detail: compactProcessDetail(content) };
+  }
+
+  function yieldChatPaint() {
+    return new Promise<void>((resolve) => window.setTimeout(resolve, 16));
   }
 
   function extractGeneratedKanbanTask(rawText: string, fallbackTitle: string) {
@@ -739,18 +870,24 @@ export function useStatusChatInputController(props: any) {
       return;
     }
 
-    setBusy(true);
-    setBusyAgentId(selectedAgent.id);
-    setHasStreamingChunk(false);
     chatAutoScrollRef.current = true;
     setText("");
     setChatAttachments([]);
     setChatDirectories([]);
     setAttachmentError("");
     setAttachmentMenuOpen(false);
-    const taskId = `${selectedAgent.id}-${Date.now()}`;
+    const requestStartedAt = Date.now();
+    const taskId = `${selectedAgent.id}-${requestStartedAt}`;
     const workingDirectory = selectedChatDirectoryPath || selectedAgent.localDataDir || "";
     const selectedStorageKey = chatMessageStorageKey(selectedAgent.id, selectedChatLeafKey);
+    const requestRuntimeSessionId = chatRuntimeSessionIdsByKey?.[selectedStorageKey] || selectedChatRuntimeSessionId;
+    startChatStream(selectedStorageKey, selectedAgent.id, selectedChatLeafKey, outgoingLabel);
+    const requestAgentId = selectedAgent.id;
+    const requestLeafKey = selectedChatLeafKey;
+    const requestStillSelected = () => {
+      const current = selectedChatTargetRef?.current;
+      return current?.agentId === requestAgentId && current?.leafKey === requestLeafKey;
+    };
     const contextMessages = messages
       .filter((message) => (
         message.role !== "system"
@@ -804,6 +941,91 @@ export function useStatusChatInputController(props: any) {
     let sawAssistantContent = false;
     let sawAgentPrompt = false;
     let sawDone = false;
+    let contentEventsSincePaint = 0;
+    let sessionPollTimer: number | null = null;
+    let currentRuntimeSessionId = requestRuntimeSessionId || "";
+    let attachedRuntimeSessionId = "";
+    let recoveredAssistantText = "";
+    let latestSessionSummary = "";
+    const seenSessionMessageKeys = new Set<string>();
+    const runtimeLabel = selectedAgent.runtime === "openai-compatible"
+      ? "OpenAI-compatible"
+      : selectedAgent.runtime === "openclaw"
+        ? "OpenClaw"
+        : selectedAgent.runtime === "aeon"
+          ? "AEON"
+          : selectedAgent.runtime === "hermes"
+            ? "Hermes"
+            : selectedAgent.runtime || "runtime";
+
+    const ingestRuntimeSession = (session: any) => {
+      if (!session || typeof session !== "object") return;
+      const sessionId = String(session.sessionId ?? session.id ?? "").trim();
+      if (sessionId) {
+        currentRuntimeSessionId = sessionId;
+        setChatRuntimeSessionIdsByKey((current) => ({ ...current, [selectedStorageKey]: sessionId }));
+        if (requestStillSelected()) setSelectedChatRuntimeSessionId(sessionId);
+        recordActiveChatRun?.({
+          storageKey: selectedStorageKey,
+          agentId: selectedAgent.id,
+          leafKey: selectedChatLeafKey,
+          startedAt: requestStartedAt,
+          updatedAt: Date.now(),
+          requestLabel: outgoingLabel,
+          sessionId,
+          status: "active",
+        });
+        if (attachedRuntimeSessionId !== sessionId) {
+          attachedRuntimeSessionId = sessionId;
+          appendChatProcess(selectedStorageKey, `Attached ${runtimeLabel} session`, sessionId);
+        }
+      }
+      const sessionMessages = Array.isArray(session.messages) ? session.messages : [];
+      for (const sessionMessage of sessionMessages) {
+        const key = [
+          sessionId,
+          sessionMessage?.index ?? "",
+          sessionMessage?.createdAt ?? "",
+          sessionMessage?.role ?? "",
+          String(sessionMessage?.content ?? "").slice(0, 48),
+        ].join(":");
+        if (seenSessionMessageKeys.has(key)) continue;
+        seenSessionMessageKeys.add(key);
+        const processEvent = processLabelFromSessionMessage(sessionMessage);
+        if (processEvent) {
+          latestSessionSummary = processEvent.detail || processEvent.label;
+          appendChatProcess(selectedStorageKey, processEvent.label, processEvent.detail);
+        }
+        if (String(sessionMessage?.role ?? "").toLowerCase() === "assistant") {
+          recoveredAssistantText += String(sessionMessage?.content ?? "");
+        }
+      }
+    };
+
+    const pollRuntimeSession = async () => {
+      const fetchSession = (body: Record<string, unknown>) => fetch("/api/chat/agent-session", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      }).catch(() => null);
+      let response = await fetchSession({
+        agent: selectedAgent,
+        sessionId: currentRuntimeSessionId || undefined,
+        sinceMs: currentRuntimeSessionId ? undefined : requestStartedAt - 2_000,
+        chatStorageKey: selectedStorageKey,
+      });
+      if (!response?.ok && currentRuntimeSessionId) {
+        response = await fetchSession({ agent: selectedAgent, sinceMs: requestStartedAt - 2_000, chatStorageKey: selectedStorageKey });
+      }
+      if (!response?.ok) return;
+      const data = await response.json().catch(() => null);
+      if (data?.ok && data.session) ingestRuntimeSession(data.session);
+    };
+
+    sessionPollTimer = window.setInterval(() => {
+      void pollRuntimeSession();
+    }, 5_000);
+    void pollRuntimeSession();
 
     try {
       const response = await fetch("/api/chat/agent-runtime", {
@@ -814,8 +1036,10 @@ export function useStatusChatInputController(props: any) {
           agent: selectedAgent,
           sharedVault,
           workingDirectory,
-          runtimeSessionId: selectedChatRuntimeSessionId || undefined,
-          hermesSessionId: selectedChatRuntimeSessionId || undefined,
+          runtimeSessionId: requestRuntimeSessionId || undefined,
+          hermesSessionId: requestRuntimeSessionId || undefined,
+          chatStorageKey: selectedStorageKey,
+          clientRunId: taskId,
           wallet: walletsByAgent[selectedAgent.id] ?? createDefaultAgentWallet(selectedAgent.id),
           honeyLedgerEnabled,
           agentMode,
@@ -848,7 +1072,11 @@ export function useStatusChatInputController(props: any) {
 
         for (const eventText of events) {
           const line = eventText.split("\n").find((entry) => entry.startsWith("data: "));
-          if (!line) continue;
+          if (!line) {
+            const label = processLabelFromComment(eventText);
+            if (label) appendChatProcess(selectedStorageKey, label);
+            continue;
+          }
           const payload = line.slice(6);
           if (payload === "[DONE]") {
             sawDone = true;
@@ -870,8 +1098,12 @@ export function useStatusChatInputController(props: any) {
             await refreshHoneyLedger();
             continue;
           }
+          const processEvent = processLabelFromRuntimeEvent(parsed);
+          if (processEvent) appendChatProcess(selectedStorageKey, processEvent.label, processEvent.detail);
           if (parsed.session?.id) {
-            setSelectedChatRuntimeSessionId(parsed.session.id);
+            appendChatProcess(selectedStorageKey, `Attached ${runtimeLabel} session`, parsed.session.id);
+            setChatRuntimeSessionIdsByKey((current) => ({ ...current, [selectedStorageKey]: parsed.session.id }));
+            if (requestStillSelected()) setSelectedChatRuntimeSessionId(parsed.session.id);
             continue;
           }
           const agentPrompt = runtimePromptFromPayload(parsed);
@@ -890,7 +1122,8 @@ export function useStatusChatInputController(props: any) {
           }
           const chunk = parsed.choices?.[0]?.delta?.content;
           if (chunk) {
-            setHasStreamingChunk(true);
+            if (!sawAssistantContent) appendChatProcess(selectedStorageKey, "Assistant started writing");
+            markChatStreamChunk(selectedStorageKey);
             sawAssistantContent = true;
             let nextTaskMessage = "";
             setMessagesByAgent((current) => {
@@ -915,6 +1148,11 @@ export function useStatusChatInputController(props: any) {
               return { ...current, messages: next };
             });
             updateTask(taskId, { lastMessage: nextTaskMessage || chunk });
+            contentEventsSincePaint += 1;
+            if (contentEventsSincePaint >= 8) {
+              contentEventsSincePaint = 0;
+              await yieldChatPaint();
+            }
           }
         }
         if (sawDone) {
@@ -931,17 +1169,36 @@ export function useStatusChatInputController(props: any) {
       updateTask(taskId, sawAgentPrompt ? { status: "active", completedAt: undefined } : { status: "completed", completedAt: Date.now() });
     } catch (error) {
       const aborted = abortController.signal.aborted;
+      if (aborted) {
+        appendChatProcess(selectedStorageKey, "Chat stream timed out", `Checking the ${runtimeLabel} session for late activity.`);
+        recordActiveChatRun?.({
+          storageKey: selectedStorageKey,
+          agentId: selectedAgent.id,
+          leafKey: selectedChatLeafKey,
+          startedAt: requestStartedAt,
+          updatedAt: Date.now(),
+          requestLabel: outgoingLabel,
+          sessionId: currentRuntimeSessionId || undefined,
+          status: "stalled",
+        });
+        await pollRuntimeSession();
+      }
+      if (aborted && recoveredAssistantText.trim()) {
+        replacePendingAssistant({ role: "assistant", content: recoveredAssistantText.trim(), surface: "chat" });
+        updateTask(taskId, { status: "completed", lastMessage: recoveredAssistantText.trim(), completedAt: Date.now() });
+        return;
+      }
       const message = aborted
-        ? `Hermes did not return a chat response within ${Math.round(CHAT_RESPONSE_STALL_TIMEOUT_MS / 1000)} seconds. The task may still be running in Hermes; check the agent activity before retrying.`
+        ? `${runtimeLabel} did not return a chat response within ${Math.round(CHAT_RESPONSE_STALL_TIMEOUT_MS / 1000)} seconds. The session ${latestSessionSummary ? `last reported: ${latestSessionSummary}` : `may still be running in ${runtimeLabel}`}; check the process panel before retrying.`
         : error instanceof Error ? error.message : "Unknown runtime error";
       const errorMessage: ChatMessage = { role: "assistant", content: `Error: ${message}`, surface: "chat" };
       replacePendingAssistant(errorMessage);
       updateTask(taskId, { status: "failed", lastMessage: message, completedAt: Date.now() });
     } finally {
       window.clearTimeout(stallTimer);
-      setBusy(false);
-      setBusyAgentId("");
-      setHasStreamingChunk(false);
+      if (sessionPollTimer) window.clearInterval(sessionPollTimer);
+      if (sawDone || !abortController.signal.aborted || recoveredAssistantText.trim()) clearActiveChatRun?.(selectedStorageKey);
+      finishChatStream(selectedStorageKey);
     }
   }
 
@@ -953,6 +1210,14 @@ export function useStatusChatInputController(props: any) {
       return;
     }
     const workingDirectory = selectedChatDirectoryPath || selectedAgent.localDataDir || "";
+    const selectedStorageKey = chatMessageStorageKey(selectedAgent.id, selectedChatLeafKey);
+    const requestRuntimeSessionId = chatRuntimeSessionIdsByKey?.[selectedStorageKey] || selectedChatRuntimeSessionId;
+    const requestAgentId = selectedAgent.id;
+    const requestLeafKey = selectedChatLeafKey;
+    const requestStillSelected = () => {
+      const current = selectedChatTargetRef?.current;
+      return current?.agentId === requestAgentId && current?.leafKey === requestLeafKey;
+    };
     const contextMessages = messages
       .filter((message) => (
         message.role !== "system"
@@ -996,8 +1261,10 @@ export function useStatusChatInputController(props: any) {
           agent: selectedAgent,
           sharedVault,
           workingDirectory,
-          runtimeSessionId: selectedChatRuntimeSessionId || undefined,
-          hermesSessionId: selectedChatRuntimeSessionId || undefined,
+          runtimeSessionId: requestRuntimeSessionId || undefined,
+          hermesSessionId: requestRuntimeSessionId || undefined,
+          chatStorageKey: selectedStorageKey,
+          clientRunId: `kanban-${Date.now().toString(36)}`,
           wallet: walletsByAgent[selectedAgent.id] ?? createDefaultAgentWallet(selectedAgent.id),
           honeyLedgerEnabled,
           messages: [{ role: "user", content: prompt }],
@@ -1034,7 +1301,8 @@ export function useStatusChatInputController(props: any) {
             continue;
           }
           if (parsed.session?.id) {
-            setSelectedChatRuntimeSessionId(parsed.session.id);
+            setChatRuntimeSessionIdsByKey((current) => ({ ...current, [selectedStorageKey]: parsed.session.id }));
+            if (requestStillSelected()) setSelectedChatRuntimeSessionId(parsed.session.id);
             continue;
           }
           const chunk = parsed.choices?.[0]?.delta?.content;

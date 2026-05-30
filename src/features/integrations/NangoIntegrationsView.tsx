@@ -11,8 +11,11 @@ import {
   Link2,
   LoaderCircle,
   MessageSquare,
+  Monitor,
+  Play,
   RefreshCw,
   Server,
+  Sparkles,
   TerminalSquare,
   Workflow,
 } from "lucide-react";
@@ -48,23 +51,27 @@ type MachineChoice = {
   note: string;
 };
 
+type SetupStep = "welcome" | "host" | "method" | "automatic" | "manual" | "apps";
+type SetupMode = "automatic" | "manual" | "";
+
 const PROVIDERS: Array<{
   key: NangoProviderKey;
   label: string;
   icon: React.ReactNode;
   detail: string;
+  color: string;
 }> = [
-  { key: "github", label: "GitHub", icon: <GitPullRequest size={19} />, detail: "Issues, pull requests, reviews, releases." },
-  { key: "linear", label: "Linear", icon: <Workflow size={19} />, detail: "Tasks, triage queues, project status." },
-  { key: "slack", label: "Slack", icon: <MessageSquare size={19} />, detail: "Mentions, channels, approval messages." },
-  { key: "notion", label: "Notion", icon: <FileText size={19} />, detail: "Docs, project pages, task databases." },
-  { key: "google", label: "Google", icon: <Cloud size={19} />, detail: "Drive, Gmail labels, Calendar context." },
+  { key: "github", label: "GitHub", icon: <GitPullRequest size={25} />, detail: "Code, issues, pull requests, and releases.", color: "ink" },
+  { key: "linear", label: "Linear", icon: <Workflow size={25} />, detail: "Tasks, projects, and triage queues.", color: "violet" },
+  { key: "slack", label: "Slack", icon: <MessageSquare size={25} />, detail: "Channels, mentions, and approval messages.", color: "coral" },
+  { key: "notion", label: "Notion", icon: <FileText size={25} />, detail: "Docs, project pages, and task databases.", color: "paper" },
+  { key: "google", label: "Google", icon: <Cloud size={25} />, detail: "Drive, Gmail, and Calendar context.", color: "sky" },
 ];
 
 function setupMethodLabel(method?: NangoHostSetupResult["method"]) {
-  if (method === "collector-api") return "agent bridge API";
-  if (method === "local-shell") return "local shell";
-  if (method === "tailscale-ssh") return "Tailscale SSH";
+  if (method === "collector-api") return "agent bridge";
+  if (method === "local-shell") return "local setup";
+  if (method === "tailscale-ssh") return "Tailscale";
   if (method === "plain-ssh") return "SSH";
   return method || "setup";
 }
@@ -77,42 +84,48 @@ export default function NangoIntegrationsView({ embedded = false }: NangoIntegra
   const [payload, setPayload] = React.useState<NangoIntegrationPayload | null>(null);
   const [machines, setMachines] = React.useState<MachineChoice[]>([]);
   const [selectedId, setSelectedId] = React.useState("");
+  const [step, setStep] = React.useState<SetupStep>("welcome");
+  const [setupMode, setSetupMode] = React.useState<SetupMode>("");
+  const [loading, setLoading] = React.useState(true);
   const [saving, setSaving] = React.useState(false);
-  const [envSaving, setEnvSaving] = React.useState(false);
   const [setupSaving, setSetupSaving] = React.useState(false);
+  const [validating, setValidating] = React.useState(false);
+  const [manualValidated, setManualValidated] = React.useState(false);
   const [setupResult, setSetupResult] = React.useState<NangoHostSetupResult | null>(null);
-  const [setupMode, setSetupMode] = React.useState<"automatic" | "manual">("automatic");
-  const [setupMessage, setSetupMessage] = React.useState("");
   const [message, setMessage] = React.useState("");
 
-  const refresh = React.useCallback(async () => {
+  const refresh = React.useCallback(async (showLoading = false) => {
+    if (showLoading) setLoading(true);
     setMessage("");
-    const nangoResponse = await fetch("/api/integrations/nango", { cache: "no-store" });
-    const nextPayload = await nangoResponse.json() as NangoIntegrationPayload;
-    setPayload(nextPayload);
-    const fallbackChoices = machineChoices([], nextPayload.config);
-    setMachines(fallbackChoices);
-    setSelectedId(nextPayload.config.hostMachineId || fallbackChoices[0]?.id || "self");
-
-    const fleetResponse = await fetch("/api/fleet/discover?includeSnapshots=0", { cache: "no-store" }).catch(() => null);
-    const fleet = fleetResponse?.ok ? await fleetResponse.json() as { machines?: FleetMachine[] } : { machines: [] };
-    const choices = machineChoices(fleet.machines ?? [], nextPayload.config);
-    setMachines(choices);
-    setSelectedId((current) => {
-      if (nextPayload.config.hostMachineId) return nextPayload.config.hostMachineId;
-      return !current || current === "self" ? choices[0]?.id ?? "self" : current;
-    });
+    try {
+      const [nangoResponse, fleetResponse] = await Promise.all([
+        fetch("/api/integrations/nango", { cache: "no-store" }),
+        fetch("/api/fleet/discover?includeSnapshots=0", { cache: "no-store" }).catch(() => null),
+      ]);
+      const nextPayload = await nangoResponse.json() as NangoIntegrationPayload;
+      const fleet = fleetResponse?.ok ? await fleetResponse.json() as { machines?: FleetMachine[] } : { machines: [] };
+      const choices = machineChoices(fleet.machines ?? [], nextPayload.config);
+      setPayload(nextPayload);
+      setMachines(choices);
+      setSelectedId((current) => nextPayload.config.hostMachineId || current || choices[0]?.id || "self");
+      setStep((current) => current === "welcome" && nextPayload.config.hostMachineId ? "apps" : current);
+      return nextPayload;
+    } finally {
+      setLoading(false);
+    }
   }, []);
 
   React.useEffect(() => {
-    const timer = window.setTimeout(() => void refresh(), 0);
+    const timer = window.setTimeout(() => void refresh(true), 0);
     return () => window.clearTimeout(timer);
   }, [refresh]);
 
   const selected = machines.find((machine) => machine.id === selectedId) ?? machines[0];
   const providerSet = new Set(payload?.config.allowedProviders ?? []);
+  const ready = payload?.health.ok === true;
+  const configured = Boolean(payload?.config.hostMachineId && payload.config.baseUrl);
 
-  async function saveHost() {
+  async function saveHost(nextStep: SetupStep = "method") {
     if (!payload || !selected) return;
     setSaving(true);
     setMessage("");
@@ -130,42 +143,13 @@ export default function NangoIntegrationsView({ embedded = false }: NangoIntegra
         }),
       });
       const nextPayload = await response.json() as NangoIntegrationPayload & { error?: string };
-      if (!response.ok) throw new Error(nextPayload.error ?? "Could not save integration host.");
+      if (!response.ok) throw new Error(nextPayload.error ?? "Could not save this machine.");
       setPayload(nextPayload);
-      setMessage(`Integration host set to ${selected.name}.`);
+      setStep(nextStep);
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : "Could not save integration host.");
+      setMessage(error instanceof Error ? error.message : "Could not save this machine.");
     } finally {
       setSaving(false);
-    }
-  }
-
-  async function saveEnv() {
-    if (!payload) return;
-    setEnvSaving(true);
-    setMessage("");
-    try {
-      const response = await fetch("/api/env", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          sourceId: "shared",
-          entries: {
-            HIVE_NANGO_ENABLED: String(payload.config.enabled),
-            HIVE_NANGO_HOST_MACHINE: payload.config.hostMachineId,
-            HIVE_NANGO_ALLOWED_PROVIDERS: payload.config.allowedProviders.join(","),
-            NANGO_BASE_URL: payload.config.baseUrl,
-          },
-        }),
-      });
-      const result = await response.json() as { ok?: boolean; error?: string };
-      if (!response.ok || result.ok === false) throw new Error(result.error ?? "Could not sync shared env.");
-      setMessage("Non-secret Nango env synced through hive-env-add.");
-      await refresh();
-    } catch (error) {
-      setMessage(error instanceof Error ? error.message : "Could not sync shared env.");
-    } finally {
-      setEnvSaving(false);
     }
   }
 
@@ -173,7 +157,6 @@ export default function NangoIntegrationsView({ embedded = false }: NangoIntegra
     if (!payload || !selected) return;
     setSetupSaving(true);
     setSetupResult(null);
-    setSetupMessage("");
     setMessage("");
     try {
       const response = await fetch("/api/integrations/nango/setup", {
@@ -193,16 +176,27 @@ export default function NangoIntegrationsView({ embedded = false }: NangoIntegra
       const result = await response.json() as NangoHostSetupResult & { error?: string };
       if (!response.ok || result.ok === false) {
         setSetupResult(result.health ? result : null);
-        throw new Error(result.error ?? result.health?.error ?? "Nango setup did not finish cleanly.");
+        throw new Error(result.error ?? result.health?.error ?? "Nango is not ready yet.");
       }
       setSetupResult(result);
-      setPayload(await (await fetch("/api/integrations/nango", { cache: "no-store" })).json() as NangoIntegrationPayload);
-      setSetupMessage(`Nango setup finished on ${result.target}.`);
+      await refresh();
     } catch (error) {
-      setSetupMessage(error instanceof Error ? error.message : "Could not set up Nango on the selected host.");
+      setMessage(friendlySetupError(error));
     } finally {
       setSetupSaving(false);
     }
+  }
+
+  async function validateManualSetup() {
+    setValidating(true);
+    setManualValidated(false);
+    setMessage("");
+    const nextPayload = await refresh();
+    window.setTimeout(() => {
+      setManualValidated(nextPayload?.health.ok === true);
+      setMessage(nextPayload?.health.ok === true ? "Nango validated!" : "Nango is not reachable yet. Check the setup and try again.");
+      setValidating(false);
+    }, 650);
   }
 
   async function toggleProvider(provider: NangoProviderKey) {
@@ -218,235 +212,387 @@ export default function NangoIntegrationsView({ embedded = false }: NangoIntegra
     if (response.ok) setPayload(await response.json() as NangoIntegrationPayload);
   }
 
-  const ready = payload?.health.ok === true;
-  const configured = Boolean(payload?.config.hostMachineId && payload.config.baseUrl);
+  function chooseMode(mode: Exclude<SetupMode, "">) {
+    setSetupMode(mode);
+    setMessage("");
+  }
+
+  function continueFromMethod() {
+    if (setupMode === "automatic") setStep("automatic");
+    if (setupMode === "manual") setStep("manual");
+  }
 
   return (
     <main className={`${styles.page} ${embedded ? styles.embedded : ""}`}>
       <div className={styles.shell}>
         <header className={styles.topbar}>
           <div>
-            <div className={styles.eyebrow}>HivemindOS · Integrations</div>
-            <h1 className={styles.title}>Integration Host</h1>
+            <div className={styles.eyebrow}>Nango</div>
+            <h1 className={styles.title}>{step === "apps" ? "Integrations" : "Welcome to Nango"}</h1>
             <p className={styles.subtitle}>
-              Pick the always-on machine that runs Nango for the hive. HivemindOS stores provider tokens there,
-              syncs only non-secret host metadata, and keeps agent access behind local policy.
+              {step === "apps" ? "Choose the integrations your hive can use." : "The unified integration system."}
             </p>
           </div>
-          <div className={styles.statusCluster}>
-            <StatusBadge good={configured} label={configured ? "host selected" : "needs host"} />
-            <StatusBadge good={ready} warn={configured && !ready} label={ready ? "Nango healthy" : "health pending"} />
-            <StatusBadge good={payload?.env.secretConfigured === true} warn label={payload?.env.secretConfigured ? "secret present" : "secret not synced"} />
-          </div>
+          {step === "apps" ? (
+            <div className={styles.statusCluster}>
+              <StatusBadge good={configured} label={configured ? "Host ready" : "Needs host"} />
+              <StatusBadge good={ready} warn={configured && !ready} label={ready ? "Nango live" : "Checking"} />
+            </div>
+          ) : null}
         </header>
 
-        <div className={styles.layout}>
-          <section className={styles.panel}>
-            <div className={styles.row}>
-              <h2 className={styles.sectionTitle}>Host</h2>
-              <Button variant="ghost" size="sm" onClick={() => void refresh()}>
-                <RefreshCw /> Refresh
-              </Button>
-            </div>
-
-            <select
-              className={styles.hostSelect}
-              value={selectedId}
-              onChange={(event) => setSelectedId(event.target.value)}
-              aria-label="Integration host machine"
-            >
-              {machines.map((machine) => (
-                <option key={machine.id} value={machine.id}>
-                  {machine.name} · {machine.note}
-                </option>
-              ))}
-            </select>
-
-            <div className={styles.machineList}>
-              {machines.slice(0, 5).map((machine) => (
-                <button
-                  key={machine.id}
-                  className={`${styles.machineButton} ${machine.id === selectedId ? styles.machineButtonSelected : ""}`}
-                  type="button"
-                  onClick={() => setSelectedId(machine.id)}
-                >
-                  <div className={styles.row}>
-                    <strong>{machine.name}</strong>
-                    <span className={`${styles.badge} ${machine.rank >= 80 ? styles.badgeGood : machine.rank >= 45 ? styles.badgeWarn : styles.badgeBad}`}>
-                      {machine.rank >= 80 ? "Recommended" : machine.self ? "Temporary" : "Check"}
-                    </span>
-                  </div>
-                  <div className={`${styles.muted} ${styles.small}`}>
-                    {machine.os} · {machine.baseUrl}
-                  </div>
-                  <div className={`${styles.muted} ${styles.small}`}>{machine.note}</div>
-                </button>
-              ))}
-            </div>
-
-            <div className={styles.checklist}>
-              <CheckItem ok={Boolean(selected?.online)} label="Tailscale reachable" detail={selected?.online ? "Machine is currently online." : "Machine is offline or unavailable."} />
-              <CheckItem ok={Boolean(selected && !selected.self)} warn={selected?.self} label="Always-on candidate" detail={selected?.self ? "This Mac is useful for testing but may sleep when closed." : "Remote host is a better default for shared API access."} />
-              <CheckItem ok={ready} warn={configured && !ready} label="Nango API health" detail={payload?.health.ok ? `${payload.health.url} responded in ${payload.health.latencyMs ?? 0}ms.` : payload?.health.error || "Nango is not responding yet."} />
-              <CheckItem ok={payload?.env.secretConfigured === true} warn label="Nango secret" detail={payload?.env.secretConfigured ? "NANGO_SECRET_KEY is configured in this runtime." : "Add NANGO_SECRET_KEY through hive-env-add after Nango is installed."} />
-            </div>
-
-            <div className={styles.actions}>
-              <Button onClick={() => void saveHost()} isLoading={saving} disabled={!selected}>
-                <Server /> Use selected host
-              </Button>
-              <Button variant="secondary" onClick={() => void saveEnv()} isLoading={envSaving} disabled={!payload?.config.enabled}>
-                <KeyRound /> Sync shared env
-              </Button>
-              {payload?.config.baseUrl ? (
-                <Button asChild variant="ghost">
-                  <a href={payload.config.baseUrl} target="_blank" rel="noreferrer">
-                    <span className="inline-flex items-center gap-2"><Link2 /> Open Nango</span>
-                  </a>
-                </Button>
-              ) : null}
-            </div>
-            {message ? <p className={styles.muted}>{message}</p> : null}
-
-            <h2 className={styles.sectionTitle} style={{ marginTop: 20 }}>Host Setup</h2>
-            <div className={styles.setupBox}>
-              <div className={styles.segmented} role="tablist" aria-label="Host setup mode">
-                <button
-                  type="button"
-                  role="tab"
-                  aria-selected={setupMode === "automatic"}
-                  className={setupMode === "automatic" ? styles.segmentActive : ""}
-                  onClick={() => setSetupMode("automatic")}
-                >
-                  Automatic Setup
-                </button>
-                <button
-                  type="button"
-                  role="tab"
-                  aria-selected={setupMode === "manual"}
-                  className={setupMode === "manual" ? styles.segmentActive : ""}
-                  onClick={() => setSetupMode("manual")}
-                >
-                  Manual Setup
-                </button>
-              </div>
-
-              {setupMode === "automatic" ? (
-                <div className={styles.setupPane} role="tabpanel">
-                  <div className={styles.row}>
-                    <div>
-                      <strong>Automatic setup</strong>
-                      <p className={`${styles.muted} ${styles.small}`}>Runs through the agent bridge API when available, falls back to SSH, starts Nango, then checks health.</p>
-                    </div>
-                    <Button variant="secondary" onClick={() => void setupHost()} isLoading={setupSaving} disabled={!selected || !selected.online}>
-                      <TerminalSquare /> Run setup
-                    </Button>
-                  </div>
-                  {setupResult ? (
-                    <div className={styles.setupResult}>
-                      <StatusBadge good={setupResult.health.ok} warn={!setupResult.health.ok} label={setupResult.health.ok ? "Nango healthy" : "Needs attention"} />
-                      <span className={`${styles.muted} ${styles.small}`}>{setupMethodLabel(setupResult.method)} · {setupResult.target}</span>
-                    </div>
-                  ) : null}
-                  {setupMessage ? (
-                    <p className={`${styles.setupMessage} ${setupResult?.ok ? styles.setupMessageGood : styles.setupMessageWarn}`}>{setupMessage}</p>
-                  ) : null}
-                  {setupResult?.stdout || setupResult?.stderr ? (
-                    <pre className={styles.codeBlock}>{[setupResult.stdout, setupResult.stderr].filter(Boolean).join("\n\n")}</pre>
-                  ) : null}
-                </div>
-              ) : (
-                <div className={styles.setupPane} role="tabpanel">
-                  <p className={`${styles.muted} ${styles.small}`}>Use these commands only if the agent bridge API and SSH automation are unavailable.</p>
-                  <pre className={styles.codeBlock}>{(payload?.setupCommands ?? []).join("\n")}</pre>
-                </div>
-              )}
-            </div>
-          </section>
-
-          <section className={styles.panel}>
-            <div className={styles.row}>
-              <h2 className={styles.sectionTitle}>Provider Access</h2>
-              <span className={styles.badge}>{payload?.connections.length ?? 0} connected</span>
-            </div>
-            <div className={styles.providers}>
-              {PROVIDERS.map((provider) => (
-                <article key={provider.key} className={styles.provider}>
-                  <div className={styles.row}>
-                    <div className={styles.providerIcon}>{provider.icon}</div>
-                    <label className={styles.providerToggle}>
-                      <input
-                        type="checkbox"
-                        checked={providerSet.has(provider.key)}
-                        onChange={() => void toggleProvider(provider.key)}
-                      />
-                      Enabled
-                    </label>
-                  </div>
-                  <div>
-                    <strong>{provider.label}</strong>
-                    <p className={`${styles.muted} ${styles.small}`}>{provider.detail}</p>
-                  </div>
-                </article>
-              ))}
-            </div>
-
-            <h2 className={styles.sectionTitle} style={{ marginTop: 20 }}>Connected Accounts</h2>
-            <div className={styles.connections}>
-              {!payload ? (
-                <div className={styles.activityRow}><LoaderCircle className="animate-spin" /> Loading integrations.</div>
-              ) : payload.connections.length ? payload.connections.map((connection) => (
-                <div key={`${connection.providerConfigKey}:${connection.id}`} className={styles.activityRow}>
-                  <div className={styles.row}>
-                    <strong>{connection.providerConfigKey}</strong>
-                    <span className={`${styles.badge} ${styles.badgeGood}`}>Connected</span>
-                  </div>
-                  <div className={`${styles.muted} ${styles.small}`}>
-                    {connection.displayName || connection.email || connection.id}
-                  </div>
-                </div>
-              )) : (
-                <div className={styles.activityRow}>
-                  <strong>No connected accounts visible yet.</strong>
-                  <p className={`${styles.muted} ${styles.small}`}>
-                    Once Nango is running and `NANGO_SECRET_KEY` is configured, connected accounts will show here.
-                    OAuth tokens remain inside the Nango host database.
-                  </p>
-                </div>
-              )}
-              {payload?.connectionError ? (
-                <div className={styles.activityRow}>
-                  <span className={`${styles.badge} ${styles.badgeWarn}`}>Connection check</span>
-                  <p className={`${styles.muted} ${styles.small}`}>{payload.connectionError}</p>
-                </div>
-              ) : null}
-            </div>
-          </section>
-        </div>
+        {loading ? <LoadingView /> : null}
+        {!loading && step === "welcome" ? <WelcomeView onStart={() => setStep("host")} /> : null}
+        {!loading && step === "host" ? (
+          <HostView
+            machines={machines}
+            selectedId={selectedId}
+            setSelectedId={setSelectedId}
+            onBack={() => setStep("welcome")}
+            onContinue={() => void saveHost("method")}
+            saving={saving}
+            message={message}
+          />
+        ) : null}
+        {!loading && step === "method" ? (
+          <MethodView
+            setupMode={setupMode}
+            chooseMode={chooseMode}
+            onBack={() => setStep("host")}
+            onContinue={continueFromMethod}
+          />
+        ) : null}
+        {!loading && step === "automatic" ? (
+          <AutomaticView
+            selected={selected}
+            setupResult={setupResult}
+            setupSaving={setupSaving}
+            message={message}
+            onBack={() => setStep("method")}
+            onRun={() => void setupHost()}
+            onFinish={() => setStep("apps")}
+          />
+        ) : null}
+        {!loading && step === "manual" ? (
+          <ManualView
+            payload={payload}
+            manualValidated={manualValidated}
+            validating={validating}
+            message={message}
+            onBack={() => setStep("method")}
+            onValidate={() => void validateManualSetup()}
+            onFinish={() => setStep("apps")}
+          />
+        ) : null}
+        {!loading && step === "apps" ? (
+          <AppsView
+            payload={payload}
+            providerSet={providerSet}
+            ready={ready}
+            onRefresh={() => void refresh(true)}
+            onSetup={() => setStep("host")}
+            onToggleProvider={toggleProvider}
+          />
+        ) : null}
       </div>
     </main>
+  );
+}
+
+function LoadingView() {
+  return (
+    <section className={styles.centerStage} aria-live="polite">
+      <div className={styles.loadingMark}>
+        <LoaderCircle className="animate-spin" />
+      </div>
+      <h2>Finding your machines</h2>
+      <p>One moment while Nango gets the full list ready.</p>
+      <div className={styles.loadingRows}>
+        <span />
+        <span />
+        <span />
+      </div>
+    </section>
+  );
+}
+
+function WelcomeView({ onStart }: { onStart: () => void }) {
+  return (
+    <section className={styles.welcomeStage}>
+      <div className={styles.nangoMark}><Sparkles /></div>
+      <h2>Welcome to Nango.</h2>
+      <p>The unified integration system.</p>
+      <Button className={styles.primaryCta} size="lg" onClick={onStart}>
+        <Play /> Set up Nango
+      </Button>
+    </section>
+  );
+}
+
+function HostView({
+  machines,
+  selectedId,
+  setSelectedId,
+  onBack,
+  onContinue,
+  saving,
+  message,
+}: {
+  machines: MachineChoice[];
+  selectedId: string;
+  setSelectedId: (id: string) => void;
+  onBack: () => void;
+  onContinue: () => void;
+  saving: boolean;
+  message: string;
+}) {
+  return (
+    <section className={styles.stage}>
+      <StepHeader kicker="Step 1" title="Choose a home for Nango" detail="Pick the machine that should keep your app connections running." />
+      <div className={styles.machineGrid}>
+        {machines.map((machine) => (
+          <button
+            key={machine.id}
+            className={`${styles.machineCard} ${machine.id === selectedId ? styles.machineCardSelected : ""}`}
+            type="button"
+            onClick={() => setSelectedId(machine.id)}
+          >
+            <span className={styles.machineIcon}><Monitor /></span>
+            <strong>{machine.name}</strong>
+            <span>{machine.self ? "This computer" : machine.note}</span>
+            <span className={`${styles.pill} ${machine.online ? styles.pillGood : styles.pillWarn}`}>
+              {machine.online ? "Online" : "Offline"}
+            </span>
+            <span className={styles.machineActions}>
+              <span>Set primary</span>
+            </span>
+          </button>
+        ))}
+      </div>
+      <FooterActions onBack={onBack}>
+        <Button onClick={onContinue} isLoading={saving} disabled={!selectedId}>
+          <Server /> Continue
+        </Button>
+      </FooterActions>
+      {message ? <p className={styles.note}>{message}</p> : null}
+    </section>
+  );
+}
+
+function MethodView({
+  setupMode,
+  chooseMode,
+  onBack,
+  onContinue,
+}: {
+  setupMode: SetupMode;
+  chooseMode: (mode: Exclude<SetupMode, "">) => void;
+  onBack: () => void;
+  onContinue: () => void;
+}) {
+  return (
+    <section className={styles.stage}>
+      <StepHeader kicker="Step 2" title="How would you like to set up this machine?" detail="Most people should choose automatic." />
+      <div className={styles.methodGrid}>
+        <button className={`${styles.methodCard} ${setupMode === "automatic" ? styles.methodCardSelected : ""}`} type="button" onClick={() => chooseMode("automatic")}>
+          <Sparkles />
+          <strong>Automatic</strong>
+          <span>HivemindOS prepares Nango for you, then checks that it works.</span>
+        </button>
+        <button className={`${styles.methodCard} ${setupMode === "manual" ? styles.methodCardSelected : ""}`} type="button" onClick={() => chooseMode("manual")}>
+          <TerminalSquare />
+          <strong>Manual</strong>
+          <span>Use your own setup, then let HivemindOS validate it.</span>
+        </button>
+      </div>
+      <FooterActions onBack={onBack}>
+        <Button onClick={onContinue} disabled={!setupMode}>Next</Button>
+      </FooterActions>
+    </section>
+  );
+}
+
+function AutomaticView({
+  selected,
+  setupResult,
+  setupSaving,
+  message,
+  onBack,
+  onRun,
+  onFinish,
+}: {
+  selected?: MachineChoice;
+  setupResult: NangoHostSetupResult | null;
+  setupSaving: boolean;
+  message: string;
+  onBack: () => void;
+  onRun: () => void;
+  onFinish: () => void;
+}) {
+  const complete = setupResult?.ok === true;
+  return (
+    <section className={styles.stage}>
+      <StepHeader kicker="Step 3" title="Start automatic setup" detail={`Nango will be prepared on ${selected?.name ?? "the selected machine"}.`} />
+      <button className={`${styles.bigSetupButton} ${setupSaving ? styles.bigSetupButtonBusy : ""}`} type="button" onClick={onRun} disabled={setupSaving || !selected}>
+        {setupSaving ? <LoaderCircle className="animate-spin" /> : complete ? <CheckCircle2 /> : <Sparkles />}
+        <span>{setupSaving ? "Setting up Nango" : complete ? "Nango is ready" : "Start automatic setup"}</span>
+      </button>
+      {complete ? (
+        <div className={styles.successBurst}>
+          <CheckCircle2 />
+          <strong>Success</strong>
+          <span>{setupMethodLabel(setupResult.method)} finished on {setupResult.target}.</span>
+        </div>
+      ) : null}
+      {message ? <p className={complete ? styles.noteGood : styles.note}>{message}</p> : null}
+      <FooterActions onBack={onBack}>
+        <Button onClick={onFinish} disabled={!complete}>Finish</Button>
+      </FooterActions>
+    </section>
+  );
+}
+
+function ManualView({
+  payload,
+  manualValidated,
+  validating,
+  message,
+  onBack,
+  onValidate,
+  onFinish,
+}: {
+  payload: NangoIntegrationPayload | null;
+  manualValidated: boolean;
+  validating: boolean;
+  message: string;
+  onBack: () => void;
+  onValidate: () => void;
+  onFinish: () => void;
+}) {
+  return (
+    <section className={styles.stage}>
+      <StepHeader kicker="Step 3" title="Manual setup" detail="Set up Nango on the chosen machine, then validate it here." />
+      <div className={styles.manualBox}>
+        <strong>Run Nango on this address</strong>
+        <span>{payload?.config.baseUrl ?? "Nango host address"}</span>
+        <pre>{(payload?.setupCommands ?? []).join("\n")}</pre>
+      </div>
+      <div className={styles.validateRow}>
+        <Button onClick={onValidate} isLoading={validating}>
+          <RefreshCw /> Validate
+        </Button>
+        {manualValidated ? <span className={styles.validated}><CheckCircle2 /> Nango validated!</span> : null}
+      </div>
+      {message ? <p className={manualValidated ? styles.noteGood : styles.note}>{message}</p> : null}
+      <FooterActions onBack={onBack}>
+        <Button onClick={onFinish} disabled={!manualValidated}>Finish</Button>
+      </FooterActions>
+    </section>
+  );
+}
+
+function AppsView({
+  payload,
+  providerSet,
+  ready,
+  onRefresh,
+  onSetup,
+  onToggleProvider,
+}: {
+  payload: NangoIntegrationPayload | null;
+  providerSet: Set<NangoProviderKey>;
+  ready: boolean;
+  onRefresh: () => void;
+  onSetup: () => void;
+  onToggleProvider: (provider: NangoProviderKey) => void;
+}) {
+  return (
+    <section className={styles.appsStage}>
+      <div className={styles.appsToolbar}>
+        <div>
+          <h2>Integrations</h2>
+          <p>{payload?.connections.length ?? 0} connected account{payload?.connections.length === 1 ? "" : "s"}</p>
+        </div>
+        <div className={styles.toolbarButtons}>
+          {payload?.config.baseUrl ? (
+            <Button asChild variant="secondary">
+              <a href={payload.config.baseUrl} target="_blank" rel="noreferrer">
+                <span className="inline-flex items-center gap-2"><Link2 /> Open Nango</span>
+              </a>
+            </Button>
+          ) : null}
+          <Button variant="secondary" onClick={onSetup}><KeyRound /> Setup</Button>
+          <Button variant="ghost" onClick={onRefresh}><RefreshCw /> Refresh</Button>
+        </div>
+      </div>
+
+      <div className={styles.appGrid}>
+        {PROVIDERS.map((provider) => {
+          const enabled = providerSet.has(provider.key);
+          return (
+            <button
+              key={provider.key}
+              className={`${styles.appCard} ${enabled ? styles.appCardEnabled : ""}`}
+              type="button"
+              onClick={() => onToggleProvider(provider.key)}
+              aria-pressed={enabled}
+            >
+              <span className={`${styles.appIcon} ${styles[`appIcon${provider.color}`]}`}>{provider.icon}</span>
+              <strong>{provider.label}</strong>
+              <span className={styles.appDetail}>{provider.detail}</span>
+              <span className={`${styles.pill} ${enabled ? styles.pillGood : styles.pillNeutral}`}>{enabled ? "Enabled" : "Off"}</span>
+            </button>
+          );
+        })}
+      </div>
+
+      <div className={styles.connectionList}>
+        <div className={styles.connectionHeader}>
+          <strong>Connected accounts</strong>
+          <StatusBadge good={ready} warn={Boolean(payload?.config.hostMachineId)} label={ready ? "Nango live" : "Waiting"} />
+        </div>
+        {payload?.connections.length ? payload.connections.map((connection) => (
+          <div key={`${connection.providerConfigKey}:${connection.id}`} className={styles.connectionRow}>
+            <strong>{connection.providerConfigKey}</strong>
+            <span>{connection.displayName || connection.email || connection.id}</span>
+          </div>
+        )) : (
+          <div className={styles.emptyAccounts}>
+            <strong>No accounts connected yet.</strong>
+            <span>When people connect apps through Nango, they will appear here.</span>
+          </div>
+        )}
+        {payload?.connectionError ? <p className={styles.note}>{payload.connectionError}</p> : null}
+      </div>
+    </section>
+  );
+}
+
+function StepHeader({ kicker, title, detail }: { kicker: string; title: string; detail: string }) {
+  return (
+    <div className={styles.stepHeader}>
+      <span>{kicker}</span>
+      <h2>{title}</h2>
+      <p>{detail}</p>
+    </div>
+  );
+}
+
+function FooterActions({ children, onBack }: { children: React.ReactNode; onBack: () => void }) {
+  return (
+    <div className={styles.footerActions}>
+      <Button variant="ghost" onClick={onBack}>Back</Button>
+      {children}
+    </div>
   );
 }
 
 function StatusBadge({ good, warn, label }: { good?: boolean; warn?: boolean; label: string }) {
   return (
     <span className={`${styles.badge} ${good ? styles.badgeGood : warn ? styles.badgeWarn : styles.badgeBad}`}>
-      {good ? <CheckCircle2 size={14} /> : warn ? <CircleAlert size={14} /> : <CircleAlert size={14} />}
+      {good ? <CheckCircle2 size={14} /> : <CircleAlert size={14} />}
       {label}
     </span>
-  );
-}
-
-function CheckItem({ ok, warn, label, detail }: { ok?: boolean; warn?: boolean; label: string; detail: string }) {
-  const Icon = ok ? CheckCircle2 : warn ? CircleAlert : CircleAlert;
-  return (
-    <div className={styles.checkItem}>
-      <Icon className={ok ? styles.iconGood : warn ? styles.iconWarn : styles.iconBad} size={18} />
-      <div>
-        <strong>{label}</strong>
-        <div className={`${styles.muted} ${styles.small}`}>{detail}</div>
-      </div>
-    </div>
   );
 }
 
@@ -472,7 +618,7 @@ function machineChoices(machines: FleetMachine[], config: NangoHostConfig): Mach
       baseUrl: `http://${baseHost}:3003`,
       collectorUrl: device.collectorUrl || "",
       rank,
-      note: device.self ? "current machine, may sleep" : serverLike ? "always-on candidate" : "tailnet machine",
+      note: device.self ? "current machine" : serverLike ? "always-on candidate" : "tailnet machine",
     };
   });
 
@@ -488,7 +634,7 @@ function machineChoices(machines: FleetMachine[], config: NangoHostConfig): Mach
       baseUrl: "http://127.0.0.1:3003",
       collectorUrl: "http://127.0.0.1:8787",
       rank: 18,
-      note: "current machine, may sleep",
+      note: "current machine",
     });
   }
 
@@ -504,7 +650,7 @@ function machineChoices(machines: FleetMachine[], config: NangoHostConfig): Mach
       baseUrl: config.baseUrl,
       collectorUrl: "",
       rank: 10,
-      note: "saved host, not in current fleet snapshot",
+      note: "saved host",
     });
   }
 
@@ -525,4 +671,12 @@ function setupTargetFromBaseUrl(baseUrl: string) {
   } catch {
     return baseUrl.replace(/^https?:\/\//, "").split(":")[0] || "integration-host";
   }
+}
+
+function friendlySetupError(error: unknown) {
+  const message = error instanceof Error ? error.message : "";
+  if (/fetch failed|failed to fetch|network/i.test(message)) {
+    return "Could not reach that machine. Make sure it is online, then try again.";
+  }
+  return message || "Could not start Nango. Try again in a moment.";
 }

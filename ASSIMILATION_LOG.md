@@ -421,7 +421,6 @@
 - Note: /Users/liam/Documents/code/projects/hivemind-os/ASSIMILATION_LOG.md
 /Users/liam/Documents/code/projects/hivemind-os/ASSIMILATION_LOG.jsonl
 cached 0 public candidates in /Users/liam/Documents/github-assimilator-vault
-
 ## 2026-05-28T03:04:35.381267+00:00 - triage
 
 - Request: Audit and fix HivemindOS chat runtime error display for SSE provider errors
@@ -848,3 +847,676 @@ cached 0 public candidates in /Users/liam/Documents/github-assimilator-vault
   - Decision: implemented
   - Reason: Upstream AEON dashboard and runtime patterns guided the HivemindOS Autopilot surface
   - Path: `dashboard/lib/config.ts,dashboard/app/api/runs/route.ts,dashboard/components/SkillDetail.tsx,dashboard/components/RightPanel.tsx`
+## 2026-05-30T04:06:18.791293+00:00 - assimilation
+
+- Request: Expand HivemindOS AEON operations dashboard from aaronjmars/aeon dashboard
+- Source: public-github
+- Selected backbone: aaronjmars/aeon
+
+### Candidates
+- aaronjmars/aeon
+  - Decision: selected
+  - Reason: upstream AEON dashboard provides concrete components and API behavior for skill roster, run logs, analytics, secrets, memory, repo sync, upload import
+  - Path: `dashboard/app/page.tsx,dashboard/components/RightPanel.tsx,dashboard/components/SkillDetail.tsx,dashboard/components/SecretsPanel.tsx,dashboard/components/ImportModal.tsx,dashboard/lib/types.ts`
+## 2026-05-30T04:08:42.473506+00:00 - assimilation-manifest
+
+- Request: (not provided)
+- Source: selected-github-code
+- Decision: assimilated
+- Assimilated: aaronjmars/aeon:dashboard/components/SkillDetail.tsx => src/features/dashboard/views/AeonAutopilotPanel.tsx, aaronjmars/aeon:dashboard/components/RightPanel.tsx => src/features/dashboard/views/AeonAutopilotPanel.tsx, aaronjmars/aeon:dashboard/components/ImportModal.tsx => src/lib/services/obsidian/brain-skills.ts, aaronjmars/aeon:dashboard/app/api/runs/[id]/logs/route.ts => src/app/api/runtimes/[runtime]/runs/logs/route.ts, aaronjmars/aeon:dashboard/app/api/secrets/route.ts => src/app/api/runtimes/[runtime]/secrets/status/route.ts
+- Verification: Wrote ASSIMILATION.json with 5 entries and custom_code_assessment=balanced.
+## 2026-05-30T04:33:05.869479+00:00 - local-search
+
+- Request: React chat UI multiple simultaneous streaming conversations per chat state
+- Source: local-index
+- Query: `React chat UI multiple simultaneous streaming conversations per chat state`
+- Decision: retrieved
+- Reason: Retrieved local/private-visible index hits.
+- Note: 1. score=8.21 react-native-google-signin/google-signin-next [repo-summary]
+   url: https://github.com/react-native-google-signin/google-signin-next
+   note: /Users/liam/Documents/github-assimilator-vault/Repos/react-native-google-signin-google-signin-next.md
+   react-native-google-signin/google-signin-next Google Sign-in for your React Native applications TypeScript React React Native
+2. score=7.52 LiamVisionary/maps-agency [repo-summary]
+   url: https://github.com/LiamVisionary/maps-agency
+   note: /Users/liam/Documents/github-assimilator-vault/Repos/LiamVisionary-maps-agency.md
+   LiamVisionary/maps-agency 7-agent solo web design agency: scouts narrow-niche local businesses on Google Maps, diagnoses, builds Lovable mockups, films Higgsfield videos, pitches by channel, books Zooms — single API key, file-system shared
+3. score=6.91 nativelaunch/expolaunch-template [repo-summary]
+   url: https://github.com/nativelaunch/expolaunch-template
+   note: /Users/liam/Documents/github-assimilator-vault/Repos/nativelaunch-expolaunch-template.md
+   nativelaunch/expolaunch-template NativeLaunch Starter – Expo SDK 55 + React Native template with Supabase, RevenueCat, OneSignal, UniWind + HeroUI Native. TypeScript Expo React React Native
+4. score=6.91 nativelaunch/nativelaunch-monorepo-template [repo-summary]
+   url: https://github.com/nativelaunch/nativelaunch-monorepo-template
+   note: /Users/liam/Documents/github-assimilator-vault/Repos/nativelaunch-nativelaunch-monorepo-template.md
+   nativelaunch/nativelaunch-monorepo-template NativeLaunch Monorepo – Expo SDK 55 + React Native + Turborepo + UniWind + HeroUI Native. Monorepo template with shared packages. TypeScript Expo React React Native
+5. score=0.88 LiamVisionary/ai-chatbot [repo-summary]
+   url: https://github.com/LiamVisionary/ai-chatbot
+   note: /Users/liam/Documents/github-assimilator-vault/Repos/LiamVisionary-ai-chatbot.md
+   LiamVisionary/ai-chatbot TypeScript
+6. score=0.88 LiamVisionary/chatterbox [repo-summary]
+   url: https://github.com/LiamVisionary/chatterbox
+   note: /Users/liam/Documents/github-assimilator-vault/Repos/LiamVisionary-chatterbox.md
+   LiamVisionary/chatterbox SoTA open-source TTS Voice/TTS
+7. score=0.88 LiamVisionary/chatterbox-tts-api-modal-deployed [repo-summary]
+   url: https://github.com/LiamVisionary/chatterbox-tts-api-modal-deployed
+   note: /Users/liam/Documents/github-assimilator-vault/Repos/LiamVisionary-chatterbox-tts-api-modal-deployed.md
+   LiamVisionary/chatterbox-tts-api-modal-deployed Python Python
+8. score=0.88 LiamVisionary/Chatterbox-TTS-Server [repo-summary]
+   url: https://github.com/LiamVisionary/Chatterbox-TTS-Server
+   note: /Users/liam/Documents/github-assimilator-vault/Repos/LiamVisionary-Chatterbox-TTS-Server.md
+   LiamVisionary/Chatterbox-TTS-Server Python Python
+
+## 2026-05-30T04:33:09.245650+00:00 - prebuild-gate
+
+- Request: React chat UI multiple simultaneous streaming conversations per chat state
+- Source: public-github
+- Query: `React chat UI multiple simultaneous streaming conversations per chat state`
+- Decision: passed
+- Reason: Public search returned candidates; choose and audit backbone/donors before implementation.
+## 2026-05-30T04:33:20.103035+00:00 - triage
+
+- Request: Add true multitasking for streaming chat conversations
+- Source: public-github
+
+### Candidates
+- MadisoMelese/Live-Chat-App
+  - Decision: rejected
+  - Reason: higher star count but real-time human chat/MERN stack, not AI streaming conversation state
+- arkaghosh2005/QuickMeet
+  - Decision: rejected
+  - Reason: video conferencing app, not relevant to AI chat streaming
+- Max-Loo/multi-chat
+  - Decision: selected
+  - Reason: MIT TypeScript multi-model chat app with simultaneous AI responses and extractable state patterns
+- mahmud-r-farhan/Multi-LLMs-Chat
+  - Decision: selected-donor
+  - Reason: small multi-LLM comparison app for concurrent response handling
+## 2026-05-30T04:43:40.990480+00:00 - local-search
+
+- Request: Add a Convert to AEON button and modal for shared skills not currently configured in AEON, reusing existing React/TypeScript UI and runtime config flows
+- Source: local-index
+- Query: `Add a Convert to AEON button and modal for shared skills not currently configured in AEON, reusing existing React/TypeScript UI and runtime config flows`
+- Decision: retrieved
+- Reason: Retrieved local/private-visible index hits.
+- Note: 1. score=18.42 LiamVisionary/ami-revenue-optimizer [repo-summary]
+   url: https://github.com/LiamVisionary/ami-revenue-optimizer
+   note: /Users/liam/Documents/github-assimilator-vault/Repos/LiamVisionary-ami-revenue-optimizer.md
+   LiamVisionary/ami-revenue-optimizer CrewAI-based revenue optimizer and ad management flows for Ami AI Companion Python Python
+2. score=16.13 nativelaunch/nativelaunch-monorepo-template [repo-summary]
+   url: https://github.com/nativelaunch/nativelaunch-monorepo-template
+   note: /Users/liam/Documents/github-assimilator-vault/Repos/nativelaunch-nativelaunch-monorepo-template.md
+   nativelaunch/nativelaunch-monorepo-template NativeLaunch Monorepo – Expo SDK 55 + React Native + Turborepo + UniWind + HeroUI Native. Monorepo template with shared packages. TypeScript Expo React React Native
+3. score=15.69 react-native-google-signin/google-signin-next [repo-summary]
+   url: https://github.com/react-native-google-signin/google-signin-next
+   note: /Users/liam/Documents/github-assimilator-vault/Repos/react-native-google-signin-google-signin-next.md
+   react-native-google-signin/google-signin-next Google Sign-in for your React Native applications TypeScript React React Native
+4. score=13.63 LiamVisionary/claw-code [repo-summary]
+   url: https://github.com/LiamVisionary/claw-code
+   note: /Users/liam/Documents/github-assimilator-vault/Repos/LiamVisionary-claw-code.md
+   LiamVisionary/claw-code The repo is finally unlocked. enjoy the party! The fastest repo in history to surpass 100K stars ⭐. Join Discord: https://discord.gg/5TUQKqFWd Built in Rust using oh-my-codex.
+5. score=12.50 LiamVisionary/skills [repo-summary]
+   url: https://github.com/LiamVisionary/skills
+   note: /Users/liam/Documents/github-assimilator-vault/Repos/LiamVisionary-skills.md
+   LiamVisionary/skills All versions of all skills that are on clawhub.com archived
+6. score=11.58 nativelaunch/expolaunch-template [repo-summary]
+   url: https://github.com/nativelaunch/expolaunch-template
+   note: /Users/liam/Documents/github-assimilator-vault/Repos/nativelaunch-expolaunch-template.md
+   nativelaunch/expolaunch-template NativeLaunch Starter – Expo SDK 55 + React Native template with Supabase, RevenueCat, OneSignal, UniWind + HeroUI Native. TypeScript Expo React React Native
+7. score=10.87 LiamVisionary/floradex [repo-summary]
+   url: https://github.com/LiamVisionary/floradex
+   note: /Users/liam/Documents/github-assimilator-vault/Repos/LiamVisionary-floradex.md
+   LiamVisionary/floradex An AI powered plant scanner and collection tracker. TypeScript
+8. score=10.04 LiamVisionary/exercise-db [repo-summary]
+   url: https://github.com/LiamVisionary/exercise-db
+   note: /Users/liam/Documents/github-assimilator-vault/Repos/LiamVisionary-exercise-db.md
+   LiamVisionary/exercise-db Open Public Domain Exercise Dataset in JSON format, over 800 exercises with a browsable public searchable frontend
+
+## 2026-05-30T04:43:44.184660+00:00 - public-search
+
+- Request: Add a Convert to AEON button and modal for shared skills not currently configured in AEON, reusing existing React/TypeScript UI and runtime config flows
+- Source: public-github
+- Query: `Add a Convert to AEON button and modal for shared skills not currently configured in AEON, reusing existing React/TypeScript UI and runtime config flows`
+- Decision: retrieved
+- Reason: Retrieved 0 public candidates from GitHub search.
+## 2026-05-30T04:43:44.229958+00:00 - prebuild-gate
+
+- Request: Add a Convert to AEON button and modal for shared skills not currently configured in AEON, reusing existing React/TypeScript UI and runtime config flows
+- Source: public-github
+- Query: `Add a Convert to AEON button and modal for shared skills not currently configured in AEON, reusing existing React/TypeScript UI and runtime config flows`
+- Decision: blocked
+- Reason: Public search returned no usable candidates; broaden queries before implementing.
+- Note: /Users/liam/Documents/code/projects/hivemind-os/ASSIMILATION_LOG.md
+/Users/liam/Documents/code/projects/hivemind-os/ASSIMILATION_LOG.jsonl
+cached 0 public candidates in /Users/liam/Documents/github-assimilator-vault
+## 2026-05-30T04:44:15.758391+00:00 - assimilation-manifest
+
+- Request: (not provided)
+- Source: selected-github-code
+- Decision: assimilated
+- Assimilated: Max-Loo/multi-chat:src/store/slices/chatSlices.ts => src/features/dashboard/hooks/use-status-chat-input-controller.tsx, Max-Loo/multi-chat:src/store/slices/chatSlices.ts => src/features/dashboard/DashboardApp.tsx, Max-Loo/multi-chat:src/store/middleware/chatMiddleware.ts => src/features/dashboard/hooks/use-dashboard-derived-state.tsx
+- Verification: Wrote ASSIMILATION.json with 3 entries and custom_code_assessment=balanced.
+## 2026-05-30T04:45:30.731889+00:00 - audit
+
+- Request: Add true multitasking for streaming chat conversations
+- Source: public-github
+- Selected backbone: Max-Loo/multi-chat
+
+### Candidates
+- Max-Loo/multi-chat
+  - Decision: selected
+  - Reason: selected source paths passed focused audit after whole-repo audit flagged unrelated archived docs
+  - Path: `src/store/slices/chatSlices.ts,src/store/middleware/chatMiddleware.ts,src/store/selectors/chatSelectors.ts,src/hooks/useCurrentSelectedChat.ts,src/types/chat.ts`
+- mahmud-r-farhan/Multi-LLMs-Chat
+  - Decision: inspected
+  - Reason: donor store reviewed for multi-model response state but not transplanted because global loading/responses shape was less applicable
+  - Path: `src/store/store.js`
+## 2026-05-30T04:57:44.617362+00:00 - local-search
+
+- Request: Simplify AEON skills UI into one Skills list with automation states and ensure scheduler automations route works with AEON runtime schedules
+- Source: local-index
+- Query: `Simplify AEON skills UI into one Skills list with automation states and ensure scheduler automations route works with AEON runtime schedules`
+- Decision: retrieved
+- Reason: Retrieved local/private-visible index hits.
+- Note: 1. score=24.13 LiamVisionary/skills [repo-summary]
+   url: https://github.com/LiamVisionary/skills
+   note: /Users/liam/Documents/github-assimilator-vault/Repos/LiamVisionary-skills.md
+   LiamVisionary/skills All versions of all skills that are on clawhub.com archived
+2. score=7.40 nativelaunch/expolaunch-template [repo-summary]
+   url: https://github.com/nativelaunch/expolaunch-template
+   note: /Users/liam/Documents/github-assimilator-vault/Repos/nativelaunch-expolaunch-template.md
+   nativelaunch/expolaunch-template NativeLaunch Starter – Expo SDK 55 + React Native template with Supabase, RevenueCat, OneSignal, UniWind + HeroUI Native. TypeScript Expo React React Native
+3. score=7.05 nativelaunch/nativelaunch-monorepo-template [repo-summary]
+   url: https://github.com/nativelaunch/nativelaunch-monorepo-template
+   note: /Users/liam/Documents/github-assimilator-vault/Repos/nativelaunch-nativelaunch-monorepo-template.md
+   nativelaunch/nativelaunch-monorepo-template NativeLaunch Monorepo – Expo SDK 55 + React Native + Turborepo + UniWind + HeroUI Native. Monorepo template with shared packages. TypeScript Expo React React Native
+4. score=6.70 LiamVisionary/exercise-db [repo-summary]
+   url: https://github.com/LiamVisionary/exercise-db
+   note: /Users/liam/Documents/github-assimilator-vault/Repos/LiamVisionary-exercise-db.md
+   LiamVisionary/exercise-db Open Public Domain Exercise Dataset in JSON format, over 800 exercises with a browsable public searchable frontend
+5. score=4.04 LiamVisionary/claude-watch [repo-summary]
+   url: https://github.com/LiamVisionary/claude-watch
+   note: /Users/liam/Documents/github-assimilator-vault/Repos/LiamVisionary-claude-watch.md
+   LiamVisionary/claude-watch Turn any tutorial or lecture video into structured study notes — scene-aware frames, persistent library, Claude-vision OCR.
+6. score=3.35 LiamVisionary/ami-revenue-optimizer [repo-summary]
+   url: https://github.com/LiamVisionary/ami-revenue-optimizer
+   note: /Users/liam/Documents/github-assimilator-vault/Repos/LiamVisionary-ami-revenue-optimizer.md
+   LiamVisionary/ami-revenue-optimizer CrewAI-based revenue optimizer and ad management flows for Ami AI Companion Python Python
+7. score=3.35 LiamVisionary/claw-code-mobile [repo-summary]
+   url: https://github.com/LiamVisionary/claw-code-mobile
+   note: /Users/liam/Documents/github-assimilator-vault/Repos/LiamVisionary-claw-code-mobile.md
+   LiamVisionary/claw-code-mobile The #1 remote agent UX on the go. Powered by the acclaimed Claw Code harness and the flexibility of any llm. Rust
+8. score=3.35 LiamVisionary/floradex [repo-summary]
+   url: https://github.com/LiamVisionary/floradex
+   note: /Users/liam/Documents/github-assimilator-vault/Repos/LiamVisionary-floradex.md
+   LiamVisionary/floradex An AI powered plant scanner and collection tracker. TypeScript
+
+## 2026-05-30T04:57:47.410925+00:00 - public-search
+
+- Request: Simplify AEON skills UI into one Skills list with automation states and ensure scheduler automations route works with AEON runtime schedules
+- Source: public-github
+- Query: `Simplify AEON skills UI into one Skills list with automation states and ensure scheduler automations route works with AEON runtime schedules`
+- Decision: retrieved
+- Reason: Retrieved 0 public candidates from GitHub search.
+## 2026-05-30T04:57:47.455377+00:00 - prebuild-gate
+
+- Request: Simplify AEON skills UI into one Skills list with automation states and ensure scheduler automations route works with AEON runtime schedules
+- Source: public-github
+- Query: `Simplify AEON skills UI into one Skills list with automation states and ensure scheduler automations route works with AEON runtime schedules`
+- Decision: blocked
+- Reason: Public search returned no usable candidates; broaden queries before implementing.
+- Note: /Users/liam/Documents/code/projects/hivemind-os/ASSIMILATION_LOG.md
+/Users/liam/Documents/code/projects/hivemind-os/ASSIMILATION_LOG.jsonl
+cached 0 public candidates in /Users/liam/Documents/github-assimilator-vault
+## 2026-05-30T05:23:22.702827+00:00 - local-search
+
+- Request: Change existing AEON skills React UI from grouped category columns into one wide list with category filter badges
+- Source: local-index
+- Query: `Change existing AEON skills React UI from grouped category columns into one wide list with category filter badges`
+- Decision: retrieved
+- Reason: Retrieved local/private-visible index hits.
+- Note: 1. score=12.06 LiamVisionary/skills [repo-summary]
+   url: https://github.com/LiamVisionary/skills
+   note: /Users/liam/Documents/github-assimilator-vault/Repos/LiamVisionary-skills.md
+   LiamVisionary/skills All versions of all skills that are on clawhub.com archived
+2. score=10.62 nativelaunch/expolaunch-template [repo-summary]
+   url: https://github.com/nativelaunch/expolaunch-template
+   note: /Users/liam/Documents/github-assimilator-vault/Repos/nativelaunch-expolaunch-template.md
+   nativelaunch/expolaunch-template NativeLaunch Starter – Expo SDK 55 + React Native template with Supabase, RevenueCat, OneSignal, UniWind + HeroUI Native. TypeScript Expo React React Native
+3. score=10.27 nativelaunch/nativelaunch-monorepo-template [repo-summary]
+   url: https://github.com/nativelaunch/nativelaunch-monorepo-template
+   note: /Users/liam/Documents/github-assimilator-vault/Repos/nativelaunch-nativelaunch-monorepo-template.md
+   nativelaunch/nativelaunch-monorepo-template NativeLaunch Monorepo – Expo SDK 55 + React Native + Turborepo + UniWind + HeroUI Native. Monorepo template with shared packages. TypeScript Expo React React Native
+4. score=8.21 react-native-google-signin/google-signin-next [repo-summary]
+   url: https://github.com/react-native-google-signin/google-signin-next
+   note: /Users/liam/Documents/github-assimilator-vault/Repos/react-native-google-signin-google-signin-next.md
+   react-native-google-signin/google-signin-next Google Sign-in for your React Native applications TypeScript React React Native
+5. score=4.04 LiamVisionary/claude-watch [repo-summary]
+   url: https://github.com/LiamVisionary/claude-watch
+   note: /Users/liam/Documents/github-assimilator-vault/Repos/LiamVisionary-claude-watch.md
+   LiamVisionary/claude-watch Turn any tutorial or lecture video into structured study notes — scene-aware frames, persistent library, Claude-vision OCR.
+6. score=3.48 LiamVisionary/maps-agency [repo-summary]
+   url: https://github.com/LiamVisionary/maps-agency
+   note: /Users/liam/Documents/github-assimilator-vault/Repos/LiamVisionary-maps-agency.md
+   LiamVisionary/maps-agency 7-agent solo web design agency: scouts narrow-niche local businesses on Google Maps, diagnoses, builds Lovable mockups, films Higgsfield videos, pitches by channel, books Zooms — single API key, file-system shared
+7. score=3.35 LiamVisionary/exercise-db [repo-summary]
+   url: https://github.com/LiamVisionary/exercise-db
+   note: /Users/liam/Documents/github-assimilator-vault/Repos/LiamVisionary-exercise-db.md
+   LiamVisionary/exercise-db Open Public Domain Exercise Dataset in JSON format, over 800 exercises with a browsable public searchable frontend
+8. score=0.35 LiamVisionary/claw-code [repo-summary]
+   url: https://github.com/LiamVisionary/claw-code
+   note: /Users/liam/Documents/github-assimilator-vault/Repos/LiamVisionary-claw-code.md
+   LiamVisionary/claw-code The repo is finally unlocked. enjoy the party! The fastest repo in history to surpass 100K stars ⭐. Join Discord: https://discord.gg/5TUQKqFWd Built in Rust using oh-my-codex.
+## 2026-05-30T06:00:53.424232+00:00 - local-search
+
+- Request: simplify existing AEON agent dashboard route UI without removing functionality
+- Source: local-index
+- Query: `simplify existing AEON agent dashboard route UI without removing functionality`
+- Decision: retrieved
+- Reason: Retrieved local/private-visible index hits.
+- Note: 1. score=4.04 LiamVisionary/claw-code-mobile [repo-summary]
+   url: https://github.com/LiamVisionary/claw-code-mobile
+   note: /Users/liam/Documents/github-assimilator-vault/Repos/LiamVisionary-claw-code-mobile.md
+   LiamVisionary/claw-code-mobile The #1 remote agent UX on the go. Powered by the acclaimed Claw Code harness and the flexibility of any llm. Rust
+2. score=1.05 LiamVisionary/maps-agency [repo-summary]
+   url: https://github.com/LiamVisionary/maps-agency
+   note: /Users/liam/Documents/github-assimilator-vault/Repos/LiamVisionary-maps-agency.md
+   LiamVisionary/maps-agency 7-agent solo web design agency: scouts narrow-niche local businesses on Google Maps, diagnoses, builds Lovable mockups, films Higgsfield videos, pitches by channel, books Zooms — single API key, file-system shared
+3. score=0.35 LiamVisionary/claw-code [repo-summary]
+   url: https://github.com/LiamVisionary/claw-code
+   note: /Users/liam/Documents/github-assimilator-vault/Repos/LiamVisionary-claw-code.md
+   LiamVisionary/claw-code The repo is finally unlocked. enjoy the party! The fastest repo in history to surpass 100K stars ⭐. Join Discord: https://discord.gg/5TUQKqFWd Built in Rust using oh-my-codex.
+4. score=0.35 nativelaunch/expolaunch-template [repo-summary]
+   url: https://github.com/nativelaunch/expolaunch-template
+   note: /Users/liam/Documents/github-assimilator-vault/Repos/nativelaunch-expolaunch-template.md
+   nativelaunch/expolaunch-template NativeLaunch Starter – Expo SDK 55 + React Native template with Supabase, RevenueCat, OneSignal, UniWind + HeroUI Native. TypeScript Expo React React Native
+5. score=0.35 nativelaunch/nativelaunch-monorepo-template [repo-summary]
+   url: https://github.com/nativelaunch/nativelaunch-monorepo-template
+   note: /Users/liam/Documents/github-assimilator-vault/Repos/nativelaunch-nativelaunch-monorepo-template.md
+   nativelaunch/nativelaunch-monorepo-template NativeLaunch Monorepo – Expo SDK 55 + React Native + Turborepo + UniWind + HeroUI Native. Monorepo template with shared packages. TypeScript Expo React React Native
+## 2026-05-30T06:46:19.048986+00:00 - local-search
+
+- Request: AEON workspace repo cards initialize browse clone GitHub agent profiles Obsidian agents folder dashboard
+- Source: local-index
+- Query: `AEON workspace repo cards initialize browse clone GitHub agent profiles Obsidian agents folder dashboard`
+- Decision: retrieved
+- Reason: Retrieved local/private-visible index hits.
+- Note: 1. score=6.85 LiamVisionary/claw-code [repo-summary]
+   url: https://github.com/LiamVisionary/claw-code
+   note: /Users/liam/Documents/github-assimilator-vault/Repos/LiamVisionary-claw-code.md
+   LiamVisionary/claw-code The repo is finally unlocked. enjoy the party! The fastest repo in history to surpass 100K stars ⭐. Join Discord: https://discord.gg/5TUQKqFWd Built in Rust using oh-my-codex.
+2. score=4.04 LiamVisionary/claw-code-mobile [repo-summary]
+   url: https://github.com/LiamVisionary/claw-code-mobile
+   note: /Users/liam/Documents/github-assimilator-vault/Repos/LiamVisionary-claw-code-mobile.md
+   LiamVisionary/claw-code-mobile The #1 remote agent UX on the go. Powered by the acclaimed Claw Code harness and the flexibility of any llm. Rust
+3. score=0.70 LiamVisionary/maps-agency [repo-summary]
+   url: https://github.com/LiamVisionary/maps-agency
+   note: /Users/liam/Documents/github-assimilator-vault/Repos/LiamVisionary-maps-agency.md
+   LiamVisionary/maps-agency 7-agent solo web design agency: scouts narrow-niche local businesses on Google Maps, diagnoses, builds Lovable mockups, films Higgsfield videos, pitches by channel, books Zooms — single API key, file-system shared
+4. score=0.44 nativelaunch/nativelaunch-monorepo-template [repo-summary]
+   url: https://github.com/nativelaunch/nativelaunch-monorepo-template
+   note: /Users/liam/Documents/github-assimilator-vault/Repos/nativelaunch-nativelaunch-monorepo-template.md
+   nativelaunch/nativelaunch-monorepo-template NativeLaunch Monorepo – Expo SDK 55 + React Native + Turborepo + UniWind + HeroUI Native. Monorepo template with shared packages. TypeScript Expo React React Native
+
+## 2026-05-30T06:46:22.491595+00:00 - prebuild-gate
+
+- Request: AEON workspace repo cards initialize browse clone GitHub agent profiles Obsidian agents folder dashboard
+- Source: public-github
+- Query: `AEON workspace repo cards initialize browse clone GitHub agent profiles Obsidian agents folder dashboard`
+- Decision: passed
+- Reason: Public search returned candidates; choose and audit backbone/donors before implementation.
+## 2026-05-30T07:53:42.122086+00:00 - local-search
+
+- Request: Redesign a React Next.js integrations route into a simple multi-step setup wizard and app-icon integration grid
+- Source: local-index
+- Query: `Redesign a React Next.js integrations route into a simple multi-step setup wizard and app-icon integration grid`
+- Decision: retrieved
+- Reason: Retrieved local/private-visible index hits.
+- Note: 1. score=13.35 LiamVisionary/maps-agency [repo-summary]
+   url: https://github.com/LiamVisionary/maps-agency
+   note: /Users/liam/Documents/github-assimilator-vault/Repos/LiamVisionary-maps-agency.md
+   LiamVisionary/maps-agency 7-agent solo web design agency: scouts narrow-niche local businesses on Google Maps, diagnoses, builds Lovable mockups, films Higgsfield videos, pitches by channel, books Zooms — single API key, file-system shared
+2. score=10.11 LiamVisionary/exercise-db [repo-summary]
+   url: https://github.com/LiamVisionary/exercise-db
+   note: /Users/liam/Documents/github-assimilator-vault/Repos/LiamVisionary-exercise-db.md
+   LiamVisionary/exercise-db Open Public Domain Exercise Dataset in JSON format, over 800 exercises with a browsable public searchable frontend
+3. score=9.08 nativelaunch/expolaunch-template [repo-summary]
+   url: https://github.com/nativelaunch/expolaunch-template
+   note: /Users/liam/Documents/github-assimilator-vault/Repos/nativelaunch-expolaunch-template.md
+   nativelaunch/expolaunch-template NativeLaunch Starter – Expo SDK 55 + React Native template with Supabase, RevenueCat, OneSignal, UniWind + HeroUI Native. TypeScript Expo React React Native
+4. score=9.08 nativelaunch/nativelaunch-monorepo-template [repo-summary]
+   url: https://github.com/nativelaunch/nativelaunch-monorepo-template
+   note: /Users/liam/Documents/github-assimilator-vault/Repos/nativelaunch-nativelaunch-monorepo-template.md
+   nativelaunch/nativelaunch-monorepo-template NativeLaunch Monorepo – Expo SDK 55 + React Native + Turborepo + UniWind + HeroUI Native. Monorepo template with shared packages. TypeScript Expo React React Native
+5. score=9.08 react-native-google-signin/google-signin-next [repo-summary]
+   url: https://github.com/react-native-google-signin/google-signin-next
+   note: /Users/liam/Documents/github-assimilator-vault/Repos/react-native-google-signin-google-signin-next.md
+   react-native-google-signin/google-signin-next Google Sign-in for your React Native applications TypeScript React React Native
+6. score=5.93 LiamVisionary/claude-watch [repo-summary]
+   url: https://github.com/LiamVisionary/claude-watch
+   note: /Users/liam/Documents/github-assimilator-vault/Repos/LiamVisionary-claude-watch.md
+   LiamVisionary/claude-watch Turn any tutorial or lecture video into structured study notes — scene-aware frames, persistent library, Claude-vision OCR.
+7. score=5.06 LiamVisionary/ami-revenue-optimizer [repo-summary]
+   url: https://github.com/LiamVisionary/ami-revenue-optimizer
+   note: /Users/liam/Documents/github-assimilator-vault/Repos/LiamVisionary-ami-revenue-optimizer.md
+   LiamVisionary/ami-revenue-optimizer CrewAI-based revenue optimizer and ad management flows for Ami AI Companion Python Python
+8. score=5.06 LiamVisionary/claw-code-mobile [repo-summary]
+   url: https://github.com/LiamVisionary/claw-code-mobile
+   note: /Users/liam/Documents/github-assimilator-vault/Repos/LiamVisionary-claw-code-mobile.md
+   LiamVisionary/claw-code-mobile The #1 remote agent UX on the go. Powered by the acclaimed Claw Code harness and the flexibility of any llm. Rust
+
+## 2026-05-30T07:53:45.490005+00:00 - prebuild-gate
+
+- Request: Redesign a React Next.js integrations route into a simple multi-step setup wizard and app-icon integration grid
+- Source: public-github
+- Query: `Redesign a React Next.js integrations route into a simple multi-step setup wizard and app-icon integration grid`
+- Decision: passed
+- Reason: Public search returned candidates; choose and audit backbone/donors before implementation.
+## 2026-05-30T07:54:20.922763+00:00 - triage
+
+- Request: Redesign integrations route into simple multi-view Nango setup
+- Source: public-github
+- Selected backbone: uixmat/onborda
+
+### Candidates
+- uixmat/onborda
+  - Decision: selected
+  - Reason: highest-star compatible Next.js onboarding wizard candidate; inspect for step/state and animation ideas
+  - Path: `src`
+- Sfedfcv/redesigned-pancake
+  - Decision: rejected
+  - Reason: search result is unrelated GitHub docs diff noise, no safe UI wizard source path
+- bugpilot/wizard
+  - Decision: rejected
+  - Reason: CLI setup wizard, not in-app React route UI
+## 2026-05-30T07:58:42.667189+00:00 - assimilation-manifest
+
+- Request: (not provided)
+- Source: selected-github-code
+- Decision: assimilated
+- Assimilated: uixmat/onborda:src/OnbordaContext.tsx => src/features/integrations/NangoIntegrationsView.tsx, uixmat/onborda:src/types/index.ts => src/features/integrations/NangoIntegrationsView.tsx, uixmat/onborda:src/Onborda.tsx => src/features/integrations/NangoIntegrationsView.tsx
+- Verification: Wrote ASSIMILATION.json with 3 entries and custom_code_assessment=balanced.
+## 2026-05-30T08:14:12.536959+00:00 - local-search
+
+- Request: simplify AEON repo dashboard detail view segmented tabs sections hide overload
+- Source: local-index
+- Query: `simplify AEON repo dashboard detail view segmented tabs sections hide overload`
+- Decision: retrieved
+- Reason: Retrieved local/private-visible index hits.
+- Note: 1. score=6.85 LiamVisionary/claw-code [repo-summary]
+   url: https://github.com/LiamVisionary/claw-code
+   note: /Users/liam/Documents/github-assimilator-vault/Repos/LiamVisionary-claw-code.md
+   LiamVisionary/claw-code The repo is finally unlocked. enjoy the party! The fastest repo in history to surpass 100K stars ⭐. Join Discord: https://discord.gg/5TUQKqFWd Built in Rust using oh-my-codex.
+2. score=0.44 nativelaunch/nativelaunch-monorepo-template [repo-summary]
+   url: https://github.com/nativelaunch/nativelaunch-monorepo-template
+   note: /Users/liam/Documents/github-assimilator-vault/Repos/nativelaunch-nativelaunch-monorepo-template.md
+   nativelaunch/nativelaunch-monorepo-template NativeLaunch Monorepo – Expo SDK 55 + React Native + Turborepo + UniWind + HeroUI Native. Monorepo template with shared packages. TypeScript Expo React React Native
+3. score=0.35 LiamVisionary/maps-agency [repo-summary]
+   url: https://github.com/LiamVisionary/maps-agency
+   note: /Users/liam/Documents/github-assimilator-vault/Repos/LiamVisionary-maps-agency.md
+   LiamVisionary/maps-agency 7-agent solo web design agency: scouts narrow-niche local businesses on Google Maps, diagnoses, builds Lovable mockups, films Higgsfield videos, pitches by channel, books Zooms — single API key, file-system shared
+
+## 2026-05-30T08:14:16.144710+00:00 - prebuild-gate
+
+- Request: simplify AEON repo dashboard detail view segmented tabs sections hide overload
+- Source: public-github
+- Query: `simplify AEON repo dashboard detail view segmented tabs sections hide overload`
+- Decision: passed
+- Reason: Public search returned candidates; choose and audit backbone/donors before implementation.
+## 2026-05-30T08:19:55.912600+00:00 - rejection
+
+- Request: (not provided)
+- Source: public-github
+
+### Candidates
+- chrisneagu/FTC-Skystone-Dark-Angels-Romania-2020
+  - Decision: rejected
+  - Reason: FTC Java robotics repo unrelated to HivemindOS React AEON dashboard section simplification; no compatible UI component paths to transplant
+- LiamVisionary/claw-code
+  - Decision: rejected
+  - Reason: large Rust agent harness, not a reusable React dashboard tab component for this focused in-repo UI cleanup
+## 2026-05-30T08:33:48.402907+00:00 - local-search
+
+- Request: AEON create repository modal name path directory picker React dashboard
+- Source: local-index
+- Query: `AEON create repository modal name path directory picker React dashboard`
+- Decision: retrieved
+- Reason: Retrieved local/private-visible index hits.
+- Note: 1. score=8.21 react-native-google-signin/google-signin-next [repo-summary]
+   url: https://github.com/react-native-google-signin/google-signin-next
+   note: /Users/liam/Documents/github-assimilator-vault/Repos/react-native-google-signin-google-signin-next.md
+   react-native-google-signin/google-signin-next Google Sign-in for your React Native applications TypeScript React React Native
+2. score=6.56 nativelaunch/expolaunch-template [repo-summary]
+   url: https://github.com/nativelaunch/expolaunch-template
+   note: /Users/liam/Documents/github-assimilator-vault/Repos/nativelaunch-expolaunch-template.md
+   nativelaunch/expolaunch-template NativeLaunch Starter – Expo SDK 55 + React Native template with Supabase, RevenueCat, OneSignal, UniWind + HeroUI Native. TypeScript Expo React React Native
+3. score=6.56 nativelaunch/nativelaunch-monorepo-template [repo-summary]
+   url: https://github.com/nativelaunch/nativelaunch-monorepo-template
+   note: /Users/liam/Documents/github-assimilator-vault/Repos/nativelaunch-nativelaunch-monorepo-template.md
+   nativelaunch/nativelaunch-monorepo-template NativeLaunch Monorepo – Expo SDK 55 + React Native + Turborepo + UniWind + HeroUI Native. Monorepo template with shared packages. TypeScript Expo React React Native
+4. score=3.48 LiamVisionary/maps-agency [repo-summary]
+   url: https://github.com/LiamVisionary/maps-agency
+   note: /Users/liam/Documents/github-assimilator-vault/Repos/LiamVisionary-maps-agency.md
+   LiamVisionary/maps-agency 7-agent solo web design agency: scouts narrow-niche local businesses on Google Maps, diagnoses, builds Lovable mockups, films Higgsfield videos, pitches by channel, books Zooms — single API key, file-system shared
+5. score=0.44 LiamVisionary/chatterbox-tts-api-modal-deployed [repo-summary]
+   url: https://github.com/LiamVisionary/chatterbox-tts-api-modal-deployed
+   note: /Users/liam/Documents/github-assimilator-vault/Repos/LiamVisionary-chatterbox-tts-api-modal-deployed.md
+   LiamVisionary/chatterbox-tts-api-modal-deployed Python Python
+
+## 2026-05-30T08:33:51.650494+00:00 - public-search
+
+- Request: AEON create repository modal name path directory picker React dashboard
+- Source: public-github
+- Query: `AEON create repository modal name path directory picker React dashboard`
+- Decision: retrieved
+- Reason: Retrieved 0 public candidates from GitHub search.
+## 2026-05-30T08:33:51.742288+00:00 - prebuild-gate
+
+- Request: AEON create repository modal name path directory picker React dashboard
+- Source: public-github
+- Query: `AEON create repository modal name path directory picker React dashboard`
+- Decision: blocked
+- Reason: Public search returned no usable candidates; broaden queries before implementing.
+- Note: /Users/liam/Documents/code/projects/hivemind-os/ASSIMILATION_LOG.md
+/Users/liam/Documents/code/projects/hivemind-os/ASSIMILATION_LOG.jsonl
+cached 0 public candidates in /Users/liam/Documents/github-assimilator-vault
+
+## 2026-05-30T09:21:36.286462+00:00 - local-search
+
+- Request: Add simple bidirectional Unison sync between an AEON repo folder and its Obsidian Agents/AEON repo folder
+- Source: local-index
+- Query: `Add simple bidirectional Unison sync between an AEON repo folder and its Obsidian Agents/AEON repo folder`
+- Decision: retrieved
+- Reason: Retrieved local/private-visible index hits.
+- Note: 1. score=13.70 LiamVisionary/claw-code [repo-summary]
+   url: https://github.com/LiamVisionary/claw-code
+   note: /Users/liam/Documents/github-assimilator-vault/Repos/LiamVisionary-claw-code.md
+   LiamVisionary/claw-code The repo is finally unlocked. enjoy the party! The fastest repo in history to surpass 100K stars ⭐. Join Discord: https://discord.gg/5TUQKqFWd Built in Rust using oh-my-codex.
+2. score=7.40 LiamVisionary/floradex [repo-summary]
+   url: https://github.com/LiamVisionary/floradex
+   note: /Users/liam/Documents/github-assimilator-vault/Repos/LiamVisionary-floradex.md
+   LiamVisionary/floradex An AI powered plant scanner and collection tracker. TypeScript
+3. score=3.70 LiamVisionary/ami-revenue-optimizer [repo-summary]
+   url: https://github.com/LiamVisionary/ami-revenue-optimizer
+   note: /Users/liam/Documents/github-assimilator-vault/Repos/LiamVisionary-ami-revenue-optimizer.md
+   LiamVisionary/ami-revenue-optimizer CrewAI-based revenue optimizer and ad management flows for Ami AI Companion Python Python
+4. score=3.70 LiamVisionary/claw-code-mobile [repo-summary]
+   url: https://github.com/LiamVisionary/claw-code-mobile
+   note: /Users/liam/Documents/github-assimilator-vault/Repos/LiamVisionary-claw-code-mobile.md
+   LiamVisionary/claw-code-mobile The #1 remote agent UX on the go. Powered by the acclaimed Claw Code harness and the flexibility of any llm. Rust
+5. score=0.88 LiamVisionary/ai-companion-website [repo-summary]
+   url: https://github.com/LiamVisionary/ai-companion-website
+   note: /Users/liam/Documents/github-assimilator-vault/Repos/LiamVisionary-ai-companion-website.md
+   LiamVisionary/ai-companion-website AI Powered Companion Landing Page TypeScript
+6. score=0.88 nativelaunch/nativelaunch-monorepo-template [repo-summary]
+   url: https://github.com/nativelaunch/nativelaunch-monorepo-template
+   note: /Users/liam/Documents/github-assimilator-vault/Repos/nativelaunch-nativelaunch-monorepo-template.md
+   nativelaunch/nativelaunch-monorepo-template NativeLaunch Monorepo – Expo SDK 55 + React Native + Turborepo + UniWind + HeroUI Native. Monorepo template with shared packages. TypeScript Expo React React Native
+7. score=0.44 LiamVisionary/ami-ai-companion-app [repo-summary]
+   url: https://github.com/LiamVisionary/ami-ai-companion-app
+   note: /Users/liam/Documents/github-assimilator-vault/Repos/LiamVisionary-ami-ai-companion-app.md
+   LiamVisionary/ami-ai-companion-app TypeScript
+8. score=0.44 LiamVisionary/data-annotation [repo-summary]
+   url: https://github.com/LiamVisionary/data-annotation
+   note: /Users/liam/Documents/github-assimilator-vault/Repos/LiamVisionary-data-annotation.md
+   LiamVisionary/data-annotation Python Python
+
+## 2026-05-30T09:21:39.186547+00:00 - public-search
+
+- Request: Add simple bidirectional Unison sync between an AEON repo folder and its Obsidian Agents/AEON repo folder
+- Source: public-github
+- Query: `Add simple bidirectional Unison sync between an AEON repo folder and its Obsidian Agents/AEON repo folder`
+- Decision: retrieved
+- Reason: Retrieved 0 public candidates from GitHub search.
+## 2026-05-30T09:21:39.248370+00:00 - prebuild-gate
+
+- Request: Add simple bidirectional Unison sync between an AEON repo folder and its Obsidian Agents/AEON repo folder
+- Source: public-github
+- Query: `Add simple bidirectional Unison sync between an AEON repo folder and its Obsidian Agents/AEON repo folder`
+- Decision: blocked
+- Reason: Public search returned no usable candidates; broaden queries before implementing.
+- Note: /Users/liam/Documents/code/projects/hivemind-os/ASSIMILATION_LOG.md
+/Users/liam/Documents/code/projects/hivemind-os/ASSIMILATION_LOG.jsonl
+cached 0 public candidates in /Users/liam/Documents/github-assimilator-vault
+
+## 2026-05-30T09:21:50.601689+00:00 - public-search
+
+- Request: unison file sync watch launchd service wrapper bidirectional folder sync
+- Source: public-github
+- Query: `unison file sync watch launchd service wrapper bidirectional folder sync`
+- Decision: retrieved
+- Reason: Retrieved 0 public candidates from GitHub search.
+## 2026-05-30T11:45:59.863853+00:00 - local-search
+
+- Request: Extract existing inline rename UX into reusable React component and use it to rename project repo folder
+- Source: local-index
+- Query: `Extract existing inline rename UX into reusable React component and use it to rename project repo folder`
+- Decision: retrieved
+- Reason: Retrieved local/private-visible index hits.
+- Note: 1. score=10.89 LiamVisionary/claw-code [repo-summary]
+   url: https://github.com/LiamVisionary/claw-code
+   note: /Users/liam/Documents/github-assimilator-vault/Repos/LiamVisionary-claw-code.md
+   LiamVisionary/claw-code The repo is finally unlocked. enjoy the party! The fastest repo in history to surpass 100K stars ⭐. Join Discord: https://discord.gg/5TUQKqFWd Built in Rust using oh-my-codex.
+2. score=9.08 nativelaunch/nativelaunch-monorepo-template [repo-summary]
+   url: https://github.com/nativelaunch/nativelaunch-monorepo-template
+   note: /Users/liam/Documents/github-assimilator-vault/Repos/nativelaunch-nativelaunch-monorepo-template.md
+   nativelaunch/nativelaunch-monorepo-template NativeLaunch Monorepo – Expo SDK 55 + React Native + Turborepo + UniWind + HeroUI Native. Monorepo template with shared packages. TypeScript Expo React React Native
+3. score=8.21 react-native-google-signin/google-signin-next [repo-summary]
+   url: https://github.com/react-native-google-signin/google-signin-next
+   note: /Users/liam/Documents/github-assimilator-vault/Repos/react-native-google-signin-google-signin-next.md
+   react-native-google-signin/google-signin-next Google Sign-in for your React Native applications TypeScript React React Native
+4. score=7.75 LiamVisionary/claw-code-mobile [repo-summary]
+   url: https://github.com/LiamVisionary/claw-code-mobile
+   note: /Users/liam/Documents/github-assimilator-vault/Repos/LiamVisionary-claw-code-mobile.md
+   LiamVisionary/claw-code-mobile The #1 remote agent UX on the go. Powered by the acclaimed Claw Code harness and the flexibility of any llm. Rust
+5. score=6.91 nativelaunch/expolaunch-template [repo-summary]
+   url: https://github.com/nativelaunch/expolaunch-template
+   note: /Users/liam/Documents/github-assimilator-vault/Repos/nativelaunch-expolaunch-template.md
+   nativelaunch/expolaunch-template NativeLaunch Starter – Expo SDK 55 + React Native template with Supabase, RevenueCat, OneSignal, UniWind + HeroUI Native. TypeScript Expo React React Native
+6. score=4.39 LiamVisionary/claude-watch [repo-summary]
+   url: https://github.com/LiamVisionary/claude-watch
+   note: /Users/liam/Documents/github-assimilator-vault/Repos/LiamVisionary-claude-watch.md
+   LiamVisionary/claude-watch Turn any tutorial or lecture video into structured study notes — scene-aware frames, persistent library, Claude-vision OCR.
+7. score=3.48 LiamVisionary/maps-agency [repo-summary]
+   url: https://github.com/LiamVisionary/maps-agency
+   note: /Users/liam/Documents/github-assimilator-vault/Repos/LiamVisionary-maps-agency.md
+   LiamVisionary/maps-agency 7-agent solo web design agency: scouts narrow-niche local businesses on Google Maps, diagnoses, builds Lovable mockups, films Higgsfield videos, pitches by channel, books Zooms — single API key, file-system shared
+8. score=3.35 LiamVisionary/ami-revenue-optimizer [repo-summary]
+   url: https://github.com/LiamVisionary/ami-revenue-optimizer
+   note: /Users/liam/Documents/github-assimilator-vault/Repos/LiamVisionary-ami-revenue-optimizer.md
+   LiamVisionary/ami-revenue-optimizer CrewAI-based revenue optimizer and ad management flows for Ami AI Companion Python Python
+
+## 2026-05-30T11:46:03.805834+00:00 - prebuild-gate
+
+- Request: Extract existing inline rename UX into reusable React component and use it to rename project repo folder
+- Source: public-github
+- Query: `Extract existing inline rename UX into reusable React component and use it to rename project repo folder`
+- Decision: passed
+- Reason: Public search returned candidates; choose and audit backbone/donors before implementation.
+## 2026-05-30T11:51:25.643932+00:00 - triage
+
+- Request: Extract existing inline rename UX into reusable React component and use it to rename project repo folder
+- Source: local-project
+- Selected backbone: existing HivemindOS AgentSettingsModal inline rename UX
+
+### Candidates
+- src/features/dashboard/views/chat/AgentSettingsModal.tsx
+  - Decision: selected
+  - Reason: existing project rename UX requested by user and already matches local styling
+  - Path: `lines 136-183`
+- zszszszsz/.config
+  - Decision: rejected
+  - Reason: highest-star public result is unrelated OpenWrt shell configuration with no React rename component
+- chrisneagu/FTC-Skystone-Dark-Angels-Romania-2020
+  - Decision: rejected
+  - Reason: Java FTC SDK project unrelated to Next.js inline rename or workspace folder moving
+## 2026-05-30T12:25:36.556086+00:00 - local-search
+
+- Request: Add AEON agent settings modal controls based on aaronjmars/aeon configuration aeon.yml dashboard
+- Source: local-index
+- Query: `Add AEON agent settings modal controls based on aaronjmars/aeon configuration aeon.yml dashboard`
+- Decision: retrieved
+- Reason: Retrieved local/private-visible index hits.
+- Note: 1. score=9.24 LiamVisionary/claw-code-mobile [repo-summary]
+   url: https://github.com/LiamVisionary/claw-code-mobile
+   note: /Users/liam/Documents/github-assimilator-vault/Repos/LiamVisionary-claw-code-mobile.md
+   LiamVisionary/claw-code-mobile The #1 remote agent UX on the go. Powered by the acclaimed Claw Code harness and the flexibility of any llm. Rust
+2. score=5.06 LiamVisionary/maps-agency [repo-summary]
+   url: https://github.com/LiamVisionary/maps-agency
+   note: /Users/liam/Documents/github-assimilator-vault/Repos/LiamVisionary-maps-agency.md
+   LiamVisionary/maps-agency 7-agent solo web design agency: scouts narrow-niche local businesses on Google Maps, diagnoses, builds Lovable mockups, films Higgsfield videos, pitches by channel, books Zooms — single API key, file-system shared
+3. score=4.19 LiamVisionary/skills [repo-summary]
+   url: https://github.com/LiamVisionary/skills
+   note: /Users/liam/Documents/github-assimilator-vault/Repos/LiamVisionary-skills.md
+   LiamVisionary/skills All versions of all skills that are on clawhub.com archived
+4. score=0.88 LiamVisionary/ami-revenue-optimizer [repo-summary]
+   url: https://github.com/LiamVisionary/ami-revenue-optimizer
+   note: /Users/liam/Documents/github-assimilator-vault/Repos/LiamVisionary-ami-revenue-optimizer.md
+   LiamVisionary/ami-revenue-optimizer CrewAI-based revenue optimizer and ad management flows for Ami AI Companion Python Python
+5. score=0.88 LiamVisionary/chatterbox-tts-api-modal-deployed [repo-summary]
+   url: https://github.com/LiamVisionary/chatterbox-tts-api-modal-deployed
+   note: /Users/liam/Documents/github-assimilator-vault/Repos/LiamVisionary-chatterbox-tts-api-modal-deployed.md
+   LiamVisionary/chatterbox-tts-api-modal-deployed Python Python
+6. score=0.44 LiamVisionary/Ad-Alchemist [repo-summary]
+   url: https://github.com/LiamVisionary/Ad-Alchemist
+   note: /Users/liam/Documents/github-assimilator-vault/Repos/LiamVisionary-Ad-Alchemist.md
+   LiamVisionary/Ad-Alchemist TypeScript
+7. score=0.44 LiamVisionary/ai-chatbot [repo-summary]
+   url: https://github.com/LiamVisionary/ai-chatbot
+   note: /Users/liam/Documents/github-assimilator-vault/Repos/LiamVisionary-ai-chatbot.md
+   LiamVisionary/ai-chatbot TypeScript
+8. score=0.44 LiamVisionary/ai-companion-website [repo-summary]
+   url: https://github.com/LiamVisionary/ai-companion-website
+   note: /Users/liam/Documents/github-assimilator-vault/Repos/LiamVisionary-ai-companion-website.md
+   LiamVisionary/ai-companion-website AI Powered Companion Landing Page TypeScript
+
+## 2026-05-30T12:25:38.882167+00:00 - public-search
+
+- Request: Add AEON agent settings modal controls based on aaronjmars/aeon configuration aeon.yml dashboard
+- Source: public-github
+- Query: `Add AEON agent settings modal controls based on aaronjmars/aeon configuration aeon.yml dashboard`
+- Decision: retrieved
+- Reason: Retrieved 0 public candidates from GitHub search.
+## 2026-05-30T12:25:38.944353+00:00 - prebuild-gate
+
+- Request: Add AEON agent settings modal controls based on aaronjmars/aeon configuration aeon.yml dashboard
+- Source: public-github
+- Query: `Add AEON agent settings modal controls based on aaronjmars/aeon configuration aeon.yml dashboard`
+- Decision: blocked
+- Reason: Public search returned no usable candidates; broaden queries before implementing.
+- Note: /Users/liam/Documents/code/projects/hivemind-os/ASSIMILATION_LOG.md
+/Users/liam/Documents/code/projects/hivemind-os/ASSIMILATION_LOG.jsonl
+cached 0 public candidates in /Users/liam/Documents/github-assimilator-vault
+
+## 2026-05-30T12:26:09.786389+00:00 - public-search
+
+- Request: aeon.yml agent dashboard configuration skills schedule model var
+- Source: public-github
+- Query: `aeon.yml agent dashboard configuration skills schedule model var`
+- Decision: retrieved
+- Reason: Retrieved 0 public candidates from GitHub search.
+## 2026-05-30T12:26:10.349338+00:00 - public-search
+
+- Request: aaronjmars aeon dashboard aeon.yml config
+- Source: public-github
+- Query: `aaronjmars aeon dashboard aeon.yml config`
+- Decision: retrieved
+- Reason: Retrieved 0 public candidates from GitHub search.

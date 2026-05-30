@@ -72,18 +72,170 @@ function selectedAgentIcon(agent?: any, beeRoleIconPath?: (role?: string, worker
     || "/icons/worker-bee-general-v2.png";
 }
 
+function agentMenuIcon(agent?: any, beeRoleIconPath?: (role?: string, workerClass?: string) => string) {
+  return selectedAgentIcon(agent, beeRoleIconPath);
+}
+
+function agentMenuMachineLabel(machine: any, agent: any) {
+  if (machine?.key !== "unassigned") return machine?.name ?? "This Mac";
+  const explicitMachine = agent?.machineName?.trim();
+  if (explicitMachine) return explicitMachine;
+  if (agent?.telemetryUrl?.trim()) return "Bridge linked";
+  if (agent?.gatewayUrl?.trim() || agent?.a2aUrl?.trim()) return "Runtime URL configured";
+  return "Setup needed";
+}
+
+function agentMenuStatusLabel(machine: any, agent: any) {
+  if (machine?.key !== "unassigned") return agent?.name ?? "";
+  if (agent?.telemetryUrl?.trim() || agent?.gatewayUrl?.trim() || agent?.a2aUrl?.trim()) {
+    return `${agent?.name ?? "Agent"} · chat route saved`;
+  }
+  return `${agent?.name ?? "Agent"} · needs chat URL`;
+}
+
+const PROCESS_TOOL_META: Record<string, { icon: string; color: string }> = {
+  bash: { icon: "terminal", color: "#A855F7" },
+  command: { icon: "terminal", color: "#A855F7" },
+  read: { icon: "file", color: "#94A3B8" },
+  file: { icon: "file", color: "#94A3B8" },
+  image: { icon: "image", color: "#38BDF8" },
+  edit: { icon: "edit", color: "#60A5FA" },
+  write: { icon: "edit", color: "#60A5FA" },
+  search: { icon: "search", color: "#FB923C" },
+  skill: { icon: "sparkles", color: "#2DD4BF" },
+  git: { icon: "git", color: "#F59E0B" },
+  status: { icon: "activity", color: "#2DD4BF" },
+  error: { icon: "alert", color: "#F87171" },
+  unknown: { icon: "hammer", color: "#94A3B8" },
+};
+
+function processToolKey(event: any) {
+  const text = `${event?.label ?? ""} ${event?.detail ?? ""}`.toLowerCase();
+  if (/assistant (wrote|started)|agent replied/.test(text)) return "assistant";
+  if (/error|failed|interrupted|timed out/.test(text)) return "error";
+  if (/git|commit|branch|origin\//.test(text)) return "git";
+  if (/image|screenshot|vision/.test(text)) return "image";
+  if (/skill context|skill loaded/.test(text)) return "skill";
+  if (/file content|read file|cat\b|view file/.test(text)) return "read";
+  if (/edit|write|patch|created|updated/.test(text)) return "edit";
+  if (/grep|search|rg\b|find/.test(text)) return "search";
+  if (/command|bash|shell|terminal|exit\s+\d+/.test(text)) return "bash";
+  if (/queued|attached|runtime|session|stream|waiting/.test(text)) return "status";
+  if (/tool/.test(text)) return "unknown";
+  return "status";
+}
+
+function processIconComponent(key: string, icons: any) {
+  const map: Record<string, any> = {
+    activity: icons.Activity,
+    alert: icons.CircleAlert,
+    edit: icons.Pencil,
+    file: icons.FileText,
+    git: icons.GitBranch,
+    hammer: icons.Hammer,
+    image: icons.Image,
+    search: icons.Search,
+    sparkles: icons.Sparkles,
+    terminal: icons.Terminal,
+  };
+  return map[key] ?? icons.Activity;
+}
+
+function processFileTarget(event: any) {
+  const detail = String(event?.detail ?? "");
+  const label = String(event?.label ?? "");
+  const haystack = `${label}\n${detail}`;
+  const structured = detail.match(/"?(?:path|file|filename|target)"?\s*[:=]\s*"?([^"',}\]\s]+)"?/i)?.[1];
+  const gitStatus = haystack.match(/(?:^|\s)[AMDRC?]{1,2}\s+([^\s]+\.[A-Za-z0-9]{1,8}|[^\s]+\/[^\s]+)/m)?.[1];
+  const mentioned = haystack.match(/(?:^|\s)([~./A-Za-z0-9_-]+\/[A-Za-z0-9_.@-]+(?:\/[A-Za-z0-9_.@-]+)*\.[A-Za-z0-9]{1,8})\b/)?.[1]
+    ?? haystack.match(/`([^`]+\.[A-Za-z0-9]{1,8})`/)?.[1];
+  const target = structured ?? gitStatus ?? mentioned ?? "";
+  if (!target) return "";
+  return target.split(/[)\],]/)[0].replace(/^["'`]+|["'`]+$/g, "");
+}
+
+function processDisplayLabel(event: any) {
+  const label = String(event?.label ?? "Runtime event").trim();
+  if (/assistant wrote in session/i.test(label)) return "Agent replied";
+  if (/assistant started writing/i.test(label)) return "Agent started writing";
+  if (/tool output/i.test(label)) return "Tool output";
+  return label;
+}
+
+function AgentProcessPanel({ Activity, ChevronDown, ChevronUp, CircleAlert, FileText, GitBranch, Hammer, Image, Pencil, Search, Sparkles, Terminal, agentIconSrc, agentInitials, chatClass, events = [] }: any) {
+  const [expanded, setExpanded] = useState(false);
+  if (!events.length) return null;
+  const Icon = expanded ? ChevronUp : ChevronDown;
+  const iconProps = { Activity, CircleAlert, FileText, GitBranch, Hammer, Image, Pencil, Search, Sparkles, Terminal };
+  return (
+    <section className={chatClass("processPanel", expanded && "expanded")} aria-label="Agent process">
+      <button
+        type="button"
+        className={chatClass("processToggle")}
+        onClick={() => setExpanded((current) => !current)}
+        aria-expanded={expanded}
+      >
+        <span>Process</span>
+        <small>{events.length} event{events.length === 1 ? "" : "s"}</small>
+        {Icon ? <Icon aria-hidden="true" /> : null}
+      </button>
+      <div className={chatClass("processScroll")}>
+        {events.map((event: any, index: number) => {
+          const toolKey = processToolKey(event);
+          const isAssistant = toolKey === "assistant";
+          const meta = PROCESS_TOOL_META[toolKey] ?? PROCESS_TOOL_META.unknown;
+          const BadgeIcon = processIconComponent(meta.icon, iconProps);
+          const fileTarget = processFileTarget(event);
+          return (
+          <div className={chatClass("processRow", isAssistant && "assistant")} key={`${event.at}-${index}`}>
+            <time>{new Date(event.at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" })}</time>
+            <div className={chatClass("processBadge", isAssistant && agentIconSrc && "avatar")} style={{ "--process-accent": meta.color, ...(isAssistant && agentIconSrc ? { backgroundImage: `url(${agentIconSrc})` } : {}) } as any} aria-hidden="true">
+              {isAssistant && agentIconSrc ? (
+                null
+              ) : isAssistant ? (
+                <b>{agentInitials}</b>
+              ) : BadgeIcon ? (
+                <BadgeIcon />
+              ) : null}
+            </div>
+            <div className={chatClass("processBody")}>
+              <div className={chatClass("processMetaLine")}>
+                <strong>{processDisplayLabel(event)}</strong>
+                {fileTarget ? <code>{fileTarget}</code> : null}
+              </div>
+              {event.detail ? <span>{event.detail}</span> : null}
+            </div>
+          </div>
+          );
+        })}
+      </div>
+    </section>
+  );
+}
+
 export function ChatPanel(props: any) {
-  const { Activity, AgentResponseLoader, Button, ChatMarkdown, Check, ComposerField, Copy, Folder, KanbanSquare, LoaderCircle, MessageAttachments, MessageSquare, Monitor, RUNTIME_LABELS, Sparkles, Tooltip, TooltipContent, TooltipProvider, TooltipTrigger, Upload, activeView, aeonEnvKeys, aeonEnvSyncStatus, aeonEnvSyncing, attachChatDirectory, attachChatRecentDirectory, attachmentError, attachmentMenuOpen, attachmentMenuRef, beeRoleIconPath, busy, changeChatWorkingDirectory, chatAttachments, chatClass, chatContextMenu, chatContextMenuRef, chatDirectories, chatDisplayContent, chatFileInputRef, chatImageInputRef, chatKanbanGeneration, chatSidebarTree, checkStatus, dismissChatKanbanGeneration, displayAgents, expandedChatFolders, fleetClass, formatAgentEnvText, formatRelativeTime, generateKanbanTaskFromChat, handleChatFileChange, handleChatImageChange, hasStreamingChunk, lastAssistant, machineGroups, messagesEndRef, messagesScrollRef, parseAgentEnvText, recentDirectories, recentDirectoriesExpanded, recording, refreshRuntimeIntegrations, removeChatAttachment, removeChatDirectory, runtimeModelSelection, runtimeModelSelectionsByRuntime, selectedAgent, selectedChatDirectory, selectedChatMachine, sendMessage, sessionNotice, setAeonEnvKeys, setAttachmentMenuOpen, setChatContextMenu, setExpandedChatFolders, setRecentDirectoriesExpanded, setText, startAgentChat, startAudioRecording, status, statusAgentId, stopAudioRecording, switchRuntime, syncAeonEnvToGitHub, text, updateAgent, updateChatAutoScroll, vaultClass, visibleMessages, voiceBands, voiceTarget, voiceTranscript } = props;
+  const { Activity, AgentResponseLoader, AlignLeft, Button, ChatMarkdown, Check, ChevronDown, ChevronUp, CircleAlert, ComposerField, Copy, FileText, Folder, GitBranch, Hammer, Image, KanbanSquare, LoaderCircle, MessageAttachments, MessageSquare, Monitor, Pencil, RUNTIME_LABELS, Search, Sparkles, Terminal, Tooltip, TooltipContent, TooltipProvider, TooltipTrigger, Upload, activeView, aeonEnvKeys, aeonEnvSyncStatus, aeonEnvSyncing, attachChatDirectory, attachChatRecentDirectory, attachmentError, attachmentMenuOpen, attachmentMenuRef, beeRoleIconPath, busy, changeChatWorkingDirectory, chatAttachments, chatClass, chatContextMenu, chatContextMenuRef, chatDirectories, chatDisplayContent, chatFileInputRef, chatImageInputRef, chatKanbanGeneration, chatSidebarTree, checkStatus, dismissChatKanbanGeneration, displayAgents, expandedChatFolders, fleetClass, formatAgentEnvText, formatRelativeTime, generateKanbanTaskFromChat, handleChatFileChange, handleChatImageChange, hasStreamingChunk, lastAssistant, machineGroups, messagesEndRef, messagesScrollRef, parseAgentEnvText, recentDirectories, recentDirectoriesExpanded, recording, refreshRuntimeIntegrations, removeChatAttachment, removeChatDirectory, runtimeModelSelection, runtimeModelSelectionsByRuntime, selectedAgent, selectedChatDirectory, selectedChatMachine, selectedChatProcess, sendMessage, sessionNotice, setAeonEnvKeys, setAttachmentMenuOpen, setChatContextMenu, setExpandedChatFolders, setRecentDirectoriesExpanded, setStatus, setStatusAgentId, setText, startAgentChat, startAudioRecording, status, statusAgentId, stopAudioRecording, switchRuntime, syncAeonEnvToGitHub, text, updateAgent, updateChatAutoScroll, vaultClass, visibleMessages, voiceBands, voiceTarget, voiceTranscript } = props;
   const [openKanbanTaskMenuKey, setOpenKanbanTaskMenuKey] = useState("");
   const [copiedMessageKey, setCopiedMessageKey] = useState("");
   const [agentMode, setAgentMode] = useState<"plan" | "act">("act");
   const [chatHistoryOpen, setChatHistoryOpen] = useState(false);
+  const [statusCheckingAgentId, setStatusCheckingAgentId] = useState("");
   const runtimeLabel = selectedAgent ? RUNTIME_LABELS[selectedAgent.runtime] ?? headerValueLabel(selectedAgent.runtime) : "Not set";
   const providerLabel = selectedAgent ? headerValueLabel(selectedAgent.provider ?? runtimeModelSelection?.provider) : "Not set";
   const modelLabel = selectedAgent ? modelValueLabel(selectedAgent.model ?? runtimeModelSelection?.model) : "Not set";
   const runtimeIdentity = runtimeIdentityLabel(selectedAgent, runtimeModelSelection, runtimeModelSelectionsByRuntime);
   const selectedAgentInitials = agentInitials(selectedAgent);
   const selectedAgentIconSrc = selectedAgentIcon(selectedAgent, beeRoleIconPath);
+  const selectedStatusChecking = Boolean(selectedAgent?.id && statusCheckingAgentId === selectedAgent.id);
+  async function handleCheckStatus() {
+    if (!selectedAgent || selectedStatusChecking) return;
+    setStatusCheckingAgentId(selectedAgent.id);
+    try {
+      await checkStatus();
+    } finally {
+      setStatusCheckingAgentId("");
+    }
+  }
   const selectedAgentIsQueen = selectedAgent?.beeRole === "queen";
   const selectedRuntimeModelSelection = selectedAgent ? runtimeModelSelectionsByRuntime?.[selectedAgent.runtime] : undefined;
   const shouldLoadRuntimeIdentity = selectedAgent
@@ -427,24 +579,69 @@ export function ChatPanel(props: any) {
               aria-expanded={chatHistoryOpen}
               onClick={() => setChatHistoryOpen(true)}
             >
-              <MessageSquare aria-hidden="true" />
+              <AlignLeft aria-hidden="true" />
             </button>
             <div className={chatClass("chatHeader")}>
-              <div className={chatClass("chatIdentity")}>
-                {renderAgentAvatar("agentAvatarLarge")}
-                <div className={chatClass("chatIdentityCopy")}>
-                  <div className={chatClass("chatTitleRow")}>
-                    <h2>{selectedAgent.name}</h2>
-                    <span className={chatClass("livePill")}><span aria-hidden="true" />Live</span>
+              <div className={chatClass("chatContextControls", "chatIdentityMenu")} ref={chatContextMenuRef}>
+                <button
+                  type="button"
+                  className={chatClass("chatIdentity", "chatIdentityTrigger")}
+                  title="Choose the machine and agent for this chat"
+                  aria-haspopup="menu"
+                  aria-expanded={chatContextMenu === "machine"}
+                  onClick={() => setChatContextMenu((current) => current === "machine" ? "" : "machine")}
+                >
+                  {renderAgentAvatar("agentAvatarLarge")}
+                  <span className={chatClass("chatIdentityCopy")}>
+                    <span className={chatClass("chatTitleRow")}>
+                      <span className={chatClass("chatIdentityTitle")}>{selectedAgent.name}</span>
+                      <span className={chatClass("livePill")}><span aria-hidden="true" />Live</span>
+                    </span>
+                    <span className={chatClass("chatIdentityMeta")}>
+                      <span className={chatClass("chatHeaderMetaFull")}>{runtimeIdentity} · {selectedChatMachine?.name ?? selectedAgent.machineName ?? "This Mac"}</span>
+                      <span className={chatClass("chatHeaderMetaMobile")}>{runtimeLabel} · {selectedChatMachine?.name ?? selectedAgent.machineName ?? "This Mac"}</span>
+                    </span>
+                  </span>
+                  <ChevronDown aria-hidden="true" className={chatClass("chatIdentityChevron")} />
+                </button>
+                {chatContextMenu === "machine" ? (
+                  <div className={chatClass("chatContextMenu")} role="menu">
+                    {chatSidebarTree.flatMap((machine) => {
+                      const group = machineGroups.find((item) => item.key === machine.key);
+                      return (group?.agents ?? []).map((agent) => {
+                        const iconSrc = agentMenuIcon(agent, beeRoleIconPath);
+                        const machineLabel = agentMenuMachineLabel(machine, agent);
+                        const statusLabel = agentMenuStatusLabel(machine, agent);
+                        return (
+                          <button
+                            type="button"
+                            role="menuitem"
+                            key={`${machine.key}-${agent.id}`}
+                            onClick={() => {
+                              startAgentChat(agent.id, { fresh: true, chatLeafKey: `machine-${machine.key}-${agent.id}` });
+                              setChatContextMenu("");
+                            }}
+                          >
+                            <span
+                              className={chatClass("chatContextAgentIcon", iconSrc && "hasImage")}
+                              style={iconSrc ? { backgroundImage: `url(${iconSrc})` } : undefined}
+                              aria-hidden="true"
+                            >
+                              {iconSrc ? null : <b>{agentInitials(agent)}</b>}
+                            </span>
+                            <span>{agent.name}</span>
+                            <small>{machineLabel}{statusLabel && statusLabel !== agent.name ? ` · ${statusLabel.replace(`${agent.name} · `, "")}` : ""}</small>
+                          </button>
+                        );
+                      });
+                    })}
                   </div>
-                  <p>{runtimeIdentity} · {selectedChatMachine?.name ?? selectedAgent.machineName ?? "This Mac"}</p>
-                </div>
+                ) : null}
               </div>
               <div className={chatClass("chatHeaderActions")}>
-                <span className={chatClass("readyPill")}>Ready</span>
-                <Button type="button" variant="secondary" onClick={() => checkStatus()}>
-                  <Activity aria-hidden="true" />
-                  Check status
+                <Button type="button" variant="secondary" onClick={handleCheckStatus} disabled={selectedStatusChecking}>
+                  {selectedStatusChecking ? <LoaderCircle aria-hidden="true" className="animate-spin" /> : <Activity aria-hidden="true" />}
+                  {selectedStatusChecking ? "Checking" : "Check status"}
                 </Button>
                 <details className={chatClass("runtimeDetails")}>
                   <summary>System</summary>
@@ -464,41 +661,6 @@ export function ChatPanel(props: any) {
                   </dl>
                 </details>
               </div>
-              <div className={chatClass("chatContextControls")} ref={chatContextMenuRef}>
-                  <div className={chatClass("chatContextControl")}>
-                    <button
-                      type="button"
-                      title="Choose the machine and agent for this chat"
-                      onClick={() => setChatContextMenu((current) => current === "machine" ? "" : "machine")}
-                    >
-                      <Monitor aria-hidden="true" />
-                      {selectedChatMachine?.name ?? selectedAgent.machineName ?? "Choose machine"}
-                      <span>{selectedAgent.name}</span>
-                    </button>
-                    {chatContextMenu === "machine" ? (
-                      <div className={chatClass("chatContextMenu")} role="menu">
-                        {chatSidebarTree.flatMap((machine) => {
-                          const group = machineGroups.find((item) => item.key === machine.key);
-                          return (group?.agents ?? []).map((agent) => (
-                            <button
-                              type="button"
-                              role="menuitem"
-                              key={`${machine.key}-${agent.id}`}
-                              onClick={() => {
-                                startAgentChat(agent.id, { fresh: true, chatLeafKey: `machine-${machine.key}-${agent.id}` });
-                                setChatContextMenu("");
-                              }}
-                            >
-                              <Monitor aria-hidden="true" />
-                              <span>{machine.name}</span>
-                              <small>{agent.name}</small>
-                            </button>
-                          ));
-                        })}
-                      </div>
-                    ) : null}
-                  </div>
-                </div>
             </div>
             {sessionNotice && visibleMessages.length > 0 ? (
               <div className={chatClass("chatSessionNote")}>
@@ -523,6 +685,14 @@ export function ChatPanel(props: any) {
                   </summary>
                   <pre className="mt-2 max-w-full overflow-auto text-[0.7rem] text-[var(--muted)]">{JSON.stringify(status, null, 2)}</pre>
                 </details>
+                <CloseIconButton
+                  aria-label="Dismiss status message"
+                  size="sm"
+                  onClick={() => {
+                    setStatus?.(null);
+                    setStatusAgentId?.("");
+                  }}
+                />
               </div>
             ) : null}
             <div
@@ -584,7 +754,12 @@ export function ChatPanel(props: any) {
                       ) : displayContent ? (
                         <ChatMarkdown text={displayContent} />
                       ) : (
-                        message.role === "assistant" && busy ? <AgentResponseLoader /> : <p />
+                        message.role === "assistant" && busy ? (
+                          <>
+                            <AgentResponseLoader />
+                            <AgentProcessPanel {...{ Activity, ChevronDown, ChevronUp, CircleAlert, FileText, GitBranch, Hammer, Image, Pencil, Search, Sparkles, Terminal, agentIconSrc: selectedAgentIconSrc, agentInitials: selectedAgentInitials, chatClass, events: selectedChatProcess }} />
+                          </>
+                        ) : <p />
                       )}
                       {isStreamingAssistant && displayContent?.trim() ? (
                         <div className={chatClass("streamingStatus")} aria-live="polite">
@@ -745,7 +920,7 @@ export function ChatPanel(props: any) {
               aria-expanded={chatHistoryOpen}
               onClick={() => setChatHistoryOpen(true)}
             >
-              <MessageSquare aria-hidden="true" />
+              <AlignLeft aria-hidden="true" />
             </button>
             <strong>No machine selected</strong>
             <p>Choose a connected machine on the left to start a chat.</p>

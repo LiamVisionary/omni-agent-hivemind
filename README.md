@@ -268,6 +268,11 @@ HIVE_LINK_ENABLED=true ./scripts/install-telemetry-collector.sh
 
 The first run builds `bin/hivemind-linkd`, starts a localhost-only collector, and prints a Tailscale sign-in URL when the embedded app node needs authorization. Remote HivemindOS traffic then travels over Tailscale's encrypted device links, while the collector itself stays on `127.0.0.1`.
 
+In Link mode, remote collectors are reached through the local sidecar URL shape
+`http://127.0.0.1:8788/peer/<tailnet-host%3A8787>/...`. Keep that `/peer/...`
+URL on port `8788`; only plain local collector URLs should use the active
+collector port from `~/.hivemindos/collector.env`.
+
 Use `./setup.sh --system-tailscale` only when you want the older full Tailnet setup surface: macOS firewall allow-listing, Tailscale SSH, rsync repair, and Syncthing pairing.
 
 ## Private By Default

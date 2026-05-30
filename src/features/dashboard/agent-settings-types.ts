@@ -13,6 +13,11 @@ export type AgentCreateDraft = {
   skillProfilePrompt: string;
   preferredSkillSlugs: string[];
   useSharedVault: boolean;
+  aeonLocalPath?: string;
+  aeonRepo?: string;
+  aeonBranch?: string;
+  aeonMode?: "github" | "a2a" | "local";
+  a2aUrl?: string;
 };
 
 export type RuntimeModelDraft = {

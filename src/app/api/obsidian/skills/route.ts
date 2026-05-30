@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import {
   getBrainSkillInventory,
   importGitHubBrainSkill,
+  importUploadedBrainSkill,
   importBrainSkills,
   importRemoteBrainSkill,
   writeBrainSkill,
@@ -30,6 +31,8 @@ export async function POST(request: NextRequest) {
       provider?: BrainSkillProviderId | "all";
       githubUrl?: string;
       markdown?: string;
+      files?: Array<{ path?: string; content?: string }>;
+      name?: string;
       skill?: {
         slug?: string;
         name?: string;
@@ -60,6 +63,16 @@ export async function POST(request: NextRequest) {
       const result = await writeBrainSkill({
         vaultPath: body.vaultPath,
         markdown: body.markdown ?? "",
+      });
+      return NextResponse.json({ ok: true, ...result, imported: [], skipped: [] });
+    }
+    if (Array.isArray(body.files) && body.files.length) {
+      const result = await importUploadedBrainSkill({
+        vaultPath: body.vaultPath,
+        name: body.name,
+        files: body.files
+          .filter((file) => typeof file.path === "string" && typeof file.content === "string")
+          .map((file) => ({ path: file.path!, content: file.content! })),
       });
       return NextResponse.json({ ok: true, ...result, imported: [], skipped: [] });
     }
