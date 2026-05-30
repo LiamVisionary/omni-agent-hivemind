@@ -8,7 +8,7 @@ be added here first, then marked `Committed` or `Pushed` after the git action.
 - Status: Uncommitted
 - Areas changed: AEON agent settings modal, agent creation draft, runtime agent creation, changelog, assimilation log
 - Summary: Collapse existing AEON agent edits to a single profile settings surface and add the AEON profile knobs the runtime adapter consumes: mode, repo, branch, A2A/gateway URL, repo path, and shared Obsidian brain.
-- Verification: Pending.
+- Verification: `pnpm exec eslint src/features/dashboard/views/chat/AgentSettingsModal.tsx src/features/dashboard/hooks/use-agent-controller.tsx src/features/dashboard/views/AeonAutopilotPanel.tsx src/features/dashboard/agent-settings-types.ts --max-warnings=999` passed with existing warnings; `pnpm exec tsc --noEmit --pretty false --skipLibCheck`; `git diff --check -- src/features/dashboard/views/chat/AgentSettingsModal.tsx src/features/dashboard/hooks/use-agent-controller.tsx src/features/dashboard/views/AeonAutopilotPanel.tsx src/features/dashboard/agent-settings-types.ts CHANGELOG.md ASSIMILATION_LOG.md ASSIMILATION_LOG.jsonl`.
 - Intended commit message: `Add AEON agent profile settings`
 
 ## 2026-05-30 20:27:07 WITA - Hide Empty Chat Fade Guards

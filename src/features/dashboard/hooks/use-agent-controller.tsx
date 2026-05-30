@@ -277,8 +277,9 @@ export function useAgentController(props: UseAgentControllerProps) {
   async function createAgentFromModal() {
     if (!agentCreateMachine?.collectorUrl) return;
     const runtime = agentCreateDraft.runtime;
+    const baseAgent = createAgentProfile(runtime, runtimeCount(agents, runtime) + 1);
     const draft: AgentProfile = {
-      ...createAgentProfile(runtime, runtimeCount(agents, runtime) + 1),
+      ...baseAgent,
       name: agentCreateDraft.name.trim() || `${RUNTIME_LABELS[runtime] ?? runtime} on ${agentCreateMachine.name}`,
       telemetryUrl: agentCreateMachine.collectorUrl,
       machineName: agentCreateMachine.name,
@@ -292,7 +293,7 @@ export function useAgentController(props: UseAgentControllerProps) {
       aeonBranch: runtime === "aeon" ? agentCreateDraft.aeonBranch || "main" : undefined,
       aeonMode: runtime === "aeon" ? agentCreateDraft.aeonMode || "github" : undefined,
       a2aUrl: runtime === "aeon" ? agentCreateDraft.a2aUrl || "http://127.0.0.1:41241" : undefined,
-      gatewayUrl: runtime === "aeon" ? agentCreateDraft.a2aUrl || "http://127.0.0.1:41241" : undefined,
+      gatewayUrl: runtime === "aeon" ? agentCreateDraft.a2aUrl || "http://127.0.0.1:41241" : baseAgent.gatewayUrl,
       beeRole: "worker",
       workerClass: agentCreateDraft.workerClass,
       customWorkerClass: agentCreateDraft.customWorkerClass,
