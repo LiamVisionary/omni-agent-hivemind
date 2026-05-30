@@ -4,6 +4,7 @@ export type RuntimeAdapterContext = {
   requestUrl?: string;
   agents?: AgentProfile[];
   vaultPath?: string;
+  fastSecretStatus?: boolean;
 };
 
 export type RuntimeScheduleAction = "run-now" | "enable" | "disable";

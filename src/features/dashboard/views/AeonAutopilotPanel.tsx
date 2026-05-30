@@ -388,6 +388,26 @@ async function postJson<T>(url: string, body: Record<string, unknown>) {
   return data as T;
 }
 
+function mergeSecretStatus(current: RuntimeSecretStatus | null, next: RuntimeSecretStatus): RuntimeSecretStatus {
+  if (!current) return next;
+  const nextKeys = new Map(next.keys.map((secret) => [secret.key, secret]));
+  const mergedKeys = current.keys.map((secret) => {
+    const update = nextKeys.get(secret.key);
+    if (!update) return secret;
+    nextKeys.delete(secret.key);
+    return {
+      ...secret,
+      ...update,
+      isSet: secret.isSet || update.isSet,
+      usedIn: update.usedIn.length ? update.usedIn : secret.usedIn,
+    };
+  });
+  return {
+    repo: next.repo || current.repo,
+    keys: [...mergedKeys, ...nextKeys.values()],
+  };
+}
+
 function timeLabel(value?: string) {
   if (!value) return "No timestamp";
   const date = new Date(value);
@@ -662,6 +682,21 @@ export function AeonAutopilotPanel({ activeView, displayAgents, selectedAgentId,
     }
   }, [selectedAgent, sharedVault.vaultPath, updateObsidianSync]);
 
+  const refreshFastSecrets = useCallback(async () => {
+    try {
+      const data = await postJson<{ secrets?: RuntimeSecretStatus }>("/api/runtimes/aeon/secrets/status", {
+        agent: selectedAgent,
+        vaultPath: sharedVault.vaultPath,
+        fast: true,
+      });
+      if (data.secrets) {
+        setSecrets((current) => mergeSecretStatus(current, data.secrets as RuntimeSecretStatus));
+      }
+    } catch {
+      // Full refresh still reports secret-status failures.
+    }
+  }, [selectedAgent, sharedVault.vaultPath]);
+
   useEffect(() => {
     if (activeView !== "aeon") return;
     const handle = window.setTimeout(() => setPanelMode("fleet"), 0);
@@ -683,9 +718,12 @@ export function AeonAutopilotPanel({ activeView, displayAgents, selectedAgentId,
 
   useEffect(() => {
     if (activeView !== "aeon" || panelMode !== "detail") return;
-    const handle = window.setTimeout(() => void refresh(), 0);
+    const handle = window.setTimeout(() => {
+      void refreshFastSecrets();
+      void refresh();
+    }, 0);
     return () => window.clearTimeout(handle);
-  }, [activeView, panelMode, refresh]);
+  }, [activeView, panelMode, refresh, refreshFastSecrets]);
 
   function upsertAeonWorkspaceAgent(agent: AgentProfile) {
     let selectedId = agent.id;
@@ -1404,7 +1442,10 @@ export function AeonAutopilotPanel({ activeView, displayAgents, selectedAgentId,
               <ChevronLeft aria-hidden="true" />
               All AEON Repos
             </Button>
-            <Button type="button" variant="secondary" onClick={() => void refresh()} disabled={loading}>
+            <Button type="button" variant="secondary" onClick={() => {
+              void refreshFastSecrets();
+              void refresh();
+            }} disabled={loading}>
               {loading ? <LoaderCircle aria-hidden="true" className="animate-spin" /> : <RefreshCcw aria-hidden="true" />}
               Refresh
             </Button>

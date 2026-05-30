@@ -3,6 +3,22 @@
 This file records user-visible changes before they are committed. New work should
 be added here first, then marked `Committed` or `Pushed` after the git action.
 
+## 2026-05-30 21:30:17 WITA - Merge Codex Branches Into Main
+
+- Status: Committed
+- Areas changed: main branch history, dashboard/vault branch changes, AEON secret status refresh, remote codex branch merge resolution
+- Summary: Merge the active codex dashboard branch into main and record the stale remote dashboard usability branch as integrated while preserving the newer main-side implementation where histories overlapped.
+- Verification: `git fetch --all --prune`; inspected local and remote `codex/*` ahead counts; resolved remote merge conflicts in favor of current main where the remote branch would remove newer work.
+- Intended commit message: `Merge codex branches into main`
+
+## 2026-05-30 21:25:44 WITA - Speed Up AEON GitHub Key Badge
+
+- Status: Uncommitted
+- Areas changed: AEON secret status API, AEON runtime adapter, AEON overview GitHub badge
+- Summary: Add a fast AEON secret-status path for core shared/local env keys and have the GitHub key badge refresh from it immediately instead of waiting for full AEON inventory and GitHub secret reconciliation.
+- Verification: Pending.
+- Intended commit message: `Speed up AEON GitHub key badge`
+
 ## 2026-05-30 20:29:21 WITA - Add AEON Agent Profile Settings
 
 - Status: Pushed

@@ -731,7 +731,8 @@ async function getMemory(profile: AgentProfile): Promise<RuntimeMemorySnapshot> 
   return { root, index, topics, logs, issues };
 }
 
-async function getSecretStatus(profile: AgentProfile, context: { vaultPath?: string }): Promise<RuntimeSecretStatus> {
+async function getSecretStatus(profile: AgentProfile, context: { vaultPath?: string; fastSecretStatus?: boolean }): Promise<RuntimeSecretStatus> {
+  if (context.fastSecretStatus) return getFastSecretStatus(profile);
   const [required, ghSecrets, sharedValues, localValues] = await Promise.all([
     requiredSecretKeys(profile, context),
     listGitHubSecretNames(profile),
@@ -746,6 +747,26 @@ async function getSecretStatus(profile: AgentProfile, context: { vaultPath?: str
       availableInSharedEnv: Boolean(sharedValues[item.key]),
       availableLocally: Boolean(localValues.values[item.key]),
       guidance: `Add ${item.key} to shared env or the AEON GitHub repo secrets.`,
+    })),
+  };
+}
+
+async function getFastSecretStatus(profile: AgentProfile): Promise<RuntimeSecretStatus> {
+  const [sharedValues, localValues] = await Promise.all([
+    hiveSharedEnvValues(),
+    aeonEnvValues(profile),
+  ]);
+  const keys = [...new Set([...DEFAULT_AEON_SECRET_KEYS, ...Object.keys(SECRET_LABELS)])].sort();
+  return {
+    repo: aeonRepo(profile),
+    keys: keys.map((key) => ({
+      key,
+      label: SECRET_LABELS[key] || key.replace(/_/g, " ").toLowerCase(),
+      isSet: false,
+      availableInSharedEnv: Boolean(sharedValues[key]),
+      availableLocally: Boolean(localValues.values[key]),
+      usedIn: [],
+      guidance: `Add ${key} to shared env or the AEON GitHub repo secrets.`,
     })),
   };
 }

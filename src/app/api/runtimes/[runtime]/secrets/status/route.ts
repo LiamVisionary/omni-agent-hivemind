@@ -15,12 +15,13 @@ export async function POST(
   if (!adapter?.getSecretStatus) {
     return NextResponse.json({ ok: false, error: `${adapter?.label ?? runtimeId} does not expose secret status.` }, { status: 501 });
   }
-  const body = await request.json().catch(() => ({})) as { agent?: AgentProfile; vaultPath?: string };
+  const body = await request.json().catch(() => ({})) as { agent?: AgentProfile; vaultPath?: string; fast?: boolean };
   try {
     const secrets = await adapter.getSecretStatus(body.agent ?? ({ runtime: runtimeId } as AgentProfile), {
       requestUrl: request.url,
       agents: body.agent ? [body.agent] : [],
       vaultPath: body.vaultPath,
+      fastSecretStatus: body.fast === true,
     });
     return NextResponse.json({ ok: true, runtime: runtimeId, secrets });
   } catch (error) {
