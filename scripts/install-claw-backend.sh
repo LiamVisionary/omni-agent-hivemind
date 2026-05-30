@@ -32,7 +32,7 @@
 set -euo pipefail
 
 CLAW_HOME="${CLAW_HOME:-$HOME/.hivemindos/claw}"
-CLAW_VERSION="${CLAW_BACKEND_VERSION:-v0.2.0}"
+CLAW_VERSION="${CLAW_BACKEND_VERSION:-v0.3.0}"
 CLAW_PUBLIC_BASE="${CLAW_BACKEND_PUBLIC_BASE:-https://claw-dl.hivemindos.workers.dev}"
 CLAW_BASE_URL="${CLAW_BACKEND_BASE_URL:-$CLAW_PUBLIC_BASE/claw-backend/$CLAW_VERSION}"
 
