@@ -16,7 +16,7 @@ export async function POST(
     return NextResponse.json({ ok: false, error: `Unknown runtime: ${runtime}` }, { status: 404 });
   }
 
-  const body = await request.json().catch(() => ({})) as { agent?: AgentProfile; keys?: string[] };
+  const body = await request.json().catch(() => ({})) as { agent?: AgentProfile; keys?: string[]; all?: boolean };
   if (!adapter?.syncEnv) {
     return NextResponse.json({ ok: false, error: `${adapter?.label ?? runtimeId} does not expose env sync.` }, { status: 501 });
   }
@@ -29,6 +29,7 @@ export async function POST(
       requestUrl: request.url,
       agents: [body.agent],
       keys: Array.isArray(body.keys) ? body.keys : undefined,
+      allSharedEnv: body.all === true,
     });
     return NextResponse.json({ ok: true, runtime: runtimeId, result });
   } catch (error) {

@@ -42,6 +42,7 @@ const nextConfig: NextConfig = {
     return config;
   },
   allowedDevOrigins: [
+    "127.0.0.1",
     ...splitOrigins(process.env.NEXT_ALLOWED_DEV_ORIGINS),
     ...detectedTailnetDevOrigins(),
   ],

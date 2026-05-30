@@ -5,7 +5,8 @@ import { promisify } from "util";
 import { homedir } from "os";
 import { basename, dirname, join, resolve } from "path";
 import type { AgentProfile } from "@/lib/types/agent-runtime";
-import { getSharedBrainSkills, syncSharedBrainSkillsToAeon } from "@/lib/services/obsidian/brain-skills";
+import { getSharedBrainSkillsCached, syncSharedBrainSkillsToAeon } from "@/lib/services/obsidian/brain-skills";
+import { cachedCall, invalidateCachedCall } from "@/lib/services/async-cache";
 import type {
   RuntimeAdapter,
   RuntimeAnalytics,
@@ -23,6 +24,12 @@ import type {
 const execFileAsync = promisify(execFile);
 const DEFAULT_BRANCH = "main";
 const DEFAULT_A2A_URL = process.env.NEXT_PUBLIC_AEON_A2A_URL ?? process.env.NEXT_PUBLIC_AEON_BASE_URL ?? "http://127.0.0.1:41241";
+// Short-TTL cache prefixes for the expensive external reads a single dashboard
+// refresh fans out to (each spawns the gh CLI or a shell script). Mutating flows
+// invalidate the matching prefix so the next read reflects the change.
+const RUNS_CACHE_PREFIX = "aeon:runs:";
+const GH_SECRETS_CACHE_PREFIX = "aeon:gh-secrets:";
+const HIVE_ENV_CACHE_KEY = "aeon:hive-env";
 const ENV_KEY_RE = /^[A-Za-z_][A-Za-z0-9_]*$/;
 const DEFAULT_AEON_SECRET_KEYS = [
   "ANTHROPIC_API_KEY",
@@ -185,6 +192,17 @@ function updateAeonSkillField(raw: string, skill: string, field: "enabled" | "sc
   const serialized = field === "enabled" ? value : JSON.stringify(value);
   const inlineRe = new RegExp(`^(\\s{2}${escaped}:\\s*\\{[^\\n]*${field}:\\s*)(true|false|\"[^\"]*\"|'[^']*'|[^,}\\n]*)([^\\n]*\\})`, "m");
   if (inlineRe.test(raw)) return raw.replace(inlineRe, `$1${serialized}$3`);
+  // Skill exists as an inline `{ ... }` object but is missing this field — merge it into the
+  // braces. Without this, the regexes below fall through and append a *duplicate* skill key
+  // (e.g. a second `morning-brief:`), corrupting aeon.yml. Trailing comments are preserved.
+  const inlineObjRe = new RegExp(`^(\\s{2}${escaped}:\\s*\\{)([^\\n}]*?)(\\})([^\\n]*)$`, "m");
+  if (inlineObjRe.test(raw)) {
+    return raw.replace(inlineObjRe, (_match, open, inner, _close, trailer) => {
+      const body = inner.trim().replace(/,\s*$/, "");
+      const next = body ? `${body}, ${field}: ${serialized}` : `${field}: ${serialized}`;
+      return `${open} ${next} }${trailer}`;
+    });
+  }
   const blockRe = new RegExp(`^(\\s{2}${escaped}:\\s*\\n(?:(?:\\s{4}[^\\n]*\\n)*?)\\s{4}${field}:\\s*)([^\\n#]*)`, "m");
   if (blockRe.test(raw)) return raw.replace(blockRe, `$1${serialized}`);
   const sectionRe = new RegExp(`^(\\s{2}${escaped}:\\s*\\n)`, "m");
@@ -288,7 +306,7 @@ async function localSkills(root: string, config: AeonConfig): Promise<RuntimeSki
 
 async function sharedBrainSkills(profile: AgentProfile, config: AeonConfig, vaultPath?: string): Promise<RuntimeSkill[]> {
   if (profile.useSharedVault === false) return [];
-  const inventory = await getSharedBrainSkills(vaultPath).catch(() => null);
+  const inventory = await getSharedBrainSkillsCached(vaultPath).catch(() => null);
   return (inventory?.shared ?? []).map((skill) => {
     const cfg = config.skills[skill.slug];
     const configured = Boolean(cfg);
@@ -466,22 +484,24 @@ async function aeonEnvValues(profile: AgentProfile | undefined) {
 }
 
 async function hiveSharedEnvValues() {
-  try {
-    const { stdout } = await execFileAsync(join(process.cwd(), "scripts", "hive-env-add"), [
-      "--export-json",
-      "--scope",
-      "agent",
-      "--runtime",
-      "generic",
-    ], {
-      timeout: 12_000,
-      maxBuffer: 1_000_000,
-    });
-    const parsed = JSON.parse(stdout) as { values?: Record<string, string> };
-    return parsed.values && typeof parsed.values === "object" ? parsed.values : {};
-  } catch {
-    return {};
-  }
+  return cachedCall(HIVE_ENV_CACHE_KEY, 15_000, async () => {
+    try {
+      const { stdout } = await execFileAsync(join(process.cwd(), "scripts", "hive-env-add"), [
+        "--export-json",
+        "--scope",
+        "agent",
+        "--runtime",
+        "generic",
+      ], {
+        timeout: 12_000,
+        maxBuffer: 1_000_000,
+      });
+      const parsed = JSON.parse(stdout) as { values?: Record<string, string> };
+      return parsed.values && typeof parsed.values === "object" ? parsed.values : {};
+    } catch {
+      return {};
+    }
+  });
 }
 
 function envKeysFromText(text: string) {
@@ -517,41 +537,70 @@ async function requiredSecretKeys(profile: AgentProfile, context: { vaultPath?: 
     .sort((left, right) => left.key.localeCompare(right.key));
 }
 
-async function syncEnvToGitHubSecrets(profile: AgentProfile, keys: string[] | undefined) {
+async function syncEnvToGitHubSecrets(
+  profile: AgentProfile,
+  keys: string[] | undefined,
+  options: { allSharedEnv?: boolean } = {},
+) {
   const repo = aeonRepo(profile);
   if (!repo) throw new Error("Configure Aeon Repo before syncing env to GitHub secrets.");
-  const selectedKeys = [...new Set((keys?.length ? keys : DEFAULT_AEON_SECRET_KEYS)
+  const [localEnv, sharedValues] = await Promise.all([
+    aeonEnvValues(profile),
+    hiveSharedEnvValues(),
+  ]);
+  const values = { ...sharedValues, ...localEnv.values };
+  // "Sync all" pushes every key in the shared brain's shared env section. Without it,
+  // sync is limited to the explicitly requested keys (or the core default allowlist).
+  const fallbackKeys = options.allSharedEnv ? Object.keys(sharedValues) : DEFAULT_AEON_SECRET_KEYS;
+  const selectedKeys = [...new Set((keys?.length ? keys : fallbackKeys)
     .map((key) => key.trim())
     .filter(Boolean))];
-  const { values, sources } = await aeonEnvValues(profile);
+  const sources = [
+    ...localEnv.sources,
+    ...(Object.keys(sharedValues).length ? ["hive-env-add shared agent env"] : []),
+  ];
   const synced: Array<{ key: string }> = [];
   const skipped: Array<{ key: string; reason: string }> = [];
 
-  for (const key of selectedKeys) {
+  // Validate first, then write the remaining secrets concurrently (bounded) — one
+  // `gh secret set` process per key is slow when run serially over the full shared env.
+  const writable = selectedKeys.filter((key) => {
     if (!ENV_KEY_RE.test(key)) {
       skipped.push({ key, reason: "Invalid env key." });
-      continue;
+      return false;
     }
-    const value = values[key];
-    if (!value) {
+    if (!values[key]) {
       skipped.push({ key, reason: "No value found in HivemindOS, generic agent, Aeon, repo, or process env stores." });
-      continue;
+      return false;
     }
-    try {
-      await ghWithInput(["secret", "set", key, "-R", repo], value, aeonRoot(profile) || undefined);
-      synced.push({ key });
-    } catch (error) {
-      skipped.push({ key, reason: error instanceof Error ? error.message : "GitHub secret sync failed." });
-    }
+    return true;
+  });
+  const root = aeonRoot(profile) || undefined;
+  const SECRET_WRITE_CONCURRENCY = 8;
+  for (let offset = 0; offset < writable.length; offset += SECRET_WRITE_CONCURRENCY) {
+    await Promise.all(writable.slice(offset, offset + SECRET_WRITE_CONCURRENCY).map(async (key) => {
+      try {
+        await ghWithInput(["secret", "set", key, "-R", repo], values[key], root);
+        synced.push({ key });
+      } catch (error) {
+        skipped.push({ key, reason: error instanceof Error ? error.message : "GitHub secret sync failed." });
+      }
+    }));
   }
 
-  return { repo, synced, skipped, sources };
+  // We just wrote secrets — drop the cached name list so the count below (and the
+  // next dashboard refresh) reflects what we pushed instead of a pre-sync snapshot.
+  invalidateCachedCall(`${GH_SECRETS_CACHE_PREFIX}${repo}`);
+  const githubSecretCount = (await listGitHubSecretNames(profile)).size;
+  return { repo, githubSecretCount, synced, skipped, sources };
 }
 
 async function listGitHubSecretNames(profile: AgentProfile) {
   const repo = aeonRepo(profile);
   if (!repo) return new Set<string>();
-  const output = await gh(["secret", "list", "-R", repo, "--json", "name", "-q", ".[].name"], aeonRoot(profile) || undefined).catch(() => "");
+  const output = await cachedCall(`${GH_SECRETS_CACHE_PREFIX}${repo}`, 15_000,
+    () => gh(["secret", "list", "-R", repo, "--json", "name", "-q", ".[].name"], aeonRoot(profile) || undefined),
+  ).catch(() => "");
   return new Set(output.split(/\r?\n/).map((line) => line.trim()).filter(Boolean));
 }
 
@@ -567,6 +616,9 @@ async function dispatchSkill(profile: AgentProfile | undefined, skill: string) {
   if (skillConfig?.var) args.push("-f", `var=${skillConfig.var}`);
   if (skillConfig?.model) args.push("-f", `model=${skillConfig.model}`);
   await gh(args, aeonRoot(profile) || undefined);
+  // A new run was just queued — drop the cached run list so the refresh that
+  // follows a dispatch surfaces it instead of an 8s-stale snapshot.
+  invalidateCachedCall(RUNS_CACHE_PREFIX);
   return { dispatched: true, skill };
 }
 
@@ -574,10 +626,13 @@ async function setSkillEnabled(profile: AgentProfile | undefined, skill: string,
   const root = aeonRoot(profile);
   if (!root) return { ok: false, error: "Configure an Aeon local path before editing aeon.yml." };
   const path = join(root, "aeon.yml");
-  const raw = await readFile(path, "utf8");
+  const raw = await readFile(path, "utf8").catch(() => "");
   const updated = updateAeonSkillEnabled(raw, skill, enabled);
-  if (updated === raw) return { ok: false, error: `Could not find Aeon skill ${skill} in aeon.yml.` };
-  await writeFile(path, updated, "utf8");
+  // `updated === raw` means the skill is already in the requested enabled state — a no-op,
+  // not a failure. (updateAeonSkillField adds the skill when it's genuinely missing, so an
+  // unchanged file can only mean "already set".) Returning an error here surfaced as a 502
+  // when arming a freshly-created skill, whose row is born `enabled: true`.
+  if (updated !== raw) await writeFile(path, updated, "utf8");
   return { ok: true, result: { skill, enabled } };
 }
 
@@ -741,6 +796,7 @@ async function getSecretStatus(profile: AgentProfile, context: { vaultPath?: str
   ]);
   return {
     repo: aeonRepo(profile),
+    githubSecretCount: ghSecrets.size,
     keys: required.map((item) => ({
       ...item,
       isSet: ghSecrets.has(item.key),
@@ -801,12 +857,16 @@ async function repoSyncAction(profile: AgentProfile, action: "pull" | "push") {
     await execFileAsync("git", ["pull", "--ff-only"], { cwd: root, timeout: 60_000, maxBuffer: 2_000_000 });
     return { ok: true, status: await repoSyncStatus(profile), message: "Pulled AEON repo." };
   }
+  const branch = aeonBranch(profile);
+  await execFileAsync("git", ["config", "user.name", "aeonframework"], { cwd: root, timeout: 12_000, maxBuffer: 200_000 }).catch(() => undefined);
+  await execFileAsync("git", ["config", "user.email", "aeonframework@proton.me"], { cwd: root, timeout: 12_000, maxBuffer: 200_000 }).catch(() => undefined);
+  await execFileAsync("git", ["checkout", "-B", branch], { cwd: root, timeout: 30_000, maxBuffer: 1_000_000 }).catch(() => undefined);
   await execFileAsync("git", ["add", "aeon.yml", "skills.json", "skills", "memory"], { cwd: root, timeout: 30_000, maxBuffer: 2_000_000 }).catch(() => undefined);
   const status = await repoSyncStatus(profile);
   if (status.hasChanges) {
     await execFileAsync("git", ["commit", "-m", "Update AEON dashboard configuration"], { cwd: root, timeout: 60_000, maxBuffer: 2_000_000 }).catch(() => undefined);
   }
-  await execFileAsync("git", ["push", "origin", aeonBranch(profile)], { cwd: root, timeout: 90_000, maxBuffer: 2_000_000 });
+  await execFileAsync("git", ["push", "-u", "origin", branch], { cwd: root, timeout: 90_000, maxBuffer: 2_000_000 });
   return { ok: true, status: await repoSyncStatus(profile), message: "Pushed AEON repo." };
 }
 
@@ -871,7 +931,7 @@ export const aeonAdapter: RuntimeAdapter = {
     });
   },
   async syncEnv(profile, context) {
-    return syncEnvToGitHubSecrets(profile, context.keys);
+    return syncEnvToGitHubSecrets(profile, context.keys, { allSharedEnv: context.allSharedEnv });
   },
   async listSchedules(profile) {
     const { raw, config } = await readConfig(profile);
@@ -880,7 +940,10 @@ export const aeonAdapter: RuntimeAdapter = {
   },
   async runScheduleAction(profile, action: RuntimeScheduleAction, jobId) {
     try {
-      if (action === "run-now") return { ok: true, result: await dispatchSkill(profile, jobId) };
+      if (action === "run-now") {
+        const push = profile?.aeonRepo ? await repoSyncAction(profile, "push") : null;
+        return { ok: true, result: { ...(await dispatchSkill(profile, jobId)), autoPushed: Boolean(push?.ok), pushStatus: push?.status } };
+      }
       if (action === "enable") return setSkillEnabled(profile, jobId, true);
       if (action === "disable") return setSkillEnabled(profile, jobId, false);
       return { ok: false, error: `Unsupported Aeon schedule action: ${action}` };
@@ -896,7 +959,8 @@ export const aeonAdapter: RuntimeAdapter = {
     }
   },
   async listRuns(profile) {
-    const output = await gh([
+    const root = aeonRoot(profile);
+    const output = await cachedCall(`${RUNS_CACHE_PREFIX}${aeonRepo(profile)}:${root}`, 8_000, () => gh([
       "run",
       "list",
       ...repoArgs(profile),
@@ -906,7 +970,7 @@ export const aeonAdapter: RuntimeAdapter = {
       "databaseId,displayTitle,status,conclusion,createdAt,updatedAt,url",
       "--limit",
       "30",
-    ], aeonRoot(profile) || undefined).catch(() => "[]");
+    ], root || undefined)).catch(() => "[]");
     const parsed = JSON.parse(output || "[]") as Array<Record<string, unknown>>;
     return parsed.map((run): RuntimeRun => ({
       id: String(run.databaseId),

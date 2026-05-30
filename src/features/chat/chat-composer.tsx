@@ -1,4 +1,4 @@
-import { ArrowUp, Check, ChevronDown, Clock3, FileText, FileUp, FolderOpen, Mic, Minus, Paperclip, Plus } from "lucide-react";
+import { ArrowUp, Check, ChevronDown, Clock3, Cpu, FileText, FileUp, FolderOpen, Mic, Minus, Paperclip, Plus, RefreshCcw } from "lucide-react";
 import { useEffect, useMemo, useRef, useState, type ChangeEvent, type KeyboardEvent, type MouseEvent as ReactMouseEvent, type RefObject } from "react";
 
 import chatStyles from "@/app/chat.module.css";
@@ -24,6 +24,26 @@ type HermesSlashCommand = {
   aliases?: string[];
   cliOnly?: boolean;
   gatewayOnly?: boolean;
+};
+
+export type ComposerModelPicker = {
+  /** Short label for the current model, shown on the button (e.g. "gpt-4o"). */
+  label: string;
+  /** Slug of the currently active provider, used to mark the active model. */
+  provider?: string;
+  /** Id of the currently active model, used to mark the active model. */
+  model?: string;
+  providers: Array<{
+    slug: string;
+    name: string;
+    models: Array<{ id: string; name?: string }>;
+  }>;
+  loading?: boolean;
+  emptyHint?: string;
+  onSelect: (provider: string, model: string) => void;
+  /** Called when the menu opens, so the caller can lazily load the model list. */
+  onOpen?: () => void;
+  onRefresh?: () => void;
 };
 
 export const HERMES_SLASH_COMMANDS: HermesSlashCommand[] = [
@@ -649,6 +669,7 @@ export function ComposerField({
   hermesSlashCommands = false,
   agentMode,
   onAgentModeChange,
+  modelPicker,
 }: {
   value: string;
   onChange: (value: string) => void;
@@ -688,10 +709,12 @@ export function ComposerField({
   hermesSlashCommands?: boolean;
   agentMode?: "plan" | "act";
   onAgentModeChange?: (mode: "plan" | "act") => void;
+  modelPicker?: ComposerModelPicker;
 }) {
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const [selectedSlashCommandIndex, setSelectedSlashCommandIndex] = useState(0);
   const [agentModeMenuOpen, setAgentModeMenuOpen] = useState(false);
+  const [modelMenuOpen, setModelMenuOpen] = useState(false);
   const [workingDirectoryMenuOpen, setWorkingDirectoryMenuOpen] = useState(false);
   const [workingDirectoryOpening, setWorkingDirectoryOpening] = useState(false);
   const slashTokenMatch = hermesSlashCommands ? value.match(/^\/([^\s/]*)$/) : null;
@@ -934,6 +957,100 @@ export function ComposerField({
                         {agentMode === option.mode ? <Check aria-hidden="true" /> : null}
                       </button>
                     ))}
+                  </div>
+                </TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
+          ) : null}
+          {modelPicker ? (
+            <TooltipProvider>
+              <Tooltip open={modelMenuOpen}>
+                <TooltipTrigger asChild>
+                  <button
+                    type="button"
+                    className={chatClass("composerModeButton", "composerModelButton")}
+                    onClick={() => setModelMenuOpen((open) => {
+                      const next = !open;
+                      if (next) modelPicker.onOpen?.();
+                      return next;
+                    })}
+                    onBlur={(event) => {
+                      if (!event.currentTarget.parentElement?.contains(event.relatedTarget as Node | null)) {
+                        setModelMenuOpen(false);
+                      }
+                    }}
+                    disabled={disabled}
+                    aria-label="Switch model"
+                    aria-expanded={modelMenuOpen}
+                  >
+                    <Cpu aria-hidden="true" />
+                    <span>{modelPicker.label || "Model"}</span>
+                    <ChevronDown aria-hidden="true" />
+                  </button>
+                </TooltipTrigger>
+                <TooltipContent
+                  side="top"
+                  align="start"
+                  sideOffset={8}
+                  className={chatClass("modelPickerTooltip")}
+                  onPointerDown={(event) => event.preventDefault()}
+                >
+                  <div className={chatClass("modelPickerHeader")}>
+                    <strong>Switch model</strong>
+                    {modelPicker.onRefresh ? (
+                      <button
+                        type="button"
+                        className={chatClass("modelPickerRefresh", modelPicker.loading && "loading")}
+                        aria-label="Refresh models"
+                        onMouseDown={(event) => event.preventDefault()}
+                        onClick={() => modelPicker.onRefresh?.()}
+                        disabled={modelPicker.loading}
+                      >
+                        <RefreshCcw aria-hidden="true" />
+                      </button>
+                    ) : null}
+                  </div>
+                  <div className={chatClass("modelPickerScroll")}>
+                    {modelPicker.providers.length ? modelPicker.providers.map((provider) => (
+                      <div className={chatClass("modelPickerGroup")} key={provider.slug}>
+                        {modelPicker.providers.length > 1 ? (
+                          <span className={chatClass("modelPickerGroupLabel")}>{provider.name}</span>
+                        ) : null}
+                        <div className={chatClass("modelPickerList")} role="listbox" aria-label={`${provider.name} models`}>
+                          {provider.models.length ? provider.models.map((model) => {
+                            const active = provider.slug === modelPicker.provider && model.id === modelPicker.model;
+                            const optionLabel = model.name || model.id;
+                            return (
+                              <button
+                                type="button"
+                                role="option"
+                                aria-selected={active}
+                                key={`${provider.slug}-${model.id}`}
+                                className={chatClass(active && "active")}
+                                onMouseDown={(event) => event.preventDefault()}
+                                onClick={() => {
+                                  modelPicker.onSelect(provider.slug, model.id);
+                                  setModelMenuOpen(false);
+                                  window.requestAnimationFrame(() => textareaRef.current?.focus());
+                                }}
+                              >
+                                <span>
+                                  <strong>{optionLabel}</strong>
+                                  {model.name ? <small>{model.id}</small> : null}
+                                </span>
+                                {active ? <Check aria-hidden="true" /> : null}
+                              </button>
+                            );
+                          }) : (
+                            <p className={chatClass("modelPickerEmpty")}>No models reported.</p>
+                          )}
+                        </div>
+                      </div>
+                    )) : (
+                      <p className={chatClass("modelPickerEmpty")}>
+                        {modelPicker.loading ? "Loading models..." : modelPicker.emptyHint || "No models configured yet."}
+                      </p>
+                    )}
                   </div>
                 </TooltipContent>
               </Tooltip>

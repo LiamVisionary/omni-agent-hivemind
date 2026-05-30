@@ -14,7 +14,7 @@ import { summarizeX402Policy } from "@/lib/services/wallet/x402-agent-fetch";
 import { getRuntimeAdapter } from "@/lib/services/runtime-adapters/registry";
 import { recordHoneyUsage } from "@/lib/services/wallet/honey-ledger";
 import { recordTelemetryBatch } from "@/lib/services/telemetry/local-telemetry";
-import { normalizeRuntimeStreamEvent, RUNTIME_STREAM_EVENT_TYPES } from "@/lib/services/runtime-stream-events";
+import { normalizeRuntimeStreamEvent, RUNTIME_STREAM_EVENT_TYPES, type RuntimeStreamEvent } from "@/lib/services/runtime-stream-events";
 import {
   appendRuntimeChatSessionEvent,
   appendRuntimeChatSessionText,
@@ -286,6 +286,9 @@ function streamEventForPayload(payload: unknown) {
   if (typeof record.error === "string") {
     return normalizeRuntimeStreamEvent({ type: RUNTIME_STREAM_EVENT_TYPES.ERROR, error: record.error });
   }
+  if (typeof record.type === "string" && record.type !== RUNTIME_STREAM_EVENT_TYPES.TEXT_DELTA) {
+    return normalizeRuntimeStreamEvent(record as RuntimeStreamEvent);
+  }
   const chunk = extractChunk(payload);
   if (chunk) {
     return normalizeRuntimeStreamEvent({ type: RUNTIME_STREAM_EVENT_TYPES.TEXT_DELTA, delta: chunk });
@@ -319,11 +322,12 @@ function ssePayload(payload: unknown): string {
 function extractChunk(payload: unknown): string {
   if (!payload || typeof payload !== "object") return "";
   const value = payload as {
+    reasoning?: string;
     delta?: string;
     text?: string;
     content?: string;
-    message?: { content?: string };
-    choices?: Array<{ delta?: { content?: string }; text?: string; message?: { content?: string } }>;
+    message?: { content?: string; reasoning?: string };
+    choices?: Array<{ delta?: { content?: string; reasoning?: string }; text?: string; message?: { content?: string; reasoning?: string } }>;
   };
   return (
     value.choices?.[0]?.delta?.content ??
@@ -335,6 +339,71 @@ function extractChunk(payload: unknown): string {
     value.message?.content ??
     ""
   );
+}
+
+function extractReasoningChunk(payload: unknown): string {
+  if (!payload || typeof payload !== "object") return "";
+  const value = payload as {
+    reasoning?: string;
+    message?: { reasoning?: string };
+    choices?: Array<{ delta?: { reasoning?: string }; message?: { reasoning?: string } }>;
+  };
+  return (
+    value.choices?.[0]?.delta?.reasoning ??
+    value.choices?.[0]?.message?.reasoning ??
+    value.reasoning ??
+    value.message?.reasoning ??
+    ""
+  );
+}
+
+type ChannelMarkupState = {
+  channel: "content" | "thinking";
+  pending: string;
+};
+
+const channelControlPattern = /<channel>\s*(thought|thinking|analysis|reasoning|final|message|content|assistant|response)\s*<\/channel>|<\|?channel\|?>\s*(thought|thinking|analysis|reasoning|final|message|content|assistant|response)\s*|<\|?message\|?>|<\/channel>/gi;
+
+function createChannelMarkupState(): ChannelMarkupState {
+  return { channel: "content", pending: "" };
+}
+
+function routeChannelMarkupDelta(
+  value: string,
+  state: ChannelMarkupState,
+): { content: string; thinking: string } {
+  let input = `${state.pending}${value}`;
+  state.pending = "";
+
+  const pendingStart = input.lastIndexOf("<");
+  if (pendingStart >= 0 && !input.slice(pendingStart).includes(">")) {
+    state.pending = input.slice(pendingStart);
+    input = input.slice(0, pendingStart);
+  }
+
+  let cursor = 0;
+  let content = "";
+  let thinking = "";
+  const append = (text: string) => {
+    if (!text) return;
+    if (state.channel === "thinking") thinking += text;
+    else content += text;
+  };
+
+  for (const match of input.matchAll(channelControlPattern)) {
+    const index = match.index ?? 0;
+    append(input.slice(cursor, index));
+    const channel = String(match[1] ?? match[2] ?? "").trim().toLowerCase();
+    if (/^(thought|thinking|analysis|reasoning)$/.test(channel)) {
+      state.channel = "thinking";
+    } else if (/^(final|message|content|assistant|response)$/.test(channel)) {
+      state.channel = "content";
+    }
+    cursor = index + match[0].length;
+  }
+  append(input.slice(cursor));
+
+  return { content, thinking };
 }
 
 function isOpenAICompatibleRuntime(profile: AgentProfile) {
@@ -910,6 +979,7 @@ async function streamHttpRuntime(
       let dataEventCount = 0;
       let textDeltaCount = 0;
       let processEventCount = 0;
+      const channelMarkupState = createChannelMarkupState();
       recordRuntimeTelemetry(telemetry, "agent_runtime.http.stream.start", {
         ...telemetryPayloadForProfile(runtimeProfile),
         url,
@@ -960,11 +1030,23 @@ async function streamHttpRuntime(
             try {
               const parsed = JSON.parse(raw);
               const outputCheck = proxyOutput(extractChunk(parsed));
+              const reasoningCheck = proxyOutput(extractReasoningChunk(parsed));
               if (outputCheck.verdict === "block") {
                 safeEnqueue(ssePayload({ error: outputCheck.reason ?? "Response blocked by security policy" }));
                 continue;
               }
-              const chunk = outputCheck.text;
+              if (reasoningCheck.verdict === "block") {
+                safeEnqueue(ssePayload({ error: reasoningCheck.reason ?? "Response blocked by security policy" }));
+                continue;
+              }
+              const routed = routeChannelMarkupDelta(outputCheck.text, channelMarkupState);
+              const thinking = [reasoningCheck.text, routed.thinking].filter(Boolean).join("");
+              const chunk = routed.content;
+              if (thinking) {
+                processEventCount += 1;
+                queueSessionWrite(() => appendRuntimeChatSessionEvent(runtimeSessionId, "Thinking", thinking, parsed));
+                safeEnqueue(ssePayload({ type: RUNTIME_STREAM_EVENT_TYPES.THINKING, delta: thinking }));
+              }
               if (chunk) {
                 fullText += chunk;
                 textDeltaCount += 1;
@@ -980,7 +1062,7 @@ async function streamHttpRuntime(
                     streamElapsedMs: Date.now() - fetchStartedAt,
                   });
                 }
-              } else {
+              } else if (!thinking) {
                 processEventCount += 1;
                 queueSessionWrite(() => appendRuntimeChatSessionEvent(
                   runtimeSessionId,
@@ -999,16 +1081,28 @@ async function streamHttpRuntime(
                   streamElapsedMs: Date.now() - fetchStartedAt,
                 });
               }
-              safeEnqueue(chunk
-                ? ssePayload({ choices: [{ delta: { content: chunk } }] })
-                : ssePayload(parsed));
+              if (chunk) {
+                safeEnqueue(ssePayload({ choices: [{ delta: { content: chunk } }] }));
+              } else if (!thinking) {
+                safeEnqueue(ssePayload(parsed));
+              }
             } catch {
               const outputCheck = proxyOutput(raw);
-              if (outputCheck.verdict !== "block") fullText += outputCheck.text;
-              if (outputCheck.verdict !== "block") queueSessionWrite(() => appendRuntimeChatSessionText(runtimeSessionId, "assistant", outputCheck.text));
-              safeEnqueue(outputCheck.verdict === "block"
-                ? ssePayload({ error: outputCheck.reason ?? "Response blocked by security policy" })
-                : ssePayload({ choices: [{ delta: { content: outputCheck.text } }] }));
+              const routed = outputCheck.verdict === "block"
+                ? { content: "", thinking: "" }
+                : routeChannelMarkupDelta(outputCheck.text, channelMarkupState);
+              if (outputCheck.verdict !== "block" && routed.thinking) {
+                processEventCount += 1;
+                queueSessionWrite(() => appendRuntimeChatSessionEvent(runtimeSessionId, "Thinking", routed.thinking));
+                safeEnqueue(ssePayload({ type: RUNTIME_STREAM_EVENT_TYPES.THINKING, delta: routed.thinking }));
+              }
+              if (outputCheck.verdict !== "block") fullText += routed.content;
+              if (outputCheck.verdict !== "block" && routed.content) queueSessionWrite(() => appendRuntimeChatSessionText(runtimeSessionId, "assistant", routed.content));
+              if (outputCheck.verdict === "block") {
+                safeEnqueue(ssePayload({ error: outputCheck.reason ?? "Response blocked by security policy" }));
+              } else if (routed.content) {
+                safeEnqueue(ssePayload({ choices: [{ delta: { content: routed.content } }] }));
+              }
             }
           }
         }
@@ -1228,7 +1322,11 @@ async function streamOpenAICompatibleRuntime(
   if (!contentType.includes("text/event-stream")) {
     const json = await upstream.json().catch(async () => ({ text: await upstream.text().catch(() => "") }));
     const outputCheck = proxyOutput(extractChunk(json));
-    const chunk = outputCheck.text || JSON.stringify(json);
+    const channelMarkupState = createChannelMarkupState();
+    const routed = outputCheck.verdict === "block"
+      ? { content: "", thinking: "" }
+      : routeChannelMarkupDelta(outputCheck.text || JSON.stringify(json), channelMarkupState);
+    const chunk = routed.content;
     const event = outputCheck.verdict === "block" ? null : await recordChatHoney(profile, userText, chunk, honeyLedgerEnabled);
     if (outputCheck.verdict === "block") {
       await appendRuntimeChatSessionEvent(runtimeSessionId, "OpenAI-compatible response blocked", outputCheck.reason ?? "Response blocked by security policy").catch(() => undefined);
@@ -1239,6 +1337,8 @@ async function streamOpenAICompatibleRuntime(
     }
     releaseInteractiveRuntime(lockKey);
     return new Response(
+      (routed.thinking ? ssePayload({ type: RUNTIME_STREAM_EVENT_TYPES.THINKING, delta: routed.thinking }) : "")
+      +
       ssePayload(outputCheck.verdict === "block"
         ? { error: outputCheck.reason ?? "Response blocked by security policy" }
         : { choices: [{ delta: { content: chunk } }] })
@@ -1265,6 +1365,7 @@ async function streamOpenAICompatibleRuntime(
       }
       let buffer = "";
       let fullText = "";
+      const channelMarkupState = createChannelMarkupState();
       try {
         while (reader) {
           const { value, done } = await reader.read();
@@ -1280,20 +1381,46 @@ async function streamOpenAICompatibleRuntime(
             try {
               const parsed = JSON.parse(raw);
               const outputCheck = proxyOutput(extractChunk(parsed));
+              const reasoningCheck = proxyOutput(extractReasoningChunk(parsed));
               if (outputCheck.verdict === "block") {
                 controller.enqueue(encoder.encode(ssePayload({ error: outputCheck.reason ?? "Response blocked by security policy" })));
                 continue;
               }
-              if (outputCheck.text) fullText += outputCheck.text;
-              if (outputCheck.text) queueSessionWrite(() => appendRuntimeChatSessionText(runtimeSessionId, "assistant", outputCheck.text, parsed));
-              if (!outputCheck.text) queueSessionWrite(() => appendRuntimeChatSessionEvent(runtimeSessionId, "Runtime event", String(parsed?.type ?? parsed?.event?.type ?? "").trim(), parsed));
-              controller.enqueue(encoder.encode(outputCheck.text
-                ? ssePayload({ choices: [{ delta: { content: outputCheck.text } }] })
-                : ssePayload(parsed)));
+              if (reasoningCheck.verdict === "block") {
+                controller.enqueue(encoder.encode(ssePayload({ error: reasoningCheck.reason ?? "Response blocked by security policy" })));
+                continue;
+              }
+              const routed = routeChannelMarkupDelta(outputCheck.text, channelMarkupState);
+              const thinking = [reasoningCheck.text, routed.thinking].filter(Boolean).join("");
+              if (thinking) {
+                queueSessionWrite(() => appendRuntimeChatSessionEvent(runtimeSessionId, "Thinking", thinking, parsed));
+                controller.enqueue(encoder.encode(ssePayload({ type: RUNTIME_STREAM_EVENT_TYPES.THINKING, delta: thinking })));
+              }
+              if (routed.content) fullText += routed.content;
+              if (routed.content) queueSessionWrite(() => appendRuntimeChatSessionText(runtimeSessionId, "assistant", routed.content, parsed));
+              if (!routed.content && !thinking) queueSessionWrite(() => appendRuntimeChatSessionEvent(runtimeSessionId, "Runtime event", String(parsed?.type ?? parsed?.event?.type ?? "").trim(), parsed));
+              if (routed.content || (!thinking && !outputCheck.text)) {
+                controller.enqueue(encoder.encode(routed.content
+                  ? ssePayload({ choices: [{ delta: { content: routed.content } }] })
+                  : ssePayload(parsed)));
+              }
             } catch {
-              controller.enqueue(encoder.encode(ssePayload({ choices: [{ delta: { content: raw } }] })));
-              fullText += raw;
-              queueSessionWrite(() => appendRuntimeChatSessionText(runtimeSessionId, "assistant", raw));
+              const outputCheck = proxyOutput(raw);
+              const routed = outputCheck.verdict === "block"
+                ? { content: "", thinking: "" }
+                : routeChannelMarkupDelta(outputCheck.text, channelMarkupState);
+              if (outputCheck.verdict === "block") {
+                controller.enqueue(encoder.encode(ssePayload({ error: outputCheck.reason ?? "Response blocked by security policy" })));
+              }
+              if (routed.thinking) {
+                queueSessionWrite(() => appendRuntimeChatSessionEvent(runtimeSessionId, "Thinking", routed.thinking));
+                controller.enqueue(encoder.encode(ssePayload({ type: RUNTIME_STREAM_EVENT_TYPES.THINKING, delta: routed.thinking })));
+              }
+              if (routed.content) {
+                controller.enqueue(encoder.encode(ssePayload({ choices: [{ delta: { content: routed.content } }] })));
+                fullText += routed.content;
+                queueSessionWrite(() => appendRuntimeChatSessionText(runtimeSessionId, "assistant", routed.content));
+              }
             }
           }
         }

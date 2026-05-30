@@ -76,6 +76,11 @@ function setupMethodLabel(method?: NangoHostSetupResult["method"]) {
   return method || "setup";
 }
 
+function setupStepForPayload(payload: NangoIntegrationPayload): SetupStep {
+  if (!payload.config.hostMachineId) return "welcome";
+  return payload.health.ok ? "apps" : "method";
+}
+
 type NangoIntegrationsViewProps = {
   embedded?: boolean;
 };
@@ -108,7 +113,7 @@ export default function NangoIntegrationsView({ embedded = false }: NangoIntegra
       setPayload(nextPayload);
       setMachines(choices);
       setSelectedId((current) => nextPayload.config.hostMachineId || current || choices[0]?.id || "self");
-      setStep((current) => current === "welcome" && nextPayload.config.hostMachineId ? "apps" : current);
+      setStep((current) => current === "welcome" || (current === "apps" && !nextPayload.health.ok) ? setupStepForPayload(nextPayload) : current);
       return nextPayload;
     } finally {
       setLoading(false);
@@ -235,7 +240,7 @@ export default function NangoIntegrationsView({ embedded = false }: NangoIntegra
           </div>
           {step === "apps" ? (
             <div className={styles.statusCluster}>
-              <StatusBadge good={configured} label={configured ? "Host ready" : "Needs host"} />
+              <StatusBadge good={configured} label={configured ? "Host saved" : "Needs host"} />
               <StatusBadge good={ready} warn={configured && !ready} label={ready ? "Nango live" : "Checking"} />
             </div>
           ) : null}
@@ -506,6 +511,30 @@ function AppsView({
   onSetup: () => void;
   onToggleProvider: (provider: NangoProviderKey) => void;
 }) {
+  if (!ready) {
+    return (
+      <section className={styles.appsStage}>
+        <div className={styles.appsToolbar}>
+          <div>
+            <h2>Nango setup incomplete</h2>
+            <p>{payload?.config.hostMachineName || "The selected host"} is saved, but Nango is not reachable yet.</p>
+          </div>
+          <div className={styles.toolbarButtons}>
+            <Button variant="secondary" onClick={onSetup}><KeyRound /> Set up again</Button>
+            <Button variant="ghost" onClick={onRefresh}><RefreshCw /> Refresh</Button>
+          </div>
+        </div>
+        <div className={styles.setupRequired}>
+          <CircleAlert />
+          <div>
+            <strong>Finish setup before adding app connections.</strong>
+            <span>{payload?.health.error || payload?.connectionError || "Nango health is failing, so connected accounts and provider setup are paused."}</span>
+          </div>
+        </div>
+      </section>
+    );
+  }
+
   return (
     <section className={styles.appsStage}>
       <div className={styles.appsToolbar}>

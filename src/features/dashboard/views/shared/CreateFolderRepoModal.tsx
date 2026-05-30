@@ -2,6 +2,7 @@
 
 import { useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
+import { createPortal } from "react-dom";
 import { FolderOpen, LoaderCircle, X } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -88,15 +89,16 @@ export function CreateFolderRepoModal({
   const selectedMachine = selectedChoice?.machine ?? machineOptions[0];
   const selectedMachineOptionId = selectedChoice?.id ?? machineChoices[0]?.id ?? "";
   const fullPath = joinDisplayPath(parentPath, name);
+  const portalTarget = typeof document === "undefined" ? null : document.body;
   const currentMachine = () => (
     machineChoices.find((choice) => choice.id === machineSelectRef.current?.value)?.machine ?? selectedMachine
   );
 
-  if (!open) return null;
+  if (!open || !portalTarget) return null;
 
-  return (
+  return createPortal(
     <div
-      className="fixed inset-0 z-50 grid place-items-center bg-[rgba(2,6,23,0.72)] p-4 backdrop-blur-sm"
+      className="fixed inset-0 z-50 grid min-h-dvh place-items-center overflow-y-auto bg-[rgba(2,6,23,0.72)] p-4 backdrop-blur-sm"
       role="presentation"
       onMouseDown={(event) => {
         if (event.target === event.currentTarget) onClose();
@@ -183,6 +185,7 @@ export function CreateFolderRepoModal({
           </Button>
         </div>
       </section>
-    </div>
+    </div>,
+    portalTarget,
   );
 }

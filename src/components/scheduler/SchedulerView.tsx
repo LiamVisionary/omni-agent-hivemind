@@ -30,19 +30,22 @@ interface SchedulerViewProps {
   onNewJob?: () => void;
   toolbar?: React.ReactNode;
   status?: React.ReactNode;
+  /** When set, the runtime filter is forced to this value and the All/Aeon toggle is hidden. */
+  lockedRuntime?: ScheduleRuntimeFilter;
 }
 
 export function SchedulerView({
-  jobs: initialJobs = SCH_JOBS, runStates = {}, onToggleJob, onRunNow, onEditJob, onNewJob, toolbar, status,
+  jobs: initialJobs = SCH_JOBS, runStates = {}, onToggleJob, onRunNow, onEditJob, onNewJob, toolbar, status, lockedRuntime,
 }: SchedulerViewProps = {}) {
   const [selectedId, setSelectedId] = React.useState<string>(initialJobs[0]?.id ?? "");
   const [timelineRange, setTimelineRange] = React.useState<TimelineRange>("24h");
-  const [runtimeFilter, setRuntimeFilter] = React.useState<ScheduleRuntimeFilter>("all");
+  const [runtimeFilter, setRuntimeFilter] = React.useState<ScheduleRuntimeFilter>(lockedRuntime ?? "all");
+  const effectiveFilter = lockedRuntime ?? runtimeFilter;
   const jobs = React.useMemo(() => (
-    runtimeFilter === "aeon"
+    effectiveFilter === "aeon"
       ? initialJobs.filter((job) => job.runtime.trim().toLowerCase() === "aeon")
       : initialJobs
-  ), [initialJobs, runtimeFilter]);
+  ), [initialJobs, effectiveFilter]);
   const selected = jobs.find((j) => j.id === selectedId) ?? jobs[0];
   const effectiveSelectedId = selected?.id ?? "";
   const timelineLabel = timelineRange === "24h" ? "next 24 hours" : timelineRange === "week" ? "next 7 days" : "next 30 days";
@@ -58,14 +61,16 @@ export function SchedulerView({
 
   const upcoming = jobs.filter((j) => j.enabled).length;
   const failedLast = jobs.filter((j) => j.lastRun.status === "failed").length;
+  // Empty because of the Aeon filter, not because there are no schedules at all.
+  const filteredEmpty = effectiveFilter === "aeon" && initialJobs.length > 0;
 
   return (
     <TooltipProvider delayDuration={120}>
       <div className={`${styles.root} relative overflow-hidden`} style={{
-        width: "100%", height: "100%",
+        width: "100%", flex: "1 1 auto", minHeight: 0,
         background: "var(--background)", color: "var(--foreground)",
         fontFamily: "var(--f-display), system-ui, sans-serif",
-        display: "grid", gridTemplateRows: "auto 1fr",
+        display: "grid", gridTemplateRows: "auto auto 1fr",
       }}>
         <div aria-hidden className="absolute inset-0 pointer-events-none" style={{
           background:
@@ -115,6 +120,39 @@ export function SchedulerView({
           {status ? <div style={{ marginTop: 12 }}>{status}</div> : null}
         </header>
 
+        {/* RUNTIME FILTER — always visible so you can switch back to All even when the filtered view is empty.
+            Hidden when lockedRuntime pins the view to a single runtime (e.g. the AEON-only scheduler). */}
+        {lockedRuntime ? null : (
+        <div className="relative z-10 flex justify-center" style={{ padding: "14px 32px 0", gap: 6 }}>
+          {([
+            ["all", "All"],
+            ["aeon", "Aeon"],
+          ] as const).map(([value, label]) => {
+            const active = runtimeFilter === value;
+            return (
+              <button
+                key={value}
+                type="button"
+                data-scheduler-filter={value}
+                aria-label={`Show ${label} schedules`}
+                aria-pressed={active}
+                className="uppercase cursor-pointer"
+                onClick={() => setRuntimeFilter(value)}
+                style={{
+                  fontFamily: "var(--f-mono)", fontSize: 10, padding: "5px 12px", borderRadius: 999,
+                  background: active ? "rgba(255,212,90,0.13)" : "rgba(148,163,184,0.04)",
+                  color: active ? "var(--foreground)" : "var(--muted)",
+                  border: `1px solid ${active ? "rgba(255,212,90,0.42)" : "rgba(148,163,184,0.16)"}`,
+                  letterSpacing: 0.1,
+                }}
+              >
+                {label}
+              </button>
+            );
+          })}
+        </div>
+        )}
+
         {/* BODY */}
         {selected ? <div className="relative z-10 grid" style={{
           gridTemplateColumns: "300px minmax(0, 1fr) 360px", minHeight: 0,
@@ -126,38 +164,10 @@ export function SchedulerView({
             minWidth: 0, minHeight: 0,
             padding: "20px 28px 28px", gap: 16, gridTemplateRows: "auto 1fr",
           }}>
-            <div className="grid items-center" style={{ gridTemplateColumns: "minmax(0, 1fr) auto minmax(0, 1fr)", gap: 12 }}>
+            <div className="grid items-center" style={{ gridTemplateColumns: "minmax(0, 1fr) auto", gap: 12 }}>
               <div className={styles.monoCap} style={{ color: "var(--hex-active-border)" }}>
                 <span className={`${styles.dot} ${styles.dotLive}`} style={{ color: "#2dd4bf" }} />
                 &nbsp; {timelineLabel}
-              </div>
-              <div className="flex justify-center" style={{ gap: 6 }}>
-                {([
-                  ["all", "All"],
-                  ["aeon", "Aeon"],
-                ] as const).map(([value, label]) => {
-                  const active = runtimeFilter === value;
-                  return (
-                    <button
-                      key={value}
-                      type="button"
-                      data-scheduler-filter={value}
-                      aria-label={`Show ${label} schedules`}
-                      aria-pressed={active}
-                      className="uppercase cursor-pointer"
-                      onClick={() => setRuntimeFilter(value)}
-                      style={{
-                        fontFamily: "var(--f-mono)", fontSize: 10, padding: "5px 12px", borderRadius: 999,
-                        background: active ? "rgba(255,212,90,0.13)" : "rgba(148,163,184,0.04)",
-                        color: active ? "var(--foreground)" : "var(--muted)",
-                        border: `1px solid ${active ? "rgba(255,212,90,0.42)" : "rgba(148,163,184,0.16)"}`,
-                        letterSpacing: 0.1,
-                      }}
-                    >
-                      {label}
-                    </button>
-                  );
-                })}
               </div>
               <div className="flex justify-end" style={{ gap: 6 }}>
                 {(["24h", "week", "month"] as TimelineRange[]).map((value) => {
@@ -198,9 +208,15 @@ export function SchedulerView({
               background: "var(--panel-bg-soft)",
             }}>
               <HexTile size={58} tone="honey"><BeeIcon role="queen" size={34} /></HexTile>
-              <div className={styles.monoCap} style={{ color: "var(--hex-active-border)" }}>No schedules yet</div>
+              <div className={styles.monoCap} style={{ color: "var(--hex-active-border)" }}>
+                {filteredEmpty ? "No Aeon schedules" : "No schedules yet"}
+              </div>
               <p style={{ margin: 0, color: "var(--muted)", fontSize: 13, lineHeight: 1.5 }}>
-                Import existing runtime schedules or create a new task to populate the dispatch rail.
+                {filteredEmpty
+                  ? lockedRuntime
+                    ? "Nothing scheduled on the Aeon runtime yet. Schedule a new task or import existing Aeon schedules to populate the dispatch rail."
+                    : "Nothing scheduled on the Aeon runtime yet. Switch to All to see your other automations, or import existing Aeon schedules."
+                  : "Import existing runtime schedules or create a new task to populate the dispatch rail."}
               </p>
               {onNewJob ? (
                 <button type="button" onClick={onNewJob} className="uppercase font-bold cursor-pointer" style={{

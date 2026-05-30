@@ -4,6 +4,7 @@ import { createHash } from "crypto";
 import { homedir } from "os";
 import { basename, dirname, join, relative, resolve } from "path";
 import { resolveObsidianVaultPath } from "@/lib/services/obsidian/vault-path";
+import { cachedCall } from "@/lib/services/async-cache";
 
 export type BrainSkillProviderId = "claude" | "codex" | "hermes" | "gemini" | "openclaw" | "aeon";
 
@@ -705,6 +706,18 @@ export async function getSharedBrainSkills(vaultPath?: string): Promise<{
     });
   }
   return { vaultPath: resolvedVault, skillsFolder, readmePath, shared };
+}
+
+// Cache key prefix for the shared-brain inventory. Mutating flows (skill imports,
+// writes) call invalidateCachedCall(SHARED_BRAIN_CACHE_PREFIX) so the next read
+// reflects the change immediately.
+export const SHARED_BRAIN_CACHE_PREFIX = "shared-brain:";
+
+// Short-TTL wrapper around getSharedBrainSkills. The AEON panel reads the shared
+// skill list from several endpoints in one refresh (skills, secrets, analytics);
+// caching the underlying vault scan collapses those into a single read.
+export function getSharedBrainSkillsCached(vaultPath?: string) {
+  return cachedCall(`${SHARED_BRAIN_CACHE_PREFIX}${vaultPath ?? ""}`, 15_000, () => getSharedBrainSkills(vaultPath));
 }
 
 async function writeSourceFiles(destinationDir: string, files: BrainSkillSourceFile[]) {

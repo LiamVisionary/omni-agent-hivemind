@@ -89,6 +89,7 @@ export type RuntimeSkill = {
 
 export type RuntimeEnvSyncResult = {
   repo: string;
+  githubSecretCount?: number;
   synced: Array<{ key: string }>;
   skipped: Array<{ key: string; reason: string }>;
   sources: string[];
@@ -96,6 +97,7 @@ export type RuntimeEnvSyncResult = {
 
 export type RuntimeSecretStatus = {
   repo: string;
+  githubSecretCount?: number;
   keys: Array<{
     key: string;
     label: string;
@@ -158,7 +160,7 @@ export type RuntimeAdapter = {
   syncSkills?: (profile: AgentProfile, context: RuntimeAdapterContext) => Promise<unknown>;
   syncEnv?: (
     profile: AgentProfile,
-    context: RuntimeAdapterContext & { keys?: string[] },
+    context: RuntimeAdapterContext & { keys?: string[]; allSharedEnv?: boolean },
   ) => Promise<RuntimeEnvSyncResult>;
   listSchedules?: (profile: AgentProfile, context: RuntimeAdapterContext) => Promise<RuntimeSchedule[]>;
   runScheduleAction?: (

@@ -43,7 +43,7 @@ export function repoNameFromAgent(agent: AgentProfile) {
 function agentProfileParts(agent: AgentProfile) {
   const runtime = runtimeFolder(agent.runtime);
   const name = slug(agent.name || agent.agentId || agent.id, "profile");
-  if (agent.runtime === "aeon") return [runtime, repoNameFromAgent(agent), "agents", name];
+  if (agent.runtime === "aeon") return [runtime, repoNameFromAgent(agent)];
   return [runtime, name];
 }
 
@@ -141,7 +141,7 @@ export async function mirrorAgentProfilesToVault(input: { vaultPath?: string; ag
     "HivemindOS mirrors dashboard runtime profiles here so agents have a durable Obsidian home.",
     "",
     "- Runtime folders contain profile records and agent notes.",
-    "- AEON profiles are grouped by repo/workspace because one AEON repo can contain many configured jobs.",
+    "- AEON folders are agents with their own skills, memory, outputs, and notes.",
     "- Secret values are not mirrored; profile files only include non-secret profile metadata and env key names.",
     "",
   ].join("\n"));
@@ -149,23 +149,29 @@ export async function mirrorAgentProfilesToVault(input: { vaultPath?: string; ag
   const written: string[] = [];
   for (const agent of input.agents) {
     const dir = join(agentsRoot, ...agentProfileParts(agent));
+    const isAeon = agent.runtime === "aeon";
+    const title = isAeon ? repoNameFromAgent(agent) : agent.name || agent.id;
     await mkdir(join(dir, "Notes"), { recursive: true });
     await writeFile(join(dir, "profile.json"), `${JSON.stringify(safeAgentProfile(agent), null, 2)}\n`);
     await writeFile(join(dir, "README.md"), [
-      `# ${agent.name || agent.id}`,
+      `# ${title}`,
       "",
       `Runtime: ${agent.runtime}`,
-      agent.runtime === "aeon" ? `AEON repo/workspace: ${repoNameFromAgent(agent)}` : "",
+      isAeon ? `Agent: ${repoNameFromAgent(agent)}` : "",
       "",
-      "Use `Notes/` for durable context specific to this agent profile.",
+      isAeon
+        ? "Use `Notes/` for durable context specific to this AEON agent."
+        : "Use `Notes/` for durable context specific to this agent profile.",
       "",
     ].filter(Boolean).join("\n"));
-    await writeFile(join(dir, "Notes", "README.md"), [
-      `# ${agent.name || agent.id} Notes`,
-      "",
-      "Agent-specific notes, decisions, and operating context can live here.",
-      "",
-    ].join("\n"));
+    if (!isAeon) {
+      await writeFile(join(dir, "Notes", "README.md"), [
+        `# ${title} Notes`,
+        "",
+        "Agent-specific notes, decisions, and operating context can live here.",
+        "",
+      ].join("\n"));
+    }
     written.push(dir.replace(`${root}${sep}`, ""));
   }
   return { root, agentsRoot, written };

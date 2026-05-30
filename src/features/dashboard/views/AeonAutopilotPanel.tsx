@@ -2,6 +2,7 @@
 
 import { forwardRef, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { Dispatch, HTMLAttributes, KeyboardEvent, ReactNode, SetStateAction } from "react";
+import { createPortal } from "react-dom";
 import Image from "next/image";
 import {
   Activity,
@@ -10,6 +11,7 @@ import {
   Check,
   ChevronLeft,
   Clock3,
+  Cpu,
   Download,
   ExternalLink,
   FileText,
@@ -20,6 +22,7 @@ import {
   ListChecks,
   LoaderCircle,
   MemoryStick,
+  Network,
   Play,
   Plus,
   Power,
@@ -27,11 +30,15 @@ import {
   Rocket,
   Search,
   ShieldCheck,
+  Sparkles,
+  Trash2,
   Upload,
   X,
 } from "lucide-react";
+import type { LucideIcon } from "lucide-react";
 
 import fleetStyles from "@/components/fleet/fleet-tokens.module.css";
+import { SchedulerView, type SchedulerJob, type SchedulerRunState } from "@/components/scheduler";
 import { Button } from "@/components/ui/button";
 import { CreateFolderRepoModal, type CreateFolderRepoValue } from "@/features/dashboard/views/shared/CreateFolderRepoModal";
 import { InlineRenameControl } from "@/features/dashboard/views/shared/InlineRenameControl";
@@ -89,6 +96,15 @@ type ConvertAeonDraft = {
   briefMode: ConvertBriefMode;
   model: string;
 };
+type AeonGithubRepoOption = {
+  fullName: string;
+  name: string;
+  owner: string;
+  private?: boolean;
+  url?: string;
+  defaultBranch?: string;
+  description?: string;
+};
 type SkillSourceView = "aeon" | "shared";
 type SkillAutomationState = "available" | "ready" | "manual" | "on-duty" | "paused";
 type UnifiedSkillRow = GroupableSkill & {
@@ -111,6 +127,15 @@ type AeonAutopilotPanelProps = {
   setSelectedAgentId: (agentId: string) => void;
   setAgentRoleModalId: (agentId: string) => void;
   setAgentSettingsPanel: Dispatch<SetStateAction<AgentSettingsPanel>>;
+  updateAgentProfile: (agentId: string, patch: Partial<AgentProfile>) => void;
+  // Scheduler reuse — the panel renders the shared SchedulerView in place, locked to AEON schedules.
+  schedulerJobs?: SchedulerJob[];
+  schedulerRunStates?: Record<string, SchedulerRunState>;
+  onSchedulerOpen?: () => void;
+  onSchedulerToggleJob?: (job: SchedulerJob) => void;
+  onSchedulerRunJob?: (job: SchedulerJob) => void;
+  onSchedulerEditJob?: (job: SchedulerJob) => void;
+  onSchedulerNewJob?: () => void;
 };
 
 const DEFAULT_AEON_AGENT: AgentProfile = {
@@ -148,6 +173,10 @@ const DEFAULT_AEON_AGENT: AgentProfile = {
 };
 
 const DEFAULT_SECRET_KEYS = ["ANTHROPIC_API_KEY", "CLAUDE_CODE_OAUTH_TOKEN", "BANKR_LLM_KEY", "GH_GLOBAL"];
+// Dwell per clone-animation step. Real work runs concurrently (and the heavy network tail
+// is backgrounded), so each step shows for this long and the final step doesn't stall.
+const CLONE_STEP_MS = 1300;
+const delay = (ms: number) => new Promise((resolve) => window.setTimeout(resolve, ms));
 const OBSIDIAN_SYNC_CACHE_PREFIX = "hivemindos.aeon.obsidianSync.";
 
 function readCachedObsidianSyncStatuses() {
@@ -165,6 +194,29 @@ function readCachedObsidianSyncStatuses() {
     return {};
   }
   return statuses;
+}
+
+// Remember the last-known "GitHub OAuth + repo are wired up" verdict per AEON
+// workspace so a return visit paints the automation hero (or the setup cards)
+// immediately, instead of flashing the not-connected cards while the async
+// status/secret checks are still in flight.
+const AEON_GITHUB_READY_CACHE_PREFIX = "hivemindos.aeon.githubReady.";
+
+function readCachedGithubReady() {
+  if (typeof window === "undefined") return {};
+  const ready: Record<string, boolean> = {};
+  try {
+    for (let index = 0; index < window.localStorage.length; index += 1) {
+      const key = window.localStorage.key(index);
+      if (!key?.startsWith(AEON_GITHUB_READY_CACHE_PREFIX)) continue;
+      const raw = window.localStorage.getItem(key);
+      if (raw === null) continue;
+      ready[key.slice(AEON_GITHUB_READY_CACHE_PREFIX.length)] = raw === "1";
+    }
+  } catch {
+    return {};
+  }
+  return ready;
 }
 
 type AeonFleetHexTone = "default" | "active" | "honey";
@@ -404,6 +456,7 @@ function mergeSecretStatus(current: RuntimeSecretStatus | null, next: RuntimeSec
   });
   return {
     repo: next.repo || current.repo,
+    githubSecretCount: next.githubSecretCount ?? current.githubSecretCount,
     keys: [...mergedKeys, ...nextKeys.values()],
   };
 }
@@ -497,6 +550,41 @@ function aeonModeBadgeLabel(agent: AgentProfile) {
   return "GitHub";
 }
 
+function aeonRepoDisplayName(agent: AgentProfile) {
+  const explicit = agent.aeonRepoName?.trim();
+  if (explicit) return explicit;
+  const repo = agent.aeonRepo?.trim().replace(/\.git$/i, "").replace(/^https?:\/\/github\.com\//i, "");
+  if (repo) return repo;
+  const path = (agent.aeonLocalPath || agent.localDataDir || "").trim().replace(/\/+$/, "");
+  const folder = path.split("/").filter(Boolean).pop();
+  return folder || agent.name || "AEON repo";
+}
+
+function aeonNameSlug(value: string, fallback = "aeon") {
+  return (value || fallback)
+    .trim()
+    .replace(/[^A-Za-z0-9._-]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .toLowerCase()
+    || fallback;
+}
+
+function nextAeonName(existingNames: Iterable<string>, baseName = "aeon") {
+  const taken = new Set(Array.from(existingNames, (name) => aeonNameSlug(name)).filter(Boolean));
+  const base = aeonNameSlug(baseName);
+  if (!taken.has(base)) return base;
+  for (let index = 2; index < 1000; index++) {
+    const candidate = `${base}-${index}`;
+    if (!taken.has(candidate)) return candidate;
+  }
+  return `${base}-${Date.now()}`;
+}
+
+function aeonProfileLabel(agent: AgentProfile, repoName: string) {
+  const name = agent.name?.trim();
+  return name && name !== repoName ? `Profile: ${name}` : "Repo workspace";
+}
+
 function preferAeonAgent(left: AgentProfile, right: AgentProfile) {
   const score = (agent: AgentProfile) => (
     (agent.aeonMode === "local" ? 8 : 0)
@@ -523,7 +611,7 @@ function aeonMachineCollectorUrl(machine: MachineGroup) {
   return machine.collectorUrl;
 }
 
-export function AeonAutopilotPanel({ activeView, displayAgents, selectedAgentId, setAgents, sharedVault, machineGroups = [], chooseDirectoryForMachine, setActiveView, setSelectedAgentId, setAgentRoleModalId, setAgentSettingsPanel }: AeonAutopilotPanelProps) {
+export function AeonAutopilotPanel({ activeView, displayAgents, selectedAgentId, setAgents, sharedVault, machineGroups = [], chooseDirectoryForMachine, setActiveView, setSelectedAgentId, setAgentRoleModalId, setAgentSettingsPanel, updateAgentProfile, schedulerJobs = [], schedulerRunStates = {}, onSchedulerOpen, onSchedulerToggleJob, onSchedulerRunJob, onSchedulerEditJob, onSchedulerNewJob }: AeonAutopilotPanelProps) {
   const aeonAgents = useMemo(() => {
     const byWorkspace = new Map<string, AgentProfile>();
     for (const agent of displayAgents.filter((item) => item.runtime === "aeon")) {
@@ -538,6 +626,7 @@ export function AeonAutopilotPanel({ activeView, displayAgents, selectedAgentId,
   const aeonFleetListRef = useRef<HTMLDivElement | null>(null);
   const [aeonFleetColumns, setAeonFleetColumns] = useState(3);
   const [panelMode, setPanelMode] = useState<"fleet" | "detail">("fleet");
+  const [aeonSchedulerOpen, setAeonSchedulerOpen] = useState(false);
   const [detailView, setDetailView] = useState<AeonDetailView>("overview");
   const [status, setStatus] = useState<AeonStatus | null>(null);
   const [skills, setSkills] = useState<RuntimeSkill[]>([]);
@@ -554,6 +643,10 @@ export function AeonAutopilotPanel({ activeView, displayAgents, selectedAgentId,
   const [secrets, setSecrets] = useState<RuntimeSecretStatus | null>(null);
   const [repoSync, setRepoSync] = useState<RuntimeRepoSyncStatus | null>(null);
   const [obsidianSyncByKey, setObsidianSyncByKey] = useState<Record<string, AeonObsidianSyncStatus>>(() => readCachedObsidianSyncStatuses());
+  const [githubReadyByKey, setGithubReadyByKey] = useState<Record<string, boolean>>(() => readCachedGithubReady());
+  // Workspace key whose status/secret refresh has actually finished — until the
+  // current workspace matches, the overview falls back to the cached verdict.
+  const [connectionLoadedKey, setConnectionLoadedKey] = useState("");
   const [selectedRunLog, setSelectedRunLog] = useState<RuntimeRunLog | null>(null);
   const [runLogLoading, setRunLogLoading] = useState("");
   const [skillDraft, setSkillDraft] = useState({ schedule: "", var: "", model: "" });
@@ -564,26 +657,43 @@ export function AeonAutopilotPanel({ activeView, displayAgents, selectedAgentId,
   const [importName, setImportName] = useState("");
   const [cloneRepoOpen, setCloneRepoOpen] = useState(false);
   const [cloneRepoUrl, setCloneRepoUrl] = useState("");
+  const [createRepoChoiceOpen, setCreateRepoChoiceOpen] = useState(false);
+  const [createRepoChoiceView, setCreateRepoChoiceView] = useState<"choice" | "official" | "created" | "cloning">("choice");
+  const [cloneSteps, setCloneSteps] = useState<{ key: string; label: string; Icon: LucideIcon }[]>([]);
+  const [cloneStepIndex, setCloneStepIndex] = useState(0);
+  const cloneRunIdRef = useRef(0);
+  const [officialCloneName, setOfficialCloneName] = useState("aeon");
+  const [officialCloneLocation, setOfficialCloneLocation] = useState("~/Documents");
+  const [officialCloneFork, setOfficialCloneFork] = useState(true);
+  const [officialClonePrivateRepo, setOfficialClonePrivateRepo] = useState(true);
+  const [officialCloneInjectSecrets, setOfficialCloneInjectSecrets] = useState(true);
+  const [createdAeonAgentId, setCreatedAeonAgentId] = useState("");
   const [createRepoOpen, setCreateRepoOpen] = useState(false);
+  const [githubRepoModalOpen, setGithubRepoModalOpen] = useState(false);
+  const [githubRepoModalView, setGithubRepoModalView] = useState<"select" | "create">("select");
+  const [githubRepoAdvancedOpen, setGithubRepoAdvancedOpen] = useState(false);
+  const [githubRepoLoading, setGithubRepoLoading] = useState(false);
+  const [githubRepoBusy, setGithubRepoBusy] = useState("");
+  const [githubRepoError, setGithubRepoError] = useState("");
+  const [githubRepoOptions, setGithubRepoOptions] = useState<AeonGithubRepoOption[]>([]);
+  const [githubRepoCreateDraft, setGithubRepoCreateDraft] = useState({
+    name: "",
+    owner: "",
+    description: "",
+    visibility: "private",
+    autoPush: true,
+  });
   const [repoRenameState, setRepoRenameState] = useState({ agentId: "", editing: false, draft: "" });
   const [loading, setLoading] = useState(false);
   const [actionBusy, setActionBusy] = useState("");
+  const [actionSuccess, setActionSuccess] = useState("");
   const [message, setMessage] = useState("");
+  const actionSuccessTimerRef = useRef<number | null>(null);
   const obsidianSyncCacheKey = useMemo(() => `${OBSIDIAN_SYNC_CACHE_PREFIX}${aeonWorkspaceKey(selectedAgent)}`, [selectedAgent]);
   const obsidianSync = obsidianSyncByKey[obsidianSyncCacheKey] ?? null;
-  const selectedRepoName = selectedAgent.aeonRepoName || selectedAgent.name;
+  const selectedRepoName = aeonRepoDisplayName(selectedAgent);
   const repoRenameEditing = repoRenameState.agentId === selectedAgent.id ? repoRenameState.editing : false;
   const repoRenameDraft = repoRenameState.agentId === selectedAgent.id ? repoRenameState.draft : selectedRepoName;
-  const aeonRepoProfileAgents = useMemo(() => {
-    const selectedWorkspace = aeonWorkspaceKey(selectedAgent);
-    const byId = new Map<string, AgentProfile>();
-    for (const agent of displayAgents) {
-      if (agent.runtime !== "aeon" || aeonWorkspaceKey(agent) !== selectedWorkspace) continue;
-      byId.set(agent.id, agent);
-    }
-    if (!byId.has(selectedAgent.id)) byId.set(selectedAgent.id, selectedAgent);
-    return Array.from(byId.values()).sort((left, right) => left.name.localeCompare(right.name));
-  }, [displayAgents, selectedAgent]);
   const obsidianMirrorStatus = obsidianSync
     ? obsidianSync.running
       ? `Running${obsidianSync.pid ? ` · ${obsidianSync.pid}` : ""}`
@@ -607,6 +717,33 @@ export function AeonAutopilotPanel({ activeView, displayAgents, selectedAgentId,
       // localStorage is best-effort UI hydration only.
     }
   }, [obsidianSyncCacheKey]);
+
+  const writeGithubReady = useCallback((workspaceKey: string, ready: boolean) => {
+    setGithubReadyByKey((current) => current[workspaceKey] === ready ? current : { ...current, [workspaceKey]: ready });
+    if (typeof window === "undefined") return;
+    try {
+      window.localStorage.setItem(`${AEON_GITHUB_READY_CACHE_PREFIX}${workspaceKey}`, ready ? "1" : "0");
+    } catch {
+      // localStorage is a best-effort paint hint only.
+    }
+  }, []);
+
+  const showActionSuccess = useCallback((key: string) => {
+    if (actionSuccessTimerRef.current) {
+      window.clearTimeout(actionSuccessTimerRef.current);
+    }
+    setActionSuccess(key);
+    actionSuccessTimerRef.current = window.setTimeout(() => {
+      setActionSuccess((current) => current === key ? "" : current);
+      actionSuccessTimerRef.current = null;
+    }, 2200);
+  }, []);
+
+  useEffect(() => () => {
+    if (actionSuccessTimerRef.current) {
+      window.clearTimeout(actionSuccessTimerRef.current);
+    }
+  }, []);
   const aeonRepoMachines = useMemo<KanbanMachineTarget[]>(() => {
     const targets = machineGroups
       .filter((machine) => machine.key !== "unassigned" && machine.collector === "ready")
@@ -643,44 +780,61 @@ export function AeonAutopilotPanel({ activeView, displayAgents, selectedAgentId,
   const refresh = useCallback(async () => {
     setLoading(true);
     setMessage("");
-    try {
-      const agent = selectedAgent;
-      const body = { agent };
-      const [nextStatus, nextSkills, nextSchedules, nextRuns, nextOutputs, nextAnalytics, nextMemory, nextSecrets, nextRepoSync, nextObsidianSync, nextAllSkills] = await Promise.all([
-        postJson<AeonStatus>("/api/runtimes/aeon/status", body),
-        postJson<{ skills?: RuntimeSkill[] }>("/api/runtimes/aeon/skills", { ...body, vaultPath: sharedVault.vaultPath }),
-        postJson<{ schedules?: RuntimeSchedule[] }>("/api/runtimes/aeon/schedules", body),
-        postJson<{ runs?: RuntimeRun[] }>("/api/runtimes/aeon/runs", body),
-        postJson<{ outputs?: AeonOutput[] }>("/api/runtimes/aeon/outputs", body),
-        postJson<{ analytics?: RuntimeAnalytics }>("/api/runtimes/aeon/analytics", { ...body, vaultPath: sharedVault.vaultPath }),
-        postJson<{ memory?: RuntimeMemorySnapshot }>("/api/runtimes/aeon/memory", body),
-        postJson<{ secrets?: RuntimeSecretStatus }>("/api/runtimes/aeon/secrets/status", { ...body, vaultPath: sharedVault.vaultPath }),
-        postJson<{ status?: RuntimeRepoSyncStatus }>("/api/runtimes/aeon/repo/sync", { ...body, action: "status" }),
-        postJson<AeonObsidianSyncStatus>("/api/runtimes/aeon/obsidian-sync", { ...body, vaultPath: sharedVault.vaultPath, action: "status" }).catch((error) => ({
+    const agent = selectedAgent;
+    const body = { agent };
+    const vaultBody = { ...body, vaultPath: sharedVault.vaultPath };
+    // Each request commits its own slice of state the moment it resolves, so the
+    // Ready Check and the other cards fill in progressively instead of blocking on
+    // the slowest call in the batch (gh run list, gh secret list, the env script).
+    // A failure on any one request surfaces a message but never holds back the rest.
+    const fail = (error: unknown) => {
+      setMessage((current) => current || (error instanceof Error ? error.message : "Aeon refresh failed."));
+    };
+    const track = <T,>(request: Promise<T>, apply: (value: T) => void) => request.then(apply).catch(fail);
+    // Capture the GitHub-relevant slices so we can cache the connected verdict
+    // for the next paint once everything settles.
+    let resolvedRepo = agent.aeonRepo || "";
+    let resolvedSecretReady = false;
+    await Promise.allSettled([
+      track(postJson<AeonStatus>("/api/runtimes/aeon/status", body), (data) => { resolvedRepo = data?.status?.repo || resolvedRepo; setStatus(data); }),
+      track(postJson<{ skills?: RuntimeSkill[] }>("/api/runtimes/aeon/skills", vaultBody), (data) => setSkills(data.skills ?? [])),
+      track(postJson<{ schedules?: RuntimeSchedule[] }>("/api/runtimes/aeon/schedules", body), (data) => setSchedules(data.schedules ?? [])),
+      track(postJson<{ runs?: RuntimeRun[] }>("/api/runtimes/aeon/runs", body), (data) => setRuns(data.runs ?? [])),
+      track(postJson<{ outputs?: AeonOutput[] }>("/api/runtimes/aeon/outputs", body), (data) => setOutputs(data.outputs ?? [])),
+      track(postJson<{ analytics?: RuntimeAnalytics }>("/api/runtimes/aeon/analytics", vaultBody), (data) => setAnalytics(data.analytics ?? null)),
+      track(postJson<{ memory?: RuntimeMemorySnapshot }>("/api/runtimes/aeon/memory", body), (data) => setMemory(data.memory ?? null)),
+      track(postJson<{ secrets?: RuntimeSecretStatus }>("/api/runtimes/aeon/secrets/status", vaultBody), (data) => {
+        const secret = data.secrets?.keys?.find((item) => item.key === "GH_GLOBAL");
+        resolvedSecretReady = Boolean(secret?.isSet || secret?.availableInSharedEnv || secret?.availableLocally);
+        setSecrets(data.secrets ?? null);
+      }),
+      track(postJson<{ status?: RuntimeRepoSyncStatus }>("/api/runtimes/aeon/repo/sync", { ...body, action: "status" }), (data) => setRepoSync(data.status ?? null)),
+      track(
+        postJson<AeonObsidianSyncStatus>("/api/runtimes/aeon/obsidian-sync", { ...vaultBody, action: "status" }).catch((error) => ({
           ok: false,
           installed: false,
           running: false,
           error: error instanceof Error ? error.message : "AEON Obsidian sync status failed.",
-        })),
-        fetch(`/api/obsidian/skills?vaultPath=${encodeURIComponent(sharedVault.vaultPath || "")}`, { cache: "no-store" }).then((response) => response.ok ? response.json() : null).catch(() => null),
-      ]);
-      setStatus(nextStatus);
-      setSkills(nextSkills.skills ?? []);
-      setSchedules(nextSchedules.schedules ?? []);
-      setRuns(nextRuns.runs ?? []);
-      setOutputs(nextOutputs.outputs ?? []);
-      setAnalytics(nextAnalytics.analytics ?? null);
-      setMemory(nextMemory.memory ?? null);
-      setSecrets(nextSecrets.secrets ?? null);
-      setRepoSync(nextRepoSync.status ?? null);
-      updateObsidianSync(nextObsidianSync ?? null);
-      if (nextAllSkills?.ok) setAllSkills(nextAllSkills as BrainSkillInventory);
-    } catch (error) {
-      setMessage(error instanceof Error ? error.message : "Aeon refresh failed.");
-    } finally {
-      setLoading(false);
-    }
-  }, [selectedAgent, sharedVault.vaultPath, updateObsidianSync]);
+        } as AeonObsidianSyncStatus)),
+        (next) => updateObsidianSync(next ?? null),
+      ),
+      // The Ready Check only reads the shared-brain skill list, so `?shared=1` skips
+      // the per-provider directory scan + remote-provider fetch the full inventory runs.
+      track(
+        fetch(`/api/obsidian/skills?shared=1&vaultPath=${encodeURIComponent(sharedVault.vaultPath || "")}`, { cache: "no-store" })
+          .then((response) => response.ok ? response.json() : null)
+          .catch(() => null),
+        (next) => { if (next?.ok) setAllSkills(next as BrainSkillInventory); },
+      ),
+    ]);
+    setLoading(false);
+    // Status + secrets have settled for this workspace, so the overview can now
+    // trust the live githubPowered verdict instead of the cached hint — and we
+    // remember it so the next paint skips the loading placeholder entirely.
+    const workspaceKey = aeonWorkspaceKey(agent);
+    writeGithubReady(workspaceKey, Boolean(resolvedRepo && resolvedSecretReady));
+    setConnectionLoadedKey(workspaceKey);
+  }, [selectedAgent, sharedVault.vaultPath, updateObsidianSync, writeGithubReady]);
 
   const refreshFastSecrets = useCallback(async () => {
     try {
@@ -697,14 +851,44 @@ export function AeonAutopilotPanel({ activeView, displayAgents, selectedAgentId,
     }
   }, [selectedAgent, sharedVault.vaultPath]);
 
+  // Latest-value ref so the view-entry effect can call refreshFastSecrets without
+  // listing it as a dependency (it changes whenever the selected agent changes,
+  // which would otherwise re-run that effect on every cell click).
+  const refreshFastSecretsRef = useRef(refreshFastSecrets);
+  useEffect(() => {
+    refreshFastSecretsRef.current = refreshFastSecrets;
+  }, [refreshFastSecrets]);
+
+  useEffect(() => () => {
+    cloneRunIdRef.current += 1; // cancel any in-flight clone animation on unmount
+  }, []);
+
   useEffect(() => {
     if (activeView !== "aeon") return;
-    const handle = window.setTimeout(() => setPanelMode("fleet"), 0);
+    const params = new URLSearchParams(window.location.search);
+    const fromGithubOAuth = params.get("githubOAuth") === "connected";
+    const requestedPanel = params.get("aeonPanel");
+    if (fromGithubOAuth || requestedPanel === "detail") {
+      const tab = params.get("aeonTab");
+      const handle = window.setTimeout(() => {
+        setAeonSchedulerOpen(false);
+        setPanelMode("detail");
+        setDetailView(tab === "work" || tab === "activity" || tab === "settings" ? tab : "overview");
+        if (fromGithubOAuth) {
+          setMessage("GitHub connected. GH_GLOBAL is available to AEON from shared env.");
+          void refreshFastSecretsRef.current();
+        }
+      }, 0);
+      return () => window.clearTimeout(handle);
+    }
+    const handle = window.setTimeout(() => { setAeonSchedulerOpen(false); setPanelMode("fleet"); }, 0);
     return () => window.clearTimeout(handle);
   }, [activeView]);
 
   useEffect(() => {
     if (activeView !== "aeon") return;
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("githubOAuth") === "connected" || params.get("aeonPanel")) return;
     const pendingDetailAgentId = window.sessionStorage.getItem("hivemindos.aeon.openDetailAgentId");
     if (pendingDetailAgentId) {
       window.sessionStorage.removeItem("hivemindos.aeon.openDetailAgentId");
@@ -725,7 +909,7 @@ export function AeonAutopilotPanel({ activeView, displayAgents, selectedAgentId,
     return () => window.clearTimeout(handle);
   }, [activeView, panelMode, refresh, refreshFastSecrets]);
 
-  function upsertAeonWorkspaceAgent(agent: AgentProfile) {
+  function upsertAeonWorkspaceAgent(agent: AgentProfile, options: { openDetail?: boolean } = {}) {
     let selectedId = agent.id;
     setAgents((current) => {
       const existingIndex = current.findIndex((item) => (
@@ -738,10 +922,10 @@ export function AeonAutopilotPanel({ activeView, displayAgents, selectedAgentId,
       return current.map((item, index) => index === existingIndex ? { ...item, ...agent, id: selectedId } : item);
     });
     setSelectedAgentId(selectedId);
-    setPanelMode("detail");
+    if (options.openDetail !== false) setPanelMode("detail");
   }
 
-  async function runWorkspaceAction(action: "initialize" | "link" | "clone", input: Record<string, string> = {}) {
+  async function runWorkspaceAction(action: "initialize" | "link" | "clone", input: Record<string, string> = {}, options: { openDetail?: boolean } = {}) {
     setActionBusy(`workspace:${action}`);
     setMessage("");
     try {
@@ -750,7 +934,7 @@ export function AeonAutopilotPanel({ activeView, displayAgents, selectedAgentId,
         ...input,
       });
       if (!data.agent) throw new Error("AEON workspace was prepared, but no profile was returned.");
-      upsertAeonWorkspaceAgent(data.agent);
+      upsertAeonWorkspaceAgent(data.agent, options);
       const mirror = await postJson<AeonObsidianSyncStatus>("/api/runtimes/aeon/obsidian-sync", {
         agent: data.agent,
         vaultPath: sharedVault.vaultPath,
@@ -768,8 +952,43 @@ export function AeonAutopilotPanel({ activeView, displayAgents, selectedAgentId,
       setMessage(mirror.running
         ? `Linked AEON repo workspace at ${data.root || data.agent.aeonLocalPath || data.agent.localDataDir}. Obsidian mirror is running.`
         : `Linked AEON repo workspace at ${data.root || data.agent.aeonLocalPath || data.agent.localDataDir}. ${mirror.error || "Obsidian mirror is not running yet."}`);
+      return data.agent;
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Could not prepare AEON workspace.");
+      return null;
+    } finally {
+      setActionBusy("");
+    }
+  }
+
+  async function deleteAeonWorkspace(action: "delete-git" | "delete-local") {
+    const root = status?.status?.root || selectedAgent.aeonLocalPath || selectedAgent.localDataDir || "";
+    const label = action === "delete-local" ? "local AEON repo folder" : "local .git metadata";
+    if (typeof window !== "undefined" && !window.confirm(`Delete the ${label} at ${root || "this workspace"}? This cannot be undone from HivemindOS.`)) return;
+    setActionBusy(`workspace:${action}`);
+    setMessage("");
+    try {
+      const data = await postJson<{ agent?: AgentProfile; root?: string; deleted?: boolean; message?: string }>("/api/runtimes/aeon/workspaces", {
+        action,
+        agent: selectedAgent,
+      });
+      updateObsidianSync(null);
+      if (action === "delete-local" || data.deleted) {
+        const deletedKey = aeonWorkspaceKey(selectedAgent);
+        const nextSelectedAgent = displayAgents.find((agent) => agent.runtime === "aeon" && agent.id !== selectedAgent.id && aeonWorkspaceKey(agent) !== deletedKey);
+        setAgents((current) => current.filter((agent) => agent.id !== selectedAgent.id && aeonWorkspaceKey(agent) !== deletedKey));
+        setSelectedAgentId(nextSelectedAgent?.id || "");
+        setPanelMode("fleet");
+        setMessage(data.message || "Deleted the local AEON workspace.");
+      } else if (data.agent) {
+        const nextAgent = { ...selectedAgent, ...data.agent, id: selectedAgent.id, aeonRepo: "", aeonMode: "local" as const };
+        setAgents((current) => current.map((agent) => agent.id === selectedAgent.id ? nextAgent : agent));
+        updateAgentProfile(selectedAgent.id, { aeonRepo: "", aeonMode: "local" });
+        setMessage(data.message || "Removed Git metadata from this AEON workspace.");
+        await refresh();
+      }
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : `Could not delete ${label}.`);
     } finally {
       setActionBusy("");
     }
@@ -849,7 +1068,7 @@ export function AeonAutopilotPanel({ activeView, displayAgents, selectedAgentId,
       if (data?.path) {
         await runWorkspaceAction("link", { path: data.path });
       } else if (!data?.cancelled) {
-        setMessage(data?.error ?? "Choose an AEON repo folder.");
+        setMessage(data?.error ?? "Choose an Aeon Agent Repo folder.");
       }
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Could not browse for an AEON repo.");
@@ -862,8 +1081,8 @@ export function AeonAutopilotPanel({ activeView, displayAgents, selectedAgentId,
     setActionBusy(`${action}:${jobId}`);
     setMessage("");
     try {
-      await postJson("/api/runtimes/aeon/schedules/action", { agent: selectedAgent, action, jobId });
-      setMessage(action === "run-now" ? `Started ${jobId}.` : `${action === "enable" ? "Enabled" : "Disabled"} ${jobId}.`);
+      const data = await postJson<{ result?: { autoPushed?: boolean } }>("/api/runtimes/aeon/schedules/action", { agent: selectedAgent, action, jobId });
+      setMessage(action === "run-now" ? `${data.result?.autoPushed ? "Saved to GitHub, then s" : "S"}tarted ${jobId}.` : `${action === "enable" ? "Enabled" : "Disabled"} ${jobId}.`);
       await refresh();
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Aeon action failed.");
@@ -891,21 +1110,124 @@ export function AeonAutopilotPanel({ activeView, displayAgents, selectedAgentId,
     }
   }
 
-  async function syncSecrets() {
-    setActionBusy("sync-secrets");
-    setMessage("");
+  async function syncSecretsForAgent(agent: AgentProfile, options: { quiet?: boolean; all?: boolean } = {}) {
+    const all = options.all === true;
+    const busyKey = all ? "sync-all-secrets" : "sync-secrets";
+    if (!options.quiet) setActionBusy(busyKey);
+    setActionSuccess("");
+    if (!options.quiet) setMessage("");
     try {
-      const data = await postJson<{ result?: { synced?: unknown[]; skipped?: unknown[]; repo?: string } }>("/api/runtimes/aeon/env/sync", {
-        agent: selectedAgent,
-        keys: DEFAULT_SECRET_KEYS,
-      });
+      const keysToSync = secrets?.keys?.map((secret) => secret.key);
+      const data = await postJson<{ result?: { synced?: unknown[]; skipped?: unknown[]; repo?: string; githubSecretCount?: number } }>("/api/runtimes/aeon/env/sync",
+        all
+          ? { agent, all: true }
+          : { agent, keys: keysToSync?.length ? keysToSync : DEFAULT_SECRET_KEYS });
       const synced = data.result?.synced?.length ?? 0;
       const skipped = data.result?.skipped?.length ?? 0;
-      setMessage(`Synced ${synced} secret${synced === 1 ? "" : "s"} to ${data.result?.repo || selectedAgent.aeonRepo || "Aeon"}${skipped ? `, skipped ${skipped}` : ""}.`);
+      const syncedSecretCount = data.result?.githubSecretCount;
+      const noun = all ? "shared env key" : "secret";
+      const resultMessage = `Synced ${synced} ${noun}${synced === 1 ? "" : "s"} to ${data.result?.repo || agent.aeonRepo || "Aeon"}${skipped ? `, skipped ${skipped} missing value${skipped === 1 ? "" : "s"}` : ""}.`;
+      if (!options.quiet) setMessage(resultMessage);
+      if (typeof syncedSecretCount === "number") {
+        setSecrets((current) => current ? { ...current, githubSecretCount: syncedSecretCount } : current);
+      }
+      if (synced > 0 && skipped === 0) showActionSuccess(busyKey);
+      void refreshFastSecrets();
+      return { message: resultMessage, synced, skipped };
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : "Aeon secret sync failed.");
+      const message = error instanceof Error ? error.message : "Aeon secret sync failed.";
+      if (!options.quiet) setMessage(message);
+      if (!options.quiet) return null;
+      throw error;
     } finally {
-      setActionBusy("");
+      if (!options.quiet) setActionBusy("");
+    }
+  }
+
+  async function syncSecrets() {
+    await syncSecretsForAgent(selectedAgent);
+  }
+
+  async function syncAllSecrets() {
+    await syncSecretsForAgent(selectedAgent, { all: true });
+  }
+
+  async function loadGithubRepos() {
+    setGithubRepoLoading(true);
+    setGithubRepoError("");
+    try {
+      const response = await fetch("/api/runtimes/aeon/github-repos", { cache: "no-store" });
+      const data = await response.json().catch(() => null) as { ok?: boolean; repos?: AeonGithubRepoOption[]; error?: string } | null;
+      if (!response.ok || data?.ok === false) throw new Error(data?.error || "Could not load GitHub repos.");
+      setGithubRepoOptions(data?.repos ?? []);
+    } catch (error) {
+      setGithubRepoError(error instanceof Error ? error.message : "Could not load GitHub repos.");
+    } finally {
+      setGithubRepoLoading(false);
+    }
+  }
+
+  async function connectGithubRepo(repo: AeonGithubRepoOption | string) {
+    const fullName = typeof repo === "string" ? repo : repo.fullName;
+    const branch = typeof repo === "string" ? "main" : repo.defaultBranch || "main";
+    setGithubRepoBusy(`connect:${fullName}`);
+    setGithubRepoError("");
+    try {
+      const response = await fetch("/api/runtimes/aeon/github-repos", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "link", agent: selectedAgent, repo: fullName }),
+      });
+      const data = await response.json().catch(() => null) as { ok?: boolean; repo?: string; branch?: string; error?: string } | null;
+      if (!response.ok || data?.ok === false || !data?.repo) throw new Error(data?.error || "Could not connect GitHub repo.");
+      const nextRepo = data.repo;
+      const nextBranch = data.branch || branch;
+      updateAgentProfile(selectedAgent.id, { aeonRepo: nextRepo, aeonBranch: nextBranch, aeonMode: "github" });
+      setStatus((current) => current ? { ...current, status: { ...current.status, repo: nextRepo } } : current);
+      setRepoSync((current) => current ? { ...current, repo: nextRepo, branch: nextBranch } : current);
+      setGithubRepoModalOpen(false);
+      setMessage(`Configured GitHub repo ${nextRepo}.`);
+      void refreshFastSecrets();
+    } catch (error) {
+      setGithubRepoError(error instanceof Error ? error.message : "Could not connect GitHub repo.");
+    } finally {
+      setGithubRepoBusy("");
+    }
+  }
+
+  async function createGithubRepo() {
+    const name = githubRepoCreateDraft.name.trim();
+    if (!name) return;
+    setGithubRepoBusy("create");
+    setGithubRepoError("");
+    try {
+      const response = await fetch("/api/runtimes/aeon/github-repos", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "create",
+          agent: selectedAgent,
+          name,
+          owner: githubRepoCreateDraft.owner,
+          description: githubRepoCreateDraft.description,
+          visibility: githubRepoCreateDraft.visibility,
+          autoPush: githubRepoCreateDraft.autoPush,
+        }),
+      });
+      const data = await response.json().catch(() => null) as { ok?: boolean; repo?: string; branch?: string; pushError?: string; error?: string } | null;
+      if (!response.ok || data?.ok === false || !data?.repo) throw new Error(data?.error || "Could not create GitHub repo.");
+      const nextRepo = data.repo;
+      const nextBranch = data.branch || "main";
+      updateAgentProfile(selectedAgent.id, { aeonRepo: nextRepo, aeonBranch: nextBranch, aeonMode: "github" });
+      setStatus((current) => current ? { ...current, status: { ...current.status, repo: nextRepo } } : current);
+      setRepoSync((current) => current ? { ...current, repo: nextRepo, branch: nextBranch } : current);
+      setGithubRepoModalOpen(false);
+      setMessage(data.pushError ? `Created and linked ${nextRepo}. Push can run later: ${data.pushError}` : `Created and linked ${nextRepo}.`);
+      void refreshFastSecrets();
+    } catch (error) {
+      setGithubRepoError(error instanceof Error ? error.message : "Could not create GitHub repo.");
+    } finally {
+      setGithubRepoBusy("");
     }
   }
 
@@ -1131,10 +1453,29 @@ export function AeonAutopilotPanel({ activeView, displayAgents, selectedAgentId,
   const a2aSkillCount = skills.filter((skill) => skill.source === "aeon-a2a").length;
   const scheduledSkillCount = visibleSkills.filter((skill) => Boolean(skill.runtimeSchedule)).length;
   const localAeonSkillCount = status?.status?.localSkillCount ?? 0;
+  const githubRepo = status?.status?.repo || selectedAgent.aeonRepo || "";
+  const githubSecret = secrets?.keys?.find((secret) => secret.key === "GH_GLOBAL");
+  const githubSecretReady = Boolean(githubSecret?.isSet || githubSecret?.availableInSharedEnv || githubSecret?.availableLocally);
+  const githubPowered = Boolean(githubRepo && githubSecretReady);
+  // Don't trust githubPowered until this workspace's refresh has landed — the
+  // status/secret calls are async, so on first paint it reads "not connected"
+  // and would flash the setup cards before snapping to the hero. Fall back to
+  // the cached verdict (instant) and a quiet placeholder while it's unknown.
+  const aeonWorkspaceKeyValue = aeonWorkspaceKey(selectedAgent);
+  const connectionResolved = connectionLoadedKey === aeonWorkspaceKeyValue;
+  const cachedGithubReady = githubReadyByKey[aeonWorkspaceKeyValue];
+  const resolvedGithubReady = connectionResolved ? githubPowered : cachedGithubReady;
+  const syncSecretsSucceeded = actionSuccess === "sync-secrets";
+  const syncAllSecretsSucceeded = actionSuccess === "sync-all-secrets";
+  const githubSecretCount = secrets?.githubSecretCount;
+  const githubSecretCountLabel = typeof githubSecretCount === "number"
+    ? `${githubSecretCount} repo secret${githubSecretCount === 1 ? "" : "s"}`
+    : githubRepo ? "Checking" : "Repo not configured";
   const setupItems = [
     { label: "Local AEON folder", ok: Boolean(status?.status?.root || selectedAgent.aeonLocalPath || selectedAgent.localDataDir), detail: status?.status?.root || selectedAgent.aeonLocalPath || selectedAgent.localDataDir || "~/.aeon" },
     { label: "aeon.yml config", ok: Boolean(status?.status?.hasConfig), detail: status?.status?.hasConfig ? "Readable" : "Missing" },
-    { label: "GitHub repo", ok: Boolean(status?.status?.repo || selectedAgent.aeonRepo), detail: status?.status?.repo || selectedAgent.aeonRepo || "Not configured" },
+    { label: "GitHub repo", ok: Boolean(githubRepo), detail: githubRepo || "Not configured" },
+    { label: "GitHub secrets", ok: typeof githubSecretCount === "number" && githubSecretCount > 0, detail: githubSecretCountLabel },
     { label: "A2A card", ok: Boolean(status?.status?.a2aReachable), detail: status?.status?.a2aReachable ? "Reachable" : selectedAgent.a2aUrl || selectedAgent.gatewayUrl || "Offline" },
     { label: "Shared Brain", ok: sharedBrainCount > 0, detail: `${sharedBrainCount} skills` },
     { label: "Recent workflow", ok: runs.length > 0, detail: latestRunLabel(runs) },
@@ -1154,11 +1495,237 @@ export function AeonAutopilotPanel({ activeView, displayAgents, selectedAgentId,
     { id: "activity", label: "Activity", detail: "Runs and outputs" },
     { id: "settings", label: "Settings", detail: "Repo, keys, memory" },
   ];
+  const openGithubConnectionSettings = () => {
+    updateAgentProfile(selectedAgent.id, { aeonMode: "github" });
+    setAgentSettingsPanel("connection");
+    setAgentRoleModalId(selectedAgent.id);
+  };
+  const openGithubRepoModal = () => {
+    setGithubRepoModalOpen(true);
+    setGithubRepoModalView("select");
+    setGithubRepoError("");
+    setGithubRepoCreateDraft((current) => ({
+      ...current,
+      name: current.name || selectedRepoName.replace(/[^A-Za-z0-9._-]+/g, "-").replace(/^-+|-+$/g, "").toLowerCase(),
+    }));
+    void loadGithubRepos();
+  };
+  const openAeonRepoCreateChoice = () => {
+    setCreateRepoChoiceOpen(true);
+    setCreateRepoChoiceView("choice");
+    setCloneStepIndex(0);
+    setMessage("");
+    setCreatedAeonAgentId("");
+    setCloneRepoOpen(false);
+  };
+  const openOfficialCloneView = async () => {
+    setCreateRepoChoiceView("official");
+    setMessage("");
+    const existing = new Set<string>();
+    for (const agent of aeonAgents) {
+      existing.add(agent.name || "");
+      existing.add(agent.aeonRepoName || "");
+      existing.add(aeonRepoDisplayName(agent));
+      existing.add((agent.aeonLocalPath || agent.localDataDir || "").split("/").filter(Boolean).at(-1) || "");
+      const repoName = agent.aeonRepo?.trim().replace(/\.git$/i, "").split("/").filter(Boolean).at(-1);
+      if (repoName) existing.add(repoName);
+    }
+    setOfficialCloneName(nextAeonName(existing, "aeon"));
+    try {
+      const response = await fetch("/api/runtimes/aeon/github-repos", { cache: "no-store" });
+      const data = await response.json().catch(() => null) as { ok?: boolean; repos?: AeonGithubRepoOption[] } | null;
+      if (response.ok && data?.ok !== false) {
+        for (const repo of data?.repos ?? []) {
+          existing.add(repo.name);
+          existing.add(repo.fullName.split("/").at(-1) || "");
+        }
+      }
+    } catch {
+      // Local AEON agent names still give us a useful collision-free default.
+    }
+    setOfficialCloneName(nextAeonName(existing, "aeon"));
+  };
+  const officialClonePath = `${officialCloneLocation.trim().replace(/\/+$/, "") || "~/Documents"}/${officialCloneName.trim().replace(/[^A-Za-z0-9._-]+/g, "-").replace(/^-+|-+$/g, "") || "aeon"}`;
+  const officialCloneBusy = actionBusy === "github:fork" || actionBusy === "github:create" || actionBusy === "workspace:clone" || actionBusy === "sync-secrets";
+  const buildCloneSteps = (): { key: string; label: string; Icon: LucideIcon }[] => {
+    // Dev mode duplicates a local preclone instead of cloning over the network (see
+    // workspaces route). Label the step honestly so a demo reads right.
+    const devPreclone = process.env.NODE_ENV !== "production";
+    const steps: { key: string; label: string; Icon: LucideIcon }[] = [
+      { key: "init", label: "Initializing AEON workspace", Icon: Sparkles },
+      { key: "identity", label: "Provisioning agent identity", Icon: Bot },
+    ];
+    if (officialCloneFork && !officialClonePrivateRepo) {
+      steps.push({ key: "fork", label: "Forking aaronjmars/aeon to your GitHub", Icon: GitBranch });
+    }
+    steps.push({ key: "clone", label: `${devPreclone ? "Precloning" : "Cloning"} AEON into ${officialClonePath}`, Icon: Download });
+    steps.push({ key: "mirror", label: "Linking Obsidian vault mirror", Icon: RefreshCcw });
+    if (officialCloneFork && officialClonePrivateRepo) {
+      steps.push({ key: "repo", label: "Creating private GitHub repo", Icon: GitBranch });
+      steps.push({ key: "push", label: "Pushing AEON to your repo", Icon: Upload });
+    }
+    steps.push({ key: "skills", label: "Indexing skills & runtime", Icon: ListChecks });
+    if (officialCloneFork && officialCloneInjectSecrets) {
+      steps.push({ key: "secrets", label: "Injecting shared brain secrets", Icon: KeyRound });
+    }
+    steps.push({ key: "mesh", label: "Calibrating neural mesh", Icon: Network });
+    steps.push({ key: "warm", label: "Warming up runtime", Icon: Cpu });
+    steps.push({ key: "ready", label: "AEON Agent online", Icon: Rocket });
+    return steps;
+  };
+  const browseOfficialCloneLocation = async () => {
+    const machine = aeonRepoMachines[0] ?? null;
+    if (chooseDirectoryForMachine && machine) {
+      await chooseDirectoryForMachine(machine, (directory) => {
+        if (directory.path) setOfficialCloneLocation(directory.path);
+      });
+      return;
+    }
+    const response = await fetch("/api/agents/browse-folder", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ currentPath: officialCloneLocation || "~/Documents", prompt: "Choose where to clone AEON:" }),
+    }).catch(() => null);
+    const data = await response?.json().catch(() => null) as { path?: string } | null;
+    if (response?.ok && data?.path) setOfficialCloneLocation(data.path);
+  };
+  // The real backend work, run concurrently with the animation. Resolves with the new
+  // agent id on success, or a message on failure (never rejects).
+  const runOfficialCloneWork = async (): Promise<{ ok: true; agentId: string } | { ok: false; message?: string }> => {
+    let repoUrl = "https://github.com/aaronjmars/aeon.git";
+    if (officialCloneFork && !officialClonePrivateRepo) {
+      setActionBusy("github:fork");
+      try {
+        const response = await fetch("/api/runtimes/aeon/github-repos", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ action: "fork-official", name: officialCloneName }),
+        });
+        const data = await response.json().catch(() => null) as { ok?: boolean; repo?: string; cloneUrl?: string; error?: string } | null;
+        if (!response.ok || data?.ok === false || !data?.repo) throw new Error(data?.error || "Could not fork AEON to your GitHub.");
+        repoUrl = data.cloneUrl || `https://github.com/${data.repo}.git`;
+      } catch (error) {
+        return { ok: false, message: error instanceof Error ? error.message : "Could not fork AEON to your GitHub." };
+      }
+    }
+    const agent = await runWorkspaceAction("clone", {
+      repoUrl,
+      path: officialClonePath,
+      name: officialCloneName,
+      unique: "true",
+    }, { openDetail: false });
+    if (!agent) return { ok: false }; // runWorkspaceAction already surfaced the failure message.
+    let createdAgent = agent;
+    const createdName = agent.aeonRepoName || agent.name || officialCloneName;
+    const createdPath = agent.aeonLocalPath || agent.localDataDir || officialClonePath;
+    setOfficialCloneName(createdName);
+    if (officialCloneFork && officialClonePrivateRepo) {
+      setActionBusy("github:create");
+      try {
+        // autoPush: false keeps this call fast — the push is backgrounded below so the
+        // clone animation doesn't wait on a full-history network push.
+        const response = await fetch("/api/runtimes/aeon/github-repos", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            action: "create",
+            agent,
+            name: createdName,
+            description: "Private AEON Agent workspace cloned from aaronjmars/aeon.",
+            visibility: "private",
+            autoPush: false,
+            autoIncrement: true,
+          }),
+        });
+        const data = await response.json().catch(() => null) as { ok?: boolean; repo?: string; branch?: string; error?: string } | null;
+        if (!response.ok || data?.ok === false || !data?.repo) throw new Error(data?.error || "Could not create the private GitHub repo.");
+        const patch = { aeonRepo: data.repo, aeonBranch: data.branch || "main", aeonMode: "github" as const };
+        createdAgent = { ...agent, ...patch };
+        updateAgentProfile(agent.id, patch);
+        setAgents((current) => current.map((item) => (
+          item.id === agent.id
+          || (item.runtime === "aeon" && (item.aeonLocalPath || item.localDataDir) === (agent.aeonLocalPath || agent.localDataDir))
+            ? { ...item, ...patch }
+            : item
+        )));
+        setStatus((current) => current ? { ...current, status: { ...current.status, repo: data.repo } } : current);
+        setMessage(`Created private GitHub repo ${data.repo}.`);
+        setSelectedAgentId(agent.id);
+      } catch (error) {
+        return { ok: false, message: error instanceof Error ? error.message : "Could not create the private GitHub repo." };
+      }
+    }
+    setActionBusy("");
+    setOfficialCloneLocation(createdPath.split("/").slice(0, -1).join("/") || officialCloneLocation);
+    // Heavy network tail (push + secret injection) runs in the background so the animation
+    // never waits on it — the agent is already linked and usable locally.
+    void completeOfficialCloneTail(createdAgent);
+    return { ok: true, agentId: createdAgent.id };
+  };
+  // Backgrounded after the agent is created: push the local repo and inject secrets. These
+  // touch only the remote, so the user can open the agent while they finish.
+  const completeOfficialCloneTail = async (agent: AgentProfile) => {
+    const tasks: Array<Promise<unknown>> = [];
+    if (officialCloneFork && officialClonePrivateRepo && agent.aeonRepo) {
+      tasks.push(postJson("/api/runtimes/aeon/repo/sync", { agent, action: "push" }).catch(() => undefined));
+    }
+    if (officialCloneFork && officialCloneInjectSecrets && agent.aeonRepo) {
+      tasks.push(syncSecretsForAgent(agent, { quiet: true, all: true }).catch(() => undefined));
+    }
+    if (tasks.length) await Promise.allSettled(tasks);
+  };
+  const cloneOfficialAeon = async () => {
+    const steps = buildCloneSteps();
+    const runId = (cloneRunIdRef.current += 1);
+    const isCurrent = () => cloneRunIdRef.current === runId;
+    setCloneSteps(steps);
+    setCloneStepIndex(0);
+    setMessage("");
+    setCreateRepoChoiceView("cloning");
+
+    // Real work runs in the background; the animation paces each step at >= CLONE_STEP_MS so
+    // nothing flashes by or stalls. The work (instant local preclone + parallel secret writes)
+    // finishes well inside the animation window, so only the final step ever waits on it.
+    const settled = runOfficialCloneWork().then(
+      (value) => ({ value }),
+      (error) => ({ value: { ok: false as const, message: error instanceof Error ? error.message : "Could not clone official AEON." } }),
+    );
+    const bail = (message?: string) => {
+      if (!isCurrent()) return;
+      setActionBusy("");
+      if (message) setMessage(message);
+      setCreateRepoChoiceView("official");
+    };
+
+    for (let index = 0; index < steps.length - 1; index += 1) {
+      if (!isCurrent()) return;
+      setCloneStepIndex(index);
+      await delay(CLONE_STEP_MS);
+      const peek = await Promise.race([settled, Promise.resolve(null)]);
+      if (peek && !peek.value.ok) { bail(peek.value.message); return; }
+    }
+    if (!isCurrent()) return;
+    setCloneStepIndex(steps.length - 1);
+
+    const final = await settled;
+    if (!isCurrent()) return;
+    if (!final.value.ok) { bail(final.value.message); return; }
+    await delay(CLONE_STEP_MS);
+    if (!isCurrent()) return;
+    setCloneStepIndex(steps.length);
+    setCreatedAeonAgentId(final.value.agentId);
+    setCreateRepoChoiceView("created");
+  };
   const activateFleetCard = (action: () => void) => (event: KeyboardEvent<HTMLDivElement>) => {
     if (event.key !== "Enter" && event.key !== " ") return;
     event.preventDefault();
     action();
   };
+
+  const cloneTotal = cloneSteps.length;
+  const cloneComplete = cloneTotal > 0 && cloneStepIndex >= cloneTotal;
+  const clonePct = cloneTotal ? Math.round((Math.min(cloneStepIndex, cloneTotal) / cloneTotal) * 100) : 0;
+  const cloneActiveStep = cloneComplete ? null : (cloneSteps[Math.min(cloneStepIndex, Math.max(0, cloneTotal - 1))] ?? null);
 
   if (panelMode === "fleet") {
     return (
@@ -1168,7 +1735,7 @@ export function AeonAutopilotPanel({ activeView, displayAgents, selectedAgentId,
           <div className="flex flex-wrap items-start justify-between gap-4">
             <div className="grid gap-2">
               <p className="eyebrow">AEON Fleet</p>
-              <h2 className="m-0 text-xl font-bold text-[var(--foreground)]">Choose an AEON repo</h2>
+              <h2 className="m-0 text-xl font-bold text-[var(--foreground)]">Choose an Aeon Agent Repo</h2>
               <p className="m-0 max-w-2xl text-sm leading-6 text-[var(--muted)]">
                 One AEON repo is a workspace. Open a repo for its skills, schedules, runs, outputs, keys, memory, and GitHub sync.
               </p>
@@ -1182,6 +1749,216 @@ export function AeonAutopilotPanel({ activeView, displayAgents, selectedAgentId,
             <p className="mt-4 rounded-md border border-[rgba(148,163,184,0.16)] bg-[rgba(10,14,21,0.64)] px-3 py-2 text-sm text-[var(--foreground)]">{message}</p>
           ) : null}
         </div>
+
+        {createRepoChoiceOpen && typeof document !== "undefined" ? createPortal((
+          <div className="fixed left-0 top-0 z-50 grid h-[100dvh] w-[100vw] place-items-center overflow-y-auto bg-[rgba(2,6,23,0.72)] p-4 backdrop-blur-sm" role="dialog" aria-modal="true" aria-label="Create or clone AEON repo">
+            <div className="grid w-full max-w-2xl gap-4 rounded-lg border border-[rgba(94,234,212,0.24)] bg-[rgba(10,14,21,0.96)] p-4 shadow-[0_24px_80px_rgba(0,0,0,0.45)]">
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <p className="eyebrow">AEON repo</p>
+                  <h3 className="m-0 text-lg font-bold text-[var(--foreground)]">{createRepoChoiceView === "official" ? "Clone official AEON" : createRepoChoiceView === "cloning" ? "Cloning official AEON" : createRepoChoiceView === "created" ? "AEON Agent Created" : "Start a workspace"}</h3>
+                  <p className="m-0 mt-1 text-sm leading-6 text-[var(--muted)]">
+                    {createRepoChoiceView === "official"
+                      ? "Name this AEON Agent and choose where the local repo should live."
+                      : createRepoChoiceView === "cloning"
+                        ? "Spinning up your AEON Agent. Hang tight while the steps complete."
+                        : createRepoChoiceView === "created"
+                          ? "The local AEON repo is linked and the agent card is ready."
+                          : "Clone AEON into a local folder or import an AEON repo already on this machine."}
+                  </p>
+                </div>
+                {createRepoChoiceView === "cloning" ? null : (
+                  <Button type="button" size="icon" variant="ghost" aria-label="Close AEON repo choices" onClick={() => setCreateRepoChoiceOpen(false)}>
+                    <X aria-hidden="true" />
+                  </Button>
+                )}
+              </div>
+              {createRepoChoiceView === "choice" ? (
+              <div className="grid gap-3 md:grid-cols-2">
+                <button
+                  type="button"
+                  className="grid min-h-[190px] content-start gap-3 rounded-lg border border-[rgba(94,234,212,0.26)] bg-[rgba(20,184,166,0.08)] p-4 text-left transition hover:bg-[rgba(20,184,166,0.13)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[rgba(94,234,212,0.42)]"
+                  onClick={() => {
+                    setCreateRepoChoiceOpen(false);
+                    setCloneRepoUrl("");
+                    setCloneRepoOpen(true);
+                  }}
+                >
+                  <span className="inline-flex h-11 w-11 items-center justify-center rounded-md border border-[rgba(94,234,212,0.30)] bg-[rgba(20,184,166,0.12)] text-[var(--accent-strong)]">
+                    <Download aria-hidden="true" className="h-5 w-5" />
+                  </span>
+                  <span className="text-base font-bold text-[var(--foreground)]">Clone local copy</span>
+                  <span className="text-xs leading-5 text-[var(--muted)]">Paste any AEON GitHub repo URL and clone it into <code className="rounded border border-[rgba(148,163,184,0.16)] bg-[rgba(2,6,23,0.34)] px-1 py-0.5 text-[var(--foreground)]">~/.aeon-repos/</code>.</span>
+                </button>
+                <button
+                  type="button"
+                  className="grid min-h-[190px] content-start gap-3 rounded-lg border border-[rgba(148,163,184,0.16)] bg-[rgba(15,23,42,0.48)] p-4 text-left transition hover:border-[rgba(94,234,212,0.30)] hover:bg-[rgba(94,234,212,0.08)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[rgba(94,234,212,0.42)]"
+                  onClick={() => void openOfficialCloneView()}
+                >
+                  <span className="inline-flex h-11 w-11 items-center justify-center rounded-md border border-[rgba(148,163,184,0.18)] bg-[rgba(2,6,23,0.36)] text-[var(--accent-strong)]">
+                    {actionBusy === "workspace:clone" ? <LoaderCircle aria-hidden="true" className="h-5 w-5 animate-spin" /> : <GitBranch aria-hidden="true" className="h-5 w-5" />}
+                  </span>
+                  <span className="text-base font-bold text-[var(--foreground)]">Clone official AEON</span>
+                  <span className="text-xs leading-5 text-[var(--muted)]">Fork <code className="rounded border border-[rgba(148,163,184,0.16)] bg-[rgba(2,6,23,0.34)] px-1 py-0.5 text-[var(--foreground)]">aaronjmars/aeon</code> to your GitHub, clone that copy into <code className="rounded border border-[rgba(148,163,184,0.16)] bg-[rgba(2,6,23,0.34)] px-1 py-0.5 text-[var(--foreground)]">~/Documents</code>, and link it.</span>
+                </button>
+                <button
+                  type="button"
+                  className="grid min-h-[150px] content-start gap-3 rounded-lg border border-[rgba(148,163,184,0.16)] bg-[rgba(15,23,42,0.48)] p-4 text-left transition hover:border-[rgba(94,234,212,0.30)] hover:bg-[rgba(94,234,212,0.08)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[rgba(94,234,212,0.42)] md:col-span-2"
+                  onClick={() => {
+                    setCreateRepoChoiceOpen(false);
+                    void browseAeonWorkspace();
+                  }}
+                >
+                  <span className="inline-flex h-11 w-11 items-center justify-center rounded-md border border-[rgba(148,163,184,0.18)] bg-[rgba(2,6,23,0.36)] text-[var(--accent-strong)]">
+                    {actionBusy === "workspace:browse" ? <LoaderCircle aria-hidden="true" className="h-5 w-5 animate-spin" /> : <FolderOpen aria-hidden="true" className="h-5 w-5" />}
+                  </span>
+                  <span className="text-base font-bold text-[var(--foreground)]">Import existing</span>
+                  <span className="text-xs leading-5 text-[var(--muted)]">Choose an AEON repo folder that already exists locally and link it.</span>
+                </button>
+              </div>
+              ) : createRepoChoiceView === "official" ? (
+                <div className="grid gap-4">
+                  {message ? (
+                    <p className="m-0 rounded-md border border-[rgba(251,191,36,0.24)] bg-[rgba(251,191,36,0.08)] px-3 py-2 text-sm leading-6 text-amber-100">{message}</p>
+                  ) : null}
+                  <label className="grid gap-2 text-xs font-bold uppercase tracking-[0.14em] text-[var(--muted)]">
+                    AEON Agent name
+                    <input
+                      value={officialCloneName}
+                      onChange={(event) => setOfficialCloneName(event.target.value)}
+                      placeholder="aeon"
+                      className="min-h-11 rounded-md border border-[rgba(148,163,184,0.18)] bg-[rgba(2,6,23,0.50)] px-3 text-base font-semibold normal-case tracking-normal text-[var(--foreground)] outline-none transition focus:border-[rgba(94,234,212,0.52)]"
+                    />
+                  </label>
+                  <label className="grid gap-2 text-xs font-bold uppercase tracking-[0.14em] text-[var(--muted)]">
+                    Location
+                    <span className="grid gap-2 sm:grid-cols-[1fr_auto]">
+                      <input
+                        value={officialCloneLocation}
+                        onChange={(event) => setOfficialCloneLocation(event.target.value)}
+                        placeholder="~/Documents"
+                        className="min-h-11 min-w-0 rounded-md border border-[rgba(148,163,184,0.18)] bg-[rgba(2,6,23,0.50)] px-3 text-base font-semibold normal-case tracking-normal text-[var(--foreground)] outline-none transition focus:border-[rgba(94,234,212,0.52)]"
+                      />
+                      <Button type="button" variant="secondary" onClick={() => void browseOfficialCloneLocation()} disabled={officialCloneBusy}>
+                        <FolderOpen aria-hidden="true" />
+                        Browse
+                      </Button>
+                    </span>
+                  </label>
+                  <p className="m-0 text-xs leading-5 text-[var(--muted)]">Will clone to <code className="rounded border border-[rgba(148,163,184,0.14)] bg-[rgba(2,6,23,0.24)] px-1.5 py-0.5 text-[var(--foreground)]">{officialClonePath}</code>.</p>
+                  <label className="flex items-start justify-between gap-3 rounded-md border border-[rgba(94,234,212,0.18)] bg-[rgba(20,184,166,0.07)] p-3 text-sm text-[var(--foreground)]">
+                    <span className="grid gap-1">
+                      <span className="font-bold">GitHub 1-Step Setup</span>
+                      <span className="text-xs leading-5 text-[var(--muted)]">Recommended. Sets up GitHub while cloning so this AEON Agent is immediately connected for origin, Actions, pushes, and secret injection.</span>
+                    </span>
+                    <input
+                      type="checkbox"
+                      checked={officialCloneFork}
+                      onChange={(event) => setOfficialCloneFork(event.target.checked)}
+                      disabled={officialCloneBusy}
+                      className="mt-1 h-4 w-4"
+                    />
+                  </label>
+                  <div className="grid gap-2 rounded-md border border-[rgba(148,163,184,0.14)] bg-[rgba(2,6,23,0.22)] p-3">
+                    <label className="flex items-start justify-between gap-3 text-sm text-[var(--foreground)]">
+                      <span className="grid gap-1">
+                        <span className="font-bold">Private GitHub repo</span>
+                        <span className="text-xs leading-5 text-[var(--muted)]">Creates a private repo in your GitHub, points the clone at it, and pushes AEON there. Turn off to use a normal GitHub fork.</span>
+                      </span>
+                      <input
+                        type="checkbox"
+                        checked={officialClonePrivateRepo}
+                        onChange={(event) => setOfficialClonePrivateRepo(event.target.checked)}
+                        disabled={officialCloneBusy || !officialCloneFork}
+                        className="mt-1 h-4 w-4"
+                      />
+                    </label>
+                    <label className="flex items-start justify-between gap-3 text-sm text-[var(--foreground)]">
+                      <span className="grid gap-1">
+                        <span className="font-bold">Inject shared brain secrets</span>
+                        <span className="text-xs leading-5 text-[var(--muted)]">Pushes every key in your shared brain&apos;s shared env to the new repo after GitHub setup, so all shared secrets are available to GitHub Actions right away.</span>
+                      </span>
+                      <input
+                        type="checkbox"
+                        checked={officialCloneInjectSecrets}
+                        onChange={(event) => setOfficialCloneInjectSecrets(event.target.checked)}
+                        disabled={officialCloneBusy || !officialCloneFork}
+                        className="mt-1 h-4 w-4"
+                      />
+                    </label>
+                  </div>
+                  <div className="flex flex-wrap justify-between gap-2">
+                    <Button type="button" variant="ghost" onClick={() => setCreateRepoChoiceView("choice")} disabled={officialCloneBusy}>Back</Button>
+                    <Button type="button" onClick={() => void cloneOfficialAeon()} disabled={!officialCloneName.trim() || !officialCloneLocation.trim() || officialCloneBusy}>
+                      {officialCloneBusy ? <LoaderCircle aria-hidden="true" className="animate-spin" /> : <Download aria-hidden="true" />}
+                      {actionBusy === "github:fork" ? "Forking..." : actionBusy === "workspace:clone" ? "Cloning..." : "Clone"}
+                    </Button>
+                  </div>
+                </div>
+              ) : createRepoChoiceView === "cloning" ? (
+                <div className="grid gap-5">
+                  <div className="relative overflow-hidden rounded-lg border border-[rgba(94,234,212,0.24)] bg-[radial-gradient(120%_120%_at_0%_0%,rgba(20,184,166,0.16),rgba(10,14,21,0.20))] p-5">
+                    <div className="pointer-events-none absolute -right-12 -top-12 h-44 w-44 animate-pulse rounded-full bg-[rgba(20,184,166,0.18)] blur-3xl" />
+                    <div className="relative flex items-center gap-4">
+                      <span className="relative inline-flex h-14 w-14 shrink-0 items-center justify-center rounded-xl border border-[rgba(94,234,212,0.34)] bg-[rgba(20,184,166,0.12)] text-[var(--accent-strong)]">
+                        {cloneComplete ? (
+                          <Check aria-hidden="true" className="h-6 w-6" />
+                        ) : (
+                          <>
+                            <span className="absolute inline-flex h-full w-full animate-ping rounded-xl border border-[rgba(94,234,212,0.40)]" />
+                            {cloneActiveStep ? <cloneActiveStep.Icon aria-hidden="true" className="h-6 w-6" /> : <Sparkles aria-hidden="true" className="h-6 w-6" />}
+                          </>
+                        )}
+                      </span>
+                      <div className="min-w-0">
+                        <p className="m-0 text-xs font-bold uppercase tracking-[0.18em] text-[var(--accent-strong)]">{cloneComplete ? "Complete" : `Step ${Math.min(cloneStepIndex + 1, cloneTotal)} of ${cloneTotal}`}</p>
+                        <h4 className="m-0 mt-1 truncate text-base font-bold text-[var(--foreground)]">{cloneComplete ? "AEON Agent online" : cloneActiveStep?.label ?? "Working…"}</h4>
+                      </div>
+                    </div>
+                    <div className="relative mt-4 h-2 overflow-hidden rounded-full bg-[rgba(2,6,23,0.55)]">
+                      <div className="h-full rounded-full bg-[linear-gradient(90deg,rgba(45,212,191,0.9),rgba(94,234,212,0.9))] shadow-[0_0_12px_rgba(94,234,212,0.6)] transition-[width] duration-700 ease-out" style={{ width: `${Math.max(6, clonePct)}%` }} />
+                    </div>
+                  </div>
+                  <ol className="grid gap-1.5">
+                    {cloneSteps.map((step, index) => {
+                      const state = cloneComplete || index < cloneStepIndex ? "done" : index === cloneStepIndex ? "active" : "todo";
+                      return (
+                        <li key={step.key} className={`flex items-center gap-3 rounded-md border px-3 py-2 transition-all duration-500 ${state === "active" ? "border-[rgba(94,234,212,0.34)] bg-[rgba(20,184,166,0.10)]" : state === "done" ? "border-[rgba(94,234,212,0.16)] bg-[rgba(20,184,166,0.04)]" : "border-transparent opacity-45"}`}>
+                          <span className={`inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md border ${state === "todo" ? "border-[rgba(148,163,184,0.22)] text-[var(--muted)]" : "border-[rgba(94,234,212,0.30)] bg-[rgba(20,184,166,0.12)] text-[var(--accent-strong)]"}`}>
+                            {state === "done" ? <Check aria-hidden="true" className="h-4 w-4" /> : state === "active" ? <LoaderCircle aria-hidden="true" className="h-4 w-4 animate-spin" /> : <step.Icon aria-hidden="true" className="h-4 w-4" />}
+                          </span>
+                          <span className={`truncate text-sm ${state === "todo" ? "text-[var(--muted)]" : "font-semibold text-[var(--foreground)]"}`}>{step.label}</span>
+                        </li>
+                      );
+                    })}
+                  </ol>
+                </div>
+              ) : (
+                <div className="grid gap-4 rounded-lg border border-[rgba(94,234,212,0.24)] bg-[rgba(20,184,166,0.08)] p-4">
+                  <div className="flex items-start gap-3">
+                    <span className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-md border border-[rgba(94,234,212,0.30)] bg-[rgba(20,184,166,0.12)] text-[var(--accent-strong)]">
+                      <Check aria-hidden="true" className="h-5 w-5" />
+                    </span>
+                    <div className="min-w-0">
+                      <h4 className="m-0 text-base font-bold text-[var(--foreground)]">{officialCloneName || "AEON"} is ready</h4>
+                      <p className="m-0 mt-1 break-words text-sm leading-6 text-[var(--muted)]">{officialClonePath}</p>
+                    </div>
+                  </div>
+                  <div className="flex justify-end">
+                    <Button type="button" onClick={() => {
+                      if (createdAeonAgentId) setSelectedAgentId(createdAeonAgentId);
+                      setPanelMode("detail");
+                      setCreateRepoChoiceOpen(false);
+                    }}>
+                      <Rocket aria-hidden="true" />
+                      Open agent
+                    </Button>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        ), document.body) : null}
 
         {createRepoOpen ? (
           <CreateFolderRepoModal
@@ -1218,7 +1995,7 @@ export function AeonAutopilotPanel({ activeView, displayAgents, selectedAgentId,
               </span>
             </div>
             <div className="grid gap-3 md:grid-cols-3">
-              <button type="button" className="grid gap-2 rounded-md border border-[rgba(94,234,212,0.24)] bg-[rgba(20,184,166,0.08)] p-4 text-left hover:bg-[rgba(20,184,166,0.12)]" onClick={() => setCreateRepoOpen(true)} disabled={actionBusy === "workspace:initialize"}>
+              <button type="button" className="grid gap-2 rounded-md border border-[rgba(94,234,212,0.24)] bg-[rgba(20,184,166,0.08)] p-4 text-left hover:bg-[rgba(20,184,166,0.12)]" onClick={openAeonRepoCreateChoice} disabled={actionBusy === "workspace:initialize"}>
                 <span className="flex items-center gap-2 text-sm font-bold text-[var(--foreground)]">{actionBusy === "workspace:initialize" ? <LoaderCircle aria-hidden="true" className="animate-spin" /> : <Plus aria-hidden="true" />} Create local repo</span>
                 <span className="text-xs leading-5 text-[var(--muted)]">Name it, choose a machine, and pick where it should live.</span>
               </button>
@@ -1251,9 +2028,9 @@ export function AeonAutopilotPanel({ activeView, displayAgents, selectedAgentId,
 
         {aeonAgents.length > 0 ? (
           <div className="flex flex-wrap gap-2">
-            <Button type="button" size="sm" variant="secondary" onClick={() => setCreateRepoOpen(true)} disabled={actionBusy === "workspace:initialize"}>
+            <Button type="button" size="sm" variant="secondary" onClick={openAeonRepoCreateChoice} disabled={actionBusy === "workspace:initialize"}>
               {actionBusy === "workspace:initialize" ? <LoaderCircle aria-hidden="true" className="animate-spin" /> : <Plus aria-hidden="true" />}
-              New AEON repo
+              New Aeon Agent Repo
             </Button>
             <Button type="button" size="sm" variant="secondary" onClick={() => void browseAeonWorkspace()} disabled={actionBusy === "workspace:browse"}>
               {actionBusy === "workspace:browse" ? <LoaderCircle aria-hidden="true" className="animate-spin" /> : <FolderOpen aria-hidden="true" />}
@@ -1295,7 +2072,7 @@ export function AeonAutopilotPanel({ activeView, displayAgents, selectedAgentId,
             tone="active"
             role="listitem"
             tabIndex={0}
-            aria-label="Create new AEON repo"
+            aria-label="Create new Aeon Agent Repo"
             data-aeon-fleet-hex="create"
             className="group absolute z-10 cursor-pointer hover:scale-[1.025] focus:outline-none focus-visible:drop-shadow-[0_0_18px_rgba(94,234,212,0.62)]"
             style={{
@@ -1303,8 +2080,8 @@ export function AeonAutopilotPanel({ activeView, displayAgents, selectedAgentId,
               left: aeonFleetHexPosition(0, aeonFleetColumns).x,
               top: aeonFleetHexPosition(0, aeonFleetColumns).y,
             }}
-            onClick={() => setCreateRepoOpen(true)}
-            onKeyDown={activateFleetCard(() => setCreateRepoOpen(true))}
+            onClick={openAeonRepoCreateChoice}
+            onKeyDown={activateFleetCard(openAeonRepoCreateChoice)}
           >
             <span className="grid w-[62%] justify-items-center gap-2 text-center [line-height:normal]">
               <span className="relative h-16 w-16 transition group-hover:scale-105">
@@ -1315,7 +2092,7 @@ export function AeonAutopilotPanel({ activeView, displayAgents, selectedAgentId,
                   {actionBusy === "workspace:initialize" ? <LoaderCircle aria-hidden="true" className="h-4 w-4 animate-spin" /> : <Plus aria-hidden="true" className="h-4 w-4" />}
                 </span>
               </span>
-              <span className="text-sm font-bold leading-5 text-[var(--foreground)]">New AEON repo</span>
+              <span className="text-sm font-bold leading-5 text-[var(--foreground)]">New Aeon Agent Repo</span>
               <span className="text-xs leading-4 text-[var(--muted)]">
                 Name it and choose its location.
               </span>
@@ -1323,6 +2100,7 @@ export function AeonAutopilotPanel({ activeView, displayAgents, selectedAgentId,
           </AeonFleetHex>
           {aeonAgents.map((agent, agentIndex) => {
             const gitBacked = Boolean(agent.aeonRepo?.trim());
+            const repoName = aeonRepoDisplayName(agent);
             return (
               <AeonFleetHex
                 key={agent.id}
@@ -1331,7 +2109,7 @@ export function AeonAutopilotPanel({ activeView, displayAgents, selectedAgentId,
                 tone="default"
                 role="listitem"
                 tabIndex={0}
-                aria-label={`Open AEON repo ${agent.aeonRepoName || agent.name}`}
+                aria-label={`Open AEON repo ${repoName}`}
                 data-aeon-fleet-hex="repo"
                 className="absolute z-10 cursor-pointer hover:scale-[1.025] focus:outline-none focus-visible:drop-shadow-[0_0_18px_rgba(94,234,212,0.42)]"
                 style={{
@@ -1353,8 +2131,8 @@ export function AeonAutopilotPanel({ activeView, displayAgents, selectedAgentId,
                     <Image src={agent.aeonLogoUrl || "/icons/runtimes/aeon.png?v=20260526-runtime-icons-2"} alt="" aria-hidden="true" fill sizes="44px" className="object-cover" unoptimized />
                   </span>
                   <span className="grid min-w-0 justify-items-center gap-0.5">
-                    <span className="min-w-0 break-words text-[18px] font-bold leading-[1.05] text-[var(--foreground)]">{agent.aeonRepoName || agent.name}</span>
-                    <span className="min-w-0 break-words text-[10px] font-semibold uppercase leading-3 text-[var(--muted)]">{agent.name}</span>
+                    <span className="min-w-0 break-words text-[18px] font-bold leading-[1.05] text-[var(--foreground)]">{repoName}</span>
+                    <span className="min-w-0 break-words text-[10px] font-semibold uppercase leading-3 text-[var(--muted)]">{aeonProfileLabel(agent, repoName)}</span>
                   </span>
                   <span className="flex flex-wrap justify-center gap-1">
                     <span
@@ -1386,6 +2164,46 @@ export function AeonAutopilotPanel({ activeView, displayAgents, selectedAgentId,
               </AeonFleetHex>
             );
           })}
+        </div>
+      </section>
+    );
+  }
+
+  if (aeonSchedulerOpen) {
+    const aeonJobCount = schedulerJobs.filter((job) => job.runtime.trim().toLowerCase() === "aeon").length;
+    return (
+      <section className={`${fleetStyles.root} grid gap-4`}>
+        <div className="relative overflow-hidden rounded-lg border border-[rgba(148,163,184,0.16)] bg-[linear-gradient(135deg,rgba(10,14,21,0.94),rgba(18,28,35,0.88)_45%,rgba(16,20,29,0.92))] p-5 shadow-[0_18px_60px_rgba(0,0,0,0.24)]">
+          <div className="absolute inset-x-0 top-0 h-px bg-[linear-gradient(90deg,transparent,rgba(94,234,212,0.65),transparent)]" />
+          <div className="flex flex-wrap items-start justify-between gap-4">
+            <div className="grid min-w-0 gap-2">
+              <p className="eyebrow">Aeon Autopilot</p>
+              <h2 className="m-0 text-xl font-bold leading-tight text-[var(--foreground)]">Scheduler</h2>
+              <p className="m-0 max-w-2xl text-sm leading-6 text-[var(--muted)]">
+                AEON automations only. Toggle, run, edit, or create scheduled work for this workspace without leaving the panel.
+              </p>
+              <div className="flex flex-wrap gap-2 text-xs text-[var(--muted)]">
+                <span className="rounded-md border border-[rgba(94,234,212,0.20)] bg-[rgba(20,184,166,0.08)] px-2 py-1 text-[var(--accent-strong)]">{aeonJobCount} AEON automation{aeonJobCount === 1 ? "" : "s"}</span>
+              </div>
+            </div>
+            <div className="flex flex-wrap items-center justify-end gap-2">
+              <Button type="button" variant="ghost" onClick={() => setAeonSchedulerOpen(false)}>
+                <ChevronLeft aria-hidden="true" />
+                Back to AEON
+              </Button>
+            </div>
+          </div>
+        </div>
+        <div className="flex min-h-[760px] flex-col overflow-hidden rounded-[18px] border border-[rgba(148,163,184,0.16)] bg-[rgba(5,8,13,0.72)]">
+          <SchedulerView
+            jobs={schedulerJobs}
+            runStates={schedulerRunStates}
+            lockedRuntime="aeon"
+            onToggleJob={onSchedulerToggleJob}
+            onRunNow={onSchedulerRunJob}
+            onEditJob={onSchedulerEditJob}
+            onNewJob={onSchedulerNewJob}
+          />
         </div>
       </section>
     );
@@ -1440,7 +2258,7 @@ export function AeonAutopilotPanel({ activeView, displayAgents, selectedAgentId,
           <div className="flex flex-wrap items-center justify-end gap-2">
             <Button type="button" variant="ghost" onClick={() => setPanelMode("fleet")}>
               <ChevronLeft aria-hidden="true" />
-              All AEON Repos
+              All AEON Agents
             </Button>
             <Button type="button" variant="secondary" onClick={() => {
               void refreshFastSecrets();
@@ -1600,7 +2418,288 @@ export function AeonAutopilotPanel({ activeView, displayAgents, selectedAgentId,
         </div>
       ) : null}
 
+      {githubRepoModalOpen ? (
+        <div className="fixed inset-0 z-50 grid place-items-center bg-[rgba(2,6,23,0.72)] p-4 backdrop-blur-sm" role="dialog" aria-modal="true" aria-label="Configure AEON GitHub repo">
+          <div className="grid max-h-[calc(100vh-2rem)] w-full max-w-3xl gap-4 overflow-auto rounded-lg border border-[rgba(94,234,212,0.24)] bg-[rgba(10,14,21,0.96)] p-4 shadow-[0_24px_80px_rgba(0,0,0,0.45)]">
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <p className="eyebrow">AEON GitHub repo</p>
+                <h3 className="m-0 text-lg font-bold text-[var(--foreground)]">{githubRepoModalView === "create" ? "Create and link repo" : "Choose a repo"}</h3>
+                <p className="m-0 mt-1 text-sm leading-6 text-[var(--muted)]">{githubRepoModalView === "create" ? "Create a GitHub repo, set it as this local AEON repo's origin, then return to the overview." : "Pick an existing GitHub repo or create a new one for this AEON workspace."}</p>
+              </div>
+              <Button type="button" size="icon" variant="ghost" aria-label="Close repo selector" onClick={() => setGithubRepoModalOpen(false)}>
+                <X aria-hidden="true" />
+              </Button>
+            </div>
+
+            {githubRepoError ? (
+              <p className="m-0 rounded-md border border-rose-300/24 bg-rose-400/10 px-3 py-2 text-sm text-rose-100">{githubRepoError}</p>
+            ) : null}
+
+            {githubRepoModalView === "select" ? (
+              <div className="grid gap-3">
+                {githubRepoLoading ? (
+                  <div className="grid min-h-[110px] place-items-center rounded-lg border border-[rgba(148,163,184,0.14)] bg-[rgba(15,23,42,0.46)] text-sm text-[var(--muted)]">
+                    <span className="inline-flex items-center gap-2"><LoaderCircle aria-hidden="true" className="h-4 w-4 animate-spin" /> Loading repos...</span>
+                  </div>
+                ) : githubRepoOptions.length ? (
+                  <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+                    <button
+                      type="button"
+                      className="grid min-h-[220px] content-center justify-items-center gap-3 rounded-lg border border-dashed border-[rgba(94,234,212,0.42)] bg-[rgba(20,184,166,0.06)] p-4 text-center text-[var(--accent-strong)] transition hover:bg-[rgba(20,184,166,0.11)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[rgba(94,234,212,0.42)]"
+                      onClick={() => setGithubRepoModalView("create")}
+                    >
+                      <span className="inline-flex h-14 w-14 items-center justify-center rounded-full border border-[rgba(94,234,212,0.36)] bg-[rgba(20,184,166,0.12)]">
+                        <Plus aria-hidden="true" className="h-6 w-6" />
+                      </span>
+                      <span className="text-sm font-bold">Create new GitHub repo</span>
+                    </button>
+                    {githubRepoOptions.map((repo) => (
+                      <article key={repo.fullName} className="grid min-h-[220px] grid-rows-[auto_minmax(0,1fr)_auto] gap-3 rounded-lg border border-[rgba(148,163,184,0.14)] bg-[rgba(15,23,42,0.48)] p-4">
+                        <div className="min-w-0 space-y-2">
+                          <h4 className="m-0 break-words text-sm font-bold text-[var(--foreground)]">{repo.fullName}</h4>
+                          <span className="inline-flex w-fit rounded-full border border-[rgba(148,163,184,0.16)] bg-[rgba(2,6,23,0.36)] px-2 py-1 text-[10px] font-bold uppercase tracking-[0.08em] text-[var(--muted)]">{repo.private ? "Private" : "Public"} · {repo.defaultBranch || "main"}</span>
+                        </div>
+                        <p className="m-0 overflow-hidden text-xs leading-5 text-[var(--muted)] [display:-webkit-box] [-webkit-line-clamp:4] [-webkit-box-orient:vertical]">{repo.description || "No description."}</p>
+                        <Button type="button" size="sm" className="w-full" onClick={() => void connectGithubRepo(repo)} disabled={Boolean(githubRepoBusy)}>
+                          {githubRepoBusy === `connect:${repo.fullName}` ? <LoaderCircle aria-hidden="true" className="animate-spin" /> : <GitBranch aria-hidden="true" />}
+                          Connect
+                        </Button>
+                      </article>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+                    <button
+                      type="button"
+                      className="grid min-h-[220px] content-center justify-items-center gap-3 rounded-lg border border-dashed border-[rgba(94,234,212,0.42)] bg-[rgba(20,184,166,0.06)] p-4 text-center text-[var(--accent-strong)] transition hover:bg-[rgba(20,184,166,0.11)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[rgba(94,234,212,0.42)]"
+                      onClick={() => setGithubRepoModalView("create")}
+                    >
+                      <span className="inline-flex h-14 w-14 items-center justify-center rounded-full border border-[rgba(94,234,212,0.36)] bg-[rgba(20,184,166,0.12)]">
+                        <Plus aria-hidden="true" className="h-6 w-6" />
+                      </span>
+                      <span className="text-sm font-bold">Create new GitHub repo</span>
+                    </button>
+                    <p className="m-0 rounded-lg border border-[rgba(148,163,184,0.14)] bg-[rgba(15,23,42,0.46)] p-4 text-sm text-[var(--muted)]">No repos returned for this GitHub account yet.</p>
+                  </div>
+                )}
+              </div>
+            ) : (
+              <div className="grid gap-4">
+                <label className="grid gap-2 text-xs font-bold uppercase tracking-[0.14em] text-[var(--muted)]">
+                  Repo name
+                  <input
+                    value={githubRepoCreateDraft.name}
+                    onChange={(event) => setGithubRepoCreateDraft((current) => ({ ...current, name: event.target.value }))}
+                    placeholder="aeon-test"
+                    className="min-h-11 rounded-md border border-[rgba(148,163,184,0.18)] bg-[rgba(2,6,23,0.50)] px-3 text-base normal-case tracking-normal text-[var(--foreground)] outline-none transition focus:border-[rgba(94,234,212,0.52)]"
+                  />
+                </label>
+
+                <button
+                  type="button"
+                  className="flex items-center justify-between gap-3 rounded-md border border-[rgba(148,163,184,0.14)] bg-[rgba(15,23,42,0.42)] px-3 py-2 text-left text-sm font-bold text-[var(--foreground)]"
+                  onClick={() => setGithubRepoAdvancedOpen((open) => !open)}
+                >
+                  Advanced
+                  <ChevronLeft aria-hidden="true" className={`h-4 w-4 transition ${githubRepoAdvancedOpen ? "-rotate-90" : "rotate-180"}`} />
+                </button>
+                {githubRepoAdvancedOpen ? (
+                  <div className="grid gap-3 rounded-md border border-[rgba(148,163,184,0.14)] bg-[rgba(2,6,23,0.28)] p-3 md:grid-cols-2">
+                    <label className="grid gap-1 text-xs text-[var(--muted)]">
+                      Organization
+                      <input value={githubRepoCreateDraft.owner} onChange={(event) => setGithubRepoCreateDraft((current) => ({ ...current, owner: event.target.value }))} placeholder="blank for personal account" className="min-h-10 rounded-md border border-[rgba(148,163,184,0.18)] bg-[rgba(2,6,23,0.50)] px-3 text-sm text-[var(--foreground)] outline-none" />
+                    </label>
+                    <label className="grid gap-1 text-xs text-[var(--muted)]">
+                      Visibility
+                      <select value={githubRepoCreateDraft.visibility} onChange={(event) => setGithubRepoCreateDraft((current) => ({ ...current, visibility: event.target.value }))} className="min-h-10 rounded-md border border-[rgba(148,163,184,0.18)] bg-[rgba(2,6,23,0.50)] px-3 text-sm text-[var(--foreground)] outline-none">
+                        <option value="private">Private</option>
+                        <option value="public">Public</option>
+                      </select>
+                    </label>
+                    <label className="grid gap-1 text-xs text-[var(--muted)] md:col-span-2">
+                      Description
+                      <input value={githubRepoCreateDraft.description} onChange={(event) => setGithubRepoCreateDraft((current) => ({ ...current, description: event.target.value }))} placeholder="Optional" className="min-h-10 rounded-md border border-[rgba(148,163,184,0.18)] bg-[rgba(2,6,23,0.50)] px-3 text-sm text-[var(--foreground)] outline-none" />
+                    </label>
+                    <label className="flex items-center gap-2 text-xs font-bold text-[var(--foreground)] md:col-span-2">
+                      <input type="checkbox" checked={githubRepoCreateDraft.autoPush} onChange={(event) => setGithubRepoCreateDraft((current) => ({ ...current, autoPush: event.target.checked }))} />
+                      Push this local AEON repo after linking
+                    </label>
+                  </div>
+                ) : null}
+                <div className="flex flex-wrap justify-between gap-2">
+                  <Button type="button" variant="ghost" onClick={() => setGithubRepoModalView("select")}>Back</Button>
+                  <Button type="button" onClick={() => void createGithubRepo()} disabled={!githubRepoCreateDraft.name.trim() || Boolean(githubRepoBusy)}>
+                    {githubRepoBusy === "create" ? <LoaderCircle aria-hidden="true" className="animate-spin" /> : <Plus aria-hidden="true" />}
+                    {githubRepoBusy === "create" ? "Creating..." : "Create and link"}
+                  </Button>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      ) : null}
+
       <div className={detailView === "overview" ? "grid gap-3 xl:grid-cols-[1.05fr_0.95fr]" : detailView === "settings" ? "contents" : "hidden"}>
+        <section className={`${detailView === "overview" ? "xl:col-span-2" : "hidden"} overflow-hidden rounded-lg border border-[rgba(94,234,212,0.24)] bg-[radial-gradient(circle_at_12%_20%,rgba(94,234,212,0.16),transparent_32%),linear-gradient(135deg,rgba(15,23,42,0.92),rgba(8,13,22,0.82))] p-5 shadow-[0_22px_70px_rgba(0,0,0,0.24)]`}>
+          {resolvedGithubReady === undefined ? (
+            <div className="grid min-h-[220px] place-items-center rounded-xl border border-[rgba(148,163,184,0.14)] bg-[rgba(10,14,21,0.42)]">
+              <span className="inline-flex items-center gap-2 text-sm text-[var(--muted)]">
+                <LoaderCircle aria-hidden="true" className="h-4 w-4 animate-spin" />
+                Checking AEON connection…
+              </span>
+            </div>
+          ) : resolvedGithubReady ? (
+            <div className="relative isolate overflow-hidden rounded-xl border border-[rgba(94,234,212,0.22)] bg-[linear-gradient(135deg,rgba(8,13,22,0.55),rgba(13,20,31,0.5))] p-6 sm:p-7">
+              <div aria-hidden="true" className="pointer-events-none absolute -right-16 -top-24 h-64 w-64 rounded-full bg-[radial-gradient(circle,rgba(45,212,191,0.22),transparent_70%)] blur-2xl" />
+              <div aria-hidden="true" className="pointer-events-none absolute -bottom-24 -left-12 h-56 w-56 rounded-full bg-[radial-gradient(circle,rgba(20,184,166,0.14),transparent_70%)] blur-2xl" />
+
+              <div className="relative grid gap-6 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center">
+                <div className="grid gap-4">
+                  <div className="flex flex-wrap items-center gap-2 text-[11px]">
+                    <span className="inline-flex items-center gap-1.5 rounded-full border border-emerald-300/25 bg-emerald-400/10 px-2.5 py-1 font-bold text-emerald-100">
+                      <Check aria-hidden="true" className="h-3 w-3" /> GitHub connected
+                    </span>
+                    <span className="inline-flex items-center gap-1.5 rounded-full border border-[rgba(94,234,212,0.28)] bg-[rgba(20,184,166,0.12)] px-2.5 py-1 font-bold text-[var(--accent-strong)]">
+                      <GitBranch aria-hidden="true" className="h-3 w-3" /> {githubRepo}
+                    </span>
+                  </div>
+
+                  <div className="flex items-start gap-4">
+                    <span className="relative flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl border border-[rgba(94,234,212,0.34)] bg-[linear-gradient(135deg,rgba(20,184,166,0.3),rgba(8,47,73,0.32))] text-[var(--accent-strong)] shadow-[0_0_34px_rgba(45,212,191,0.28)]">
+                      <Rocket aria-hidden="true" className="h-7 w-7" />
+                      <Sparkles aria-hidden="true" className="absolute -right-1.5 -top-1.5 h-4 w-4 text-amber-200" />
+                    </span>
+                    <div className="grid gap-1.5">
+                      <p className="eyebrow">Aeon Autopilot · Ready</p>
+                      <h3 className="m-0 text-2xl font-bold leading-tight text-[var(--foreground)] sm:text-[28px]">
+                        {schedules.length ? "Create a new automation" : "Create your first automation"}
+                      </h3>
+                      <p className="m-0 max-w-xl text-sm leading-6 text-[var(--muted)]">
+                        GitHub and <strong className="font-semibold text-[var(--foreground)]">{githubRepo}</strong> are wired up. Pick a skill, choose a cadence, and AEON arms it as a scheduled workflow — no YAML or Actions setup.
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="grid gap-2 sm:grid-cols-3">
+                    {[
+                      { Icon: Clock3, title: "Runs on a schedule", body: "Cron, hourly, daily, or manual." },
+                      { Icon: Sparkles, title: "Driven by your skills", body: "Attach a shared-brain skill." },
+                      { Icon: ListChecks, title: "Outputs tracked", body: "Every run is logged for review." },
+                    ].map(({ Icon, title, body }) => (
+                      <div key={title} className="grid gap-1 rounded-lg border border-[rgba(148,163,184,0.14)] bg-[rgba(10,14,21,0.5)] p-3">
+                        <span className="inline-flex items-center gap-1.5 text-xs font-bold text-[var(--foreground)]">
+                          <Icon aria-hidden="true" className="h-3.5 w-3.5 text-[var(--accent-strong)]" /> {title}
+                        </span>
+                        <span className="text-[11px] leading-4 text-[var(--muted)]">{body}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="grid gap-3 lg:w-60">
+                  <Button
+                    type="button"
+                    onClick={() => onSchedulerNewJob?.()}
+                    className="min-h-12 justify-center bg-[linear-gradient(135deg,rgba(45,212,191,0.26),rgba(20,184,166,0.16))] px-5 text-sm font-bold shadow-[0_0_28px_rgba(45,212,191,0.22)] [&_svg]:size-4"
+                  >
+                    <Plus aria-hidden="true" />
+                    Create automation
+                  </Button>
+                  {schedules.length ? (
+                    <Button type="button" variant="secondary" className="min-h-10 justify-center" onClick={() => setAeonSchedulerOpen(true)}>
+                      <Clock3 aria-hidden="true" />
+                      View {schedules.length} automation{schedules.length === 1 ? "" : "s"}
+                    </Button>
+                  ) : (
+                    <Button type="button" variant="secondary" className="min-h-10 justify-center" onClick={() => setDetailView("work")}>
+                      <Sparkles aria-hidden="true" />
+                      Browse skills
+                    </Button>
+                  )}
+                </div>
+              </div>
+
+              <div className="relative mt-5 flex flex-wrap items-center gap-x-4 gap-y-1.5 border-t border-[rgba(148,163,184,0.12)] pt-3 text-[11px] text-[var(--muted)]">
+                <span className="inline-flex items-center gap-1.5">
+                  <ShieldCheck aria-hidden="true" className="h-3.5 w-3.5 text-emerald-300/80" />
+                  Connection ready
+                </span>
+                <button type="button" onClick={openGithubRepoModal} className="font-semibold text-[var(--accent-strong)] underline-offset-2 transition hover:underline">Change repo</button>
+                <button type="button" onClick={openGithubConnectionSettings} className="font-semibold text-[var(--muted)] transition hover:text-[var(--foreground)]">Reconnect GitHub</button>
+                <button
+                  type="button"
+                  onClick={() => void syncSecrets()}
+                  disabled={actionBusy === "sync-secrets" || actionBusy === "sync-all-secrets"}
+                  className="font-semibold text-[var(--muted)] transition hover:text-[var(--foreground)] disabled:opacity-45"
+                >
+                  {actionBusy === "sync-secrets" ? "Syncing keys…" : syncSecretsSucceeded ? "Keys synced" : "Sync keys"}
+                </button>
+              </div>
+            </div>
+          ) : (
+          <div className="grid gap-4 lg:grid-cols-2">
+            <div className={`grid min-h-[220px] grid-cols-[72px_minmax(0,1fr)] gap-4 rounded-lg border p-4 ${githubSecretReady ? "border-emerald-300/24 bg-[linear-gradient(135deg,rgba(16,185,129,0.14),rgba(15,23,42,0.42))]" : "border-[rgba(94,234,212,0.22)] bg-[rgba(15,23,42,0.44)]"}`}>
+              <span className={`flex h-16 w-16 items-center justify-center rounded-md border text-5xl font-black leading-none ${githubSecretReady ? "border-emerald-300/30 bg-emerald-400/10 text-emerald-100" : "border-[rgba(94,234,212,0.32)] bg-[rgba(20,184,166,0.10)] text-[var(--accent-strong)]"}`}>1</span>
+              <div className="grid min-w-0 gap-3">
+                <div>
+                  <p className="eyebrow">Connect GitHub</p>
+                  <h3 className="m-0 text-2xl font-bold leading-tight text-[var(--foreground)]">{githubSecretReady ? "OAuth connected" : "Authorize account access"}</h3>
+                </div>
+                <p className="m-0 text-sm leading-6 text-[var(--muted)]">
+                  {githubSecretReady ? <>AEON can use GitHub OAuth through <code className="rounded border border-[rgba(148,163,184,0.18)] bg-[rgba(2,6,23,0.38)] px-1.5 py-0.5 text-[var(--foreground)]">GH_GLOBAL</code>.</> : <>Authorize GitHub once so AEON can use Actions, workflow dispatch, issue triggers, and repo sync without pasted tokens.</>}
+                </p>
+                <div className="flex flex-wrap gap-2 text-xs">
+                  <span className={`rounded-full border px-3 py-1 font-bold ${githubSecretReady ? "border-emerald-300/25 bg-emerald-400/10 text-emerald-100" : "border-amber-300/25 bg-amber-400/10 text-amber-100"}`}>
+                    {githubSecret?.isSet ? "GitHub key set" : githubSecretReady ? "GitHub key available" : "GitHub key missing"}
+                  </span>
+                </div>
+                <div className="mt-auto flex flex-wrap gap-2">
+                  <Button type="button" onClick={openGithubConnectionSettings}>
+                    <GitBranch aria-hidden="true" />
+                    {githubSecretReady ? "Reconnect GitHub" : "Connect GitHub"}
+                  </Button>
+                </div>
+              </div>
+            </div>
+            <div className={`grid min-h-[220px] grid-cols-[72px_minmax(0,1fr)] gap-4 rounded-lg border p-4 ${githubRepo ? "border-emerald-300/24 bg-[linear-gradient(135deg,rgba(16,185,129,0.12),rgba(15,23,42,0.42))]" : "border-amber-300/24 bg-[linear-gradient(135deg,rgba(251,191,36,0.10),rgba(15,23,42,0.44))]"}`}>
+              <span className={`flex h-16 w-16 items-center justify-center rounded-md border text-5xl font-black leading-none ${githubRepo ? "border-emerald-300/30 bg-emerald-400/10 text-emerald-100" : "border-amber-300/30 bg-amber-400/10 text-amber-100"}`}>2</span>
+              <div className="grid min-w-0 gap-3">
+                <div>
+                  <p className="eyebrow">Configure repo</p>
+                  <h3 className="m-0 text-2xl font-bold leading-tight text-[var(--foreground)]">{githubRepo ? "Repo selected" : "Choose the AEON repo"}</h3>
+                </div>
+                <p className="m-0 text-sm leading-6 text-[var(--muted)]">
+                  {githubRepo ? <>AEON is pointed at <strong className="font-bold text-[var(--foreground)]">{githubRepo}</strong>. Sync keys when you want GitHub Actions to receive shared secrets.</> : "OAuth is account access. AEON still needs the owner/repo that should run workflows and receive synced secrets."}
+                </p>
+                <div className="flex flex-wrap gap-2 text-xs">
+                  <span className={`rounded-full border px-3 py-1 font-bold ${githubRepo ? "border-emerald-300/25 bg-emerald-400/10 text-emerald-100" : "border-amber-300/25 bg-amber-400/10 text-amber-100"}`}>
+                    {githubRepo ? `Repo: ${githubRepo}` : "Repo not configured"}
+                  </span>
+                  <span className={`rounded-full border px-3 py-1 font-bold ${githubPowered ? "border-[rgba(94,234,212,0.32)] bg-[rgba(20,184,166,0.12)] text-[var(--accent-strong)]" : "border-[rgba(148,163,184,0.18)] bg-[rgba(10,14,21,0.42)] text-[var(--muted)]"}`}>
+                    {githubPowered ? "Ready for Actions" : "Local mode still works"}
+                  </span>
+                </div>
+                <div className="mt-auto flex flex-wrap gap-2">
+                  <Button type="button" variant={githubRepo ? "secondary" : "default"} onClick={openGithubRepoModal}>
+                    <GitBranch aria-hidden="true" />
+                    {githubRepo ? "Change repo" : "Configure repo"}
+                  </Button>
+                  <Button type="button" variant="secondary" onClick={() => void syncSecrets()} disabled={actionBusy === "sync-secrets" || actionBusy === "sync-all-secrets" || !githubRepo}>
+                    {actionBusy === "sync-secrets" ? <LoaderCircle aria-hidden="true" className="animate-spin" /> : syncSecretsSucceeded ? <Check aria-hidden="true" /> : <Upload aria-hidden="true" />}
+                    {actionBusy === "sync-secrets" ? "Syncing..." : syncSecretsSucceeded ? "Success!" : "Sync keys"}
+                  </Button>
+                  <Button type="button" variant="secondary" onClick={() => void syncAllSecrets()} disabled={actionBusy === "sync-secrets" || actionBusy === "sync-all-secrets" || !githubRepo} title="Push every key in your shared brain's shared env to AEON repo secrets">
+                    {actionBusy === "sync-all-secrets" ? <LoaderCircle aria-hidden="true" className="animate-spin" /> : syncAllSecretsSucceeded ? <Check aria-hidden="true" /> : <Upload aria-hidden="true" />}
+                    {actionBusy === "sync-all-secrets" ? "Syncing all..." : syncAllSecretsSucceeded ? "Success!" : "Sync all shared env"}
+                  </Button>
+                </div>
+              </div>
+            </div>
+          </div>
+          )}
+        </section>
+
         <section className="hidden rounded-lg border border-[rgba(148,163,184,0.16)] bg-[rgba(16,20,29,0.78)] p-4">
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div>
@@ -1643,27 +2742,6 @@ export function AeonAutopilotPanel({ activeView, displayAgents, selectedAgentId,
             <Metric label="Success" value={`${analytics?.summary.successRate ?? 0}%`} />
             <Metric label="Failures" value={analytics?.summary.failure ?? failedRuns} tone={(analytics?.summary.failure ?? failedRuns) > 0 ? "rose" : undefined} />
             <Metric label="Skills used" value={analytics?.summary.uniqueSkills ?? 0} />
-          </div>
-          <div className="mt-4 grid gap-2">
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <h4 className="m-0 text-sm font-bold text-[var(--foreground)]">Agents</h4>
-              <span className="rounded border border-[rgba(94,234,212,0.18)] bg-[rgba(20,184,166,0.07)] px-2 py-1 text-[10px] font-bold uppercase leading-3 text-[var(--accent-strong)]">
-                {aeonRepoProfileAgents.length}
-              </span>
-            </div>
-            <div className="grid gap-2 md:grid-cols-2">
-              {aeonRepoProfileAgents.map((agent) => (
-                <AeonRepoAgentCard
-                  key={agent.id}
-                  agent={agent}
-                  onOpen={() => {
-                    setSelectedAgentId(agent.id);
-                    setAgentSettingsPanel("memory");
-                    setAgentRoleModalId(agent.id);
-                  }}
-                />
-              ))}
-            </div>
           </div>
           <div className="mt-4 grid gap-2">
             {(analytics?.insights ?? []).slice(0, 4).map((insight, index) => (
@@ -1711,6 +2789,32 @@ export function AeonAutopilotPanel({ activeView, displayAgents, selectedAgentId,
           </div>
         </section>
 
+        <section className={`${detailView === "settings" ? "" : "hidden"} rounded-lg border border-rose-300/20 bg-[linear-gradient(135deg,rgba(127,29,29,0.18),rgba(16,20,29,0.78))] p-4`}>
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <p className="eyebrow">Danger zone</p>
+              <h3 className="m-0 text-base font-bold">Local workspace cleanup</h3>
+            </div>
+            <Trash2 aria-hidden="true" className="h-5 w-5 text-rose-200" />
+          </div>
+          <p className="m-0 mt-3 text-xs leading-5 text-[var(--muted)]">
+            Remove the local Git link when you want to keep files but detach this workspace from GitHub. Delete the local repo when the folder should disappear from this AEON list.
+          </p>
+          <div className="mt-4 grid gap-2 text-sm">
+            <StatusRow label="Local path" value={status?.status?.root || selectedAgent.aeonLocalPath || selectedAgent.localDataDir || "~/.aeon"} ok={Boolean(status?.status?.root || selectedAgent.aeonLocalPath || selectedAgent.localDataDir)} />
+          </div>
+          <div className="mt-4 flex flex-wrap gap-2">
+            <Button type="button" size="sm" variant="secondary" onClick={() => void deleteAeonWorkspace("delete-git")} disabled={actionBusy === "workspace:delete-git" || !(status?.status?.root || selectedAgent.aeonLocalPath || selectedAgent.localDataDir)}>
+              {actionBusy === "workspace:delete-git" ? <LoaderCircle aria-hidden="true" className="animate-spin" /> : <GitBranch aria-hidden="true" />}
+              Delete Git only
+            </Button>
+            <Button type="button" size="sm" variant="danger" onClick={() => void deleteAeonWorkspace("delete-local")} disabled={actionBusy === "workspace:delete-local" || !(status?.status?.root || selectedAgent.aeonLocalPath || selectedAgent.localDataDir)}>
+              {actionBusy === "workspace:delete-local" ? <LoaderCircle aria-hidden="true" className="animate-spin" /> : <Trash2 aria-hidden="true" />}
+              Delete local repo
+            </Button>
+          </div>
+        </section>
+
         <section className={`${detailView === "overview" ? "" : "hidden"} rounded-lg border border-[rgba(148,163,184,0.16)] bg-[rgba(16,20,29,0.78)] p-4`}>
           <div className="flex items-center justify-between gap-3">
             <div>
@@ -1727,7 +2831,7 @@ export function AeonAutopilotPanel({ activeView, displayAgents, selectedAgentId,
         </section>
       </div>
 
-      <div className={detailView === "work" ? "grid gap-3 xl:grid-cols-[1fr_1.2fr] xl:items-start" : detailView === "settings" ? "contents" : "hidden"}>
+      <div className={detailView === "work" ? "grid gap-3" : detailView === "settings" ? "contents" : "hidden"}>
         <section className={`${detailView === "settings" ? "" : "hidden"} rounded-lg border border-[rgba(148,163,184,0.16)] bg-[rgba(16,20,29,0.78)] p-4`}>
           <div className="flex items-center justify-between gap-3">
             <div>
@@ -1750,8 +2854,8 @@ export function AeonAutopilotPanel({ activeView, displayAgents, selectedAgentId,
               Sync skill library
             </Button>
             <Button type="button" size="sm" variant="secondary" onClick={() => void syncSecrets()} disabled={actionBusy === "sync-secrets" || !(selectedAgent.aeonRepo || status?.status?.repo)}>
-              {actionBusy === "sync-secrets" ? <LoaderCircle aria-hidden="true" className="animate-spin" /> : <Upload aria-hidden="true" />}
-              Sync keys
+              {actionBusy === "sync-secrets" ? <LoaderCircle aria-hidden="true" className="animate-spin" /> : syncSecretsSucceeded ? <Check aria-hidden="true" /> : <Upload aria-hidden="true" />}
+              {actionBusy === "sync-secrets" ? "Syncing..." : syncSecretsSucceeded ? "Success!" : "Sync keys"}
             </Button>
             <Button type="button" size="sm" variant="ghost" onClick={() => setActiveView("files")}>
               <FileText aria-hidden="true" />
@@ -1785,7 +2889,7 @@ export function AeonAutopilotPanel({ activeView, displayAgents, selectedAgentId,
                 <FileUp aria-hidden="true" />
                 Import skill
               </Button>
-              <Button type="button" size="sm" variant="ghost" onClick={() => setActiveView("scheduler")}>
+              <Button type="button" size="sm" variant="ghost" onClick={() => { setAeonSchedulerOpen(true); onSchedulerOpen?.(); }}>
                 <Clock3 aria-hidden="true" />
                 Scheduler
               </Button>
@@ -1882,8 +2986,9 @@ export function AeonAutopilotPanel({ activeView, displayAgents, selectedAgentId,
                 ) : null}
               </div>
             ) : null}
-            <div className="grid gap-2">
-              {visibleSkillRows.map((skill) => {
+            {visibleSkillRows.length ? (
+              <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+                {visibleSkillRows.map((skill) => {
                 const canAutomateRuntime = Boolean(skill.runtimeSkill && skill.automationState === "ready");
                 const canOpenConvert = Boolean(!canAutomateRuntime && skill.sharedSkill && skill.automationState === "available");
                 const canRun = Boolean(skill.runtimeSkill?.runtimeSchedule);
@@ -1891,11 +2996,11 @@ export function AeonAutopilotPanel({ activeView, displayAgents, selectedAgentId,
                 return (
                   <div
                     key={`${skill.source}:${skill.slug}`}
-                    className={`grid gap-3 rounded-md border border-[rgba(148,163,184,0.12)] px-4 py-3 hover:bg-[rgba(94,234,212,0.08)] md:grid-cols-[minmax(0,1fr)_auto] md:items-center ${selectedSkillSlug === skill.slug ? "bg-[rgba(94,234,212,0.12)]" : "bg-[rgba(10,14,21,0.38)]"}`}
+                    className={`flex h-full flex-col gap-3 rounded-md border px-4 py-3 transition hover:border-[rgba(94,234,212,0.32)] hover:bg-[rgba(94,234,212,0.08)] ${selectedSkillSlug === skill.slug ? "border-[rgba(94,234,212,0.4)] bg-[rgba(94,234,212,0.12)]" : "border-[rgba(148,163,184,0.12)] bg-[rgba(10,14,21,0.38)]"}`}
                   >
                     <button
                       type="button"
-                      className="grid min-w-0 gap-1 text-left"
+                      className="grid min-w-0 flex-1 content-start gap-1.5 text-left"
                       onClick={() => {
                         setSelectedSkillSlug(skill.slug);
                         const runtimeSkill = visibleSkills.find((item) => item.slug === skill.slug);
@@ -1907,7 +3012,7 @@ export function AeonAutopilotPanel({ activeView, displayAgents, selectedAgentId,
                         });
                       }}
                     >
-                      <span className="text-sm font-bold text-[var(--foreground)]">{skill.name}</span>
+                      <span className="text-sm font-bold text-[var(--foreground)] [overflow-wrap:anywhere]">{skill.name}</span>
                       <span className="flex flex-wrap items-center gap-2 text-[11px] text-[var(--muted)]">
                         <span>{skill.statusLabel} · {skill.runtimeSkill ? skillSourceLabel(skill.runtimeSkill.source) : "Shared Brain"}</span>
                         {skill.runtimeSkill?.automationYaml ? (
@@ -1919,7 +3024,7 @@ export function AeonAutopilotPanel({ activeView, displayAgents, selectedAgentId,
                         </span>
                       </span>
                     </button>
-                    <div className="flex flex-wrap items-center gap-2 md:justify-end">
+                    <div className="mt-auto flex flex-wrap items-center gap-2">
                       {canAutomateRuntime && skill.runtimeSkill ? (
                         <Button type="button" size="sm" variant="secondary" onClick={() => void automateAeonSkill(skill.runtimeSkill!)} disabled={actionBusy === actionBusyKey}>
                           {actionBusy === actionBusyKey ? <LoaderCircle aria-hidden="true" className="animate-spin" /> : <Rocket aria-hidden="true" />}
@@ -1944,14 +3049,14 @@ export function AeonAutopilotPanel({ activeView, displayAgents, selectedAgentId,
                     </div>
                   </div>
                 );
-              })}
-              {!visibleSkillRows.length ? (
-                <EmptyState
-                  icon={<Bot aria-hidden="true" />}
-                  text={skillSourceView === "aeon" ? aeonEmptyText : "No Shared Brain skills match this filter yet."}
-                />
-              ) : null}
-            </div>
+                })}
+              </div>
+            ) : (
+              <EmptyState
+                icon={<Bot aria-hidden="true" />}
+                text={skillSourceView === "aeon" ? aeonEmptyText : "No Shared Brain skills match this filter yet."}
+              />
+            )}
           </div>
           {selectedSkill ? (
             <div className="mt-4 grid gap-3 rounded-md border border-[rgba(94,234,212,0.18)] bg-[rgba(20,184,166,0.06)] p-3">
@@ -1984,8 +3089,8 @@ export function AeonAutopilotPanel({ activeView, displayAgents, selectedAgentId,
                     <input value={selectedDraft.var} onChange={(event) => setSkillDraft((current) => ({ ...current, var: event.target.value }))} onBlur={() => void updateSelectedSkill("var", selectedDraft.var)} className="rounded-md border border-[rgba(148,163,184,0.18)] bg-[rgba(2,6,23,0.5)] px-3 py-2 text-[var(--foreground)] outline-none" />
                   </label>
                   <label className="grid gap-1 text-xs text-[var(--muted)]">
-                    Model
-                    <input value={selectedDraft.model} onChange={(event) => setSkillDraft((current) => ({ ...current, model: event.target.value }))} onBlur={() => void updateSelectedSkill("model", selectedDraft.model)} className="rounded-md border border-[rgba(148,163,184,0.18)] bg-[rgba(2,6,23,0.5)] px-3 py-2 text-[var(--foreground)] outline-none" />
+                    Skill model override
+                    <input value={selectedDraft.model} onChange={(event) => setSkillDraft((current) => ({ ...current, model: event.target.value }))} onBlur={() => void updateSelectedSkill("model", selectedDraft.model)} placeholder="Blank uses repo default" className="rounded-md border border-[rgba(148,163,184,0.18)] bg-[rgba(2,6,23,0.5)] px-3 py-2 text-[var(--foreground)] outline-none" />
                   </label>
                 </div>
               </details>
@@ -2136,7 +3241,7 @@ export function AeonAutopilotPanel({ activeView, displayAgents, selectedAgentId,
             ))}
           </div>
           <div className="mt-3 rounded-md border border-[rgba(94,234,212,0.14)] bg-[rgba(20,184,166,0.06)] p-3 text-xs leading-5 text-[var(--muted)]">
-            Default sync pushes the core keys only: {DEFAULT_SECRET_KEYS.join(", ")}. Optional notification and provider keys stay visible here as the expected AEON surface.
+            Default sync pushes the core keys only: {DEFAULT_SECRET_KEYS.join(", ")}. Optional notification and provider keys stay visible here as the expected AEON surface. Use <strong className="font-bold text-[var(--foreground)]">Sync all shared env</strong> to push every key in your shared brain&apos;s shared env section.
           </div>
         </section>
 
@@ -2243,38 +3348,6 @@ function ConvertInfo({ label, value, detail }: { label: string; value: string; d
   );
 }
 
-function AeonRepoAgentCard({ agent, onOpen }: { agent: AgentProfile; onOpen: () => void }) {
-  const gitBacked = Boolean(agent.aeonRepo?.trim());
-  const role = agent.beeRole || "worker";
-  const workerClass = agent.workerClass || "general";
-  return (
-    <button
-      type="button"
-      className="group grid gap-3 rounded-md border border-[rgba(148,163,184,0.14)] bg-[linear-gradient(135deg,rgba(2,6,23,0.54),rgba(20,184,166,0.07))] p-3 text-left shadow-[0_10px_26px_rgba(0,0,0,0.16)] transition duration-200 hover:-translate-y-0.5 hover:border-[rgba(94,234,212,0.38)] hover:bg-[linear-gradient(135deg,rgba(2,6,23,0.62),rgba(20,184,166,0.14))] hover:shadow-[0_16px_34px_rgba(20,184,166,0.12)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[rgba(45,212,191,0.34)]"
-      onClick={onOpen}
-      aria-label={`Edit ${agent.name}`}
-      title={`Edit ${agent.name}`}
-    >
-      <div className="flex items-start gap-3">
-        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md border border-[rgba(94,234,212,0.22)] bg-[rgba(20,184,166,0.10)] text-[var(--accent-strong)] transition group-hover:border-[rgba(94,234,212,0.42)] group-hover:bg-[rgba(20,184,166,0.16)]">
-          <Bot aria-hidden="true" className="h-4 w-4" />
-        </span>
-        <span className="grid min-w-0 gap-1">
-          <strong className="min-w-0 break-words text-sm leading-5 text-[var(--foreground)]">{agent.name}</strong>
-          <span className="break-words text-[11px] uppercase leading-4 text-[var(--muted)]">{workerClass} · {role}</span>
-        </span>
-      </div>
-      <div className="flex flex-wrap gap-1.5 text-[10px] font-bold uppercase leading-3">
-        <span className="rounded border border-[rgba(148,163,184,0.16)] bg-[rgba(15,23,42,0.58)] px-1.5 py-0.5 text-[var(--muted)]">{agent.machineName || "This Mac"}</span>
-        <span className="rounded border border-[rgba(148,163,184,0.16)] bg-[rgba(15,23,42,0.58)] px-1.5 py-0.5 text-[var(--muted)]">{aeonModeBadgeLabel(agent)}</span>
-        <span className={`rounded border px-1.5 py-0.5 ${gitBacked ? "border-[rgba(74,222,128,0.28)] bg-[rgba(34,197,94,0.10)] text-emerald-200" : "border-[rgba(251,191,36,0.26)] bg-[rgba(245,158,11,0.10)] text-amber-200"}`}>
-          {gitBacked ? "Online" : "Offline"}
-        </span>
-      </div>
-    </button>
-  );
-}
-
 function Metric({ label, value, tone }: { label: string; value: string | number; tone?: "rose" }) {
   return (
     <div className={`rounded-md border p-3 ${tone === "rose" ? "border-rose-300/20 bg-rose-400/10" : "border-[rgba(148,163,184,0.12)] bg-[rgba(10,14,21,0.34)]"}`}>
@@ -2288,7 +3361,7 @@ function AeonFleetMeta({ label, value }: { label: string; value: string }) {
   return (
     <span className="grid min-w-0 justify-items-center gap-0.5 rounded border border-[rgba(148,163,184,0.14)] bg-[rgba(2,6,23,0.50)] px-2 py-1">
       <span className="text-[8px] font-bold uppercase leading-3 text-[var(--muted)]">{label}</span>
-      <span className="min-w-0 break-words text-center text-[10px] font-bold leading-3 text-[var(--foreground)]">{value}</span>
+      <span className="w-full min-w-0 break-all text-center text-[10px] font-bold leading-3 text-[var(--foreground)]">{value}</span>
     </span>
   );
 }

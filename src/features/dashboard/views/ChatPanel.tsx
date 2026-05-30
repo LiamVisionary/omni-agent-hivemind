@@ -41,6 +41,18 @@ function modelValueLabel(value?: string) {
   return trimmed;
 }
 
+// Compact label for the composer model button: drop the provider prefix
+// from ids like "anthropic/hermes-3" so the pill stays readable.
+function shortModelLabel(value?: string) {
+  const trimmed = value?.trim();
+  if (!trimmed) return "Model";
+  if (trimmed.toLowerCase() === "adaptive") return "Adaptive";
+  const slash = trimmed.lastIndexOf("/");
+  return slash >= 0 ? trimmed.slice(slash + 1) : trimmed;
+}
+
+const MODEL_SWITCHABLE_RUNTIMES = ["hermes", "openclaw", "openai-compatible"];
+
 function runtimeIdentityLabel(agent?: any, runtimeModelSelection?: any, runtimeModelSelectionsByRuntime?: Record<string, any>) {
   if (!agent) return "not-set";
   const runtime = agent.runtime?.trim() || "not-set";
@@ -214,7 +226,7 @@ function AgentProcessPanel({ Activity, ChevronDown, ChevronUp, CircleAlert, File
 }
 
 export function ChatPanel(props: any) {
-  const { Activity, AgentResponseLoader, AlignLeft, Button, ChatMarkdown, Check, ChevronDown, ChevronUp, CircleAlert, ComposerField, Copy, FileText, Folder, GitBranch, Hammer, Image, KanbanSquare, LoaderCircle, MessageAttachments, MessageSquare, Monitor, Pencil, RUNTIME_LABELS, Search, Sparkles, Terminal, Tooltip, TooltipContent, TooltipProvider, TooltipTrigger, Upload, activeView, aeonEnvKeys, aeonEnvSyncStatus, aeonEnvSyncing, attachChatDirectory, attachChatRecentDirectory, attachmentError, attachmentMenuOpen, attachmentMenuRef, beeRoleIconPath, busy, changeChatWorkingDirectory, chatAttachments, chatClass, chatContextMenu, chatContextMenuRef, chatDirectories, chatDisplayContent, chatFileInputRef, chatImageInputRef, chatKanbanGeneration, chatSidebarTree, checkStatus, dismissChatKanbanGeneration, displayAgents, expandedChatFolders, fleetClass, formatAgentEnvText, formatRelativeTime, generateKanbanTaskFromChat, handleChatFileChange, handleChatImageChange, hasStreamingChunk, lastAssistant, machineGroups, messagesEndRef, messagesScrollRef, parseAgentEnvText, recentDirectories, recentDirectoriesExpanded, recording, refreshRuntimeIntegrations, removeChatAttachment, removeChatDirectory, runtimeModelSelection, runtimeModelSelectionsByRuntime, selectedAgent, selectedChatDirectory, selectedChatMachine, selectedChatProcess, sendMessage, sessionNotice, setAeonEnvKeys, setAttachmentMenuOpen, setChatContextMenu, setExpandedChatFolders, setRecentDirectoriesExpanded, setStatus, setStatusAgentId, setText, startAgentChat, startAudioRecording, status, statusAgentId, stopAudioRecording, switchRuntime, syncAeonEnvToGitHub, text, updateAgent, updateChatAutoScroll, vaultClass, visibleMessages, voiceBands, voiceTarget, voiceTranscript } = props;
+  const { Activity, AgentResponseLoader, AlignLeft, Button, ChatMarkdown, Check, ChevronDown, ChevronUp, CircleAlert, ComposerField, Copy, FileText, Folder, GitBranch, Hammer, Image, KanbanSquare, LoaderCircle, MessageAttachments, MessageSquare, Monitor, Pencil, RUNTIME_LABELS, Search, Sparkles, Terminal, Tooltip, TooltipContent, TooltipProvider, TooltipTrigger, Upload, activeView, aeonEnvKeys, aeonEnvSyncStatus, aeonEnvSyncing, attachChatDirectory, attachChatRecentDirectory, attachmentError, attachmentMenuOpen, attachmentMenuRef, beeRoleIconPath, busy, changeChatWorkingDirectory, chatAttachments, chatClass, chatContextMenu, chatContextMenuRef, chatDirectories, chatDisplayContent, chatFileInputRef, chatImageInputRef, chatKanbanGeneration, chatSidebarTree, checkStatus, dismissChatKanbanGeneration, displayAgents, expandedChatFolders, fleetClass, formatAgentEnvText, formatRelativeTime, generateKanbanTaskFromChat, handleChatFileChange, handleChatImageChange, hasStreamingChunk, lastAssistant, machineGroups, messagesEndRef, messagesScrollRef, parseAgentEnvText, recentDirectories, recentDirectoriesExpanded, recording, refreshRuntimeIntegrations, removeChatAttachment, removeChatDirectory, runRuntimeIntegrationAction, runtimeIntegrationBusy, runtimeModelSelection, runtimeModelSelectionsByRuntime, selectedAgent, selectedChatDirectory, selectedChatMachine, selectedChatProcess, sendMessage, sessionNotice, setAeonEnvKeys, setAttachmentMenuOpen, setChatContextMenu, setExpandedChatFolders, setRecentDirectoriesExpanded, setStatus, setStatusAgentId, setText, startAgentChat, startAudioRecording, status, statusAgentId, stopAudioRecording, switchRuntime, syncAeonEnvToGitHub, text, updateAgent, updateChatAutoScroll, vaultClass, visibleMessages, voiceBands, voiceTarget, voiceTranscript } = props;
   const [openKanbanTaskMenuKey, setOpenKanbanTaskMenuKey] = useState("");
   const [copiedMessageKey, setCopiedMessageKey] = useState("");
   const [agentMode, setAgentMode] = useState<"plan" | "act">("act");
@@ -238,6 +250,35 @@ export function ChatPanel(props: any) {
   }
   const selectedAgentIsQueen = selectedAgent?.beeRole === "queen";
   const selectedRuntimeModelSelection = selectedAgent ? runtimeModelSelectionsByRuntime?.[selectedAgent.runtime] : undefined;
+  const chatModelProviders = selectedRuntimeModelSelection?.providers ?? [];
+  const chatCurrentProvider = selectedAgent ? (selectedAgent.provider?.trim() || selectedRuntimeModelSelection?.provider || "") : "";
+  const chatCurrentModel = selectedAgent ? (selectedAgent.model?.trim() || selectedRuntimeModelSelection?.model || "") : "";
+  const modelPickerEnabled = Boolean(selectedAgent) && MODEL_SWITCHABLE_RUNTIMES.includes(selectedAgent?.runtime);
+  function selectChatModel(provider: string, model: string) {
+    if (!selectedAgent) return;
+    updateAgent({ provider, model });
+    // Hermes/OpenClaw keep the active model in their own runtime config, so push
+    // the change through set-model too; other runtimes read it from the profile.
+    if (selectedAgent.runtime === "hermes" || selectedAgent.runtime === "openclaw") {
+      void runRuntimeIntegrationAction?.("set-model", { provider, model }, { ...selectedAgent, provider, model });
+    }
+  }
+  const modelPicker = modelPickerEnabled ? {
+    label: shortModelLabel(chatCurrentModel),
+    provider: chatCurrentProvider,
+    model: chatCurrentModel,
+    providers: chatModelProviders,
+    loading: runtimeIntegrationBusy === "status",
+    emptyHint: "No models configured for this agent yet. Open agent settings to add one.",
+    onSelect: selectChatModel,
+    onOpen: () => {
+      if (!selectedAgent || chatModelProviders.length) return;
+      void refreshRuntimeIntegrations?.(selectedAgent);
+    },
+    onRefresh: () => {
+      if (selectedAgent) void refreshRuntimeIntegrations?.(selectedAgent);
+    },
+  } : undefined;
   const shouldLoadRuntimeIdentity = selectedAgent
     && activeView === "chat"
     && !selectedAgent.provider?.trim()
@@ -903,6 +944,7 @@ export function ChatPanel(props: any) {
                 hermesSlashCommands={selectedAgent.runtime === "hermes"}
                 agentMode={agentMode}
                 onAgentModeChange={setAgentMode}
+                modelPicker={modelPicker}
               />
             </form>
             <p className={chatClass("composerHint")}>

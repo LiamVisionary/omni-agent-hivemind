@@ -1520,3 +1520,132 @@ cached 0 public candidates in /Users/liam/Documents/github-assimilator-vault
 - Query: `aaronjmars aeon dashboard aeon.yml config`
 - Decision: retrieved
 - Reason: Retrieved 0 public candidates from GitHub search.
+## 2026-05-30T12:34:38.097866+00:00 - local-search
+
+- Request: Improve existing React settings modal UI for AEON connection modes with card controls instead of inputs
+- Source: local-index
+- Query: `Improve existing React settings modal UI for AEON connection modes with card controls instead of inputs`
+- Decision: retrieved
+- Reason: Retrieved local/private-visible index hits.
+- Note: 1. score=12.76 react-native-google-signin/google-signin-next [repo-summary]
+   url: https://github.com/react-native-google-signin/google-signin-next
+   note: /Users/liam/Documents/github-assimilator-vault/Repos/react-native-google-signin-google-signin-next.md
+   react-native-google-signin/google-signin-next Google Sign-in for your React Native applications TypeScript React React Native
+2. score=10.27 nativelaunch/expolaunch-template [repo-summary]
+   url: https://github.com/nativelaunch/expolaunch-template
+   note: /Users/liam/Documents/github-assimilator-vault/Repos/nativelaunch-expolaunch-template.md
+   nativelaunch/expolaunch-template NativeLaunch Starter – Expo SDK 55 + React Native template with Supabase, RevenueCat, OneSignal, UniWind + HeroUI Native. TypeScript Expo React React Native
+3. score=10.27 nativelaunch/nativelaunch-monorepo-template [repo-summary]
+   url: https://github.com/nativelaunch/nativelaunch-monorepo-template
+   note: /Users/liam/Documents/github-assimilator-vault/Repos/nativelaunch-nativelaunch-monorepo-template.md
+   nativelaunch/nativelaunch-monorepo-template NativeLaunch Monorepo – Expo SDK 55 + React Native + Turborepo + UniWind + HeroUI Native. Monorepo template with shared packages. TypeScript Expo React React Native
+4. score=3.70 LiamVisionary/exercise-db [repo-summary]
+   url: https://github.com/LiamVisionary/exercise-db
+   note: /Users/liam/Documents/github-assimilator-vault/Repos/LiamVisionary-exercise-db.md
+   LiamVisionary/exercise-db Open Public Domain Exercise Dataset in JSON format, over 800 exercises with a browsable public searchable frontend
+5. score=3.64 LiamVisionary/ami-revenue-optimizer [repo-summary]
+   url: https://github.com/LiamVisionary/ami-revenue-optimizer
+   note: /Users/liam/Documents/github-assimilator-vault/Repos/LiamVisionary-ami-revenue-optimizer.md
+   LiamVisionary/ami-revenue-optimizer CrewAI-based revenue optimizer and ad management flows for Ami AI Companion Python Python
+6. score=3.64 LiamVisionary/claw-code-mobile [repo-summary]
+   url: https://github.com/LiamVisionary/claw-code-mobile
+   note: /Users/liam/Documents/github-assimilator-vault/Repos/LiamVisionary-claw-code-mobile.md
+   LiamVisionary/claw-code-mobile The #1 remote agent UX on the go. Powered by the acclaimed Claw Code harness and the flexibility of any llm. Rust
+7. score=3.64 LiamVisionary/skills [repo-summary]
+   url: https://github.com/LiamVisionary/skills
+   note: /Users/liam/Documents/github-assimilator-vault/Repos/LiamVisionary-skills.md
+   LiamVisionary/skills All versions of all skills that are on clawhub.com archived
+8. score=3.48 LiamVisionary/maps-agency [repo-summary]
+   url: https://github.com/LiamVisionary/maps-agency
+   note: /Users/liam/Documents/github-assimilator-vault/Repos/LiamVisionary-maps-agency.md
+   LiamVisionary/maps-agency 7-agent solo web design agency: scouts narrow-niche local businesses on Google Maps, diagnoses, builds Lovable mockups, films Higgsfield videos, pitches by channel, books Zooms — single API key, file-system shared
+
+## 2026-05-30T12:34:41.470165+00:00 - prebuild-gate
+
+- Request: Improve existing React settings modal UI for AEON connection modes with card controls instead of inputs
+- Source: public-github
+- Query: `Improve existing React settings modal UI for AEON connection modes with card controls instead of inputs`
+- Decision: passed
+- Reason: Public search returned candidates; choose and audit backbone/donors before implementation.
+## 2026-05-30T14:28:10.237188+00:00 - local-search
+
+- Request: Add private by default toggle to AEON clone official config and fix GitHub secrets sync count
+- Source: local-index
+- Query: `Add private by default toggle to AEON clone official config and fix GitHub secrets sync count`
+- Decision: retrieved
+- Reason: Retrieved local/private-visible index hits.
+- Note: 1. score=6.99 LiamVisionary/claw-code-mobile [repo-summary]
+   url: https://github.com/LiamVisionary/claw-code-mobile
+   note: /Users/liam/Documents/github-assimilator-vault/Repos/LiamVisionary-claw-code-mobile.md
+   LiamVisionary/claw-code-mobile The #1 remote agent UX on the go. Powered by the acclaimed Claw Code harness and the flexibility of any llm. Rust
+2. score=5.06 LiamVisionary/claw-code-mobile-private [repo-summary]
+   url: https://github.com/LiamVisionary/claw-code-mobile-private
+   note: /Users/liam/Documents/github-assimilator-vault/Repos/LiamVisionary-claw-code-mobile-private.md
+   LiamVisionary/claw-code-mobile-private Private fork: on-device inference + experimental features Rust
+3. score=4.04 LiamVisionary/claw-code [repo-summary]
+   url: https://github.com/LiamVisionary/claw-code
+   note: /Users/liam/Documents/github-assimilator-vault/Repos/LiamVisionary-claw-code.md
+   LiamVisionary/claw-code The repo is finally unlocked. enjoy the party! The fastest repo in history to surpass 100K stars ⭐. Join Discord: https://discord.gg/5TUQKqFWd Built in Rust using oh-my-codex.
+4. score=3.64 LiamVisionary/maps-agency [repo-summary]
+   url: https://github.com/LiamVisionary/maps-agency
+   note: /Users/liam/Documents/github-assimilator-vault/Repos/LiamVisionary-maps-agency.md
+   LiamVisionary/maps-agency 7-agent solo web design agency: scouts narrow-niche local businesses on Google Maps, diagnoses, builds Lovable mockups, films Higgsfield videos, pitches by channel, books Zooms — single API key, file-system shared 
+5. score=3.35 LiamVisionary/ami-revenue-optimizer [repo-summary]
+   url: https://github.com/LiamVisionary/ami-revenue-optimizer
+   note: /Users/liam/Documents/github-assimilator-vault/Repos/LiamVisionary-ami-revenue-optimizer.md
+   LiamVisionary/ami-revenue-optimizer CrewAI-based revenue optimizer and ad management flows for Ami AI Companion Python Python
+6. score=3.35 LiamVisionary/floradex [repo-summary]
+   url: https://github.com/LiamVisionary/floradex
+   note: /Users/liam/Documents/github-assimilator-vault/Repos/LiamVisionary-floradex.md
+   LiamVisionary/floradex An AI powered plant scanner and collection tracker. TypeScript
+7. score=0.44 LiamVisionary/ai-headshot-generator [repo-summary]
+   url: https://github.com/LiamVisionary/ai-headshot-generator
+   note: /Users/liam/Documents/github-assimilator-vault/Repos/LiamVisionary-ai-headshot-generator.md
+   LiamVisionary/ai-headshot-generator TypeScript
+8. score=0.44 LiamVisionary/fantom-survivor-testnet [repo-summary]
+   url: https://github.com/LiamVisionary/fantom-survivor-testnet
+   note: /Users/liam/Documents/github-assimilator-vault/Repos/LiamVisionary-fantom-survivor-testnet.md
+   LiamVisionary/fantom-survivor-testnet
+
+## 2026-05-30T14:28:13.135973+00:00 - prebuild-gate
+
+- Request: Add private by default toggle to AEON clone official config and fix GitHub secrets sync count
+- Source: public-github
+- Query: `Add private by default toggle to AEON clone official config and fix GitHub secrets sync count`
+- Decision: passed
+- Reason: Public search returned candidates; choose and audit backbone/donors before implementation.
+## 2026-05-30T15:03:30.219409+00:00 - local-search
+
+- Request: HivemindOS AEON dashboard auto commit push before GitHub Actions run, increment clone workspace names, delete local repo or git metadata UI
+- Source: local-index
+- Query: `HivemindOS AEON dashboard auto commit push before GitHub Actions run, increment clone workspace names, delete local repo or git metadata UI`
+- Decision: retrieved
+- Reason: Retrieved local/private-visible index hits.
+- Note: 1. score=7.55 LiamVisionary/claw-code [repo-summary]
+   url: https://github.com/LiamVisionary/claw-code
+   note: /Users/liam/Documents/github-assimilator-vault/Repos/LiamVisionary-claw-code.md
+   LiamVisionary/claw-code The repo is finally unlocked. enjoy the party! The fastest repo in history to surpass 100K stars ⭐. Join Discord: https://discord.gg/5TUQKqFWd Built in Rust using oh-my-codex.
+2. score=4.74 LiamVisionary/maps-agency [repo-summary]
+   url: https://github.com/LiamVisionary/maps-agency
+   note: /Users/liam/Documents/github-assimilator-vault/Repos/LiamVisionary-maps-agency.md
+   LiamVisionary/maps-agency 7-agent solo web design agency: scouts narrow-niche local businesses on Google Maps, diagnoses, builds Lovable mockups, films Higgsfield videos, pitches by channel, books Zooms — single API key, file-system shared 
+3. score=4.04 LiamVisionary/claude-watch [repo-summary]
+   url: https://github.com/LiamVisionary/claude-watch
+   note: /Users/liam/Documents/github-assimilator-vault/Repos/LiamVisionary-claude-watch.md
+   LiamVisionary/claude-watch Turn any tutorial or lecture video into structured study notes — scene-aware frames, persistent library, Claude-vision OCR.
+4. score=1.31 nativelaunch/nativelaunch-monorepo-template [repo-summary]
+   url: https://github.com/nativelaunch/nativelaunch-monorepo-template
+   note: /Users/liam/Documents/github-assimilator-vault/Repos/nativelaunch-nativelaunch-monorepo-template.md
+   nativelaunch/nativelaunch-monorepo-template NativeLaunch Monorepo – Expo SDK 55 + React Native + Turborepo + UniWind + HeroUI Native. Monorepo template with shared packages. TypeScript Expo React React Native
+5. score=0.44 LiamVisionary/ai-headshot-generator [repo-summary]
+   url: https://github.com/LiamVisionary/ai-headshot-generator
+   note: /Users/liam/Documents/github-assimilator-vault/Repos/LiamVisionary-ai-headshot-generator.md
+   LiamVisionary/ai-headshot-generator TypeScript
+
+## 2026-05-30T15:03:33.643443+00:00 - prebuild-gate
+
+- Request: HivemindOS AEON dashboard auto commit push before GitHub Actions run, increment clone workspace names, delete local repo or git metadata UI
+- Source: public-github
+- Query: `HivemindOS AEON dashboard auto commit push before GitHub Actions run, increment clone workspace names, delete local repo or git metadata UI`
+- Decision: passed
+- Reason: Public search returned candidates; choose and audit backbone/donors before implementation.

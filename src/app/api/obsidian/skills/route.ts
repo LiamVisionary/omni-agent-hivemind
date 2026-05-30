@@ -1,22 +1,38 @@
 import { NextRequest, NextResponse } from "next/server";
 import {
   getBrainSkillInventory,
+  getSharedBrainSkillsCached,
   importGitHubBrainSkill,
   importUploadedBrainSkill,
   importBrainSkills,
   importRemoteBrainSkill,
   writeBrainSkill,
+  SHARED_BRAIN_CACHE_PREFIX,
   type BrainSkillProviderId,
 } from "@/lib/services/obsidian/brain-skills";
 import { remoteSkillProviders } from "@/lib/services/fleet/remote-skill-providers";
+import { invalidateCachedCall } from "@/lib/services/async-cache";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 export async function GET(request: NextRequest) {
   try {
+    const vaultPath = request.nextUrl.searchParams.get("vaultPath") ?? undefined;
+    // `?shared=1` returns only the shared-brain skills. Callers that just need the
+    // shared list (e.g. the AEON ready check) skip the expensive per-provider
+    // directory scan and remote-provider fetch that the full inventory performs.
+    if (request.nextUrl.searchParams.get("shared") === "1") {
+      const shared = await getSharedBrainSkillsCached(vaultPath);
+      return NextResponse.json({
+        ok: true,
+        ...shared,
+        providers: [],
+        totals: { shared: shared.shared.length, providerSkills: 0, importable: 0 },
+      });
+    }
     const remoteProviders = await remoteSkillProviders(request);
-    const inventory = await getBrainSkillInventory(request.nextUrl.searchParams.get("vaultPath") ?? undefined, remoteProviders);
+    const inventory = await getBrainSkillInventory(vaultPath, remoteProviders);
     return NextResponse.json({ ok: true, ...inventory });
   } catch (error) {
     return errorResponse(error);
@@ -49,6 +65,7 @@ export async function POST(request: NextRequest) {
         vaultPath: body.vaultPath,
         githubUrl: body.githubUrl,
       });
+      invalidateCachedCall(SHARED_BRAIN_CACHE_PREFIX);
       return NextResponse.json({ ok: true, ...result, imported: [], skipped: [] });
     }
     if (body.action === "import-remote") {
@@ -57,6 +74,7 @@ export async function POST(request: NextRequest) {
         vaultPath: body.vaultPath,
         skill: body.skill,
       });
+      invalidateCachedCall(SHARED_BRAIN_CACHE_PREFIX);
       return NextResponse.json({ ok: true, ...result, imported: [body.skill], skipped: [] });
     }
     if (body.action === "write-skill") {
@@ -64,6 +82,7 @@ export async function POST(request: NextRequest) {
         vaultPath: body.vaultPath,
         markdown: body.markdown ?? "",
       });
+      invalidateCachedCall(SHARED_BRAIN_CACHE_PREFIX);
       return NextResponse.json({ ok: true, ...result, imported: [], skipped: [] });
     }
     if (Array.isArray(body.files) && body.files.length) {
@@ -74,6 +93,7 @@ export async function POST(request: NextRequest) {
           .filter((file) => typeof file.path === "string" && typeof file.content === "string")
           .map((file) => ({ path: file.path!, content: file.content! })),
       });
+      invalidateCachedCall(SHARED_BRAIN_CACHE_PREFIX);
       return NextResponse.json({ ok: true, ...result, imported: [], skipped: [] });
     }
     const result = await importBrainSkills({
@@ -81,6 +101,7 @@ export async function POST(request: NextRequest) {
       provider: body.provider ?? "all",
       remoteProviders: await remoteSkillProviders(request, { includeSourceFiles: true }),
     });
+    invalidateCachedCall(SHARED_BRAIN_CACHE_PREFIX);
     return NextResponse.json({ ok: true, ...result });
   } catch (error) {
     return errorResponse(error);

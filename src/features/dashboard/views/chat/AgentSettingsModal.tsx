@@ -2,6 +2,7 @@
 // @ts-nocheck
 "use client";
 
+import { useState } from "react";
 import { createPortal } from "react-dom";
 import { CloseIconButton } from "@/components/ui/close-icon-button";
 import { GuidedProviderSetup } from "./GuidedProviderSetup";
@@ -9,6 +10,7 @@ import { InlineRenameControl } from "@/features/dashboard/views/shared/InlineRen
 
 export function AgentSettingsModal(props: any) {
   const { BEE_WORKER_PRESET_LIST, BrainCircuit, Button, Check, ChevronRight, Copy, Cpu, Eye, FolderOpen, HERMES_UPDATE_INTEGRATION_KEYS, Image, KanbanSquare, LoaderCircle, MessageSquare, Minus, Pencil, PlugZap, Plus, RUNTIME_LABELS, RefreshCcw, Repeat2, Search, Send, Settings2, ShieldCheck, Sparkles, Upload, addHermesModelFromDraft, agentCreateDraft, agentCreateMachine, agentRenameDraft, agentRenameEditing, agentRuntimeAdvancedOpen, agentRuntimeFolderBrowsing, agentRuntimeFolderEditing, agentRuntimeFolderStatus, agentSettingsCustomWorker, agentSettingsCustomWorkers, agentSettingsDescription, agentSettingsIntegrationTarget, agentSettingsPanel, agentSettingsPreferredSkills, agentSettingsProvider, agentSettingsRuntime, agentSettingsSelectedCustomWorkerId, agentSettingsSkillProfile, agentSettingsTitle, agentSettingsWorkerClass, agentSettingsWorkerImage, agentSettingsWorkerLabel, agentSettingsWorkerPreset, agentWorkerClassView, applyCustomWorkerClass, beeRoleIconPath, browseAgentRuntimeFolder, closeAgentSettingsModal, createAgentFromModal, customWorkerDraft, customWorkerImageError, customWorkerImageInputRef, customWorkerSkillSearch, filteredCustomWorkerSkills, fleetClass, hermesUpdateRequired, openAgentSkillBrowser, openCustomWorkerClassCreator, providerIconPath, providerIconRenderMode, refreshRuntimeIntegrations, removeAgentPreferredSkill, roleModalAgent, runRuntimeIntegrationAction, runtimeAvailability, runtimeBackgroundPrompt, runtimeCapabilities, runtimeIconFallback, runtimeIconPath, runtimeIconRenderMode, runtimeIntegrationBusy, runtimeIntegrationMessage, runtimeIntegrationStatus, runtimeModelDraft, runtimeModelProviders, runtimeModelSelection, runtimeModelSetupMode, runtimeSessionQuery, runtimeSessionResults, runtimeSetupDefinition, runtimeSetupKey, runtimeUpdateConfirmKey, searchRuntimeSessionsForAgent, selectAgentWorkerClass, selectCustomWorkerClass, selectedRuntimeModelId, selectedRuntimeModels, selectedRuntimeProvider, setActiveView, setAgentCreateDraft, setAgentRenameDraft, setAgentRenameEditing, setAgentRuntimeAdvancedOpen, setAgentRuntimeFolderEditing, setAgentRuntimeFolderStatus, setAgentSettingsPanel, setAgentWorkerClassView, setCustomWorkerDraft, setCustomWorkerSkillSearch, setRuntimeBackgroundPrompt, setRuntimeModelDraft, setRuntimeModelSetupMode, setRuntimeSessionQuery, setRuntimeSetupKey, setRuntimeUpdateConfirmKey, sharedVault, startAgentChat, toggleCustomWorkerSkill, updateAgentProfile, updateAgentRuntimeModel, updateAgentSkillProfile, uploadCustomWorkerImage, workerCapabilityBadges } = props;
+  const [aeonOauthConnecting, setAeonOauthConnecting] = useState(false);
   const portalTarget = typeof document === "undefined" ? null : document.body;
   const openRouterSelected = (selectedRuntimeProvider?.slug || agentSettingsProvider) === "openrouter";
   const adaptiveSelected = openRouterSelected && selectedRuntimeModelId === "adaptive";
@@ -26,6 +28,14 @@ export function AgentSettingsModal(props: any) {
     const next = { ...adaptiveOpenRouter, ...patch };
     if (agentCreateMachine) setAgentCreateDraft((current) => ({ ...current, adaptiveOpenRouter: next }));
     else if (roleModalAgent) updateAgentProfile(roleModalAgent.id, { adaptiveOpenRouter: next });
+  };
+  const openAeonGithubOauth = () => {
+    if (aeonOauthConnecting) return;
+    setAeonOauthConnecting(true);
+    updateAeonSettings({ aeonMode: "github" });
+    requestAnimationFrame(() => {
+      window.location.assign("/api/integrations/github/oauth/start?source=aeon");
+    });
   };
 
   const updateSettingsRuntime = (runtime: AgentRuntime) => {
@@ -134,14 +144,21 @@ export function AgentSettingsModal(props: any) {
     if (!roleModalAgent) return;
     updateAgentProfile(roleModalAgent.id, patch);
   };
+  const aeonModeCopy = aeonSettings.mode === "github"
+    ? "Runs through the configured GitHub repo and branch."
+    : aeonSettings.mode === "a2a"
+      ? "Talks to a running AEON A2A gateway."
+      : "Reads the local AEON repo folder on this machine.";
   const agentSettingsPanels = agentCreateMachine
     ? agentSettingsRuntime === "aeon"
-      ? (["role", "memory"] as const)
+      ? (["role", "connection", "memory"] as const)
       : (["role", "memory", "security"] as const)
     : isAeonSettings
-      ? (["memory"] as const)
+      ? (["connection", "memory"] as const)
       : (["role", "memory", "tools", "security"] as const);
-  const activeAgentSettingsPanel = isAeonSettings && !agentCreateMachine ? "memory" : agentSettingsPanel;
+  const activeAgentSettingsPanel = (agentSettingsPanels as readonly string[]).includes(agentSettingsPanel)
+    ? agentSettingsPanel
+    : agentSettingsPanels[0];
 
   if (!portalTarget) return null;
 
@@ -220,7 +237,7 @@ export function AgentSettingsModal(props: any) {
                     className={activeAgentSettingsPanel === panel ? fleetClass("activeSegment") : ""}
                     onClick={() => setAgentSettingsPanel(panel)}
                   >
-                    {panel === "role" ? "Role" : panel === "memory" ? "Memory" : panel === "tools" ? "Tools" : "Security"}
+                    {panel === "role" ? "Role" : panel === "connection" ? "Connection" : panel === "memory" ? "Memory" : panel === "tools" ? "Tools" : "Security"}
                   </button>
                 ))}
               </div>
@@ -733,57 +750,108 @@ export function AgentSettingsModal(props: any) {
               </div>
             ) : null}
 
+            {activeAgentSettingsPanel === "connection" && isAeonSettings ? (
+              <div className={fleetClass("agentSettingsGrid", "agentMemoryPanel")}>
+                <div className={fleetClass("aeonConnectionPanel")}>
+                    <div className={fleetClass("aeonConnectionHeader")}>
+                      <div>
+                        <span>AEON connection</span>
+                        <strong>{aeonSettings.mode === "github" ? "GitHub Actions" : aeonSettings.mode === "a2a" ? "A2A gateway" : "Local repo"}</strong>
+                      </div>
+                      <p>{aeonModeCopy}</p>
+                    </div>
+                    <div className={fleetClass("aeonModeCards")} role="radiogroup" aria-label="AEON connection mode">
+                      <button
+                        type="button"
+                        role="radio"
+                        aria-checked={aeonSettings.mode === "local"}
+                        className={aeonSettings.mode === "local" ? fleetClass("selectedAeonModeCard") : ""}
+                        onClick={() => updateAeonSettings({ aeonMode: "local" })}
+                      >
+                        <FolderOpen aria-hidden="true" />
+                        <span>Local repo</span>
+                        <small>Use files on this Mac</small>
+                      </button>
+                      <button
+                        type="button"
+                        role="radio"
+                        aria-checked={aeonSettings.mode === "github"}
+                        className={aeonSettings.mode === "github" ? fleetClass("selectedAeonModeCard") : ""}
+                        onClick={() => updateAeonSettings({ aeonMode: "github" })}
+                      >
+                        <Upload aria-hidden="true" />
+                        <span>GitHub</span>
+                        <small>Use repo + branch</small>
+                      </button>
+                      <button
+                        type="button"
+                        role="radio"
+                        aria-checked={aeonSettings.mode === "a2a"}
+                        className={aeonSettings.mode === "a2a" ? fleetClass("selectedAeonModeCard") : ""}
+                        onClick={() => updateAeonSettings({ aeonMode: "a2a" })}
+                      >
+                        <PlugZap aria-hidden="true" />
+                        <span>A2A</span>
+                        <small>Use gateway URL</small>
+                      </button>
+                    </div>
+                    {aeonSettings.mode === "github" ? (
+                      <div className={fleetClass("aeonGithubConnect")}>
+                        <div className={fleetClass("aeonOauthCard")}>
+                          <span className={fleetClass("aeonOauthIcon")}><Upload aria-hidden="true" /></span>
+                          <div>
+                            <strong>Connect with GitHub OAuth</strong>
+                            <p>Connects through GitHub OAuth directly and saves <code>GH_GLOBAL</code> with repo, workflow, hook, org, and email access, never delete-repo access.</p>
+                          </div>
+                          <Button
+                            type="button"
+                            size="sm"
+                            disabled={aeonOauthConnecting}
+                            onClick={openAeonGithubOauth}
+                          >
+                            {aeonOauthConnecting ? <LoaderCircle aria-hidden="true" className="animate-spin" /> : <PlugZap aria-hidden="true" />}
+                            {aeonOauthConnecting ? "Opening GitHub..." : "Connect GitHub"}
+                          </Button>
+                        </div>
+                        <div className={fleetClass("aeonManualDivider")}><span>or enter repo manually</span></div>
+                        <div className={fleetClass("aeonConnectionFields")}>
+                          <label className={fleetClass("agentSettingsField")}>
+                            <span>GitHub repo</span>
+                            <input
+                              value={aeonSettings.repo}
+                              onChange={(event) => updateAeonSettings({ aeonRepo: event.target.value })}
+                              placeholder="owner/repo"
+                            />
+                          </label>
+                          <label className={fleetClass("agentSettingsField")}>
+                            <span>Branch</span>
+                            <input
+                              value={aeonSettings.branch}
+                              onChange={(event) => updateAeonSettings({ aeonBranch: event.target.value })}
+                              placeholder="main"
+                            />
+                          </label>
+                        </div>
+                      </div>
+                    ) : null}
+                    {aeonSettings.mode === "a2a" ? (
+                      <div className={fleetClass("aeonConnectionFields")}>
+                        <label className={fleetClass("agentSettingsField")}>
+                          <span>A2A / gateway URL</span>
+                          <input
+                            value={aeonSettings.a2aUrl}
+                            onChange={(event) => updateAeonSettings({ a2aUrl: event.target.value, gatewayUrl: event.target.value })}
+                            placeholder="http://127.0.0.1:41241"
+                          />
+                        </label>
+                      </div>
+                    ) : null}
+                </div>
+              </div>
+            ) : null}
+
             {activeAgentSettingsPanel === "memory" ? (
               <div className={fleetClass("agentSettingsGrid", "agentMemoryPanel")}>
-                {isAeonSettings ? (
-                  <div className="grid gap-3 rounded-md border border-[rgba(94,234,212,0.14)] bg-[rgba(20,184,166,0.06)] p-3 md:grid-cols-2">
-                    <label className={fleetClass("agentSettingsField")}>
-                      <span>AEON mode</span>
-                      <select
-                        value={aeonSettings.mode}
-                        onChange={(event) => updateAeonSettings({ aeonMode: event.target.value })}
-                      >
-                        <option value="github">GitHub Actions</option>
-                        <option value="local">Local repo</option>
-                        <option value="a2a">A2A gateway</option>
-                      </select>
-                    </label>
-                    <label className={fleetClass("agentSettingsField")}>
-                      <span>GitHub repo</span>
-                      <input
-                        value={aeonSettings.repo}
-                        onChange={(event) => updateAeonSettings({ aeonRepo: event.target.value })}
-                        placeholder="owner/repo"
-                      />
-                    </label>
-                    <label className={fleetClass("agentSettingsField")}>
-                      <span>Branch</span>
-                      <input
-                        value={aeonSettings.branch}
-                        onChange={(event) => updateAeonSettings({ aeonBranch: event.target.value })}
-                        placeholder="main"
-                      />
-                    </label>
-                    <label className={fleetClass("agentSettingsField")}>
-                      <span>A2A / gateway URL</span>
-                      <input
-                        value={aeonSettings.a2aUrl}
-                        onChange={(event) => updateAeonSettings({ a2aUrl: event.target.value, gatewayUrl: event.target.value })}
-                        placeholder="http://127.0.0.1:41241"
-                      />
-                    </label>
-                    {agentCreateMachine ? (
-                      <label className={fleetClass("agentSettingsField")}>
-                        <span>AEON repo path</span>
-                        <input
-                          value={aeonSettings.path}
-                          onChange={(event) => updateAeonSettings({ aeonLocalPath: event.target.value })}
-                          placeholder="~/.aeon or ~/my-aeon-repo"
-                        />
-                      </label>
-                    ) : null}
-                  </div>
-                ) : null}
                 <label className={fleetClass("agentSettingsField", "toggleRow")}>
                   <input
                     type="checkbox"
@@ -803,6 +871,16 @@ export function AgentSettingsModal(props: any) {
                     <BrainCircuit aria-hidden="true" />
                     <p>{sharedVault.enabled ? `Shared brain: ${sharedVault.vaultPath || "auto-detected vault"}. Memory, Kanban, notifications, and HivemindOS context are shared from there.` : "Shared brain is off. Turn it on from the Vault view to give agents one common memory space."}</p>
                   </div>
+                ) : null}
+                {agentCreateMachine && isAeonSettings ? (
+                  <label className={fleetClass("agentSettingsField")}>
+                    <span>AEON repo folder</span>
+                    <input
+                      value={aeonSettings.path}
+                      onChange={(event) => updateAeonSettings({ aeonLocalPath: event.target.value })}
+                      placeholder="~/.aeon or ~/my-aeon-repo"
+                    />
+                  </label>
                 ) : null}
 	                {!agentCreateMachine && roleModalAgent ? (
 	                  <div className={fleetClass("agentMemoryFolderRow")}>

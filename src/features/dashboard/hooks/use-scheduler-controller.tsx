@@ -220,8 +220,9 @@ export function useSchedulerController(props: any) {
   async function configureAeonSchedule(agent: AgentProfile, schedule: AgentSchedule) {
     const skill = schedule.skills[0] || schedule.steps.flatMap((step) => step.skills)[0];
     if (!skill) {
-      setScheduleImportStatus("AEON automations need one attached skill. Add a skill, then save again.");
-      return null;
+      const error = "AEON automations need one attached skill. Add a skill, then save again.";
+      setScheduleImportStatus(error);
+      return { error };
     }
     const brief = schedulerPlainPrompt(schedule) || `Run ${skill}.`;
     const cron = aeonCronFromEvery(schedule.every);
@@ -239,8 +240,9 @@ export function useSchedulerController(props: any) {
       }).catch(() => null);
       const data = await response?.json().catch(() => null) as { ok?: boolean; error?: string } | null;
       if (!response?.ok || data?.ok === false) {
-        setScheduleImportStatus(data?.error ?? `Could not configure ${skill} in AEON.`);
-        return null;
+        const error = data?.error ?? `Could not configure ${skill} in AEON.`;
+        setScheduleImportStatus(error);
+        return { error };
       }
     }
     return { skill, cron };
@@ -1341,12 +1343,19 @@ export function useSchedulerController(props: any) {
   }, [displayAgents, editingScheduleId, scheduleDraft, selectedAgent]);
 
   async function saveScheduleFromModal(task: NewTaskPayload) {
-    const agent = displayAgents.find((item) => item.name === task.target.bee)
-      ?? displayAgents.find((item) => item.machineName === task.target.machine)
-      ?? displayAgents.find((item) => item.machineName && displayMachineName(item.machineName) === task.target.machine)
-      ?? selectedAgent
-      ?? displayAgents[0];
-    if (!agent) return;
+    // In AEON mode the modal hides the machine/bee picker, so task.target.bee is just the
+    // stale default — the intended workspace is the AEON agent seeded into scheduleDraft when
+    // the modal opened. Honor that; otherwise resolve from the picker selection as before.
+    const draftAgent = displayAgents.find((item) => item.id === scheduleDraft.agentId);
+    const agent = (task.aeon && draftAgent)
+      ? draftAgent
+      : (displayAgents.find((item) => item.name === task.target.bee)
+        ?? displayAgents.find((item) => item.machineName === task.target.machine)
+        ?? displayAgents.find((item) => item.machineName && displayMachineName(item.machineName) === task.target.machine)
+        ?? draftAgent
+        ?? selectedAgent
+        ?? displayAgents[0]);
+    if (!agent) return "No agent is configured to run this automation.";
     const now = Date.now();
     const skills = task.attachments.filter((item) => item.kind === "skill").map((item) => item.label);
     const paths = task.attachments.filter((item) => item.kind === "path").map((item) => item.label);
@@ -1389,7 +1398,9 @@ export function useSchedulerController(props: any) {
     };
     if (agent.runtime === "aeon") {
       const configured = await configureAeonSchedule(agent, next);
-      if (!configured) return;
+      if (!configured || "error" in configured) {
+        return configured?.error || `Could not arm this AEON automation on ${agent.name}.`;
+      }
       next.externalSource = "aeon";
       next.externalJobId = configured.skill;
       next.every = configured.cron;

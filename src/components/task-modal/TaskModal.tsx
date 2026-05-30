@@ -20,6 +20,8 @@ export interface NewTaskPayload {
   templateId: string | null;
   usePastRuns: boolean;
   pastRunLimit: number;
+  /** True when saved from AEON mode — the target is the AEON workspace, not the bee picker. */
+  aeon: boolean;
 }
 
 export type TaskModalSkillOption = {
@@ -37,7 +39,8 @@ const DEFAULT_STEPS = [
 interface TaskModalProps {
   open: boolean;
   onClose: () => void;
-  onSave?: (task: NewTaskPayload) => void;
+  /** Return a non-empty string to surface a save error in the modal and keep it open. */
+  onSave?: (task: NewTaskPayload) => void | string | Promise<void | string>;
   initial?: Partial<NewTaskPayload>;
   /** Skill ids the user can attach. */
   skillOptions?: Array<string | TaskModalSkillOption>;
@@ -47,6 +50,12 @@ interface TaskModalProps {
   machineOptions?: string[];
   beeOptions?: string[];
   onBrowseFolder?: () => Promise<string | null>;
+  /**
+   * AEON mode. Hides the machine/bee target picker and generic templates
+   * (AEON always runs against its own workspace), and requires a skill —
+   * an AEON automation is a single skill armed on a schedule.
+   */
+  aeon?: boolean;
 }
 
 const TEMPLATES = [
@@ -88,13 +97,14 @@ export function TaskModal({
   machineOptions = DEFAULT_MACHINES,
   beeOptions = DEFAULT_BEES,
   onBrowseFolder,
+  aeon = false,
 }: TaskModalProps) {
   const normalizedSkillOptions = React.useMemo<TaskModalSkillOption[]>(() => (
     skillOptions.map((skill) => typeof skill === "string"
       ? { slug: skill, name: skill, description: "" }
       : skill)
   ), [skillOptions]);
-  const [tab, setTab] = React.useState<"template" | "custom">(initial?.templateId === null ? "custom" : "template");
+  const [tab, setTab] = React.useState<"template" | "custom">(aeon || initial?.templateId === null ? "custom" : "template");
   const [skill, setSkill] = React.useState<string>(initial?.templateId ?? "brain/index-vault");
   const [title, setTitle] = React.useState(initial?.title ?? "Index Obsidian vault");
   const [mode, setMode] = React.useState<"steps" | "prompt">(initial?.mode ?? "steps");
@@ -114,11 +124,23 @@ export function TaskModal({
   });
   const [usePastRuns, setUsePastRuns] = React.useState(initial?.usePastRuns ?? false);
   const [pastRunLimit, setPastRunLimit] = React.useState(initial?.pastRunLimit ?? 3);
+  const [saveError, setSaveError] = React.useState("");
+  const [saving, setSaving] = React.useState(false);
 
-  // ESC to close
+  // ESC to close — but never discard a half-typed automation by accident.
+  // Ignore the Escape used to cancel an IME composition, and when focus is in a
+  // form field the first Escape only blurs it (which also dismisses any open
+  // autocomplete/native popup); a second Escape on the now-unfocused modal closes.
   React.useEffect(() => {
     if (!open) return;
-    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "Escape" || e.isComposing || e.keyCode === 229) return;
+      const el = document.activeElement as HTMLElement | null;
+      const tag = el?.tagName;
+      const editing = tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || el?.isContentEditable === true;
+      if (editing) { el?.blur(); return; }
+      onClose();
+    };
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
   }, [open, onClose]);
@@ -133,14 +155,28 @@ export function TaskModal({
   const removeAttach = (i: number) =>
     setAttachments((arr) => arr.filter((_, j) => j !== i));
 
-  const handleSave = () => {
+  // An AEON automation is one skill armed on a schedule — block save until a skill is attached.
+  const hasSkill = attachments.some((a) => a.kind === "skill");
+  const aeonBlocked = aeon && !hasSkill;
+
+  const handleSave = async () => {
     const cadence: NewTaskPayload["cadence"] =
       cadenceKind === "cron" ? { kind: "cron", expr: cronExpr } : { kind: cadenceKind };
-    onSave?.({
-      title, mode, steps, prompt, attachments,
-      cadence, target, templateId: tab === "template" ? skill : null,
-      usePastRuns, pastRunLimit,
-    });
+    setSaveError("");
+    setSaving(true);
+    try {
+      const result = await onSave?.({
+        title, mode, steps, prompt, attachments,
+        cadence, target, templateId: tab === "template" ? skill : null,
+        usePastRuns, pastRunLimit, aeon,
+      });
+      // A returned string is a save failure — surface it and keep the modal open.
+      if (typeof result === "string" && result.trim()) setSaveError(result.trim());
+    } catch (error) {
+      setSaveError(error instanceof Error ? error.message : "Could not save this task.");
+    } finally {
+      setSaving(false);
+    }
   };
 
   return createPortal(
@@ -184,12 +220,12 @@ export function TaskModal({
           }}>＋</div>
           <div style={{ minWidth: 0 }}>
             <div className={styles.monoCap} style={{ color: "var(--tm-honey-2)" }}>
-              NEW SCHEDULED TASK
+              {aeon ? "NEW AEON AUTOMATION" : "NEW SCHEDULED TASK"}
             </div>
             <div id="tm-title" style={{
               fontFamily: "var(--tm-f-display)", fontSize: 18, fontWeight: 700,
               color: "var(--tm-fg)", letterSpacing: 0, lineHeight: 1.15, marginTop: 2,
-            }}>Schedule a new task</div>
+            }}>{aeon ? "Create an AEON automation" : "Schedule a new task"}</div>
           </div>
           <CloseIconButton onClick={onClose} aria-label="Close" />
         </header>
@@ -198,27 +234,29 @@ export function TaskModal({
         <div style={{
           overflow: "auto", padding: "16px 20px 18px", display: "grid", gap: 14,
         }}>
-          {/* Tab */}
-          <div style={{
-            display: "inline-flex", gap: 4, padding: 4, width: "fit-content",
-            borderRadius: 999, border: "1px solid var(--tm-line)",
-            background: "var(--tm-panel-soft)",
-          }}>
-            {[
-              { id: "template" as const, label: "Start from template" },
-              { id: "custom"   as const, label: "Custom task" },
-            ].map((t) => (
-              <button key={t.id} onClick={() => setTab(t.id)} style={{
-                padding: "7px 14px", borderRadius: 999, cursor: "pointer", border: 0,
-                background: tab === t.id ? "var(--tm-bg-4)" : "transparent",
-                color: tab === t.id ? "var(--tm-fg)" : "var(--tm-fg-3)",
-                fontFamily: "var(--tm-f-mono)", fontSize: 11, fontWeight: 700,
-                letterSpacing: 0.06, textTransform: "uppercase",
-              }}>{t.label}</button>
-            ))}
-          </div>
+          {/* Tab — AEON always runs a custom skill brief, so the template picker is hidden */}
+          {!aeon && (
+            <div style={{
+              display: "inline-flex", gap: 4, padding: 4, width: "fit-content",
+              borderRadius: 999, border: "1px solid var(--tm-line)",
+              background: "var(--tm-panel-soft)",
+            }}>
+              {[
+                { id: "template" as const, label: "Start from template" },
+                { id: "custom"   as const, label: "Custom task" },
+              ].map((t) => (
+                <button key={t.id} onClick={() => setTab(t.id)} style={{
+                  padding: "7px 14px", borderRadius: 999, cursor: "pointer", border: 0,
+                  background: tab === t.id ? "var(--tm-bg-4)" : "transparent",
+                  color: tab === t.id ? "var(--tm-fg)" : "var(--tm-fg-3)",
+                  fontFamily: "var(--tm-f-mono)", fontSize: 11, fontWeight: 700,
+                  letterSpacing: 0.06, textTransform: "uppercase",
+                }}>{t.label}</button>
+              ))}
+            </div>
+          )}
 
-          {tab === "template" && (
+          {!aeon && tab === "template" && (
             <Section title="Pick a template">
               <div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: 8 }}>
                 {TEMPLATES.map((s) => {
@@ -340,6 +378,18 @@ export function TaskModal({
                   setAttachOpen(null);
                 }} />
             </div>
+            {aeon ? (
+              <p style={{
+                marginTop: 8, display: "flex", alignItems: "center", gap: 6,
+                fontFamily: "var(--tm-f-mono)", fontSize: 10.5, lineHeight: 1.4,
+                color: aeonBlocked ? "var(--tm-honey-2)" : "var(--tm-fg-4)",
+              }}>
+                <span aria-hidden="true">{aeonBlocked ? "▸" : "✓"}</span>
+                {aeonBlocked
+                  ? "Attach one skill — it's the workflow AEON arms on this schedule."
+                  : "AEON will arm this skill on the cadence below."}
+              </p>
+            ) : null}
           </Section>
 
           <Section title="Cadence">
@@ -412,16 +462,19 @@ export function TaskModal({
             </label>
           </Section>
 
-          <Section title="Target">
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
-              <PickerField label="machine" value={target.machine}
-                options={machineOptions}
-                onChange={(v) => setTarget((t) => ({ ...t, machine: v }))} />
-              <PickerField label="bee" value={target.bee}
-                options={beeOptions}
-                onChange={(v) => setTarget((t) => ({ ...t, bee: v }))} />
-            </div>
-          </Section>
+          {/* Target — AEON always runs against its own workspace, so the picker is hidden in AEON mode */}
+          {!aeon && (
+            <Section title="Target">
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+                <PickerField label="machine" value={target.machine}
+                  options={machineOptions}
+                  onChange={(v) => setTarget((t) => ({ ...t, machine: v }))} />
+                <PickerField label="bee" value={target.bee}
+                  options={beeOptions}
+                  onChange={(v) => setTarget((t) => ({ ...t, bee: v }))} />
+              </div>
+            </Section>
+          )}
         </div>
 
         {/* Footer */}
@@ -430,18 +483,29 @@ export function TaskModal({
           padding: "14px 18px", borderTop: "1px solid var(--tm-line)",
           background: "rgba(255,255,255,0.02)",
         }}>
-          <div style={{
-            display: "flex", alignItems: "center", gap: 8,
-            fontFamily: "var(--tm-f-mono)", fontSize: 10.5, color: "var(--tm-fg-4)",
-            letterSpacing: 0.06, textTransform: "uppercase",
-          }}>
-            <span className={styles.dotLive} style={{ color: "var(--tm-cyan)" }} />
-            Will fire <strong style={{ color: "var(--tm-cyan-3)" }}>
-              {cadenceSummary(cadenceKind, cronExpr)}
-            </strong>
-            <span style={{ color: "var(--tm-fg-4)" }}>·</span>
-            <span>on {target.machine} → {target.bee}</span>
-          </div>
+          {saveError ? (
+            <div style={{
+              display: "flex", alignItems: "center", gap: 8, minWidth: 0,
+              fontFamily: "var(--tm-f-mono)", fontSize: 10.5, lineHeight: 1.35,
+              color: "var(--tm-honey-2)",
+            }}>
+              <span aria-hidden="true">⚠</span>
+              <span style={{ overflow: "hidden", textOverflow: "ellipsis" }}>{saveError}</span>
+            </div>
+          ) : (
+            <div style={{
+              display: "flex", alignItems: "center", gap: 8,
+              fontFamily: "var(--tm-f-mono)", fontSize: 10.5, color: "var(--tm-fg-4)",
+              letterSpacing: 0.06, textTransform: "uppercase",
+            }}>
+              <span className={styles.dotLive} style={{ color: "var(--tm-cyan)" }} />
+              Will fire <strong style={{ color: "var(--tm-cyan-3)" }}>
+                {cadenceSummary(cadenceKind, cronExpr)}
+              </strong>
+              <span style={{ color: "var(--tm-fg-4)" }}>·</span>
+              <span>{aeon ? `on AEON · ${target.bee || "workspace"}` : `on ${target.machine} → ${target.bee}`}</span>
+            </div>
+          )}
           <div style={{ display: "flex", gap: 8 }}>
             <button onClick={onClose} style={{
               padding: "9px 14px", borderRadius: 7, cursor: "pointer",
@@ -449,13 +513,16 @@ export function TaskModal({
               fontFamily: "var(--tm-f-mono)", fontSize: 11, fontWeight: 700,
               letterSpacing: 0.06, textTransform: "uppercase",
             }}>cancel</button>
-            <button onClick={handleSave} style={{
-              padding: "9px 16px", borderRadius: 7, cursor: "pointer",
-              border: "1px solid rgba(255,212,90,0.55)",
-              background: "rgba(255,212,90,0.18)", color: "var(--tm-honey-2)",
-              fontFamily: "var(--tm-f-mono)", fontSize: 11, fontWeight: 700,
-              letterSpacing: 0.06, textTransform: "uppercase",
-            }}>save & arm</button>
+            <button onClick={handleSave} disabled={aeonBlocked || saving}
+              title={aeonBlocked ? "Attach one skill to arm this AEON automation" : undefined}
+              style={{
+                padding: "9px 16px", borderRadius: 7, cursor: (aeonBlocked || saving) ? "not-allowed" : "pointer",
+                border: "1px solid rgba(255,212,90,0.55)",
+                background: "rgba(255,212,90,0.18)", color: "var(--tm-honey-2)",
+                fontFamily: "var(--tm-f-mono)", fontSize: 11, fontWeight: 700,
+                letterSpacing: 0.06, textTransform: "uppercase",
+                opacity: (aeonBlocked || saving) ? 0.45 : 1,
+              }}>{saving ? "arming…" : "save & arm"}</button>
           </div>
         </footer>
       </div>

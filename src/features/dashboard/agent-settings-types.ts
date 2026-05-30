@@ -26,7 +26,7 @@ export type RuntimeModelDraft = {
   contextLength: string;
 };
 
-export type AgentSettingsPanel = "role" | "memory" | "tools" | "security";
+export type AgentSettingsPanel = "role" | "connection" | "memory" | "tools" | "security";
 
 export type AgentWorkerClassView = "presets" | "create";
 

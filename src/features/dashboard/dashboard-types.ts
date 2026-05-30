@@ -733,6 +733,7 @@ export type RuntimeEnvSyncResponse = {
   ok?: boolean;
   result?: {
     repo?: string;
+    githubSecretCount?: number;
     synced?: Array<{ key: string }>;
     skipped?: Array<{ key: string; reason: string }>;
     sources?: string[];

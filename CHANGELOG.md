@@ -3,6 +3,198 @@
 This file records user-visible changes before they are committed. New work should
 be added here first, then marked `Committed` or `Pushed` after the git action.
 
+## 2026-05-30 23:04:53 WITA - Harden AEON Run And Cleanup Flows
+
+- Status: Uncommitted
+- Areas changed: AEON run-now GitHub sync, official clone name/path collision handling, AEON workspace cleanup API/UI, changelog
+- Summary: Auto-save and push AEON repo automation files before dispatching a GitHub Actions run, make stale `aeon-2` clone submissions advance to the next `aeon-N` workspace/repo instead of nesting suffixes, and add settings actions to delete only local Git metadata or delete the full local AEON workspace with immediate fleet UI refresh.
+- Verification: `pnpm exec eslint src/features/dashboard/views/AeonAutopilotPanel.tsx src/app/api/runtimes/aeon/workspaces/route.ts src/app/api/runtimes/aeon/github-repos/route.ts src/lib/services/runtime-adapters/aeon.ts --max-warnings=999`; `pnpm exec tsc --noEmit --pretty false --skipLibCheck`; `git diff --check -- src/features/dashboard/views/AeonAutopilotPanel.tsx src/app/api/runtimes/aeon/workspaces/route.ts src/app/api/runtimes/aeon/github-repos/route.ts src/lib/services/runtime-adapters/aeon.ts CHANGELOG.md`; in-app browser smoke on `http://127.0.0.1:5020/?view=aeon&aeonPanel=detail&aeonTab=settings` confirmed the local cleanup controls render; clone modal smoke confirmed the default name immediately advanced to `aeon-3` when `aeon` and `aeon-2` exist; temp API smoke confirmed `delete-git` removes `.git` and `delete-local` removes the AEON workspace folder.
+- Intended commit message: `Harden AEON run and cleanup flows`
+
+## 2026-05-30 22:54:21 WITA - Portal AEON Repo Choice Modal
+
+- Status: Uncommitted
+- Areas changed: AEON repo choice modal, changelog
+- Summary: Render the AEON clone/import choice modal through `document.body` with explicit `100dvh`/`100vw` overlay sizing so page layout height no longer leaves extra bottom space or pushes the modal upward.
+- Verification: `pnpm exec eslint src/features/dashboard/views/AeonAutopilotPanel.tsx --max-warnings=999`; `pnpm exec tsc --noEmit --pretty false --skipLibCheck`; `git diff --check -- src/features/dashboard/views/AeonAutopilotPanel.tsx CHANGELOG.md`.
+- Intended commit message: `Portal AEON repo choice modal`
+
+## 2026-05-30 22:51:57 WITA - Add AEON GitHub One-Step Toggles
+
+- Status: Uncommitted
+- Areas changed: AEON official clone setup, AEON secret sync flow, changelog
+- Summary: Rename the fork setup control to `GitHub 1-Step Setup`, restore the default-on private GitHub repo option, add a default-on `Inject shared brain secrets` option, and run the existing AEON secret sync automatically after GitHub setup when enabled.
+- Verification: `pnpm exec eslint src/features/dashboard/views/AeonAutopilotPanel.tsx src/app/api/runtimes/aeon/github-repos/route.ts src/app/api/runtimes/aeon/workspaces/route.ts --max-warnings=999`; `pnpm exec tsc --noEmit --pretty false --skipLibCheck`; `git diff --check -- src/features/dashboard/views/AeonAutopilotPanel.tsx src/app/api/runtimes/aeon/github-repos/route.ts src/app/api/runtimes/aeon/workspaces/route.ts CHANGELOG.md`.
+- Intended commit message: `Add AEON GitHub one-step toggles`
+
+## 2026-05-30 22:40:01 WITA - Fork Official AEON Before Clone
+
+- Status: Uncommitted
+- Areas changed: AEON official clone flow, AEON GitHub repo API, AEON workspace profiles, changelog
+- Summary: Change the official AEON setup path to fork `aaronjmars/aeon` into the user's GitHub by default before cloning, so the local origin and dashboard repo source point at the user's fork immediately. Normalize cloned GitHub remotes into `owner/repo` profile values instead of showing raw clone URLs.
+- Verification: `pnpm exec eslint src/features/dashboard/views/AeonAutopilotPanel.tsx src/app/api/runtimes/aeon/github-repos/route.ts src/app/api/runtimes/aeon/workspaces/route.ts --max-warnings=999`; `pnpm exec tsc --noEmit --pretty false --skipLibCheck`; `git diff --check -- src/features/dashboard/views/AeonAutopilotPanel.tsx src/app/api/runtimes/aeon/github-repos/route.ts src/app/api/runtimes/aeon/workspaces/route.ts CHANGELOG.md`.
+- Intended commit message: `Fork official AEON before clone`
+
+## 2026-05-30 22:41:10 WITA - Auto-Increment Official AEON Clone Names
+
+- Status: Uncommitted
+- Areas changed: AEON official clone flow, AEON workspace API, AEON GitHub repo API, changelog
+- Summary: Prefill Clone official AEON with a collision-free name such as `aeon-2` when local agents or GitHub repos already use `aeon`, allow the workspace clone endpoint to choose a unique sibling folder when requested, and let private GitHub repo creation auto-increment the repo name instead of failing on an existing repo.
+- Verification: `pnpm exec eslint src/features/dashboard/views/AeonAutopilotPanel.tsx src/app/api/runtimes/aeon/workspaces/route.ts src/app/api/runtimes/aeon/github-repos/route.ts src/lib/services/runtime-adapters/aeon.ts --max-warnings=999`; `pnpm exec tsc --noEmit --pretty false --skipLibCheck`; `git diff --check -- src/features/dashboard/views/AeonAutopilotPanel.tsx src/app/api/runtimes/aeon/workspaces/route.ts src/app/api/runtimes/aeon/github-repos/route.ts src/lib/services/runtime-adapters/aeon.ts CHANGELOG.md`; in-app browser smoke opened Clone official AEON and confirmed the default name/path auto-incremented to `aeon-2` / `~/Documents/aeon-2` with the private repo checkbox checked.
+- Intended commit message: `Auto-increment official AEON clone names`
+
+## 2026-05-30 22:30:50 WITA - Default Official AEON To Private Repo
+
+- Status: Uncommitted
+- Areas changed: AEON official clone flow, AEON GitHub secret sync, changelog
+- Summary: Add an on-by-default private GitHub repo toggle to the Clone official AEON configuration, create and link that private repo after cloning when enabled, keep the clone modal open until it can show success or inline errors, and fix key sync so shared `hive-env-add` agent env values are actually eligible for GitHub secret upload. Sync feedback now avoids showing `Success!` when requested keys were skipped for missing values.
+- Verification: `pnpm exec eslint src/features/dashboard/views/AeonAutopilotPanel.tsx src/lib/services/runtime-adapters/aeon.ts --max-warnings=999`; `pnpm exec tsc --noEmit --pretty false --skipLibCheck`; `git diff --check -- src/features/dashboard/views/AeonAutopilotPanel.tsx src/lib/services/runtime-adapters/aeon.ts CHANGELOG.md`; confirmed `gh secret list -R LiamVisionary/aeon-test` currently returns only `GH_GLOBAL`, so the displayed `1 repo secret` is accurate before the fixed sync runs again; in-app browser smoke on `http://127.0.0.1:5020/?view=aeon` showed the AEON fleet and existing `aeon`/`aeon-test` repo cards still render.
+- Intended commit message: `Default official AEON to private repo`
+
+## 2026-05-30 22:26:34 WITA - Refine AEON Clone Setup Text
+
+- Status: Uncommitted
+- Areas changed: AEON repo choice modal, changelog
+- Summary: Render AEON clone repo names and paths as real inline code elements and restyle the `Will clone` destination as a subtle note instead of an input-like bordered block.
+- Verification: `pnpm exec eslint src/features/dashboard/views/AeonAutopilotPanel.tsx --max-warnings=999`; `pnpm exec tsc --noEmit --pretty false --skipLibCheck`; `git diff --check -- src/features/dashboard/views/AeonAutopilotPanel.tsx CHANGELOG.md`.
+- Intended commit message: `Refine AEON clone setup text`
+
+## 2026-05-30 22:24:31 WITA - Add Official AEON Clone Setup View
+
+- Status: Uncommitted
+- Areas changed: AEON repo choice modal, AEON workspace clone flow, changelog
+- Summary: Make `Clone official AEON` open a simple clone setup view with AEON Agent name and location fields, clone into the chosen path with a loading state, then show an `AEON Agent Created` success view with an `Open agent` action while ensuring the cloned workspace is upserted into the AEON fleet.
+- Verification: `pnpm exec eslint src/features/dashboard/views/AeonAutopilotPanel.tsx --max-warnings=999`; `pnpm exec tsc --noEmit --pretty false --skipLibCheck`; `git diff --check -- src/features/dashboard/views/AeonAutopilotPanel.tsx CHANGELOG.md`.
+- Intended commit message: `Add official AEON clone setup view`
+
+## 2026-05-30 22:16:27 WITA - Show AEON GitHub Secret Count
+
+- Status: Uncommitted
+- Areas changed: AEON ready check, runtime secret status, changelog
+- Summary: Add a GitHub secrets row to the AEON Ready Check that shows the total number of secrets currently present in the configured GitHub repo, preserves the count through fast secret refreshes, and updates it after key sync.
+- Verification: `pnpm exec eslint src/features/dashboard/views/AeonAutopilotPanel.tsx src/lib/services/runtime-adapters/aeon.ts src/lib/services/runtime-adapters/types.ts src/features/dashboard/dashboard-types.ts --max-warnings=999`; `pnpm exec tsc --noEmit --pretty false --skipLibCheck`; `git diff --check -- src/features/dashboard/views/AeonAutopilotPanel.tsx src/lib/services/runtime-adapters/aeon.ts src/lib/services/runtime-adapters/types.ts src/features/dashboard/dashboard-types.ts CHANGELOG.md`; in-app browser on `http://127.0.0.1:5020/?view=aeon&aeonPanel=detail&aeonTab=overview` showed `GitHub secrets` with `1 repo secret`.
+- Intended commit message: `Show AEON GitHub secret count`
+
+## 2026-05-30 22:16:28 WITA - Fix AEON Repo Choice Card Span
+
+- Status: Uncommitted
+- Areas changed: AEON repo choice modal, changelog
+- Summary: Move the full-width two-column span from the official clone card to the import-existing card so the first two choices sit side by side and the single import choice spans below them.
+- Verification: `pnpm exec eslint src/features/dashboard/views/AeonAutopilotPanel.tsx --max-warnings=999`; `pnpm exec tsc --noEmit --pretty false --skipLibCheck`; `git diff --check -- src/features/dashboard/views/AeonAutopilotPanel.tsx CHANGELOG.md`.
+- Intended commit message: `Fix AEON repo choice card span`
+
+## 2026-05-30 22:14:28 WITA - Make AEON Repo Choice Two Column
+
+- Status: Uncommitted
+- Areas changed: AEON repo choice modal, changelog
+- Summary: Change the AEON repo start chooser to a two-column layout with the import-existing card spanning both columns below the clone options.
+- Verification: `pnpm exec eslint src/features/dashboard/views/AeonAutopilotPanel.tsx --max-warnings=999`; `pnpm exec tsc --noEmit --pretty false --skipLibCheck`; `git diff --check -- src/features/dashboard/views/AeonAutopilotPanel.tsx CHANGELOG.md`.
+- Intended commit message: `Make AEON repo choice two column`
+
+## 2026-05-30 22:12:55 WITA - Route AEON Hex Create Through Choice Modal
+
+- Status: Uncommitted
+- Areas changed: AEON fleet create card, changelog
+- Summary: Route the hex-grid `New Aeon Agent Repo` card through the three-card clone/import choice modal instead of opening the old local scratch-create form directly.
+- Verification: `pnpm exec eslint src/features/dashboard/views/AeonAutopilotPanel.tsx src/features/dashboard/views/shared/CreateFolderRepoModal.tsx --max-warnings=999`; `pnpm exec tsc --noEmit --pretty false --skipLibCheck`; `git diff --check -- src/features/dashboard/views/AeonAutopilotPanel.tsx src/features/dashboard/views/shared/CreateFolderRepoModal.tsx CHANGELOG.md`.
+- Intended commit message: `Route AEON hex create through choice modal`
+
+## 2026-05-30 22:11:59 WITA - Show AEON Key Sync Success
+
+- Status: Uncommitted
+- Areas changed: AEON overview key sync UI, changelog
+- Summary: Keep the step 2 `Sync keys` button from snapping silently back to its default label by showing a short-lived `Success!` state after the GitHub secret sync completes, and refresh fast secret status immediately afterward.
+- Verification: `pnpm exec eslint src/features/dashboard/views/AeonAutopilotPanel.tsx --max-warnings=999`; `pnpm exec tsc --noEmit --pretty false --skipLibCheck`; `git diff --check -- src/features/dashboard/views/AeonAutopilotPanel.tsx CHANGELOG.md`.
+- Intended commit message: `Show AEON key sync success`
+
+## 2026-05-30 22:11:13 WITA - Portal Shared Repo Modal Backdrop
+
+- Status: Uncommitted
+- Areas changed: shared repo creation modal, changelog
+- Summary: Render the shared create-folder/repo modal through `document.body` and give its overlay a dynamic viewport minimum height so the dim backdrop covers the full visible screen instead of being constrained by AEON page containers.
+- Verification: `pnpm exec eslint src/features/dashboard/views/AeonAutopilotPanel.tsx src/features/dashboard/views/shared/CreateFolderRepoModal.tsx --max-warnings=999`; `pnpm exec tsc --noEmit --pretty false --skipLibCheck`; `git diff --check -- src/features/dashboard/views/AeonAutopilotPanel.tsx src/features/dashboard/views/shared/CreateFolderRepoModal.tsx CHANGELOG.md`.
+- Intended commit message: `Portal shared repo modal backdrop`
+
+## 2026-05-30 22:07:31 WITA - Replace Blank AEON Create With Clone Choices
+
+- Status: Uncommitted
+- Areas changed: AEON repo creation flow, changelog
+- Summary: Replace the scratch-create choice with three side-by-side AEON workspace options: clone a local copy from a GitHub URL, clone the official `aaronjmars/aeon` repo, or import an existing local AEON folder.
+- Verification: `pnpm exec eslint src/features/dashboard/views/AeonAutopilotPanel.tsx --max-warnings=999`; `pnpm exec tsc --noEmit --pretty false --skipLibCheck`; `git diff --check -- src/features/dashboard/views/AeonAutopilotPanel.tsx CHANGELOG.md`.
+- Intended commit message: `Replace blank AEON create with clone choices`
+
+## 2026-05-30 22:06:33 WITA - Add AEON Repo Creation Choice
+
+- Status: Uncommitted
+- Areas changed: AEON repo creation flow, changelog
+- Summary: Add a two-card choice step before the local `Create AEON repo` form so users can choose between creating a fresh local AEON repo and cloning an existing AEON repo from GitHub.
+- Verification: Pending.
+- Intended commit message: `Add AEON repo creation choice`
+
+## 2026-05-30 22:01:51 WITA - Make AEON Repo Picker Cards Vertical
+
+- Status: Uncommitted
+- Areas changed: AEON GitHub repo picker UI, changelog
+- Summary: Change the AEON GitHub repo picker from full-width horizontal rows to a vertical card grid, with the dashed create card matching the same card footprint and repo actions stacked at the bottom of each card.
+- Verification: `pnpm exec eslint src/features/dashboard/views/AeonAutopilotPanel.tsx --max-warnings=999`; `pnpm exec tsc --noEmit --pretty false --skipLibCheck`; `git diff --check -- src/features/dashboard/views/AeonAutopilotPanel.tsx CHANGELOG.md`.
+- Intended commit message: `Make AEON repo picker cards vertical`
+
+## 2026-05-30 22:00:47 WITA - Route Streamed Thought Channels
+
+- Status: Uncommitted
+- Areas changed: agent runtime SSE bridge, changelog
+- Summary: Strip streamed channel control markup such as `<|channel|>thought`/`<channel>thought</channel>` from assistant text, forward thought/analysis/reasoning deltas as `chat.thinking` process events, and preserve final/message deltas in the visible chat bubble.
+- Verification: `pnpm exec eslint src/app/api/chat/agent-runtime/route.ts --max-warnings=999`; `pnpm exec tsc --noEmit --pretty false --skipLibCheck`; `git diff --check -- src/app/api/chat/agent-runtime/route.ts CHANGELOG.md`.
+- Intended commit message: `Route streamed thought channels`
+
+## 2026-05-30 21:59:02 WITA - Add AEON GitHub Repo Picker
+
+- Status: Uncommitted
+- Areas changed: AEON overview repo setup UI, AEON GitHub repo API, changelog
+- Summary: Replace the Step 2 repo action with a dedicated GitHub repo picker/creator modal that lists repos as vertical cards, starts with a dashed create card, creates GitHub repos from a simple form with collapsed advanced settings, links the selected/created repo to the local AEON git origin, and updates the AEON repo state immediately.
+- Verification: `pnpm exec eslint src/features/dashboard/views/AeonAutopilotPanel.tsx src/app/api/runtimes/aeon/github-repos/route.ts --max-warnings=999`; `pnpm exec tsc --noEmit --pretty false --skipLibCheck`; `git diff --check -- src/features/dashboard/views/AeonAutopilotPanel.tsx src/app/api/runtimes/aeon/github-repos/route.ts CHANGELOG.md`.
+- Intended commit message: `Add AEON GitHub repo picker`
+
+## 2026-05-30 21:49:07 WITA - Split AEON GitHub Setup Into Two Steps
+
+- Status: Uncommitted
+- Areas changed: AEON overview GitHub setup UI, changelog
+- Summary: Replace the single AEON GitHub banner with two modern side-by-side setup columns: step 1 for GitHub OAuth/account access and step 2 for selecting the AEON GitHub repo, with separate connected/configured status and actions.
+- Verification: `pnpm exec eslint src/features/dashboard/views/AeonAutopilotPanel.tsx --max-warnings=999`; `pnpm exec tsc --noEmit --pretty false --skipLibCheck`; `git diff --check -- src/features/dashboard/views/AeonAutopilotPanel.tsx CHANGELOG.md`.
+- Intended commit message: `Split AEON GitHub setup into two steps`
+
+## 2026-05-30 21:44:20 WITA - Return AEON OAuth To Connected Overview
+
+- Status: Uncommitted
+- Areas changed: GitHub OAuth callback routing, AEON overview GitHub card, changelog
+- Summary: Send successful AEON GitHub OAuth back to the AEON detail overview with a connected flag, refresh the fast GitHub secret status immediately, and show connected/reconnect wording once `GH_GLOBAL` is available.
+- Verification: `pnpm exec eslint src/features/dashboard/views/AeonAutopilotPanel.tsx src/lib/services/integrations/github-oauth.ts src/app/api/integrations/github/oauth/callback/route.ts --max-warnings=999`; `pnpm exec tsc --noEmit --pretty false --skipLibCheck`; `git diff --check -- src/features/dashboard/views/AeonAutopilotPanel.tsx src/lib/services/integrations/github-oauth.ts src/app/api/integrations/github/oauth/callback/route.ts CHANGELOG.md`.
+- Intended commit message: `Return AEON OAuth to connected overview`
+
+## 2026-05-30 21:40:42 WITA - Keep AEON GitHub OAuth Modal Responsive
+
+- Status: Uncommitted
+- Areas changed: AEON settings modal, changelog
+- Summary: Keep the AEON settings modal open after pressing `Connect GitHub`, show an immediate connecting spinner state, and navigate to GitHub on the next animation frame so slow route startup no longer looks like the UI disappeared.
+- Verification: `pnpm exec eslint src/features/dashboard/views/chat/AgentSettingsModal.tsx --max-warnings=999` passed with one existing warning; `pnpm exec tsc --noEmit --pretty false --skipLibCheck`; `git diff --check -- src/features/dashboard/views/chat/AgentSettingsModal.tsx CHANGELOG.md`.
+- Intended commit message: `Keep AEON GitHub OAuth modal responsive`
+
+## 2026-05-30 21:39:26 WITA - Allow Localhost Dev Asset Origin
+
+- Status: Uncommitted
+- Areas changed: Next.js development config, changelog
+- Summary: Add `127.0.0.1` to Next.js `allowedDevOrigins` so local OAuth callbacks and localhost/loopback navigation do not trigger blocked dev font/resource requests.
+- Verification: `pnpm exec tsc --noEmit --pretty false --skipLibCheck`; `git diff --check -- next.config.ts CHANGELOG.md`.
+- Intended commit message: `Allow localhost dev asset origin`
+
+## 2026-05-30 21:32:28 WITA - Read GitHub OAuth App Keys From Hive Env
+
+- Status: Uncommitted
+- Areas changed: GitHub OAuth integration helper, OAuth start and callback routes, changelog
+- Summary: Load GitHub OAuth app client ID, client secret, callback URL, and scopes from the shared `hive-env-add` agent env store as well as the dashboard process env, scrub hidden copy/paste characters from GitHub OAuth credentials, normalize local callback URLs to `127.0.0.1`, and use signed OAuth state instead of host-specific cookies so `localhost`/`127.0.0.1` callback handoffs do not fail.
+- Verification: Confirmed shared env has `GITHUB_OAUTH_CLIENT_ID` and `GITHUB_OAUTH_CLIENT_SECRET` present without printing values; masked `curl -I http://localhost:5020/api/integrations/github/oauth/start?source=aeon` returns a GitHub authorize redirect with callback `http://127.0.0.1:5020/api/integrations/github/oauth/callback`; `pnpm exec eslint src/lib/services/integrations/github-oauth.ts src/app/api/integrations/github/oauth/start/route.ts src/app/api/integrations/github/oauth/callback/route.ts --max-warnings=999`; `pnpm exec tsc --noEmit --pretty false --skipLibCheck`; `git diff --check -- src/lib/services/integrations/github-oauth.ts src/app/api/integrations/github/oauth/start/route.ts src/app/api/integrations/github/oauth/callback/route.ts CHANGELOG.md`.
+- Intended commit message: `Read GitHub OAuth app keys from hive env`
+
 ## 2026-05-30 21:30:17 WITA - Merge Codex Branches Into Main
 
 - Status: Committed
@@ -10,14 +202,116 @@ be added here first, then marked `Committed` or `Pushed` after the git action.
 - Summary: Merge the active codex dashboard branch into main and record the stale remote dashboard usability branch as integrated while preserving the newer main-side implementation where histories overlapped.
 - Verification: `git fetch --all --prune`; inspected local and remote `codex/*` ahead counts; resolved remote merge conflicts in favor of current main where the remote branch would remove newer work.
 - Intended commit message: `Merge codex branches into main`
+## 2026-05-30 21:24:32 WITA - Send AEON GitHub Connect Directly To OAuth
 
+- Status: Uncommitted
+- Areas changed: AEON settings modal, changelog
+- Summary: Stop routing AEON's GitHub connect action through Nango detection and always start the direct GitHub OAuth API flow from the AEON modal.
+- Verification: `pnpm exec eslint src/features/dashboard/views/chat/AgentSettingsModal.tsx --max-warnings=999` passed with one existing warning; `pnpm exec tsc --noEmit --pretty false --skipLibCheck`; `git diff --check -- src/features/dashboard/views/chat/AgentSettingsModal.tsx CHANGELOG.md`.
+- Intended commit message: `Send AEON GitHub connect directly to OAuth`
 ## 2026-05-30 21:25:44 WITA - Speed Up AEON GitHub Key Badge
 
 - Status: Uncommitted
 - Areas changed: AEON secret status API, AEON runtime adapter, AEON overview GitHub badge
 - Summary: Add a fast AEON secret-status path for core shared/local env keys and have the GitHub key badge refresh from it immediately instead of waiting for full AEON inventory and GitHub secret reconciliation.
-- Verification: Pending.
+- Verification: `curl -X POST /api/runtimes/aeon/secrets/status {"fast":true}` on the running 5020 dev server returned `GH_GLOBAL` available from shared/local env with warm responses around 0.11-0.18s; `pnpm exec eslint src/features/dashboard/views/AeonAutopilotPanel.tsx src/lib/services/runtime-adapters/aeon.ts src/lib/services/runtime-adapters/types.ts src/app/api/runtimes/[runtime]/secrets/status/route.ts --max-warnings=999`; `pnpm exec tsc --noEmit --pretty false --skipLibCheck`; `git diff --check` on the touched code files.
 - Intended commit message: `Speed up AEON GitHub key badge`
+
+## 2026-05-30 21:20:13 WITA - Add Direct GitHub OAuth Fallback For AEON
+
+- Status: Uncommitted
+- Areas changed: AEON settings modal, GitHub OAuth API routes, integration OAuth helpers, changelog
+- Summary: Make AEON's GitHub connect action use Nango only when the configured host is live, otherwise start a direct GitHub OAuth flow that requests repo/workflow/hook/org/email scopes without `delete_repo` and saves the access token as `GH_GLOBAL` through `hive-env-add`.
+- Verification: `pnpm exec eslint src/features/dashboard/views/chat/AgentSettingsModal.tsx src/lib/services/integrations/github-oauth.ts src/app/api/integrations/github/oauth/start/route.ts src/app/api/integrations/github/oauth/callback/route.ts --max-warnings=999` passed with one existing warning; `pnpm exec tsc --noEmit --pretty false --skipLibCheck`; `git diff --check -- src/features/dashboard/views/chat/AgentSettingsModal.tsx src/lib/services/integrations/github-oauth.ts src/app/api/integrations/github/oauth/start/route.ts src/app/api/integrations/github/oauth/callback/route.ts CHANGELOG.md`.
+- Intended commit message: `Add direct GitHub OAuth fallback for AEON`
+
+## 2026-05-30 21:13:34 WITA - Split AEON Connection And Memory Settings
+
+- Status: Uncommitted
+- Areas changed: AEON agent settings modal, AEON overview modal handoff, dashboard settings panel types, changelog
+- Summary: Add an AEON-only `Connection` settings tab for GitHub/OAuth/A2A mode controls and keep shared Obsidian brain plus AEON repo folder controls in `Memory`.
+- Verification: `pnpm exec eslint src/features/dashboard/views/chat/AgentSettingsModal.tsx src/features/dashboard/views/AeonAutopilotPanel.tsx src/features/dashboard/DashboardApp.tsx src/features/dashboard/agent-settings-types.ts --max-warnings=999` passed with existing warnings; `pnpm exec tsc --noEmit --pretty false --skipLibCheck`; `git diff --check -- src/features/dashboard/views/chat/AgentSettingsModal.tsx src/features/dashboard/views/AeonAutopilotPanel.tsx src/features/dashboard/DashboardApp.tsx src/features/dashboard/agent-settings-types.ts CHANGELOG.md`.
+- Intended commit message: `Split AEON connection and memory settings`
+
+## 2026-05-30 21:08:48 WITA - Reopen Failed Nango Setup
+
+- Status: Uncommitted
+- Areas changed: Nango integrations UI, integrations styling, changelog
+- Summary: Treat saved Nango host configuration separately from live Nango health so partial setup runs reopen the setup flow instead of showing the integrations app grid as ready, and add an explicit setup-incomplete state with retry and refresh actions.
+- Verification: `pnpm exec eslint src/features/integrations/NangoIntegrationsView.tsx --max-warnings=0`; `pnpm exec tsc --noEmit --pretty false --skipLibCheck`; `git diff --check -- src/features/integrations/NangoIntegrationsView.tsx src/app/integrations/integrations.module.css CHANGELOG.md`; checked the local Nango integration payload shape from `/api/integrations/nango` and confirmed the UI now branches on `health.ok` rather than only saved host configuration.
+- Intended commit message: `Reopen failed Nango setup`
+
+## 2026-05-30 21:08:31 WITA - Prioritize GitHub OAuth In AEON Connection
+
+- Status: Uncommitted
+- Areas changed: AEON agent settings modal, fleet modal styling, changelog
+- Summary: Put GitHub OAuth first in the AEON GitHub connection state, route it to Integrations/Nango, and move manual repo/branch entry below an `or enter repo manually` divider.
+- Verification: `pnpm exec eslint src/features/dashboard/views/chat/AgentSettingsModal.tsx --max-warnings=999` passed with one existing warning; `pnpm exec tsc --noEmit --pretty false --skipLibCheck`; `git diff --check -- src/features/dashboard/views/chat/AgentSettingsModal.tsx src/app/fleet.module.css CHANGELOG.md`.
+- Intended commit message: `Prioritize GitHub OAuth in AEON connection`
+
+## 2026-05-30 21:04:03 WITA - Preselect GitHub Mode From AEON Power Card
+
+- Status: Uncommitted
+- Areas changed: AEON overview GitHub card, AEON settings modal handoff, changelog
+- Summary: Make the `Connect GitHub` overview action set the selected AEON profile to GitHub mode before opening the connection modal.
+- Verification: `pnpm exec eslint src/features/dashboard/views/AeonAutopilotPanel.tsx src/features/dashboard/DashboardApp.tsx --max-warnings=999` passed with existing warnings; `pnpm exec tsc --noEmit --pretty false --skipLibCheck`; `git diff --check -- src/features/dashboard/views/AeonAutopilotPanel.tsx src/features/dashboard/DashboardApp.tsx CHANGELOG.md`.
+- Intended commit message: `Preselect GitHub mode from AEON power card`
+
+## 2026-05-30 21:01:16 WITA - Render AEON Local Command Inline Code
+
+- Status: Uncommitted
+- Areas changed: AEON overview GitHub setup card, changelog
+- Summary: Replace raw markdown backticks around `./aeon` with an actual inline code element in the AEON overview power card.
+- Verification: `pnpm exec eslint src/features/dashboard/views/AeonAutopilotPanel.tsx --max-warnings=999`; `pnpm exec tsc --noEmit --pretty false --skipLibCheck`; `git diff --check -- src/features/dashboard/views/AeonAutopilotPanel.tsx CHANGELOG.md`.
+- Intended commit message: `Render AEON local command inline code`
+
+## 2026-05-30 20:56:32 WITA - Add AEON GitHub Power Card
+
+- Status: Uncommitted
+- Areas changed: AEON overview GitHub setup card, dashboard AEON panel props, changelog
+- Summary: Add a prominent `Power AEON` card to the overview that explains GitHub Actions as AEON's unattended runner, shows repo/key readiness, and links directly to GitHub connection setup and key sync.
+- Verification: `pnpm exec eslint src/features/dashboard/views/AeonAutopilotPanel.tsx src/features/dashboard/DashboardApp.tsx --max-warnings=999` passed with existing warnings; `pnpm exec tsc --noEmit --pretty false --skipLibCheck`; `git diff --check -- src/features/dashboard/views/AeonAutopilotPanel.tsx src/features/dashboard/DashboardApp.tsx CHANGELOG.md`; Playwright smoke confirmed `http://127.0.0.1:5020/` loads without taking over the managed dev server.
+- Intended commit message: `Add AEON GitHub power card`
+
+## 2026-05-30 20:55:35 WITA - Remove AEON Overview Agent Strip
+
+- Status: Uncommitted
+- Areas changed: AEON agent dashboard view, changelog
+- Summary: Remove the redundant Agents card strip from the AEON overview because the route already represents AEON agents.
+- Verification: `pnpm exec eslint src/features/dashboard/views/AeonAutopilotPanel.tsx src/features/dashboard/DashboardApp.tsx --max-warnings=999` passed with existing warnings in `DashboardApp.tsx`; `pnpm exec tsc --noEmit --pretty false --skipLibCheck`; `git diff --check -- src/features/dashboard/views/AeonAutopilotPanel.tsx src/features/dashboard/DashboardApp.tsx CHANGELOG.md`; in-app browser smoke on `http://127.0.0.1:5020/?view=aeon` loaded the AEON route and `rg` confirmed the removed overview Agents block/component no longer exists.
+- Intended commit message: `Remove AEON overview agent strip`
+
+## 2026-05-30 20:50:02 WITA - Simplify AEON Vault Agent Notes
+
+- Status: Uncommitted
+- Areas changed: Obsidian agent profile mirroring, AEON vault README files, changelog
+- Summary: Make `Agents/AEON/<agent>/README.md` the canonical generated AEON note, stop generating duplicate `Notes/README.md` stubs for AEON, and use the label `Agent` instead of `repo/workspace`.
+- Verification: `pnpm exec eslint src/lib/services/obsidian/agent-profiles.ts --max-warnings=999`; `pnpm exec tsc --noEmit --pretty false --skipLibCheck`; `git diff --check -- src/lib/services/obsidian/agent-profiles.ts CHANGELOG.md`; filesystem checks found no AEON `Notes/README.md` stubs and no remaining `repo/workspace` AEON vault wording.
+- Intended commit message: `Simplify AEON vault agent notes`
+
+## 2026-05-30 20:48:21 WITA - Flatten AEON Obsidian Repo Profiles
+
+- Status: Uncommitted
+- Areas changed: Obsidian agent profile mirroring, AEON vault folders, changelog
+- Summary: Mirror AEON profile metadata directly under `Agents/AEON/<repo>/` instead of nesting it under `agents/<agentName>/`, and flatten the existing generated AEON vault folders.
+- Verification: `pnpm exec eslint src/lib/services/obsidian/agent-profiles.ts --max-warnings=999`; `pnpm exec tsc --noEmit --pretty false --skipLibCheck`; `git diff --check -- src/lib/services/obsidian/agent-profiles.ts CHANGELOG.md`; filesystem check confirmed `Agents/AEON/aeon-test` now contains `README.md`, `profile.json`, and `Notes/` directly with no generated `agents/<name>` child.
+- Intended commit message: `Flatten AEON Obsidian repo profiles`
+
+## 2026-05-30 20:41:58 WITA - Clarify AEON Repo And Skill Model Labels
+
+- Status: Uncommitted
+- Areas changed: AEON repo view labels, AEON skill advanced settings, changelog
+- Summary: Treat AEON detail names as repo/workspace names, show dashboard profile labels separately, and relabel skill model editing as a per-skill override that falls back to the repo default model in `aeon.yml`.
+- Verification: `pnpm exec eslint src/features/dashboard/views/AeonAutopilotPanel.tsx src/features/dashboard/views/chat/AgentSettingsModal.tsx --max-warnings=999` passed with one existing warning; `pnpm exec tsc --noEmit --pretty false --skipLibCheck`; `git diff --check -- src/features/dashboard/views/AeonAutopilotPanel.tsx src/features/dashboard/views/chat/AgentSettingsModal.tsx src/app/fleet.module.css CHANGELOG.md ASSIMILATION_LOG.md ASSIMILATION_LOG.jsonl`.
+- Intended commit message: `Clarify AEON repo and model labels`
+
+## 2026-05-30 20:37:03 WITA - Refine AEON Connection Settings UI
+
+- Status: Uncommitted
+- Areas changed: AEON agent settings modal, fleet modal styling, changelog, assimilation log
+- Summary: Replace the four-field AEON connection block with mode cards that reveal only the relevant details for Local, GitHub, or A2A setup.
+- Verification: `pnpm exec eslint src/features/dashboard/views/chat/AgentSettingsModal.tsx --max-warnings=999` passed with one existing warning; `pnpm exec tsc --noEmit --pretty false --skipLibCheck`; `git diff --check -- src/features/dashboard/views/chat/AgentSettingsModal.tsx src/app/fleet.module.css CHANGELOG.md ASSIMILATION_LOG.md ASSIMILATION_LOG.jsonl`; Playwright smoke confirmed `http://127.0.0.1:5020/` loads without taking over the managed dev server.
+- Intended commit message: `Refine AEON connection settings UI`
 
 ## 2026-05-30 20:29:21 WITA - Add AEON Agent Profile Settings
 

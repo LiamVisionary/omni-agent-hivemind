@@ -353,13 +353,39 @@
 }
 
 .manualBox,
-.connectionList {
+.connectionList,
+.setupRequired {
   border: 1px solid rgba(177, 194, 189, 0.16);
   border-radius: 8px;
   background: rgba(7, 12, 17, 0.58);
   padding: 16px;
   display: grid;
   gap: 10px;
+}
+
+.setupRequired {
+  border-color: rgba(251, 113, 133, 0.28);
+  background:
+    linear-gradient(135deg, rgba(127, 29, 29, 0.22), rgba(10, 15, 22, 0.68)),
+    rgba(7, 12, 17, 0.58);
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: start;
+}
+
+.setupRequired svg {
+  width: 28px;
+  height: 28px;
+  color: #fca5a5;
+}
+
+.setupRequired div {
+  display: grid;
+  gap: 5px;
+}
+
+.setupRequired span {
+  color: #fecdd3;
+  line-height: 1.5;
 }
 
 .manualBox pre {

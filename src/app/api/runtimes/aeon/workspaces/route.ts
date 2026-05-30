@@ -1,5 +1,5 @@
 import { constants } from "fs";
-import { access, mkdir, readFile, rename, writeFile } from "fs/promises";
+import { access, mkdir, readFile, rename, rm, stat, writeFile } from "fs/promises";
 import { execFile } from "child_process";
 import { promisify } from "util";
 import { homedir } from "os";
@@ -68,6 +68,14 @@ function repoNameFromUrl(url: string) {
   return slug(parts.at(-1) || "aeon");
 }
 
+function repoFullNameFromUrl(url: string) {
+  const cleaned = url.trim().replace(/\.git$/i, "");
+  const github = cleaned.match(/github\.com[:/]([^/\s]+)\/([^/\s.]+)$/i);
+  const ownerRepo = cleaned.match(/^([^/\s]+)\/([^/\s.]+)$/);
+  const match = github || ownerRepo;
+  return match ? `${match[1]}/${match[2]}` : "";
+}
+
 function logoFromRepo(repo?: string) {
   const match = repo?.match(/github\.com[:/]([^/\s]+)\/([^/\s.]+)/i) || repo?.match(/^([^/\s]+)\/([^/\s.]+)$/);
   return match ? `https://github.com/${match[1]}.png` : "";
@@ -75,6 +83,34 @@ function logoFromRepo(repo?: string) {
 
 async function canRead(path: string) {
   return access(path, constants.R_OK).then(() => true).catch(() => false);
+}
+
+// Dev-only: instead of cloning AEON over the network on every "Clone official AEON",
+// seed a local preclone cache once, then duplicate that folder (instant on APFS via
+// copy-on-write) and re-point origin. Lets a demo run the clone step in ~no time.
+// Force on with AEON_PRECLONE=1, force off with AEON_PRECLONE=0.
+function precloneEnabled() {
+  if (process.env.AEON_PRECLONE === "1") return true;
+  if (process.env.AEON_PRECLONE === "0") return false;
+  return process.env.NODE_ENV !== "production";
+}
+
+function precloneSourcePath(repo: string) {
+  return join(resolve(expandHome("~/.aeon-repos")), ".preclone", repoNameFromUrl(repo));
+}
+
+async function precloneInto(repo: string, root: string) {
+  const source = precloneSourcePath(repo);
+  if (!await canRead(join(source, ".git"))) {
+    // Seed the cache once (the slow network clone), then reuse it for instant copies.
+    await rm(source, { recursive: true, force: true }).catch(() => undefined);
+    await mkdir(dirname(source), { recursive: true });
+    await execFileAsync("git", ["clone", repo, source], { timeout: 120_000, maxBuffer: 2_000_000 });
+  }
+  // Duplicate the local repo (APFS clonefile when available) and point origin at the requested repo.
+  await execFileAsync("cp", ["-R", source, root], { timeout: 120_000, maxBuffer: 2_000_000 });
+  await execFileAsync("git", ["remote", "set-url", "origin", repo], { cwd: root, timeout: 20_000, maxBuffer: 500_000 })
+    .catch(() => execFileAsync("git", ["remote", "add", "origin", repo], { cwd: root, timeout: 20_000, maxBuffer: 500_000 }).catch(() => undefined));
 }
 
 async function gitRemote(root: string) {
@@ -218,10 +254,11 @@ async function renameRemoteAeonWorkspace(input: { collectorUrl: string; path: st
   throw new Error(errors.at(-1) ?? "Could not rename AEON repo over Tailscale SSH.");
 }
 
-async function availableLocalWorkspaceRoot(name = "aeon-workspace") {
-  const root = resolve(expandHome("~/.aeon-repos"));
+async function availableLocalWorkspaceRoot(name = "aeon-workspace", parentPath = "~/.aeon-repos") {
+  const root = resolve(expandHome(parentPath));
   await mkdir(root, { recursive: true });
-  const base = slug(name, "aeon-workspace").toLowerCase();
+  const requested = slug(name, "aeon-workspace").toLowerCase();
+  const base = /^aeon-\d+$/.test(requested) ? "aeon" : requested;
   for (let index = 1; index < 1000; index++) {
     const suffix = index === 1 ? "" : `-${index}`;
     const candidate = join(root, `${base}${suffix}`);
@@ -230,10 +267,21 @@ async function availableLocalWorkspaceRoot(name = "aeon-workspace") {
   return join(root, `${base}-${Date.now()}`);
 }
 
+async function assertSafeLocalWorkspaceRoot(root: string) {
+  if (!root || root === sep || root === homedir()) {
+    throw new Error("Refusing to delete a broad filesystem path.");
+  }
+  const info = await stat(root).catch(() => null);
+  if (!info?.isDirectory()) throw new Error("AEON repo folder does not exist.");
+  const hasAeonFile = await canRead(join(root, "aeon.yml")) || await canRead(join(root, "skills.json"));
+  if (!hasAeonFile) throw new Error("Refusing to delete a folder that does not look like an AEON workspace.");
+}
+
 async function agentForWorkspace(input: { root: string; name?: string; repo?: string; mode?: AgentProfile["aeonMode"]; collectorUrl?: string; machineName?: string }): Promise<AgentProfile> {
   const collectorUrl = normalizeCollectorUrl(input.collectorUrl);
   const remoteWorkspace = Boolean(collectorUrl && !isLocalCollectorUrl(collectorUrl));
   const remote = input.repo || (remoteWorkspace ? "" : await gitRemote(input.root));
+  const repoFullName = repoFullNameFromUrl(remote);
   const repoName = slug(input.name || (remote ? repoNameFromUrl(remote) : basename(input.root)) || "AEON Workspace", "AEON Workspace");
   return {
     id: `aeon-${repoName.toLowerCase()}-${Date.now()}`,
@@ -258,11 +306,11 @@ async function agentForWorkspace(input: { root: string; name?: string; repo?: st
     agentId: repoName,
     localDataDir: remoteWorkspace ? input.root : displayPath(input.root),
     aeonLocalPath: remoteWorkspace ? input.root : displayPath(input.root),
-    aeonRepo: remote,
+    aeonRepo: repoFullName || remote,
     aeonRepoName: repoName,
-    aeonLogoUrl: logoFromRepo(remote),
+    aeonLogoUrl: logoFromRepo(repoFullName || remote),
     aeonBranch: "main",
-    aeonMode: input.mode || (remote ? "github" : "local"),
+    aeonMode: input.mode || (repoFullName || remote ? "github" : "local"),
     machineName: input.machineName || (remoteWorkspace ? remoteHostFromCollectorUrl(collectorUrl) : "local"),
     telemetryUrl: collectorUrl,
     useSharedVault: true,
@@ -300,6 +348,16 @@ export async function POST(request: NextRequest) {
       const remoteResult = await ensureRemoteAeonWorkspace({ collectorUrl, path, action, repoUrl: repo });
       root = remoteResult.root;
       repo = repo || remoteResult.repo;
+    } else if (action === "delete-git" || action === "delete-local") {
+      root = resolve(expandHome(body.path?.trim() || workspaceRootFromAgent(body.agent)));
+      await assertSafeLocalWorkspaceRoot(root);
+      if (action === "delete-git") {
+        await rm(join(root, ".git"), { recursive: true, force: true });
+        const agent = await agentForWorkspace({ root, name: body.agent?.aeonRepoName || body.agent?.name || basename(root), mode: "local" });
+        return NextResponse.json({ ok: true, action, agent, root: displayPath(root), message: "Removed Git metadata from the AEON workspace." });
+      }
+      await rm(root, { recursive: true, force: true });
+      return NextResponse.json({ ok: true, action, root: displayPath(root), deleted: true, message: "Deleted the local AEON workspace." });
     } else if (action === "initialize") {
       const createUnique = body.unique === true || body.unique === "true";
       root = body.path
@@ -317,11 +375,18 @@ export async function POST(request: NextRequest) {
       if (!/^((https:\/\/github\.com\/[\w.-]+\/[\w.-]+(?:\.git)?)|git@github\.com:[\w.-]+\/[\w.-]+(?:\.git)?)$/.test(repo)) {
         throw new Error("Use a GitHub repository URL like https://github.com/owner/repo.git.");
       }
-      const name = repoNameFromUrl(repo);
-      root = resolve(expandHome(body.path || `~/.aeon-repos/${name}`));
+      const name = body.name?.trim() || repoNameFromUrl(repo);
+      const requestedRoot = resolve(expandHome(body.path || `~/.aeon-repos/${name}`));
+      root = body.unique === true || body.unique === "true"
+        ? await availableLocalWorkspaceRoot(name, dirname(requestedRoot))
+        : requestedRoot;
       if (!await canRead(root)) {
-        await mkdir(resolve(expandHome("~/.aeon-repos")), { recursive: true });
-        await execFileAsync("git", ["clone", repo, root], { timeout: 120_000, maxBuffer: 2_000_000 });
+        await mkdir(dirname(root), { recursive: true });
+        if (precloneEnabled()) {
+          await precloneInto(repo, root);
+        } else {
+          await execFileAsync("git", ["clone", repo, root], { timeout: 120_000, maxBuffer: 2_000_000 });
+        }
       }
       await ensureAeonWorkspace(root);
     } else if (action === "rename") {
@@ -340,7 +405,9 @@ export async function POST(request: NextRequest) {
     } else {
       throw new Error(`Unsupported AEON workspace action: ${action}.`);
     }
-    const agent = await agentForWorkspace({ root, repo, name: body.name, mode: action === "clone" ? "github" : undefined, collectorUrl, machineName: body.machineName });
+    const requestedName = body.name?.trim();
+    const actualName = (body.unique === true || body.unique === "true") && root ? basename(root) : requestedName;
+    const agent = await agentForWorkspace({ root, repo, name: actualName, mode: action === "clone" ? "github" : undefined, collectorUrl, machineName: body.machineName });
     const readme = remoteWorkspace ? "" : await readFile(join(root, "README.md"), "utf8").catch(() => "");
     return NextResponse.json({ ok: true, agent, root: displayPath(root), readme: readme.slice(0, 1200) });
   } catch (error) {
